@@ -13,10 +13,14 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const verifyOnly = process.argv.includes('--verify-only')
+// A floor, not an exact match. Node 24 is the pinned and tested runtime (see
+// .nvmrc), but refusing anything newer blocks contributors — and the whole
+// suite, build and browser acceptance run pass on later majors — while the
+// features this repository relies on are the ones 24 introduced.
 const major = Number(process.versions.node.split('.')[0])
-if (major !== 24) {
-  console.error(`Brickwright requires Node 24.x; this process is ${process.version}.`)
-  console.error('Activate the repository-pinned runtime, then rerun npm run bootstrap.')
+if (!Number.isFinite(major) || major < 24) {
+  console.error(`Brickwright needs Node 24 or newer; this process is ${process.version}.`)
+  console.error('Run `nvm use` to activate the pinned runtime, then rerun npm run bootstrap.')
   process.exit(1)
 }
 

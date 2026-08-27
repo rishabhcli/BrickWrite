@@ -10,7 +10,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # The browser acceptance run compiles the catalog into a real WebGL context
+    # and renders a build guide, so it needs more headroom than the unit suite.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,4 +20,30 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run check
+
+      # Committed catalog integrity: byte lengths and SHA-256 over every asset
+      # the runtime will later verify again before using it as CAD input.
+      - name: Verify committed catalog assets
+        run: node tools/bootstrap.mjs --verify-only
+
+      - name: Unit tests, strict TypeScript and production build
+        run: npm run check
+
+      # Chromium only: the acceptance run drives one browser and starts its own
+      # dev server, so the other engines would be pure cost.
+      - name: Install Chromium for the acceptance run
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser acceptance run
+        run: npm run test:e2e
+
+      # The run writes screenshots and the generated build guide; on a failure
+      # they are the fastest way to see what the browser actually did.
+      - name: Upload acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
