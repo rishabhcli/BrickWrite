@@ -2,6 +2,8 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   CircleAlert,
   CircleDot,
   Clock3,
@@ -9,6 +11,8 @@ import {
   MessageSquareText,
   Plus,
   Search,
+  RotateCcw,
+  RotateCw,
   ShieldCheck,
   Sparkles,
   Unlock,
@@ -192,17 +196,52 @@ function NumberField({ label, value, suffix, onCommit }: { label: string; value:
   )
 }
 
+export interface ArticulationControl {
+  edgeId: string
+  label: string
+  family: string
+  canRotate: boolean
+  canSlide: boolean
+  rotateStep: number
+  slideStep: number
+  movingCount: number
+}
+
+export interface ArticulationControl {
+  edgeId: string
+  label: string
+  family: string
+  canRotate: boolean
+  canSlide: boolean
+  rotateStep: number
+  slideStep: number
+  movingCount: number
+}
+
 interface InspectorPanelProps {
   state: EngineSnapshot
   selectedPart?: PartInstance
   definition?: PartDefinition
+  /** Joints the current selection can drive; empty for a rigid assembly. */
+  articulation: ArticulationControl[]
   onTransform: (partId: string, transform: Transform) => void
   onRecolor: (color: number) => void
   onProtect: (protect: boolean) => void
   onSelectIds: (ids: string[]) => void
+  onArticulate: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
 }
 
-export function InspectorPanel({ state, selectedPart, definition, onTransform, onRecolor, onProtect, onSelectIds }: InspectorPanelProps) {
+export function InspectorPanel({
+  state,
+  selectedPart,
+  definition,
+  articulation,
+  onTransform,
+  onRecolor,
+  onProtect,
+  onSelectIds,
+  onArticulate,
+}: InspectorPanelProps) {
   const [tab, setTab] = useState<'object' | 'validate'>('object')
   const report = state.validation
   const displayRotation = useMemo(
@@ -310,6 +349,44 @@ export function InspectorPanel({ state, selectedPart, definition, onTransform, o
                 <i>{selectedPart.protected ? 'LOCKED' : 'OPEN'}</i>
               </button>
             </section>
+            {articulation.length > 0 && (
+              <section className="property-section">
+                <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>
+                {/* Only interfaces designed to move appear here. A stud
+                    connection is rigid once built, so a brick wall offers
+                    nothing to drive. */}
+                {articulation.map((joint) => (
+                  <div className="joint-row" key={joint.edgeId}>
+                    <div className="joint-copy">
+                      <strong>{joint.family}</strong>
+                      <small>{joint.label.split(' · ').slice(2).join(' · ')} · moves {joint.movingCount}</small>
+                    </div>
+                    <div className="joint-controls">
+                      {joint.canRotate && (
+                        <>
+                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: -joint.rotateStep })} title={`Rotate -${joint.rotateStep}°`}>
+                            <RotateCcw size={12} />
+                          </button>
+                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: joint.rotateStep })} title={`Rotate +${joint.rotateStep}°`}>
+                            <RotateCw size={12} />
+                          </button>
+                        </>
+                      )}
+                      {joint.canSlide && (
+                        <>
+                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: -joint.slideStep })} title={`Slide -${joint.slideStep} LDU`}>
+                            <ChevronsLeft size={12} />
+                          </button>
+                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: joint.slideStep })} title={`Slide +${joint.slideStep} LDU`}>
+                            <ChevronsRight size={12} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
             <section className="property-section">
               <header><span>DATA PROVENANCE</span><em>{definition.license}</em></header>
               <dl className="provenance-list">

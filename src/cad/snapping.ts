@@ -20,7 +20,7 @@ import {
   type RigidTransform,
   type Vec3,
 } from './math'
-import type { ConnectionFamily, ConnectionFeature, ModelDocument, PartInstance } from './types'
+import type { ConnectionEdge, ConnectionFamily, ConnectionFeature, ModelDocument, PartInstance } from './types'
 
 export interface WorldConnector {
   readonly id: string
@@ -220,6 +220,11 @@ export interface DerivedConnections {
  * the document object gives correct reuse across the many consumers that ask
  * for the same derived state — solver, validation, viewport — without any of
  * them recomputing it, and without a manual invalidation path to get wrong.
+ *
+ * That immutability is a real requirement, not an incidental property: mutating
+ * a document's parts in place after it has been derived from will read the stale
+ * derivation. Every kernel mutation goes through `applyMutations`, which returns
+ * a new object, so production code cannot violate it.
  */
 const derivedCache = new WeakMap<ModelDocument, DerivedConnections>()
 
@@ -266,6 +271,38 @@ export function deriveConnections(document: ModelDocument): DerivedConnections {
   const derived: DerivedConnections = { index, connectors, occupied, pairs, pairsByParts }
   derivedCache.set(document, derived)
   return derived
+}
+
+/** Deterministic id for an edge, from its two endpoints. */
+export const connectionEdgeId = (a: string, b: string) => `edge_${[a, b].sort().join('__')}`
+
+/**
+ * Connection edges implied by a document's geometry.
+ *
+ * Shared by the engine, which attributes new edges to a transaction, and by
+ * document constructors such as the opening showcase, which have no transaction
+ * to attribute them to. Both need the graph to be part of the document rather
+ * than something only the engine knows.
+ */
+export function deriveConnectionEdges(
+  document: ModelDocument,
+  revision: number,
+  source: ConnectionEdge['source'],
+): Record<string, ConnectionEdge> {
+  const edges: Record<string, ConnectionEdge> = {}
+  for (const pair of deriveConnections(document).pairs) {
+    const id = connectionEdgeId(`${pair.a.partId}/${pair.a.id}`, `${pair.b.partId}/${pair.b.id}`)
+    edges[id] = {
+      id,
+      a: { partId: pair.a.partId, featureId: pair.a.id },
+      b: { partId: pair.b.partId, featureId: pair.b.id },
+      family: pair.a.family,
+      joint: jointFor(pair.a.feature, pair.b.feature),
+      createdAtRevision: revision,
+      source,
+    }
+  }
+  return edges
 }
 
 export interface SnapSolverOptions {

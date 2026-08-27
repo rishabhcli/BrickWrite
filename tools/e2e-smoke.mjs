@@ -232,7 +232,41 @@ try {
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
+  // -- the model contains a real mechanism, and it can be driven ------------
+  // The showcase carries a hinged rear hatch, so articulation is exercised on a
+  // real assembly rather than a synthetic fixture.
+  const articulation = await page.evaluate(async () => {
+    const hatch = Object.values(window.brickwright.getDocument().parts).find((part) => part.definitionId === '3938')
+    if (!hatch) return { error: 'showcase has no hinge top plate' }
+    const joints = (await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatch.id] } }))
+      ?.structuredContent
+    return { hatchId: hatch.id, joints }
+  })
+  assert(!articulation.error, `Articulation probe failed: ${articulation.error}`)
+  assert(articulation.joints?.joints?.length === 1, `Expected one drivable joint, saw ${JSON.stringify(articulation.joints?.joints)}`)
+  assert(articulation.joints.joints[0].family === 'hinge', 'Expected the drivable joint to be the hinge')
+
   await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+
+  const driven = await page.evaluate(async (hatchId) => {
+    const model = window.brickwright.getDocument()
+    const before = model.parts[hatchId].transform.basis.join(',')
+    const result = await window.brickwright.invoke('action_mutate', {
+      action: 'articulate_joint',
+      expectedRevision: model.revision,
+      args: { partIds: [hatchId], edgeId: (await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatchId] } })).structuredContent.joints[0].edgeId, rotateDegrees: 35 },
+    })
+    const after = window.brickwright.getDocument()
+    return {
+      committed: Boolean(result?.structuredContent?.resultRevision),
+      error: result?.structuredContent?.error,
+      changed: after.parts[hatchId].transform.basis.join(',') !== before,
+      anchorUnchanged: Object.values(after.parts).some((part) => part.definitionId === '3937'),
+    }
+  }, articulation.hatchId)
+  assert(driven.committed, `Driving the hinge failed: ${JSON.stringify(driven.error)}`)
+  assert(driven.changed, 'Driving the hinge did not rotate the hatch')
+  await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
 
   // -- rendering cost tracks part/colour combinations, not brick count ------
   // A 400-part agent batch is committed far from the model, then the renderer's
@@ -348,6 +382,12 @@ try {
     rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
     meshAssetsFetched: geometry.meshes,
     refusedUnplaceableIdentity: unplaceable,
+    articulation: {
+      drivableJoints: articulation.joints?.joints?.length,
+      family: articulation.joints?.joints?.[0]?.family,
+      freedom: articulation.joints?.joints?.[0]?.freedom?.kind,
+      drivenByAgent: driven.committed,
+    },
     contractEnforcement: {
       profile: contract.profile,
       malformedBatch: contract.malformed?.code,

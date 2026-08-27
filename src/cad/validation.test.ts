@@ -15,10 +15,17 @@ const part = (id: string, definitionId: string, position: [number, number, numbe
   protected: false,
 })
 
+/** Fresh document object per call: derived state is memoized on identity. */
 const withParts = (...parts: PartInstance[]): ModelDocument => {
-  const document = createEmptyDocument()
-  for (const item of parts) document.parts[item.id] = item
-  return document
+  const base = createEmptyDocument()
+  return {
+    ...base,
+    parts: Object.fromEntries(parts.map((item) => [item.id, item])),
+    subassemblies: {
+      ...base.subassemblies,
+      hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
+    },
+  }
 }
 
 describe('validation', () => {

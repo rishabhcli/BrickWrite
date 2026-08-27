@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { articulate, findArticulatedJoints } from './cad/articulation'
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './cad/catalog'
 import { IDENTITY_BASIS, rotateLocal } from './cad/math'
 import { exportBomCsv } from './cad/bom'
@@ -35,7 +36,7 @@ import { bestSnapTransform } from './cad/snapping'
 import { session, type SessionStatus } from './cad/session'
 import type { CadOperation, CatalogSearchRecord, PartInstance, Transform, Vec3 } from './cad/types'
 import { CadViewport, type CameraView, type EditorTool, type RenderMode } from './editor/CadViewport'
-import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline } from './editor/Panels'
+import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline, type ArticulationControl } from './editor/Panels'
 import { useCad } from './editor/useCad'
 import { webMcpAdapter } from './webmcp/adapter'
 
@@ -287,6 +288,51 @@ export default function App() {
    * be exercised without the agent attached. It goes through the exact same
    * command bus, revision guard and validation the agent uses.
    */
+  /**
+   * Joints the current selection can drive.
+   *
+   * Derived from the persisted connection graph, so it reflects what the model is
+   * actually assembled from rather than what the selected part could in principle
+   * connect to.
+   */
+  const articulation = useMemo<ArticulationControl[]>(() => {
+    if (!state.selection.length) return []
+    return findArticulatedJoints(state.document, state.selection).map((joint) => ({
+      edgeId: joint.edgeId,
+      label: joint.label,
+      family: joint.family,
+      canRotate: joint.joint.kind === 'revolute' || joint.joint.kind === 'cylindrical' || joint.joint.kind === 'spherical',
+      canSlide: joint.joint.kind === 'cylindrical' || joint.joint.kind === 'prismatic',
+      rotateStep:
+        joint.joint.kind === 'revolute' && !joint.joint.continuous
+          ? (joint.joint.stepDegrees ?? 90)
+          : joint.joint.kind === 'cylindrical' && !joint.joint.continuousRotation
+            ? 90
+            : 15,
+      slideStep: 4,
+      movingCount: joint.movingPartIds.length,
+    }))
+  }, [state.document, state.selection])
+
+  const driveJoint = useCallback(
+    (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => {
+      const snapshot = cadEngine.getSnapshot()
+      const joint = findArticulatedJoints(snapshot.document, snapshot.selection).find((entry) => entry.edgeId === edgeId)
+      if (!joint) return
+      const operations = articulate(snapshot.document, joint, request)
+      if (!operations.length) {
+        setToast({
+          kind: 'info',
+          title: 'Joint did not move',
+          detail: 'That amount is outside what this interface allows, so nothing was changed.',
+        })
+        return
+      }
+      dispatch(`Articulate ${joint.family}`, operations)
+    },
+    [dispatch],
+  )
+
   const createDemoProposal = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
     // Find a real exposed stud plane on the rear deck rather than assuming one:
@@ -523,6 +569,8 @@ export default function App() {
           state={state}
           selectedPart={selectedPart}
           definition={selectedDefinition}
+          articulation={articulation}
+          onArticulate={driveJoint}
           onTransform={handleTransform}
           onRecolor={recolorSelection}
           onProtect={protectSelection}

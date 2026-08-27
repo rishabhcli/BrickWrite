@@ -63,13 +63,17 @@ function lattice(count: number): PartInstance[] {
 
 const createEmptyParts = () => createEmptyDocument()
 
+/** Fresh document object per call: derived state is memoized on identity. */
 const withParts = (parts: PartInstance[]): ModelDocument => {
-  const document = createEmptyDocument()
-  for (const item of parts) {
-    document.parts[item.id] = item
-    document.subassemblies.hull.partIds.push(item.id)
+  const base = createEmptyDocument()
+  return {
+    ...base,
+    parts: Object.fromEntries(parts.map((item) => [item.id, item])),
+    subassemblies: {
+      ...base.subassemblies,
+      hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
+    },
   }
-  return document
 }
 
 const timed = <T,>(work: () => T): { value: T; ms: number } => {
@@ -166,17 +170,14 @@ describe('kernel at scale', () => {
   it('gives the same collisions incrementally as it does from scratch', () => {
     // An optimization that changes answers is a defect, so the two paths are
     // compared directly on a model seeded with deliberate overlaps.
-    const seeded = lattice(400)
+    // Drive four parts into their neighbours before constructing the document.
+    const nudge = new Set(['p3', 'p20', 'p150', 'p399'])
+    const seeded = lattice(400).map((item) =>
+      nudge.has(item.id)
+        ? { ...item, transform: { position: [item.transform.position[0] + 6, item.transform.position[1], item.transform.position[2]] as [number, number, number], basis: IDENTITY_BASIS } }
+        : item,
+    )
     const document = withParts(seeded)
-    // Drive four parts into their neighbours.
-    for (const id of ['p3', 'p20', 'p150', 'p399']) {
-      const existing = document.parts[id]
-      if (!existing) continue
-      document.parts[id] = {
-        ...existing,
-        transform: { position: [existing.transform.position[0] + 6, existing.transform.position[1], existing.transform.position[2]], basis: IDENTITY_BASIS },
-      }
-    }
     const baseline = validateDocument(document, { provideGeometry: () => null })
     expect(baseline.collisions.length).toBeGreaterThan(0)
 
@@ -202,9 +203,8 @@ describe('kernel at scale', () => {
   })
 
   it('queries snap candidates against a dense model within budget', () => {
-    const document = withParts(parts)
     const moving = part('moving', [20, -12, 20])
-    document.parts.moving = moving
+    const document = withParts([...parts, moving])
     // Warm the per-revision derivation, as a drag would after the first frame.
     findSnapCandidates(moving, document, moving.transform, { radiusLdu: 14 })
     const { value, ms } = timed(() => findSnapCandidates(moving, document, moving.transform, { radiusLdu: 14 }))

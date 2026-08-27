@@ -14,7 +14,7 @@
 | D — Human editor | **Working slice** | Search across all 22,941 identities, placeable/all toggle, place/select/multi-select/subassembly-select/move/rotate/recolour/duplicate/delete/connect/lock | Marquee selection, palette drag-and-drop positioning, array/mirror UI, complete keyboard map |
 | E — Connections | **Working** | **Full 6-DOF frame solver** (`Tm = Tt·Ft·C·Fm⁻¹`): studs-not-on-top, right-angle Technic and hinge halves solve through the same expression as stacking. Per-family joint freedoms with closed-form continuous parameters, axial flip where insertion is two-sided, orientation-independent target discovery, axis-alignment requirement for a mate, occupancy exclusion, multi-match scoring, Connect-tool pinning. Classification grounded in measured Shadow Library conventions. **Persistent `ConnectionEdge`** records carrying joint, revision and provenance | Articulated manipulation UI driving the joint graph; per-family regression fixtures across the whole library |
 | F — Collision | **Working** | Box broad phase → mated-connector clearance → **`three-mesh-bvh` triangle-pair confirmation**, with per-verdict certainty (`exact` / `clearance-subtracted` / `unknown`) surfaced in the UI. Eliminates the axis-aligned-box false positives that dominate rotated parts. Per-definition BVH cache | Penetration-depth discrimination inside the narrow phase; measured per-connector mating volumes replacing the family-level allowance; offline BVH serialization into the asset |
-| G — Structural graph | **Working** | Connection graph from coincident compatible connectors with axis alignment, memoized per revision and shared by solver/validation/viewport; persisted edges with joint types; component count, loose groups, weak single-connector attachments | Rigid-component collapse and articulation graph, cut-set analysis |
+| G — Structural graph | **Working** | Connection graph from coincident compatible connectors with axis alignment, memoized per revision and shared by solver/validation/viewport; persisted edges with joint types; **rigid-component collapse and articulated joint driving** for hinges, pins, axles, bars and ball joints; component count, loose groups, weak single-connector attachments | Cut-set analysis, load-path tracing |
 | H — Transactions | **Working** | Patch-based history: every transaction carries forward and inverse mutations plus the entity set it touched, so undo applies an inverse rather than restoring a document copy. **IndexedDB persistence** with periodic checkpoints, an append-only transaction log, replay on open, gap detection, legacy-`localStorage` migration and a save indicator that reports what durability was actually achieved | Named checkpoints and branches in the UI, project switcher, transaction compaction policy |
 | I — WebMCP | **Working** | Dynamic 12/17-tool inventories; **schema-driven contracts** where the advertised JSON Schema is derived from the same Zod declaration the gateway enforces; a versioned tool profile with a drift-detecting hash; a **centralized sanitized error envelope** that redacts credentials, signed URLs, data blobs and filesystem paths and never relays a stack trace; bounded batch sizes; compact reads; catalog coverage; preflight/apply; render capture; capability virtualization | Native ChatGPT desktop acceptance run; cancellation propagation into asset fetches and workers |
 | J — Agent UX | **Working slice** | Inspect/Propose/Build modes, visible ghosts, activity history, notes, locked cockpit | Transaction-wave assembly animation, anchored 3D note authoring, autonomous hierarchical planning |
@@ -24,7 +24,7 @@
 
 ## Verified now
 
-`npm run check` — **133 tests**, strict TypeScript, production Vite build. The compiler is
+`npm run check` — **146 tests**, strict TypeScript, production Vite build. The compiler is
 driven in-process against committed fixtures, so CI asserts its semantics — colour crosswalk,
 snap-grid expansion, measured bounds, hashed files, determinism — not just that it exits zero.
 
@@ -169,6 +169,43 @@ the exposed tool names plus the catalog revision. A mutation may pin it, and a
 plan made against a surface that has since changed is refused with
 `STALE_TOOL_PROFILE` instead of executing against a contract the agent never saw.
 
+## Productionization pass 4
+
+**Articulated manipulation.** The connection graph already recorded a joint
+freedom on every edge, but that freedom conflated two different things, and the
+distinction turned out to be the whole problem:
+
+- *Placement* freedom is what the snap solver uses. A round stud admits any
+  rotation about its axis, which is why a 1×1 plate can be turned on its stud.
+- *Articulation* freedom is what a built model retains. A stud connection is
+  rigid once assembled — friction holds it, and nothing about a finished brick
+  wall hinges. Only interfaces designed to move articulate.
+
+Treating stud connections as rigid for articulation is what makes "rotate this
+hinge" carry the whole flap rather than peeling one plate off the assembly. The
+moving side is the selection's rigid group; everything else anchors it. A joint
+whose two sides land in the *same* rigid group is skipped, because a closed loop
+cannot articulate without deforming.
+
+Limits are enforced in the kernel, not the UI, so an agent call is clamped the
+same way: a keyed axle only seats at quarter turns, a prismatic joint respects its
+axial range, and a joint whose freedom is unmodelled drives nothing rather than
+guessing.
+
+The showcase now contains a hinged rear hatch, so the model carries a real
+mechanism instead of only rigid connections. Placing it surfaced two things worth
+recording. The hinge top plate has no anti-studs at all, so deriving its origin
+from a surface plane is meaningless — it belongs wherever its hinge connector
+coincides with its counterpart's, which needed an explicit placement path. And
+hinge halves interleave their fingers, so two correctly hinged parts share a
+substantial bounding volume; the collision clearance had to recognize that.
+
+The colour-evidence check also did its job unprompted: the hatch was first built
+in the rover's orange accent, and part 3938 has no observed official-set
+appearance in orange. It is white.
+
+![Driving the hinged hatch](docs/assets/brickwright-articulation.png)
+
 ## Honest evidence boundary
 
 **What changed since the last update:** the browser no longer renders generated stand-in
@@ -183,10 +220,12 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 - **Collision is broad-phase.** Box overlap minus a family-level mating allowance. It catches
   real interpenetration and does not flag correct stacking, but it is not triangle-exact, and
   the insertion allowance for pin/axle/bar/ball pairs is deliberately permissive.
-- **Snapping solves poses but does not yet drive articulation.** Joints are classified and
-  their freedoms recorded on each edge, and the solver resolves the free parameter from
-  operator intent. What is missing is the manipulation side: rotating a hinge assembly about
-  its own axis, or sliding an axle within its range, is not yet an editor gesture.
+- **Articulation is driven by stepped controls, not dragging.** Joints can be rotated and slid
+  from the inspector and from the agent surface, but there is no direct-manipulation gizmo
+  constrained to the joint axis.
+- **Joint limits are not published by the source data.** LDCad does not record angular stops,
+  so a hinge can be driven past where the physical part would bind; the collision kernel is
+  what catches the result.
 - **Collision does not discriminate touching from interpenetrating at the triangle level.**
   The mating-clearance layer handles the legal-stacking case, and the triangle phase removes
   box false positives, but a contact whose depth is zero is not distinguished from a shallow
@@ -216,13 +255,12 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 
 Continuing down the same critical path:
 
-1. **Articulated manipulation.** Joints are classified and recorded on every edge; what is
-   missing is the gesture — rotating a hinge assembly about its own axis, sliding an axle
-   within its range — so mechanisms move as mechanisms.
-2. **Project and checkpoint UI.** Surface the persistence layer: project switcher, named
+1. **Project and checkpoint UI.** Surface the persistence layer: project switcher, named
    checkpoints, and a visible restore report.
-3. **GPU picking pass**, so selection scales with the renderer rather than with the React
+2. **GPU picking pass**, so selection scales with the renderer rather than with the React
    event system.
+3. **Joint-axis drag gizmo**, so articulation is direct manipulation rather than stepped
+   buttons.
 4. **Articulated manipulation.** Drive hinge, axle and ball edges from their recorded joint
    freedoms so mechanisms move as mechanisms.
 5. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to

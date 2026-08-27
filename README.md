@@ -109,6 +109,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Persistent connection edges** — each mated pair is recorded with its joint freedom,
   the revision it appeared at and its provenance, so the structural graph survives save,
   load and export.
+- **Articulated mechanisms** — hinges, pins, axles, bars and ball joints can be driven from
+  the inspector or by the agent, carrying everything rigidly attached to the moving side.
+  Stud connections are treated as rigid, because a built brick wall does not hinge.
 - **Triangle-confirmed collision** — box broad phase, then a mated-connector clearance
   allowance, then `three-mesh-bvh` triangle-pair confirmation. Every verdict carries its
   certainty (`exact`, `clearance-subtracted`, `unknown`) and the UI shows it, so a result
@@ -160,7 +163,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 133 deterministic tests + strict TS + production build
+npm run check            # 146 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```

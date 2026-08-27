@@ -17,10 +17,24 @@ const part = (id: string, definitionId: string, transform: Partial<Transform> = 
   protected: false,
 })
 
+/**
+ * Builds a fresh document object rather than mutating one.
+ *
+ * Derived connection state is memoized on document identity, which is sound
+ * because the kernel treats a document as immutable per revision. A helper that
+ * injected parts into an already-constructed document would read a cached
+ * derivation from before the injection.
+ */
 const withParts = (...parts: PartInstance[]): ModelDocument => {
-  const document = createEmptyDocument()
-  for (const item of parts) document.parts[item.id] = item
-  return document
+  const base = createEmptyDocument()
+  return {
+    ...base,
+    parts: Object.fromEntries(parts.map((item) => [item.id, item])),
+    subassemblies: {
+      ...base.subassemblies,
+      hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
+    },
+  }
 }
 
 const feature = (family: ConnectionFamily, gender: 'male' | 'female', extra: Partial<ConnectionFeature> = {}): ConnectionFeature => ({
@@ -86,9 +100,8 @@ describe('snap solver', () => {
   })
 
   it('will not reuse a stud that already carries a part', () => {
-    const document = withParts(part('base', '3001'), part('stacked', '3001', { position: [0, -24, 0] }))
     const moving = part('moving', '3001', { position: [0, -26, 0] })
-    document.parts.moving = moving
+    const document = withParts(part('base', '3001'), part('stacked', '3001', { position: [0, -24, 0] }), moving)
 
     expect(computeOccupancy(document).size).toBeGreaterThan(0)
     const candidates = findSnapCandidates(moving, document, moving.transform, { radiusLdu: 12 })

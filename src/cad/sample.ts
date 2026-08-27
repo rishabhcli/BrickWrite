@@ -1,5 +1,6 @@
 import { catalog, originForSurface, surfaceAbove } from './catalog'
 import { basisFromEulerDegrees, cleanBasis } from './math'
+import { deriveConnectionEdges } from './snapping'
 import type { BuildStep, ModelDocument, PartInstance, Subassembly, Vec3 } from './types'
 
 /**
@@ -68,6 +69,31 @@ class RoverBuilder {
     return surfaceAbove(definition, y) ?? surfaceY
   }
 
+  /**
+   * Places a part at an explicit origin.
+   *
+   * Needed for parts that mate to another part's connector rather than resting
+   * on a surface. A hinge top plate has no anti-studs at all, so deriving its
+   * origin from a surface plane is meaningless — it belongs wherever its hinge
+   * connector coincides with its counterpart's.
+   */
+  placeAt(definitionId: string, color: number, x: number, y: number, z: number, options: PlaceOptions = {}): number {
+    const definition = catalog.get(definitionId)
+    if (!definition) throw new Error(`Showcase references ${definitionId}, which is not in the compiled catalog pack.`)
+    this.sequence += 1
+    this.parts.push({
+      id: `part_${String(this.sequence).padStart(4, '0')}`,
+      definitionId,
+      color,
+      transform: { position: [x, y, z] as Vec3, basis: cleanBasis(basisFromEulerDegrees([0, options.rotationY ?? 0, 0])) },
+      subassemblyId: options.subassemblyId ?? 'hull',
+      stepId: options.stepId ?? 'step_1',
+      provenance: 'human',
+      protected: options.protectedPart ?? false,
+    })
+    return surfaceAbove(definition, y) ?? y
+  }
+
   row(definitionId: string, color: number, xs: number[], zs: number[], surfaceY: number, options: PlaceOptions = {}) {
     let exposed = surfaceY
     for (const x of xs) for (const z of zs) exposed = this.place(definitionId, color, x, z, surfaceY, options)
@@ -108,6 +134,18 @@ export function createShowcaseDocument(): ModelDocument {
   build.place('3004', GREY, -60, 10, afterHull, cockpit)
   build.place('3004', GREY, 60, 10, afterHull, cockpit)
 
+  // Layer 6 — a hinged rear hatch, so the model contains a real mechanism and
+  // not only rigid stud connections. The two halves mate through the LDCad
+  // `hgBrC` hinge group and share an origin.
+  const hatch = { subassemblyId: 'deck', stepId: 'step_6' }
+  const hingeOrigin = originForSurface(catalog.get('3937'), afterDeck)
+  build.place('3937', LIGHT_GREY, 0, 90, afterDeck, hatch)
+  // The top plate shares the base's origin: that is where their hinge
+  // connectors coincide. White rather than the rover's orange accent because
+  // 3938 has no observed official-set appearance in orange, and the colour
+  // evidence check is there to be respected.
+  build.placeAt('3938', WHITE, 0, hingeOrigin, 90, hatch)
+
   // Layer 6 — surface detail: smooth deck tiles, grille intakes and nose tiles.
   // Tiles expose no stud plane, which the kernel reads from their connectors.
   const detail = { subassemblyId: 'deck', stepId: 'step_6' }
@@ -132,7 +170,7 @@ function assemble(parts: PartInstance[], name: string, revision: number): ModelD
     partIds: parts.filter((part) => part.stepId === step.id).map((part) => part.id),
   }))
   const timestamp = new Date().toISOString()
-  return {
+  const document: ModelDocument = {
     schemaVersion: 2,
     id: `doc_${name.toLowerCase().replace(/\W+/g, '_')}`,
     name,
@@ -164,4 +202,8 @@ function assemble(parts: PartInstance[], name: string, revision: number): ModelD
         ]
       : [],
   }
+  // The connection graph belongs to the document, not only to the engine, so a
+  // constructed document already knows how it is assembled.
+  document.connections = deriveConnectionEdges(document, revision, 'import-inferred')
+  return document
 }

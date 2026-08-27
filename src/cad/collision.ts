@@ -285,6 +285,14 @@ const STUD_CLEARANCE_LDU = 4.05
 /** Allowance for connectors that insert deeply, pending measured volumes. */
 const INSERTED_CLEARANCE_LDU = 26
 
+/**
+ * Families whose parts genuinely interpenetrate when correctly assembled.
+ *
+ * A pin sits inside a hole, a bar inside a clip, a ball inside a socket — and
+ * hinge halves interleave their fingers, so two correctly hinged parts share a
+ * substantial bounding volume. Each gets the generous allowance below rather
+ * than the stud-height one.
+ */
 const INSERTED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamily>([
   'pin',
   'pin-hole',
@@ -294,6 +302,7 @@ const INSERTED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamil
   'clip',
   'ball',
   'socket',
+  'hinge',
 ])
 
 /**
@@ -303,7 +312,7 @@ const INSERTED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamil
 function matingAllowance(mated: readonly MatedPair[]): number | null {
   if (!mated.length) return null
   const inserted = mated.some(
-    (pair) => INSERTED_FAMILIES.has(pair.a.family) && INSERTED_FAMILIES.has(pair.b.family),
+    (pair) => INSERTED_FAMILIES.has(pair.a.family) || INSERTED_FAMILIES.has(pair.b.family),
   )
   return inserted ? INSERTED_CLEARANCE_LDU : STUD_CLEARANCE_LDU
 }

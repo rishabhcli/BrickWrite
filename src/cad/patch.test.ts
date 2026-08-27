@@ -16,13 +16,17 @@ const part = (id: string, position: [number, number, number] = [0, 0, 0]): PartI
   protected: false,
 })
 
+/** Fresh document object per call: derived state is memoized on identity. */
 const documentWith = (...parts: PartInstance[]): ModelDocument => {
-  const document = createEmptyDocument()
-  for (const item of parts) {
-    document.parts[item.id] = item
-    document.subassemblies.hull.partIds.push(item.id)
+  const base = createEmptyDocument()
+  return {
+    ...base,
+    parts: Object.fromEntries(parts.map((item) => [item.id, item])),
+    subassemblies: {
+      ...base.subassemblies,
+      hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
+    },
   }
-  return document
 }
 
 describe('document patches', () => {

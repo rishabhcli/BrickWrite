@@ -2,7 +2,7 @@ import { catalog, searchCatalog } from './catalog'
 import { jointFor } from './connections'
 import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from './math'
 import { applyMutations, invertMutations, mutationsForOperations, touchedBy, type DocumentPatch, type EntityMutation } from './patch'
-import { deriveConnections, IncrementalConnectorWorld, type MatedPair } from './snapping'
+import { connectionEdgeId as edgeId, deriveConnections, IncrementalConnectorWorld, type MatedPair } from './snapping'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import { validateDocument } from './validation'
 import type {
@@ -62,9 +62,6 @@ function normalizeDocument(document: ModelDocument): ModelDocument {
   }
   return document
 }
-
-/** Deterministic id for an edge, from its two endpoints. */
-const edgeId = (a: string, b: string) => `edge_${[a, b].sort().join('__')}`
 
 /**
  * Connection-edge mutations needed to bring the document's recorded graph in

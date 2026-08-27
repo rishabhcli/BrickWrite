@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { articulate, findArticulatedJoints } from '../cad/articulation'
 import { catalog } from '../cad/catalog'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
@@ -11,6 +12,7 @@ import {
   MAX_OPERATIONS_PER_BATCH,
   OperationSchema,
   PreflightSchema,
+  ContractError,
   toErrorEnvelope,
   toKernelOperations,
   TOOL_PROFILE,
@@ -292,6 +294,8 @@ const readTools: ToolDefinition[] = [
         { id: 'export_mpd', kind: 'read', summary: 'Export the document as a multi-part MPD with one submodel per subassembly.' },
         { id: 'catalog_coverage', kind: 'read', summary: 'Report exactly what the compiled catalog knows: identity, geometry, connection and colour coverage.' },
         { id: 'weak_attachments', kind: 'read', summary: 'List parts held by a single connector, the classic will-fall-off warning.' },
+        { id: 'list_joints', kind: 'read', summary: 'List articulated joints the current selection can drive, with their retained freedom.' },
+        { id: 'articulate_joint', kind: 'mutate', summary: 'Drive an articulated joint, carrying everything rigidly attached to the moving side.' },
       ]
       return json(capabilities.filter((capability) => `${capability.id} ${capability.summary}`.toLowerCase().includes(query)))
     },
@@ -312,6 +316,18 @@ const readTools: ToolDefinition[] = [
         export_mpd: { call: 'action_read', input: { action: 'export_mpd' } },
         catalog_coverage: { call: 'action_read', input: { action: 'catalog_coverage' } },
         weak_attachments: { call: 'action_read', input: { action: 'weak_attachments' } },
+        list_joints: { call: 'action_read', input: { action: 'list_joints' } },
+        articulate_joint: {
+          call: 'action_mutate',
+          input: {
+            action: 'articulate_joint',
+            expectedRevision: 'integer',
+            edgeId: 'string, from list_joints',
+            rotateDegrees: 'number, optional; clamped to the joint\'s retained freedom',
+            slideLdu: 'number, optional; clamped to the joint\'s axial range',
+          },
+          note: 'Stud connections are rigid once built and are never drivable. Only hinges, pins, axles, bars and ball joints appear.',
+        },
       }
       return json(help[capability] ?? { error: 'UNKNOWN_CAPABILITY', repair: 'Call capabilities_search with a task-oriented query.' })
     },
@@ -340,6 +356,24 @@ const readTools: ToolDefinition[] = [
       }
       if (action === 'weak_attachments') {
         return json({ documentRevision: cadEngine.getSnapshot().document.revision, weak: findWeakAttachments(cadEngine.getDocument()) })
+      }
+      if (action === 'list_joints') {
+        const state = cadEngine.getSnapshot()
+        const scope = (input as { args?: { partIds?: string[] } }).args?.partIds ?? state.selection
+        return json({
+          documentRevision: state.document.revision,
+          scope,
+          joints: findArticulatedJoints(state.document, scope).map((joint) => ({
+            edgeId: joint.edgeId,
+            family: joint.family,
+            freedom: joint.joint,
+            pivotLdu: joint.pivotLdu,
+            axis: joint.axis,
+            movingPartCount: joint.movingPartIds.length,
+            description: joint.label,
+          })),
+          note: 'Stud connections are rigid once assembled and are deliberately absent.',
+        })
       }
       return json({ error: 'UNKNOWN_ACTION', repair: 'Call capabilities_search and capabilities_help.' })
     },
@@ -449,6 +483,43 @@ const buildTools: ToolDefinition[] = [
           }
         })
         return resultOf(cadEngine.execute('Mirror selection', operations, 'agent', request.expectedRevision, 'action_mutate'))
+      }
+      if (request.action === 'articulate_joint') {
+        const edgeId = String(request.args?.edgeId ?? '')
+        const scope = (request.args?.partIds as string[] | undefined) ?? state.selection
+        const joint = findArticulatedJoints(state.document, scope).find((entry) => entry.edgeId === edgeId)
+        if (!joint) {
+          return json(
+            toErrorEnvelope(
+              new ContractError(
+                'INVALID_OPERATION',
+                `No drivable joint ${edgeId} for the current scope.`,
+                'Call action_read with list_joints to get current edge ids, then retry.',
+              ),
+              { currentRevision: state.document.revision },
+            ),
+          )
+        }
+        const operations = articulate(state.document, joint, {
+          rotateDegrees: request.args?.rotateDegrees === undefined ? undefined : Number(request.args.rotateDegrees),
+          slideLdu: request.args?.slideLdu === undefined ? undefined : Number(request.args.slideLdu),
+        })
+        if (!operations.length) {
+          return json(
+            toErrorEnvelope(
+              new ContractError(
+                'INVALID_OPERATION',
+                'The requested amount is outside what this joint permits, so nothing changed.',
+                'Inspect the joint freedom from list_joints and request a value it allows.',
+                { freedom: joint.joint },
+              ),
+              { currentRevision: state.document.revision },
+            ),
+          )
+        }
+        return resultOf(
+          cadEngine.execute(`Articulate ${joint.family}`, operations, 'agent', request.expectedRevision, 'action_mutate'),
+        )
       }
       return json({ error: { code: 'INVALID_OPERATION', message: `Unknown action ${request.action}`, repair: 'Call capabilities_search and capabilities_help.' } })
     },
