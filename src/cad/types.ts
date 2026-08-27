@@ -128,6 +128,20 @@ export interface GeometryAsset {
 }
 
 /**
+ * Palette preview, rendered offline from the same compiled geometry.
+ *
+ * Deliberately colour-independent: RGB carries shading and alpha carries
+ * coverage, so one asset serves all 322 LDraw colours. The runtime masks a
+ * coloured layer with the alpha and multiplies the shading over it.
+ */
+export interface ThumbnailAsset {
+  hash: string
+  file: string
+  bytes: number
+  size: number
+}
+
+/**
  * One compiled catalog part. Every field states where it came from, so the
  * application can distinguish "verified" from "unknown" instead of implying
  * uniform coverage across a 22,000-part library.
@@ -154,6 +168,7 @@ export interface PartDefinition {
   dimensions: PartDimensions | null
   geometryStatus: GeometryStatus
   geometryAsset: GeometryAsset | null
+  thumbnail: ThumbnailAsset | null
   connectionStatus: ConnectionStatus
   connectors: ConnectionFeature[]
   license: string

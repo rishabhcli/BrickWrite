@@ -34,30 +34,27 @@ import type {
 } from '../cad/types'
 
 /**
- * Plan-view glyph sized from the part's *measured* LDraw footprint, so the card
- * reflects real geometry instead of a decorative icon. Parts without compiled
- * geometry deliberately render as an empty outline.
+ * Palette preview.
+ *
+ * Uses the offline-rendered thumbnail, tinted to the active colour: a coloured
+ * layer masked by the thumbnail's alpha, with the same image multiplied over it
+ * to restore shading. One asset therefore serves every LDraw colour, instead of
+ * needing a render per part per colour.
+ *
+ * A part with no compiled geometry has no thumbnail either, and falls back to an
+ * empty outline rather than a decorative stand-in — the card should not imply a
+ * part is placeable when it is not.
  */
-function PartGlyph({ record, color }: { record: CatalogSearchRecord; color: string }) {
-  const width = record.dimensions ? Math.min(6, Math.max(1, Math.round(record.dimensions[0]))) : 0
-  const depth = record.dimensions ? Math.min(6, Math.max(1, Math.round(record.dimensions[2]))) : 0
-  const flat = record.dimensions ? record.dimensions[1] <= 1.6 : false
-  if (!width || !depth) {
-    return <div className="part-glyph empty" aria-hidden><span /></div>
-  }
+function PartPreview({ record, color }: { record: CatalogSearchRecord; color: string }) {
+  const thumbnail = catalog.get(record.id)?.thumbnail
+  if (!thumbnail) return <div className="part-glyph empty" aria-hidden><span /></div>
   return (
-    <div
-      className={`part-glyph ${flat ? 'flat' : 'tall'}`}
-      style={{
-        '--part-color': color,
-        '--glyph-cols': width,
-        '--glyph-rows': depth,
-      } as React.CSSProperties}
-      aria-hidden
-    >
-      <div className="glyph-studs">
-        {Array.from({ length: width * depth }, (_, index) => <i key={index} />)}
-      </div>
+    <div className="part-thumb" aria-hidden>
+      <span
+        className="thumb-tint"
+        style={{ '--part-color': color, '--thumb': `url(${thumbnail.file})` } as React.CSSProperties}
+      />
+      <img className="thumb-shade" src={thumbnail.file} alt="" width={thumbnail.size} height={thumbnail.size} loading="lazy" />
     </div>
   )
 }
@@ -139,7 +136,7 @@ export function CatalogPanel({ activeColor, onColorChange, onAdd }: CatalogPanel
               ? `Double-click to place ${record.name} (${record.frequency} official set appearances)`
               : `${record.name} is in the catalog but has no compiled geometry in this build`}
           >
-            <PartGlyph record={record} color={getColor(activeColor).hex} />
+            <PartPreview record={record} color={getColor(activeColor).hex} />
             <div className="part-copy">
               <strong>{record.name.replace(/^(Brick|Plate|Tile|Slope) /, '')}</strong>
               <span>{record.id}{record.dimensions ? ` · ${record.dimensions[0]}×${record.dimensions[2]}` : ' · no geometry'}</span>
@@ -350,6 +347,44 @@ export function InspectorPanel({
                 <i>{selectedPart.protected ? 'LOCKED' : 'OPEN'}</i>
               </button>
             </section>
+            {articulation.length > 0 && (
+              <section className="property-section">
+                <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>
+                {/* Only interfaces designed to move appear here. A stud
+                    connection is rigid once built, so a brick wall offers
+                    nothing to drive. */}
+                {articulation.map((joint) => (
+                  <div className="joint-row" key={joint.edgeId}>
+                    <div className="joint-copy">
+                      <strong>{joint.family}</strong>
+                      <small>{joint.label.split(' · ').slice(2).join(' · ')} · moves {joint.movingCount}</small>
+                    </div>
+                    <div className="joint-controls">
+                      {joint.canRotate && (
+                        <>
+                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: -joint.rotateStep })} title={`Rotate -${joint.rotateStep}°`}>
+                            <RotateCcw size={12} />
+                          </button>
+                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: joint.rotateStep })} title={`Rotate +${joint.rotateStep}°`}>
+                            <RotateCw size={12} />
+                          </button>
+                        </>
+                      )}
+                      {joint.canSlide && (
+                        <>
+                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: -joint.slideStep })} title={`Slide -${joint.slideStep} LDU`}>
+                            <ChevronsLeft size={12} />
+                          </button>
+                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: joint.slideStep })} title={`Slide +${joint.slideStep} LDU`}>
+                            <ChevronsRight size={12} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
             {articulation.length > 0 && (
               <section className="property-section">
                 <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>

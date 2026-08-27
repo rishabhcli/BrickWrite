@@ -85,6 +85,30 @@ try {
   }))
   assert(geometry.meshes > 5, `Expected compiled .bwmesh assets to be fetched, saw ${geometry.meshes}`)
 
+  // -- the palette shows rendered previews, not decorative glyphs ------------
+  const palette = await page.evaluate(async () => {
+    const search = await window.brickwright.invoke('catalog_search', { text: 'brick', requireGeometry: true, limit: 12 })
+    const inspected = await Promise.all(
+      search.structuredContent.results.slice(0, 6).map((record) => window.brickwright.invoke('part_inspect', { id: record.id })),
+    )
+    const thumbnails = inspected.map((entry) => entry?.structuredContent?.definition?.thumbnail).filter(Boolean)
+    // Fetch one to prove the asset the record points at is really served.
+    const probe = thumbnails[0] ? await fetch(`/${thumbnails[0].file}`) : null
+    return {
+      results: search.structuredContent.results.length,
+      withThumbnails: thumbnails.length,
+      // One asset serves every colour, so distinct parts must have distinct hashes.
+      distinctHashes: new Set(thumbnails.map((thumb) => thumb.hash)).size,
+      probeOk: probe?.ok ?? false,
+      probeType: probe?.headers.get('content-type') ?? null,
+      renderedInDom: document.querySelectorAll('.part-thumb img').length,
+    }
+  })
+  assert(palette.withThumbnails === 6, `Expected every placeable result to carry a thumbnail, saw ${palette.withThumbnails}`)
+  assert(palette.distinctHashes === 6, `Thumbnails should be per-part, saw ${palette.distinctHashes} distinct hashes`)
+  assert(palette.probeOk && /image\/png/.test(palette.probeType ?? ''), `Thumbnail asset not served as PNG: ${palette.probeType}`)
+  assert(palette.renderedInDom > 10, `Expected the palette to render thumbnails, saw ${palette.renderedInDom}`)
+
   // -- dynamic WebMCP surface ------------------------------------------------
   assert(initial.tools.includes('render_capture'), 'render_capture was not registered')
   assert(initial.tools.includes('build_preflight'), 'proposal tools were not registered in Propose mode')
@@ -400,6 +424,11 @@ try {
     },
     rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
     meshAssetsFetched: geometry.meshes,
+    palette: {
+      thumbnailsOnResults: palette.withThumbnails,
+      distinctThumbnailHashes: palette.distinctHashes,
+      renderedInDom: palette.renderedInDom,
+    },
     refusedUnplaceableIdentity: unplaceable,
     buildOrder: {
       steps: sequence.steps,

@@ -28,6 +28,7 @@ import { createInterface } from 'node:readline'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { compileMesh } from './ldraw-mesh.mjs'
+import { compileThumbnail } from './thumbnail.mjs'
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1]
 const DEFAULT_PACK_SIZE = 420
@@ -728,6 +729,7 @@ export async function compileCatalog(options) {
       dimensions: null,
       geometryStatus: 'uncompiled',
       geometryAsset: null,
+      thumbnail: null,
       connectionStatus: connectors.length ? 'ldcad-authoritative' : 'missing',
       connectors: connectors.map(trimConnector),
       license: header.license,
@@ -799,7 +801,9 @@ export async function compileCatalog(options) {
 
   const outputRoot = path.resolve(out)
   const geometryDirectory = path.join(outputRoot, 'assets', 'geometry')
+  const thumbnailDirectory = path.join(outputRoot, 'assets', 'thumb')
   await mkdir(geometryDirectory, { recursive: true })
+  await mkdir(thumbnailDirectory, { recursive: true })
 
   const parseCache = new Map()
   const syncResolve = (reference) => {
@@ -812,8 +816,10 @@ export async function compileCatalog(options) {
 
   const missingReferences = new Set()
   let geometryBytes = 0
+  let thumbnailBytes = 0
   let triangleTotal = 0
   let compiled = 0
+  let thumbnails = 0
 
   for (const record of pack) {
     // Warm every file the part can reach so the mesh compiler stays synchronous.
@@ -840,9 +846,28 @@ export async function compileCatalog(options) {
     geometryBytes += mesh.buffer.length
     triangleTotal += mesh.stats.triangles
     compiled += 1
+
+    // Palette preview, rendered from the same compiled geometry so it can never
+    // disagree with what the viewport draws.
+    const thumbnail = compileThumbnail(decodeMeshBuffer(mesh.buffer), { size: 128 })
+    if (thumbnail) {
+      const thumbName = `${thumbnail.hash}.png`
+      await writeFile(path.join(thumbnailDirectory, thumbName), thumbnail.buffer)
+      record.thumbnail = {
+        hash: `sha256:${thumbnail.hash}`,
+        file: `assets/thumb/${thumbName}`,
+        bytes: thumbnail.buffer.length,
+        size: thumbnail.size,
+      }
+      thumbnailBytes += thumbnail.buffer.length
+      thumbnails += 1
+    }
     if (compiled % 50 === 0) log(`geometry pass: ${compiled}/${pack.length}`)
   }
-  log(`geometry pass complete: ${compiled} meshes, ${(geometryBytes / 1e6).toFixed(1)} MB`)
+  log(
+    `geometry pass complete: ${compiled} meshes (${(geometryBytes / 1e6).toFixed(1)} MB), ` +
+      `${thumbnails} thumbnails (${(thumbnailBytes / 1e6).toFixed(2)} MB)`,
+  )
 
   for (const record of records) Object.assign(record, { search: searchFeatures(record) })
 
@@ -870,6 +895,8 @@ export async function compileCatalog(options) {
     identityAdoptedFromRename: adoptedFromRenames,
     triangleTotal,
     geometryBytes,
+    thumbnailsRendered: thumbnails,
+    thumbnailBytes,
     ldrawLicenses: Object.fromEntries(licenseCounts),
   }
 
@@ -911,6 +938,7 @@ export async function compileCatalog(options) {
     counts: {
       parts: records.length,
       packParts: packRecords.length,
+      thumbnails,
       connectors: coverage.connectorTotal,
       colors: ldrawColours.length,
       aliases: Object.keys(resolvedAliases).length,
@@ -967,6 +995,37 @@ export async function compileCatalog(options) {
   ])
 
   return manifest
+}
+
+/**
+ * Reads back a packed `.bwmesh` for the thumbnail renderer.
+ *
+ * Decoding the buffer the compiler just wrote, rather than reusing the in-memory
+ * intermediate, means the preview is rendered from exactly the bytes the browser
+ * will fetch — a packing bug shows up as a wrong thumbnail rather than hiding.
+ */
+function decodeMeshBuffer(buffer) {
+  const array = new Uint8Array(buffer)
+  const view = new DataView(array.buffer, array.byteOffset, array.byteLength)
+  const vertexCount = view.getUint32(32, true)
+  const indexCount = view.getUint32(36, true)
+  const sliceCount = view.getUint32(44, true)
+  const slices = []
+  for (let index = 0; index < sliceCount; index += 1) {
+    const offset = 52 + index * 12
+    slices.push({
+      colour: view.getUint32(offset, true),
+      start: view.getUint32(offset + 4, true),
+      count: view.getUint32(offset + 8, true),
+    })
+  }
+  let cursor = array.byteOffset + 52 + sliceCount * 12
+  const positions = new Float32Array(array.buffer, cursor, vertexCount * 3)
+  cursor += vertexCount * 12
+  const normals = new Float32Array(array.buffer, cursor, vertexCount * 3)
+  cursor += vertexCount * 12
+  const indices = new Uint32Array(array.buffer, cursor, indexCount)
+  return { positions, normals, indices, slices }
 }
 
 /** Depth-first warm of a part's reference closure into the synchronous cache. */

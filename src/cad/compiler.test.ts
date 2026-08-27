@@ -68,6 +68,18 @@ describe('catalog compiler', () => {
     expect(brick.geometryAsset!.file).toBe(`assets/geometry/${brick.geometryAsset!.hash.slice(7)}.bwmesh`)
   })
 
+  it('renders a palette thumbnail from the same compiled geometry', async () => {
+    const brick = parts.find((part) => part.canonicalId === '3001')!
+    expect(brick.thumbnail).not.toBeNull()
+    expect(brick.thumbnail!.hash).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(brick.thumbnail!.size).toBe(128)
+    // The asset the record points at actually exists and is a PNG.
+    const bytes = await readFile(path.join(out, brick.thumbnail!.file))
+    expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+    expect(bytes.length).toBe(brick.thumbnail!.bytes)
+    expect(manifest.counts.thumbnails).toBe(1)
+  })
+
   it('publishes hashed files and measured coverage', () => {
     expect(manifest.counts).toMatchObject({ parts: 1, packParts: 1, connectors: 16, colors: 6 })
     for (const file of Object.values(manifest.files)) {

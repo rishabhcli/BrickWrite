@@ -426,3 +426,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px s
 
 .sequence-button { margin-top: 8px; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid #2a3639; background: #151d20; color: #9fb4b8; border-radius: 4px; font-size: 7px; font-weight: 700; letter-spacing: .08em; cursor: pointer; }
 .sequence-button:hover { border-color: #3d5257; color: #d8e8ea; background: #1a2427; }
+
+/* Palette preview: one colour-independent thumbnail, tinted at display time.
+   The tint layer is masked by the thumbnail's alpha so the part colour appears
+   only inside the silhouette; the same image is then multiplied over it to
+   restore shading. */
+.part-thumb { position: absolute; inset: 0; display: grid; place-items: center; isolation: isolate; }
+.part-thumb .thumb-tint { position: absolute; width: 76px; height: 76px; background-color: var(--part-color); mask-image: var(--thumb); -webkit-mask-image: var(--thumb); mask-size: contain; -webkit-mask-size: contain; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; mask-position: center; -webkit-mask-position: center; }
+.part-thumb .thumb-tint { filter: brightness(1.18); }
+/* Multiply always darkens, so at 80% the shading still reads as form without
+   sinking a dark part colour into the card background. */
+.part-thumb .thumb-shade { position: absolute; width: 76px; height: 76px; object-fit: contain; mix-blend-mode: multiply; opacity: .8; }
+.part-card.unplaceable .part-thumb { opacity: .5; }

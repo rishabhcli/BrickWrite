@@ -7,7 +7,7 @@
 
 | Phase | Status | Implemented evidence | Missing before production |
 | --- | --- | --- | --- |
-| A — Data compiler | **Working** | Real compilation of LDraw 2026-07 + LDCad Shadow Library + Rebrickable bulk CSV: 22,941 identities, 324,331 connectors, 322 colours, 1,150 renames resolved, per-file licence capture, content-hashed manifests, measured coverage report, deterministic fixture in CI | Thumbnail generation; BVH serialization; wider geometry pack; ShareAlike/TOS review before public redistribution |
+| A — Data compiler | **Working** | Real compilation of LDraw 2026-07 + LDCad Shadow Library + Rebrickable bulk CSV: 22,941 identities, 324,331 connectors, 322 colours, 1,150 renames resolved, **900 compiled meshes and 900 rendered thumbnails**, per-file licence capture, content-hashed manifests, measured coverage report, deterministic fixture in CI | BVH serialization into the asset; full-library geometry behind lazy per-part fetch; ShareAlike/TOS review before public redistribution |
 | A2 — Geometry compiler | **Working** | Full `.dat` dependency flattening with BFC `CERTIFY`/`CW`/`CCW`/`INVERTNEXT`, matrix-handedness winding, colour 16/24 inheritance, quad splitting, type-2 hard edges, 35° crease smoothing, SHA-256-named binary container, 0 unresolved references across 500 parts | Texture/printed-part material slots; decimated LOD for very large panels |
 | B — CAD kernel | **Working** | Pure TS document in LDraw's native frame with **exact matrix bases**; orthonormal-and-clean basis enforced on ingest; schema-2 migration; **patch-based transactions** with forward/inverse mutations and structural sharing; monotonic revisions, stale-write rejection, protected regions, connector-derived stacking planes | Named checkpoints/branches, multi-document tabs, operation-level schema validation |
 | C — Renderer | **Working** | **Instanced batching** by part/colour with merged per-batch hard edges: 400 extra parts cost 14 extra draw calls, measured in the browser. Real compiled meshes, shared geometry per definition, per-slice materials for baked colours, transparent/metallic finishes from `LDConfig.ldr`, shadows, selection and ghost overlays outside the batches, camera views | GPU picking pass for very large models; section render mode; thumbnail cache for the palette |
@@ -24,7 +24,7 @@
 
 ## Verified now
 
-`npm run check` — **157 tests**, strict TypeScript, production Vite build. The compiler is
+`npm run check` — **166 tests**, strict TypeScript, production Vite build. The compiler is
 driven in-process against committed fixtures, so CI asserts its semantics — colour crosswalk,
 snap-grid expansion, measured bounds, hashed files, determinism — not just that it exits zero.
 
@@ -228,6 +228,35 @@ order. Producing genuinely *good* instructions — grouping by technique, hiding
 internals until they matter, choosing where to sub-model — is a larger problem and
 is not claimed.
 
+## Productionization pass 6
+
+**Rendered part thumbnails.** The palette showed a derived footprint glyph — a
+proportionally-correct rectangle with the right stud count, but not the part. It
+now shows the part.
+
+The renderer is a software rasterizer in the compiler, not a headless browser:
+the catalog build has to run under bare `node` in CI, output bytes have to be
+reproducible because asset hashes depend on them, and a palette preview needs a
+clean orthographic three-quarter view rather than a photoreal render. Nine
+hundred parts take a few seconds. PNG rather than WebP because Node ships zlib
+but no WebP encoder, and adding a native dependency to the catalog build for a
+2 KB preview is a poor trade.
+
+The output is deliberately **colour-independent**: RGB carries shading and alpha
+carries coverage, so the runtime tints one asset with any of the 322 LDraw
+colours by masking a coloured layer with the alpha and multiplying the shading
+over it. Baking colour in would have meant 900 parts × hundreds of colours of
+assets to show a brick in the colour the operator actually selected.
+
+Rendering the previews immediately caught a sign error worth recording: with
+LDraw's Y-down convention the first camera looked *up* at every part, so the
+palette showed hollow undersides and anti-stud tubes instead of studs.
+
+**Wider geometry pack.** 500 → **900** placeable parts, 47.7 MB of geometry plus
+2.0 MB of thumbnails.
+
+![Palette with rendered previews](docs/assets/brickwright-palette.png)
+
 ## Honest evidence boundary
 
 **What changed since the last update:** the browser no longer renders generated stand-in
@@ -236,9 +265,11 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 
 **What is still bounded:**
 
-- **Geometry pack, not the whole library.** 500 of 22,941 identities have compiled geometry.
-  The remaining 22,441 are searchable and inspectable but not placeable, and the kernel says
-  so explicitly. Widening the pack is a compiler flag and a bandwidth decision, not new work.
+- **Geometry pack, not the whole library.** 900 of 22,941 identities have compiled geometry.
+  The remaining 22,041 are searchable and inspectable but not placeable, and the kernel says
+  so explicitly. Widening further is a compiler flag and a repository-size decision, not new
+  work — the committed assets are already 57 MB, so the full library belongs behind a lazy
+  per-part CDN fetch rather than in the repository.
 - **Collision is broad-phase.** Box overlap minus a family-level mating allowance. It catches
   real interpenetration and does not flag correct stacking, but it is not triangle-exact, and
   the insertion allowance for pin/axle/bar/ball pairs is deliberately permissive.

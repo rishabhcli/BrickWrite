@@ -11,15 +11,17 @@
   "withColorEvidence": 5119,
   "withAuthoritativeConnections": 17364,
   "connectorTotal": 324331,
-  "geometryCompiled": 500,
+  "geometryCompiled": 900,
   "geometryPartial": 0,
-  "geometryUncompiled": 22441,
+  "geometryUncompiled": 22041,
   "unresolvedReferences": [],
   "unmatchedRebrickableColors": 69,
   "renamedAliases": 1150,
   "identityAdoptedFromRename": 136,
-  "triangleTotal": 453624,
-  "geometryBytes": 22688012,
+  "triangleTotal": 961732,
+  "geometryBytes": 47682588,
+  "thumbnailsRendered": 900,
+  "thumbnailBytes": 2015817,
   "ldrawLicenses": {
     "CC-BY-4.0": 22941
   }

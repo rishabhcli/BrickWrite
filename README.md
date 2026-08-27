@@ -45,7 +45,8 @@ runtime assets. Measured output of the committed build (`catalog/2026-07`):
 | Parts with official-set colour production evidence | 5,119 |
 | Parts with a resolved category | 11,192 |
 | Identity crosswalk to Rebrickable | 5,465 exact (136 of them via an LDraw rename) · 5,727 heuristic base-design |
-| Parts with compiled geometry (the runtime pack) | **500** · 453,624 triangles · 22.7 MB |
+| Parts with compiled geometry (the runtime pack) | **900** · 961,732 triangles · 47.7 MB |
+| Rendered palette thumbnails | **900** · 2.0 MB · colour-independent |
 | Unresolved LDraw references during geometry compilation | **0** |
 | LDraw source licensing observed | 22,941 files CC BY 4.0 |
 
@@ -126,6 +127,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   bounds, count and selection metadata.
 - **Colour honesty** — 322 real LDraw colours; part/colour pairings with no observed
   official-set appearance are reported as *virtual*, not illegal.
+- **Rendered part previews** — the palette shows each part rasterized offline from its own
+  compiled geometry, tinted at display time: RGB carries shading and alpha carries coverage,
+  so one asset serves all 322 LDraw colours.
 - **Derived build order** — sequencing is a precedence problem over the connection graph, so
   steps are generated with the checkable guarantee that every part attaches to structure
   placed earlier, or is reported as beginning a separately-built subassembly.
@@ -166,7 +170,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 157 deterministic tests + strict TS + production build
+npm run check            # 166 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```

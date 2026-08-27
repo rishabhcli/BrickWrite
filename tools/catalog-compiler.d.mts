@@ -40,6 +40,8 @@ export interface CatalogCoverage {
   identityAdoptedFromRename: number
   triangleTotal: number
   geometryBytes: number
+  thumbnailsRendered: number
+  thumbnailBytes: number
   ldrawLicenses: Record<string, number>
 }
 
@@ -55,7 +57,7 @@ export interface CompiledCatalogManifest {
   generatedAt: string
   sources: Record<string, unknown>
   files: Record<string, CatalogManifestFile>
-  counts: { parts: number; packParts: number; connectors: number; colors: number; aliases: number }
+  counts: { parts: number; packParts: number; connectors: number; colors: number; aliases: number; thumbnails: number }
   coverage: CatalogCoverage
 }
 
