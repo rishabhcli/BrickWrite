@@ -23,6 +23,14 @@ export default defineConfig({
               test: /node_modules\/(?:react|react-dom|react-reconciler|scheduler|its-fine|use-sync-external-store)\//,
             },
             {
+              // The account layer is statically imported by the entry module, so
+              // without its own group the whole Hexclave SDK — and the Stripe,
+              // Radix, rrweb and ai-sdk trees it carries — lands in the entry
+              // chunk and takes it past a megabyte on its own.
+              name: 'hexclave',
+              test: /node_modules\/(?:@hexclave|@stripe|@ai-sdk|@radix-ui|@hookform|ai|react-hook-form|rrweb|@rrweb)\//,
+            },
+            {
               name: 'contracts',
               test: /node_modules\/zod\//,
             },

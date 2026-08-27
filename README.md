@@ -19,9 +19,15 @@ npm run bootstrap       # exact npm ci + committed catalog integrity verificatio
 npm run dev             # http://localhost:4173
 ```
 
-The compiled catalog is committed, so a fresh clone runs immediately. Open the page in the
-ChatGPT desktop app's built-in browser to make native Site Tools discoverable. In a normal
-browser the same tools are exposed as a deterministic development bridge:
+The compiled catalog is committed, so a fresh clone runs immediately. `npm run dev` wraps Vite
+in `hexclave dev`, which starts the local Hexclave dashboard and injects the project ID into
+the Vite process; `hexclave.config.ts` is the source of truth for which Hexclave apps are
+installed. `npm run dev:inner` is the bare Vite server — Brickwright still boots without the
+wrapper, it just runs with no account, email or analytics layer.
+
+Open the page in the ChatGPT desktop app's built-in browser to make native Site Tools
+discoverable. In a normal browser the same tools are exposed as a deterministic development
+bridge:
 
 ```js
 await window.brickwright.invoke('workspace_get', {})
