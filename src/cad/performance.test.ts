@@ -23,7 +23,14 @@ const BUDGETS = {
   // that a generous ceiling still catches a regression on any of the three.
   buildPerEditMs: 3,
   fullValidationMs: 900,
-  incrementalValidationMs: 60,
+  // Incremental revalidation is judged against a full pass measured on the same
+  // machine in the same run, not against a millisecond ceiling. The property is
+  // that scoping the collision phase to the touched part costs much less than
+  // redoing every pair; an absolute budget measures the runner's hardware as
+  // much as the optimization, which is why 60 ms passed locally and failed at
+  // 82 ms on a CI runner. Locally the ratio sits at ~0.45; losing
+  // incrementality entirely takes it to ~1.0.
+  incrementalFraction: 0.75,
   snapQueryMs: 40,
   undoMs: 60,
 } as const
@@ -149,22 +156,41 @@ describe('kernel at scale', () => {
   })
 
   it('revalidates an edit far faster than the full pass', () => {
-    const document = withParts(parts)
-    const full = validateDocument(document, { provideGeometry: () => null })
-
-    const moved: ModelDocument = {
-      ...document,
-      parts: { ...document.parts, p0: { ...document.parts.p0, transform: { position: [0, -400, 0], basis: IDENTITY_BASIS } } },
-      revision: document.revision + 1,
+    const previous = validateDocument(withParts(parts), { provideGeometry: () => null })
+    const moveP0 = (): ModelDocument => {
+      const base = withParts(parts)
+      return {
+        ...base,
+        parts: { ...base.parts, p0: { ...base.parts.p0, transform: { position: [0, -400, 0], basis: IDENTITY_BASIS } } },
+        revision: base.revision + 1,
+      }
     }
-    const { value, ms } = timed(() =>
-      validateDocument(moved, {
-        provideGeometry: () => null,
-        incremental: { previous: full, touchedPartIds: ['p0'] },
-      }),
+
+    // Documents are built before anything is timed, and each sample gets a fresh
+    // one because derived state is memoized on document identity — reusing one
+    // would time the memo rather than the work.
+    const ROUNDS = 3
+    const fullDocuments = Array.from({ length: ROUNDS }, () => withParts(parts))
+    const movedDocuments = Array.from({ length: ROUNDS }, moveP0)
+
+    // Best of three per side. A shared runner's scheduling noise lands on
+    // individual samples, so the minimum is the least contaminated estimate of
+    // what the code actually costs.
+    const fullMs = Math.min(
+      ...fullDocuments.map((document) => timed(() => validateDocument(document, { provideGeometry: () => null })).ms),
     )
-    expect(ms).toBeLessThan(BUDGETS.incrementalValidationMs)
-    expect(value.partCount).toBe(COUNT)
+    const samples = movedDocuments.map((document) =>
+      timed(() =>
+        validateDocument(document, {
+          provideGeometry: () => null,
+          incremental: { previous, touchedPartIds: ['p0'] },
+        }),
+      ),
+    )
+    const incrementalMs = Math.min(...samples.map((sample) => sample.ms))
+
+    expect(samples[0].value.partCount).toBe(COUNT)
+    expect(incrementalMs).toBeLessThan(fullMs * BUDGETS.incrementalFraction)
   })
 
   it('gives the same collisions incrementally as it does from scratch', () => {

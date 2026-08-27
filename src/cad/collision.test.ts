@@ -11,13 +11,40 @@ import { createEmptyDocument } from './sample'
 import type { ModelDocument, PartInstance } from './types'
 
 /**
- * Collision needs real triangles, so this suite compiles them with the offline
- * compiler straight from the LDraw library when it is present. Without the
- * library the narrow phase cannot run at all, and the suite asserts that
- * Brickwright says so rather than reporting a clean build.
+ * Collision needs real triangles, from one of two sources.
+ *
+ * With the LDraw library present the suite compiles them straight from source
+ * with the offline compiler, which also exercises the compiler. Without it —
+ * CI, and any fresh clone, since `.sources` is gitignored — it decodes the
+ * committed `.bwmesh` pack instead, which is what actually ships to users.
+ *
+ * The fallback matters more than it looks: this suite was previously skipped
+ * outright whenever the library was absent, so the triangle confirmation that
+ * the whole buildability claim rests on had no CI coverage at all.
  */
 const LDRAW_ROOT = path.resolve('.sources/ldraw')
 const HAVE_LIBRARY = existsSync(path.join(LDRAW_ROOT, 'LDConfig.ldr'))
+
+const PUBLIC_ROOT = path.resolve('public')
+
+/** Canonical id to committed geometry asset, read from the shipped manifest. */
+const packGeometry = (() => {
+  const index = new Map<string, string>()
+  try {
+    const pointer = JSON.parse(readFileSync(path.join(PUBLIC_ROOT, 'catalog/latest.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(path.join(PUBLIC_ROOT, pointer.manifest.path), 'utf8'))
+    const parts = JSON.parse(readFileSync(path.join(PUBLIC_ROOT, manifest.files.parts.path), 'utf8'))
+    for (const record of parts) {
+      if (record.geometryAsset?.file) index.set(record.canonicalId, record.geometryAsset.file)
+    }
+  } catch {
+    // No committed pack: HAVE_PACK stays false and the suite skips, rather than
+    // silently exercising the fallback path and appearing to pass.
+  }
+  return index
+})()
+
+const HAVE_PACK = ['3001', '3005', '62360'].every((id) => packGeometry.has(id))
 
 const sourceCache = new Map<string, { text: string; key: string } | null>()
 const resolveSource = (reference: string) => {
@@ -38,14 +65,26 @@ const resolveSource = (reference: string) => {
 const geometries = new Map<string, THREE.BufferGeometry | null>()
 const parseCache = new Map()
 
+/** Raw `.bwmesh` bytes for a part, from source or from the committed pack. */
+const meshBytes = (definitionId: string): ArrayBuffer | null => {
+  if (HAVE_LIBRARY) {
+    const compiled = compileMesh(`parts/${definitionId}.dat`, resolveSource, { parseCache })
+    return compiled ? (new Uint8Array(compiled.buffer).buffer as ArrayBuffer) : null
+  }
+  const file = packGeometry.get(definitionId)
+  if (!file) return null
+  const bytes = readFileSync(path.join(PUBLIC_ROOT, file))
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
 const provide: GeometryProvider = (definitionId) => {
   if (geometries.has(definitionId)) return geometries.get(definitionId)!
-  const compiled = compileMesh(`parts/${definitionId}.dat`, resolveSource, { parseCache })
-  if (!compiled) {
+  const buffer = meshBytes(definitionId)
+  if (!buffer) {
     geometries.set(definitionId, null)
     return null
   }
-  const mesh = decodeMesh(new Uint8Array(compiled.buffer).buffer)
+  const mesh = decodeMesh(buffer)
   const geometry = geometryFromArrays(mesh.positions, mesh.indices, mesh.normals)
   geometries.set(definitionId, geometry)
   return geometry
@@ -75,7 +114,7 @@ const withParts = (...parts: PartInstance[]): ModelDocument => {
   }
 }
 
-describe.skipIf(!HAVE_LIBRARY)('collision narrow phase', () => {
+describe.skipIf(!HAVE_LIBRARY && !HAVE_PACK)('collision narrow phase', () => {
   beforeAll(() => {
     clearCollisionGeometryCache()
     // Fail loudly if the fixture parts cannot be compiled, rather than silently
