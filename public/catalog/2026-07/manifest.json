@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "catalogVersion": "2026-07",
+  "generatedAt": "2026-08-27T05:21:31.987Z",
+  "sources": {
+    "ldraw": {
+      "root": "ldraw",
+      "partFiles": 24591,
+      "colorDefinitions": 322
+    },
+    "ldcadShadow": {
+      "root": "LDCadShadowLibrary-main",
+      "files": 4251
+    },
+    "rebrickable": {
+      "identities": 64347,
+      "colorMappings": 205
+    }
+  },
+  "files": {
+    "parts": {
+      "path": "catalog/2026-07/parts.json",
+      "hash": "sha256:e5e19ff2197736011d4a6d2a331aec33fb8e4f60c98e8d7294fdc0ac13d800f7",
+      "bytes": 1192278
+    },
+    "search": {
+      "path": "catalog/2026-07/search.json",
+      "hash": "sha256:f5f0c8b94d1af309bacd67373dfb509f45e3c5c1f51341a57eabf743c8c06aa8",
+      "bytes": 3450379
+    },
+    "colors": {
+      "path": "catalog/2026-07/colors.json",
+      "hash": "sha256:6194916a5babff06d391914d35198dba0f2ca930ad9cd9a9d0d7fe528e1e2ba0",
+      "bytes": 32951
+    },
+    "aliases": {
+      "path": "catalog/2026-07/aliases.json",
+      "hash": "sha256:20bd5a73246b84971dd82dbb6b42f1eaf677df9ed65c7375465f73fca5273fee",
+      "bytes": 19938
+    }
+  },
+  "counts": {
+    "parts": 22941,
+    "packParts": 500,
+    "connectors": 324331,
+    "colors": 322,
+    "aliases": 1150
+  },
+  "coverage": {
+    "catalogIdentities": 22941,
+    "byLdrawKind": {
+      "Part": 17982,
+      "Shortcut": 4959
+    },
+    "helperParts": 2741,
+    "withRebrickableIdentity": 5465,
+    "withHeuristicIdentity": 5727,
+    "withCategory": 11192,
+    "withColorEvidence": 5119,
+    "withAuthoritativeConnections": 17364,
+    "connectorTotal": 324331,
+    "geometryCompiled": 500,
+    "geometryPartial": 0,
+    "geometryUncompiled": 22441,
+    "unresolvedReferences": [],
+    "unmatchedRebrickableColors": 69,
+    "renamedAliases": 1150,
+    "identityAdoptedFromRename": 136,
+    "triangleTotal": 453624,
+    "geometryBytes": 22688012,
+    "ldrawLicenses": {
+      "CC-BY-4.0": 22941
+    }
+  }
+}

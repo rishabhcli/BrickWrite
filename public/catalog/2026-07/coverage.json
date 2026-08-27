@@ -1,0 +1,26 @@
+{
+  "catalogIdentities": 22941,
+  "byLdrawKind": {
+    "Part": 17982,
+    "Shortcut": 4959
+  },
+  "helperParts": 2741,
+  "withRebrickableIdentity": 5465,
+  "withHeuristicIdentity": 5727,
+  "withCategory": 11192,
+  "withColorEvidence": 5119,
+  "withAuthoritativeConnections": 17364,
+  "connectorTotal": 324331,
+  "geometryCompiled": 500,
+  "geometryPartial": 0,
+  "geometryUncompiled": 22441,
+  "unresolvedReferences": [],
+  "unmatchedRebrickableColors": 69,
+  "renamedAliases": 1150,
+  "identityAdoptedFromRename": 136,
+  "triangleTotal": 453624,
+  "geometryBytes": 22688012,
+  "ldrawLicenses": {
+    "CC-BY-4.0": 22941
+  }
+}

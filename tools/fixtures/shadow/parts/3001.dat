@@ -1,0 +1,3 @@
+0 Brick 2 x 4 shadow
+0 !LDCAD SNAP_CYL [id=stud] [gender=M] [caps=A] [secs=R 6 4] [pos=0 0 0] [grid=C 2 C 4 20 20]
+0 !LDCAD SNAP_CYL [id=antistud] [gender=F] [caps=B] [secs=R 6 4] [pos=0 24 0] [grid=C 2 C 4 20 20]

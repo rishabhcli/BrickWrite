@@ -1,0 +1,43 @@
+{
+  "name": "brickwright",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "node tools/e2e-smoke.mjs",
+    "catalog:sources": "node tools/fetch-sources.mjs",
+    "catalog:build": "node --max-old-space-size=8192 tools/catalog-compiler.mjs --ldraw .sources/ldraw --shadow .sources/LDCadShadowLibrary-main --rebrickable .sources/rebrickable --out public --version 2026-07 --pack-size 500",
+    "catalog:fixture": "rm -rf .catalog-fixture && node tools/catalog-compiler.mjs --ldraw tools/fixtures/ldraw --shadow tools/fixtures/shadow --rebrickable tools/fixtures/rebrickable --out .catalog-fixture --version fixture-1",
+    "catalog:test-fixture": "node tools/make-test-fixture.mjs",
+    "check": "npm run test && npm run build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "latest",
+    "@fontsource/chakra-petch": "latest",
+    "@react-three/drei": "latest",
+    "@react-three/fiber": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "three": "latest"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@types/node": "^26.4.0",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/three": "latest",
+    "@vitejs/plugin-react": "latest",
+    "jsdom": "latest",
+    "playwright": "^1.62.1",
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "note": "Brickwright compiles third-party datasets. Attribution below is required for redistribution of the compiled assets.",
+  "datasets": [
+    {
+      "dataset": "LDraw Parts Library",
+      "use": "part geometry, part identity, LDraw colour definitions",
+      "licensePerFile": true,
+      "observedLicenses": {
+        "CC-BY-4.0": 22941
+      },
+      "attribution": "This software uses the LDraw Parts Library. LEGO is a trademark of the LEGO Group, which does not sponsor, endorse or authorize LDraw or Brickwright."
+    },
+    {
+      "dataset": "LDCad Shadow Library",
+      "use": "connection/snap metadata",
+      "license": "CC-BY-SA-4.0",
+      "attribution": "Connection metadata derived from the LDCad Shadow Library by Roland Melkert, licensed CC BY-SA 4.0.",
+      "shareAlikeReviewRequired": true
+    },
+    {
+      "dataset": "Rebrickable bulk catalog",
+      "use": "part names, categories, colour production evidence, usage frequency",
+      "redistributionReviewRequired": true,
+      "note": "Redistribution rights for compiled derivatives are unspecified and must be reviewed against current Rebrickable terms before public deployment."
+    }
+  ]
+}

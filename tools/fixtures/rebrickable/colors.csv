@@ -1,0 +1,8 @@
+id,name,rgb,is_trans,num_parts,num_sets,y1,y2
+-1,[Unknown],0033B2,False,17,2,2000,2000
+0,Black,05131D,False,840795,232797,1957,2027
+4,Red,C91A09,False,1,1,1957,2027
+15,White,FFFFFF,False,1,1,1957,2027
+71,Light Bluish Gray,A0A5A9,False,519289,136105,2002,2026
+72,Dark Bluish Gray,6C6E68,False,374886,104990,1999,2026
+1099,Glitter Trans-Pink,DF6695,True,3,2,2018,2019

@@ -1,0 +1,18 @@
+0 Brickwright compiler fixture colour table
+0 Name: LDConfig.ldr
+0 // Deliberately small. Includes the bluish greys because LDraw spells them
+0 // "Grey" and Rebrickable spells them "Gray"; the crosswalk has to fold the two
+0 // together or the most common structural colours lose their evidence.
+
+0                             // LEGOID  26 - Black
+0 !COLOUR Black                                                 CODE     0   VALUE #1B2A34   EDGE #808080
+0                             // LEGOID  21 - Bright Red
+0 !COLOUR Red                                                   CODE     4   VALUE #B40000   EDGE #333333
+0                             // LEGOID   1 - White
+0 !COLOUR White                                                 CODE    15   VALUE #FFFFFF   EDGE #333333
+0                             // LEGOID 194 - Medium Stone Grey
+0 !COLOUR Light_Bluish_Grey                                     CODE    71   VALUE #969696   EDGE #333333
+0                             // LEGOID 199 - Dark Stone Grey
+0 !COLOUR Dark_Bluish_Grey                                      CODE    72   VALUE #646464   EDGE #333333
+0                             // LEGOID  40 - Transparent
+0 !COLOUR Trans_Clear                                           CODE    47   VALUE #FCFCFC   EDGE #C3C3C3   ALPHA 128
