@@ -47,3 +47,36 @@ jobs:
           path: artifacts/
           if-no-files-found: ignore
           retention-days: 7
+
+  # Deploys the static build to Cloudflare Pages, which fronts brickwrite.tech.
+  # Only after `verify` passes, and only from the default branch, so a red
+  # acceptance run cannot reach the domain.
+  #
+  # Requires two repository secrets: CLOUDFLARE_API_TOKEN (scoped to
+  # "Cloudflare Pages: Edit") and CLOUDFLARE_ACCOUNT_ID. The custom domain
+  # itself is attached to the Pages project in the Cloudflare dashboard, not
+  # from here.
+  #
+  # Today this ships the ~57MB committed asset pack inside dist/. That is
+  # within Pages' limits (largest single file is 1.66MB against a 25MB cap,
+  # ~1,800 files against a 20,000 cap), but it is the thing B1 moves to R2
+  # when the part library widens and the pack approaches ~900MB.
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=brickwright --branch=main

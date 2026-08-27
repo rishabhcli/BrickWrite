@@ -192,6 +192,17 @@ printable guide and asserts that its step images are embedded rather than remote
 Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); remaining
 production work is in [PROGRESS.md](PROGRESS.md).
 
+## Licence
+
+Brickwright's own source is licensed **AGPL-3.0-only** (see `LICENSE`). Because the network
+clause applies, anyone who runs a modified Brickwright as a hosted service owes their users
+the modified source.
+
+That covers the code only. The compiled catalog assets are derivatives of three independently
+licensed datasets, and their terms travel with them rather than with this licence — including
+the CC BY-SA obligation on connector metadata, which is a separate copyleft from the AGPL and
+is not satisfied by it. See below.
+
 ## Dataset attribution
 
 Brickwright's code is separate from the datasets it compiles. The compiler writes
