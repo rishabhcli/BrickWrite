@@ -24,13 +24,19 @@ const BUDGETS = {
   buildPerEditMs: 3,
   fullValidationMs: 900,
   // Incremental revalidation is judged against a full pass measured on the same
-  // machine in the same run, not against a millisecond ceiling. The property is
-  // that scoping the collision phase to the touched part costs much less than
-  // redoing every pair; an absolute budget measures the runner's hardware as
-  // much as the optimization, which is why 60 ms passed locally and failed at
-  // 82 ms on a CI runner. Locally the ratio sits at ~0.45; losing
-  // incrementality entirely takes it to ~1.0.
-  incrementalFraction: 0.75,
+  // machine in the same run, not against a millisecond ceiling: an absolute
+  // budget measures the runner's hardware as much as the optimization, which is
+  // why 60 ms passed locally and failed at 82 ms on a CI runner.
+  //
+  // The ceiling is loose because only the collision phase is incremental —
+  // connectivity, components, bounds and colour evidence still run a full pass
+  // — so the achievable saving is bounded, and how much of validation collision
+  // accounts for turns out to be machine-dependent: the measured ratio is ~0.45
+  // locally but ~0.75 on a CI runner. What the assertion has to separate is a
+  // working optimization from a removed one, and removing it entirely measures
+  // ~1.05, so 0.85 discriminates on both machines without pretending the ratio
+  // is more stable than it is.
+  incrementalFraction: 0.85,
   snapQueryMs: 40,
   undoMs: 60,
 } as const
@@ -169,11 +175,11 @@ describe('kernel at scale', () => {
     // Documents are built before anything is timed, and each sample gets a fresh
     // one because derived state is memoized on document identity — reusing one
     // would time the memo rather than the work.
-    const ROUNDS = 3
+    const ROUNDS = 5
     const fullDocuments = Array.from({ length: ROUNDS }, () => withParts(parts))
     const movedDocuments = Array.from({ length: ROUNDS }, moveP0)
 
-    // Best of three per side. A shared runner's scheduling noise lands on
+    // Best of five per side. A shared runner's scheduling noise lands on
     // individual samples, so the minimum is the least contaminated estimate of
     // what the code actually costs.
     const fullMs = Math.min(
