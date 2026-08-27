@@ -12,7 +12,7 @@
  * meaningful when the showcase model or catalog revision changes.
  */
 import { spawn } from 'node:child_process'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
 const url = process.env.BRICKWRIGHT_E2E_URL ?? 'http://127.0.0.1:4174'
@@ -50,6 +50,19 @@ try {
   // The catalog must load before the editor mounts at all.
   await page.locator('canvas').waitFor({ timeout: 30_000 })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+
+  // -- first run explains itself, once ---------------------------------------
+  // A dense CAD console that opens with no orientation is a usability defect,
+  // and one that reopens every session is a different one. Both are asserted.
+  const welcome = page.getByRole('dialog', { name: 'Build something real' })
+  await welcome.waitFor({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Start building' }).click()
+  await welcome.waitFor({ state: 'hidden' })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  assert(await welcome.count() === 0, 'The first-run guide reappeared after being dismissed')
+  const welcomeReplayable = await page.evaluate(() => Boolean(window.localStorage.getItem('brickwright.welcome.v1')))
+  assert(welcomeReplayable, 'Dismissing the first-run guide was not remembered')
 
   const initial = await page.evaluate(async () => ({
     document: window.brickwright.getDocument(),
@@ -109,6 +122,92 @@ try {
   assert(palette.distinctHashes === 6, `Thumbnails should be per-part, saw ${palette.distinctHashes} distinct hashes`)
   assert(palette.probeOk && /image\/png/.test(palette.probeType ?? ''), `Thumbnail asset not served as PNG: ${palette.probeType}`)
   assert(palette.renderedInDom > 10, `Expected the palette to render thumbnails, saw ${palette.renderedInDom}`)
+
+  // -- the index covers the whole catalogue, and search can reach it --------
+  // LDraw models what people build with; the wider catalogue records what
+  // exists. Both have to be searchable, and a result has to say which it is,
+  // because "we have never heard of that part" and "that part is real and this
+  // build cannot place it" are different answers.
+  const catalogue = await page.evaluate(async () => {
+    const call = async (args) => (await window.brickwright.invoke('catalog_search', args))?.structuredContent
+    const build = await call({ text: 'brick 2 x 4', tier: 'placeable', limit: 5 })
+    const wide = await call({ text: 'minifig head', tier: 'all', limit: 5 })
+    const paged = await call({ text: 'plate', tier: 'all', limit: 5, offset: 5 })
+    const pagedAgain = await call({ text: 'plate', tier: 'all', limit: 5, offset: 5 })
+    const exact = await call({ text: '3001', tier: 'all', limit: 3 })
+    const missing = await call({ text: 'zzzz-not-a-real-part', tier: 'all', limit: 3 })
+    return { build, wide, paged, pagedAgain, exact, missing }
+  })
+  assert(
+    catalogue.build.index.totalIdentities > catalogue.build.index.modelledIdentities,
+    'The index does not reach past the LDraw-modelled library',
+  )
+  assert(
+    catalogue.build.index.cataloguedIdentities > 40_000,
+    `Expected the wider LEGO catalogue in the index, saw ${catalogue.build.index.cataloguedIdentities}`,
+  )
+  assert(catalogue.exact.results[0]?.id === '3001', 'An exact part number did not rank first')
+  assert(catalogue.build.results[0]?.id === '3001', 'A described part did not rank above its variants')
+  assert(
+    catalogue.build.results.every((entry) => entry.placeable),
+    'The placeable tier returned something that cannot be placed',
+  )
+  assert(
+    catalogue.wide.matched.cataloguedTierSearched,
+    'Searching every tier did not load the wider catalogue index',
+  )
+  assert(
+    catalogue.wide.matched.byTier.catalogued > 0 && catalogue.wide.matched.byTier.placeable > 0,
+    `Expected matches in both tiers, saw ${JSON.stringify(catalogue.wide.matched.byTier)}`,
+  )
+  assert(
+    catalogue.wide.results.some((entry) => entry.tier === 'placeable'),
+    'A whole-catalogue search buried every buildable result',
+  )
+  assert(
+    catalogue.paged.matched.total > catalogue.paged.page.returned,
+    'Paging reported a total no larger than one page',
+  )
+  assert(
+    JSON.stringify(catalogue.paged.results) === JSON.stringify(catalogue.pagedAgain.results),
+    'Two identical paged searches returned different rows, so the ordering is not deterministic',
+  )
+  assert(catalogue.missing.matched.total === 0, 'A nonsense query matched something')
+
+  // Ranking over eighty thousand identities has to stay inside a keystroke.
+  const searchMs = await page.evaluate(async () => {
+    const run = async (args) => {
+      const started = performance.now()
+      for (let attempt = 0; attempt < 5; attempt += 1) await window.brickwright.invoke('catalog_search', args)
+      return Math.round((performance.now() - started) / 5)
+    }
+    return {
+      wholeIndex: await run({ tier: 'all', limit: 60 }),
+      describedPart: await run({ text: 'brick 2 x 4', tier: 'all', limit: 60 }),
+      partNumber: await run({ text: '3001', tier: 'all', limit: 60 }),
+    }
+  })
+  assert(
+    searchMs.describedPart < 150,
+    `A two-token search over the whole index took ${searchMs.describedPart} ms, which is past a keystroke`,
+  )
+
+  // The human sees the same index behind the same facets.
+  await page.locator('[data-catalog-search]').fill('minifig head')
+  await page.locator('.tier-row button', { hasText: 'EVERYTHING' }).click()
+  await page.waitForFunction(() => !document.querySelector('.catalog-loading'), null, { timeout: 60_000 })
+  const humanFacets = await page.locator('.tier-row button').allInnerTexts()
+  const humanTotal = await page.locator('.catalog-meta span').first().innerText()
+  assert(
+    /of 8[0-9],\d{3} identities/.test(humanTotal),
+    `The catalog panel does not report the whole index, it says "${humanTotal}"`,
+  )
+  assert(humanFacets.length === 4, `Expected four knowledge tiers in the panel, saw ${humanFacets.length}`)
+  const humanRows = await page.locator('.part-card').count()
+  assert(humanRows > 0, 'The panel found nothing for a query the agent matched thousands of times')
+  await page.locator('.tier-row button', { hasText: 'BUILDABLE' }).click()
+  await page.locator('[data-catalog-search]').fill('')
+  await page.waitForTimeout(150)
 
   // -- keyboard command map is a real modal, not decorative chrome ----------
   const shortcutsButton = page.getByRole('button', { name: 'Keyboard shortcuts' })
@@ -255,15 +354,123 @@ try {
   assert(contract.drifted?.code === 'STALE_TOOL_PROFILE', `Stale profile was not refused: ${JSON.stringify(contract.drifted)}`)
   assert(contract.drifted?.retryable === true, 'A stale profile should be reported as retryable')
 
+  // -- the transform gizmo is actually grabbable ----------------------------
+  // It used to render inside the model root, which is scaled to 1/20, so the
+  // handles were drawn at a twentieth of their intended size: present in the
+  // scene graph, invisible and unhittable on screen. The check measures the
+  // drawn handles rather than asserting that a component mounted.
+  const canvasBox = await page.locator('canvas').boundingBox()
+  const canvasCentre = { x: canvasBox.width / 2, y: canvasBox.height / 2 }
+  await page.locator('canvas').click({ position: canvasCentre })
+  await page.locator('.inspector-panel .selection-identity').waitFor({ timeout: 5_000 })
+  await page.keyboard.press('g')
+  await page.waitForFunction(() => Boolean(window.__brickwrightGizmo), null, { timeout: 5_000 })
+  const beforePlaceParts = await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)
+  const gizmoSize = await page.evaluate(() => window.__brickwrightGizmo())
+  assert(gizmoSize.attached, 'The move tool did not attach a transform gizmo to the selection')
+  assert(
+    gizmoSize.screenPixels > 60,
+    `The transform gizmo spans only ${Math.round(gizmoSize.screenPixels)} screen pixels, which is not grabbable`,
+  )
+
+  // Grabbing the gizmo must actually move the part, through the same command
+  // bus as everything else: one transaction, one revision.
+  const beforeDrag = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision }))
+  const handle = { x: canvasBox.x + gizmoSize.centre[0], y: canvasBox.y + gizmoSize.centre[1] }
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 70, handle.y - 40, { steps: 12 })
+  await page.mouse.up()
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    beforeDrag.revision,
+    { timeout: 10_000 },
+  )
+  const afterDrag = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { revision: model.revision, parts: Object.keys(model.parts).length }
+  })
+  assert(afterDrag.revision === beforeDrag.revision + 1, 'Dragging the gizmo did not commit exactly one transaction')
+  assert(afterDrag.parts === beforePlaceParts, 'Dragging the gizmo changed the part count')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    afterDrag.revision,
+    { timeout: 10_000 },
+  )
+
+  await page.keyboard.press('v')
+
+  // -- click-to-place drops a part where the operator is looking ------------
+  const beforePlace = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+  await page.locator('.part-card:not(.unplaceable) .part-card-main').first().click()
+  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  await page.locator('canvas').click({ position: canvasCentre })
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    beforePlace.revision,
+    { timeout: 10_000 },
+  )
+  const afterPlace = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+  assert(afterPlace.parts === beforePlace.parts + 1, 'Clicking in the viewport did not place exactly one part')
+  assert(afterPlace.revision === beforePlace.revision + 1, 'Viewport placement did not commit as a single transaction')
+  await page.keyboard.press('Escape')
+  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
+    beforePlace.parts,
+    { timeout: 10_000 },
+  )
+
+  // -- shift-drag selects a region, and does not pan the camera -------------
+  await page.locator('canvas').click({ position: { x: 12, y: 12 } })
+  const marqueeBox = await page.locator('canvas').boundingBox()
+  await page.keyboard.down('Shift')
+  await page.mouse.move(marqueeBox.x + marqueeBox.width * 0.25, marqueeBox.y + marqueeBox.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(marqueeBox.x + marqueeBox.width * 0.5, marqueeBox.y + marqueeBox.height * 0.5, { steps: 8 })
+  const marqueeVisible = await page.locator('.marquee-box').count()
+  await page.mouse.move(marqueeBox.x + marqueeBox.width * 0.75, marqueeBox.y + marqueeBox.height * 0.72, { steps: 8 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  assert(marqueeVisible === 1, 'Shift-dragging did not draw a selection rectangle')
+  const marqueeSelected = await page.locator('.viewport-title-block p').innerText()
+  assert(
+    /\d+ parts selected/.test(marqueeSelected),
+    `Box selection did not select a region, viewport reports "${marqueeSelected}"`,
+  )
+  await page.locator('canvas').click({ position: { x: 12, y: 12 } })
+
+  // -- the build sequence survives an edit ----------------------------------
+  // The bottom band used to swap the sequence out for history the moment
+  // anything was edited, so the steps vanished exactly when a builder needed
+  // them. They are now separate views, and STEPS is reachable at any time.
+  await page.locator('.timeline-switch button', { hasText: 'STEPS' }).click()
+  const stepCards = await page.locator('.step-card').count()
+  assert(
+    stepCards === (await page.evaluate(() => window.brickwright.getDocument().steps.length)),
+    `The build sequence shows ${stepCards} steps but the document has more`,
+  )
+
   // -- manual placement uses the same bus, and undo stays monotonic ---------
+  const beforeAdd = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
   await page.locator('.part-card').first().locator('.part-add').click()
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeAdd.revision, { timeout: 10_000 })
   const afterAdd = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
-  assert(afterAdd.revision === afterProposal.revision + 1 && afterAdd.parts === afterProposal.parts + 1, 'Manual catalog placement did not use the shared command bus')
+  assert(afterAdd.revision === beforeAdd.revision + 1 && afterAdd.parts === beforeAdd.parts + 1, 'Manual catalog placement did not use the shared command bus')
 
   await page.getByRole('button', { name: 'Undo' }).click()
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterAdd.revision, { timeout: 10_000 })
   const afterUndo = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
   assert(afterUndo.revision === afterAdd.revision + 1, 'Undo did not advance the revision monotonically')
-  assert(afterUndo.parts === afterProposal.parts, 'Undo did not restore the previous part set')
+  assert(afterUndo.parts === beforeAdd.parts, 'Undo did not restore the previous part set')
 
   // -- stale agent writes are rejected by the kernel ------------------------
   const stale = await page.evaluate(() => window.brickwright.invoke('build_preflight', {
@@ -499,6 +706,153 @@ try {
     `The commit was still refused after its constraint was lifted: ${JSON.stringify(constraintGate.released)}`,
   )
 
+  // -- an agent builds a storey in one call, not one brick at a time --------
+  // Authoring a large model per-part is slow and it is where quality is lost:
+  // a wall placed brick-by-brick by a language model has stacked seams and
+  // unbonded courses. The generators do the bricklaying and the kernel checks
+  // the result, so what is asserted here is the *quality* of what came back.
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  const generated = await page.evaluate(async () => {
+    const mutate = async (action, args) => {
+      const r = await window.brickwright.invoke('action_mutate', {
+        action,
+        expectedRevision: window.brickwright.getDocument().revision,
+        args,
+      })
+      return r?.structuredContent
+    }
+    const before = Object.keys(window.brickwright.getDocument().parts).length
+    const beforeRevision = window.brickwright.getDocument().revision
+    const storey = await mutate('build_enclosure', {
+      widthStuds: 16,
+      depthStuds: 12,
+      courses: 4,
+      floor: true,
+      color: 4,
+      originLdu: [600, 0, 600],
+      openings: [{ atStud: 6, widthStuds: 4, fromCourse: 0, toCourse: 2 }],
+    })
+    const stacked = await mutate('stack_selection', { copies: 2 })
+    const validation = (await window.brickwright.invoke('validate_model', {}))?.structuredContent
+    return {
+      before,
+      beforeRevision,
+      storey,
+      stacked,
+      after: Object.keys(window.brickwright.getDocument().parts).length,
+      afterRevision: window.brickwright.getDocument().revision,
+      collisions: validation.collisions.length,
+      unverified: validation.unverifiedCollisions,
+    }
+  })
+  assert(!generated.storey?.error, `Generating a storey failed: ${JSON.stringify(generated.storey?.error)}`)
+  assert(!generated.stacked?.error, `Stacking storeys failed: ${JSON.stringify(generated.stacked?.error)}`)
+  assert(
+    generated.storey.report.parts > 60,
+    `One call produced only ${generated.storey.report.parts} parts, which is not a storey`,
+  )
+  assert(generated.storey.report.runningBond === true, 'The generated storey is not in running bond')
+  assert(
+    generated.storey.report.unbondedCourses === 0 && generated.storey.report.warnings.length === 0,
+    `The generator reported problems it did not fix: ${JSON.stringify(generated.storey.report.warnings)}`,
+  )
+  assert(
+    generated.storey.report.bill.reduce((sum, entry) => sum + entry.count, 0) === generated.storey.report.parts,
+    'The reported bill does not account for every part placed',
+  )
+  assert(
+    generated.afterRevision === generated.beforeRevision + 2,
+    `Two generator calls produced ${generated.afterRevision - generated.beforeRevision} transactions, not two`,
+  )
+  assert(
+    generated.after - generated.before === generated.storey.report.parts * 3,
+    `A storey plus two stacked copies added ${generated.after - generated.before} parts, not three storeys' worth`,
+  )
+  assert(
+    generated.stacked.report.pitchLdu === generated.storey.report.courses * 24 + 8 * (generated.storey.report.floorLayers ?? 2),
+    `The stack pitch of ${generated.stacked.report.pitchLdu} LDU does not match the storey it measured`,
+  )
+  assert(generated.collisions === 0, `The generated building collides with itself in ${generated.collisions} places`)
+  assert(generated.unverified === 0, 'The generated building has collision verdicts reached from bounding boxes alone')
+
+  // -- a whole building, and a module reused across the block ---------------
+  // The composition layer is the one that makes a large model reachable at all:
+  // storeys, windows, banding and a roof from one instruction, then the whole
+  // thing captured and stamped rather than authored again.
+  const block = await page.evaluate(async () => {
+    const mutate = async (action, args) => {
+      const r = await window.brickwright.invoke('action_mutate', {
+        action,
+        expectedRevision: window.brickwright.getDocument().revision,
+        args,
+      })
+      return r?.structuredContent
+    }
+    const before = Object.keys(window.brickwright.getDocument().parts).length
+    const raised = await mutate('build_structure', {
+      widthStuds: 16,
+      depthStuds: 14,
+      storeys: 3,
+      coursesPerStorey: 6,
+      color: 4,
+      bandColor: 15,
+      windowsPerSide: 2,
+      door: true,
+      originLdu: [1600, 0, 1600],
+    })
+    const captured = await mutate('capture_module', { name: 'Corner block' })
+    const stamped = await mutate('stamp_module', { module: 'Corner block', atLdu: [2000, 0, 1600], copies: 1, color: 14 })
+    const validation = (await window.brickwright.invoke('validate_model', {}))?.structuredContent
+    return {
+      before,
+      raised,
+      captured,
+      stamped,
+      modules: (window.brickwright.getDocument().modules ?? []).map((entry) => entry.name),
+      after: Object.keys(window.brickwright.getDocument().parts).length,
+      collisions: validation.collisions.length,
+      unverified: validation.unverifiedCollisions,
+    }
+  })
+  assert(!block.raised?.error, `Raising a building failed: ${JSON.stringify(block.raised?.error)}`)
+  assert(!block.captured?.error, `Capturing a module failed: ${JSON.stringify(block.captured?.error)}`)
+  assert(!block.stamped?.error, `Stamping a module failed: ${JSON.stringify(block.stamped?.error)}`)
+  assert(block.raised.report.parts > 200, `One instruction produced only ${block.raised.report.parts} parts`)
+  assert(block.raised.report.runningBond === true, 'The generated building is not in running bond')
+  assert(
+    block.raised.report.windows > 3 && block.raised.report.doors === 1,
+    `Expected windows and a door seated in the facade, saw ${JSON.stringify({ windows: block.raised.report.windows, doors: block.raised.report.doors })}`,
+  )
+  assert(block.raised.report.warnings.length === 0, `The building reported problems: ${JSON.stringify(block.raised.report.warnings)}`)
+  assert(block.modules.includes('Corner block'), 'The captured module is not in the document')
+  assert(
+    block.stamped.report.parts === block.raised.report.parts,
+    `A stamp placed ${block.stamped.report.parts} parts from a ${block.raised.report.parts}-part module`,
+  )
+  assert(
+    block.after === block.before + block.raised.report.parts * 2,
+    `The building and its stamp added ${block.after - block.before} parts, not two buildings' worth`,
+  )
+  assert(block.collisions === 0 && block.unverified === 0, `The stamped block collides in ${block.collisions} places`)
+
+  // A large generated model still sequences into a verified instruction set.
+  const generatedOrder = await page.evaluate(async () => {
+    const started = performance.now()
+    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))?.structuredContent
+    return { ms: Math.round(performance.now() - started), steps: derived?.steps?.length, verified: derived?.verified, warnings: derived?.warnings?.length ?? 0 }
+  })
+  assert(generatedOrder.verified === true, 'The generated building failed its own build-order reachability check')
+  assert(generatedOrder.steps > 5, `A ${generated.after}-part model sequenced into only ${generatedOrder.steps} steps`)
+
+  // Undo has to reverse a generated assembly as one move, like any other edit —
+  // a building of three hundred parts is still one transaction.
+  for (let step = 0; step < 5; step += 1) await page.getByRole('button', { name: 'Undo' }).click()
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
+    generated.before,
+    { timeout: 20_000 },
+  )
+
   // -- rendering cost tracks part/colour combinations, not brick count ------
   // A 400-part agent batch is committed far from the model, then the renderer's
   // own counters are read. Instanced batching means the draw calls should barely
@@ -607,9 +961,9 @@ try {
     const model = window.brickwright.getDocument()
     return { id: model.id, name: model.name, revision: model.revision, parts: Object.keys(model.parts).length }
   })
-  await page.locator('.project-fork input').fill('E2E fork')
+  await page.getByLabel('New or forked project name').fill('E2E fork')
   const forkStarted = Date.now()
-  await page.locator('.project-fork button').click()
+  await page.locator('.project-panel').getByRole('button', { name: 'Fork' }).click()
   // A fork checkpoints the outgoing project and writes a copy, so it is bounded
   // by IndexedDB rather than by rendering. The budget is generous because a
   // shared CI runner is roughly an order of magnitude slower than a laptop, and
@@ -668,11 +1022,47 @@ try {
   assert(attribution.trademark, 'The trademark disclaimer is missing from the attribution panel')
   await page.keyboard.press('Escape')
 
+  // -- an exported model imports back as the same build ---------------------
+  // Interoperability is only real if the round trip closes. This is the last
+  // check in the run because it replaces the open document.
+  const roundTripPath = 'artifacts/e2e-roundtrip.ldr'
+  await writeFile(roundTripPath, exported, 'utf8')
+  await page.getByRole('button', { name: 'More export options' }).click()
+  await page.locator('.export-panel input[type=file]').setInputFiles(roundTripPath)
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
+    type1,
+    { timeout: 30_000 },
+  )
+  const imported = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return {
+      parts: Object.keys(model.parts).length,
+      placeable: Object.values(model.parts).every((part) => Boolean(part.definitionId)),
+      connections: Object.keys(model.connections).length,
+    }
+  })
+  assert(
+    imported.parts === type1,
+    `Re-importing the export produced ${imported.parts} parts from ${type1} type-1 lines`,
+  )
+  assert(imported.placeable, 'An imported part lost its catalog identity')
+  assert(imported.connections > 0, 'The imported model derived no connection graph')
+
   assert(errors.length === 0, `Browser errors: ${errors.join('; ')}`)
 
   console.log(JSON.stringify({
     status: 'passed',
     catalog: initial.workspace.catalog,
+    index: {
+      ...catalogue.build.index,
+      exactNumberRanksFirst: catalogue.exact.results[0]?.id,
+      wholeCatalogueMatches: catalogue.wide.matched,
+      pagingDeterministic: true,
+      searchMs,
+      panelFacets: humanFacets.length,
+      panelTotal: humanTotal,
+    },
     coverage: {
       identities: initial.coverage.coverage.catalogIdentities,
       authoritativeConnections: initial.coverage.coverage.withAuthoritativeConnections,
@@ -697,6 +1087,12 @@ try {
     interface: {
       modalShortcutsBlocked: true,
       focusRestored: true,
+      firstRunGuideShownOnceOnly: true,
+      gizmoScreenPixels: Math.round(gizmoSize.screenPixels),
+      gizmoDragCommitted: afterDrag.revision === beforeDrag.revision + 1,
+      viewportPlacement: { parts: afterPlace.parts, revision: afterPlace.revision },
+      buildStepsVisibleAfterEdit: stepCards,
+      boxSelection: marqueeSelected,
       commandDeckCapabilities: 13,
       commandDeckScreenshot: 'artifacts/e2e-command-deck.png',
       sharedCapabilityParity: {
@@ -704,6 +1100,24 @@ try {
         agentRevision: agentParity.result?.resultRevision,
         restoredRevision: parityUndo.revision,
       },
+    },
+    generation: {
+      storeyParts: generated.storey.report.parts,
+      storeyCourses: generated.storey.report.courses,
+      runningBond: generated.storey.report.runningBond,
+      stackedParts: generated.stacked.report.parts,
+      stackPitchLdu: generated.stacked.report.pitchLdu,
+      partsFromTwoCalls: generated.after - generated.before,
+      transactions: generated.afterRevision - generated.beforeRevision,
+      collisions: generated.collisions,
+      sequencedSteps: generatedOrder.steps,
+      sequenceVerified: generatedOrder.verified,
+      sequenceMs: generatedOrder.ms,
+      buildingParts: block.raised.report.parts,
+      buildingWindows: block.raised.report.windows,
+      buildingDoors: block.raised.report.doors,
+      moduleStampedParts: block.stamped.report.parts,
+      blockCollisions: block.collisions,
     },
     refusedUnplaceableIdentity: unplaceable,
     buildOrder: {
@@ -728,6 +1142,7 @@ try {
     afterAdd,
     afterUndo,
     exportType1Lines: type1,
+    importRoundTrip: { parts: imported.parts, connections: imported.connections },
     delivery: {
       mpdFileBlocks: (mpd.match(/^0 FILE /gm) ?? []).length,
       guideSteps,

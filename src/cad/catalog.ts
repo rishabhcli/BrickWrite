@@ -1,6 +1,8 @@
 import type {
+  CatalogSearchPage,
   CatalogSearchQuery,
   CatalogSearchRecord,
+  CatalogTier,
   ColorDefinition,
   ConnectionFamily,
   PartDefinition,
@@ -29,6 +31,25 @@ interface RawSearchEntry {
   h?: 1
 }
 
+/**
+ * Raw shape of `catalog/<version>/search-external.json`.
+ *
+ * Identity only: these are catalogued LEGO parts that LDraw does not model, so
+ * there is no geometry, no measured envelope and no connector list to publish.
+ * The absence is the record — an entry here is the catalogue saying the part is
+ * real and that this build knows nothing else about it.
+ */
+interface RawExternalEntry {
+  id: string
+  n: string
+  c: string
+  f: number
+  /** Base design a printed or mould variant decorates. */
+  p?: string
+  /** Material, when the catalogue records something other than plastic. */
+  m?: string
+}
+
 export interface CatalogManifest {
   schemaVersion: number
   catalogVersion: string
@@ -38,8 +59,19 @@ export interface CatalogManifest {
     path: string
     hash: string
     bytes: number
-  }>
-  counts: { parts: number; packParts: number; connectors: number; colors: number; aliases: number; thumbnails?: number }
+  }> & {
+    /** Fetched on demand: most sessions never ask past the modelled library. */
+    searchExternal?: { path: string; hash: string; bytes: number; lazy?: boolean }
+  }
+  counts: {
+    parts: number
+    packParts: number
+    connectors: number
+    colors: number
+    aliases: number
+    thumbnails?: number
+    externalIdentities?: number
+  }
   coverage: Record<string, unknown>
 }
 
@@ -50,6 +82,26 @@ export interface CatalogPayload {
   colors: ColorDefinition[]
   /** Retired LDraw part number → its current replacement, e.g. 3023 → 3023b. */
   aliases?: Record<string, string>
+}
+
+/** An entry with everything the ranker needs precomputed once at install. */
+interface IndexedEntry {
+  id: string
+  lowerId: string
+  name: string
+  lowerName: string
+  category: string
+  tier: CatalogTier
+  /** `id name category`, lowercased, for token containment. */
+  hay: string
+  studs: Vec3 | null
+  frequency: number
+  families: ConnectionFamily[]
+  geometry: boolean
+  connections: boolean
+  helper: boolean
+  variantOf?: string
+  material?: string
 }
 
 const UNKNOWN_COLOR = (code: number): ColorDefinition => ({
@@ -87,19 +139,51 @@ const envelopeMatches = (studs: Vec3 | null, minimum?: StudEnvelope, maximum?: S
  */
 export class CatalogRegistry {
   private definitions = new Map<string, PartDefinition>()
-  private searchEntries: RawSearchEntry[] = []
+  private modelled: IndexedEntry[] = []
+  private catalogued: IndexedEntry[] = []
   private colorsByCode = new Map<number, ColorDefinition>()
   private aliases = new Map<string, string>()
-  private searchById = new Map<string, RawSearchEntry>()
+  private entriesById = new Map<string, IndexedEntry>()
   private manifest: CatalogManifest | null = null
 
   install(payload: CatalogPayload) {
     this.manifest = payload.manifest
     this.definitions = new Map(payload.parts.map((part) => [part.canonicalId, part]))
-    this.searchEntries = payload.search
-    this.searchById = new Map(payload.search.map((entry) => [entry.id, entry]))
+    this.modelled = payload.search.map(indexModelled)
+    this.catalogued = []
+    this.entriesById = new Map(this.modelled.map((entry) => [entry.id, entry]))
     this.colorsByCode = new Map(payload.colors.map((color) => [color.code, color]))
     this.aliases = new Map(Object.entries(payload.aliases ?? {}))
+  }
+
+  /**
+   * Adds the wider LEGO catalogue to the index.
+   *
+   * Fetched separately because it is seven megabytes that an editing session
+   * does not need: what you build with is the modelled library, and the rest of
+   * the catalogue only matters the moment somebody asks whether a part exists.
+   * An identity the modelled index already claims is skipped rather than
+   * duplicated, so installing twice is harmless.
+   */
+  installExternalIndex(entries: RawExternalEntry[]) {
+    const added: IndexedEntry[] = []
+    for (const raw of entries) {
+      if (this.entriesById.has(raw.id)) continue
+      const entry = indexCatalogued(raw)
+      this.entriesById.set(entry.id, entry)
+      added.push(entry)
+    }
+    this.catalogued = this.catalogued.concat(added)
+  }
+
+  /** True once the wider catalogue is resident and `catalogued` results exist. */
+  get catalogueLoaded(): boolean {
+    return this.catalogued.length > 0
+  }
+
+  /** How many catalogued-only identities the manifest says exist, resident or not. */
+  get externalIdentityCount(): number {
+    return this.manifest?.counts.externalIdentities ?? 0
   }
 
   /**
@@ -137,7 +221,7 @@ export class CatalogRegistry {
 
   /** Compact record, following LDraw renames. Covers every catalog identity. */
   describe(id: string): CatalogSearchRecord | undefined {
-    const entry = this.searchById.get(id) ?? this.searchById.get(this.resolveId(id))
+    const entry = this.entriesById.get(id) ?? this.entriesById.get(this.resolveId(id))
     return entry ? toRecord(entry) : undefined
   }
 
@@ -145,12 +229,21 @@ export class CatalogRegistry {
     return this.definitions.size
   }
 
+  /** Identities this build models: shape and connections are known. */
   get identityCount(): number {
-    return this.searchEntries.length
+    return this.modelled.length
+  }
+
+  /** Every identity the index can answer for, modelled or merely catalogued. */
+  get totalIdentityCount(): number {
+    return this.modelled.length + (this.catalogued.length || this.externalIdentityCount)
   }
 
   get categories(): string[] {
-    return Array.from(new Set(this.searchEntries.map((entry) => entry.c))).sort()
+    const names = new Set<string>()
+    for (const entry of this.modelled) names.add(entry.category)
+    for (const entry of this.catalogued) names.add(entry.category)
+    return Array.from(names).sort()
   }
 
   color(code: number): ColorDefinition {
@@ -167,51 +260,85 @@ export class CatalogRegistry {
   }
 
   /**
-   * Ranked catalog search over every identity.
+   * Ranked search over every identity this build knows about.
    *
-   * Results are ordered by textual precision first, then by how often the part
-   * actually appears in official sets, so a query for "plate" surfaces the
-   * everyday plate before an obscure decorated variant.
+   * Ordering is deliberate: an exact part number beats a name match, a name
+   * match beats a word buried mid-string, a measured envelope beats a number
+   * that merely appears in a name, and among equals the part that actually
+   * turns up in official sets comes first. Tier is a tiebreaker rather than a
+   * filter, so asking for "2 x 4 brick" surfaces the one you can build with
+   * without hiding the fifty printed variants you cannot.
    */
   search(query: CatalogSearchQuery): CatalogSearchRecord[] {
-    const text = query.text?.trim().toLowerCase()
-    const words = text ? text.split(/\s+/).filter(Boolean) : []
-    const limit = Math.max(1, Math.min(query.limit ?? 24, 200))
-    const colorFilter = query.colors?.length ? query.colors : null
+    return this.searchPage(query).records
+  }
 
-    const scored: Array<{ entry: RawSearchEntry; score: number }> = []
-    for (const entry of this.searchEntries) {
-      if (!query.includeHelpers && entry.h) continue
-      if (query.requireGeometry && !entry.g) continue
-      if (query.category && entry.c !== query.category) continue
-      if (!envelopeMatches(entry.d, query.minStuds, query.maxStuds)) continue
-      if (query.connectorTypes?.length && !query.connectorTypes.every((family) => entry.k.includes(family))) continue
+  /**
+   * The same search, with the counts a caller needs to page and to build facets.
+   *
+   * A capped list with no total is what made the catalogue feel small: sixty
+   * results out of eighty thousand looked identical to sixty results out of
+   * sixty.
+   */
+  searchPage(query: CatalogSearchQuery): CatalogSearchPage {
+    const text = query.text?.trim().toLowerCase() ?? ''
+    const tokens = tokenize(text)
+    const limit = Math.max(1, Math.min(query.limit ?? 24, 500))
+    const offset = Math.max(0, Math.trunc(query.offset ?? 0))
+    const colorFilter = query.colors?.length ? query.colors : null
+    const tier = query.tier ?? (query.requireGeometry ? 'placeable' : 'all')
+    const aliasTarget = text ? this.aliases.get(text) : undefined
+
+    const tiers: Record<CatalogTier, number> = { placeable: 0, modelled: 0, catalogued: 0 }
+    const scored: Array<{ entry: IndexedEntry; score: number }> = []
+
+    const consider = (entry: IndexedEntry) => {
+      if (!query.includeHelpers && entry.helper) return
+      if (query.category && entry.category !== query.category) return
+      if (query.minStuds || query.maxStuds) {
+        if (!envelopeMatches(entry.studs, query.minStuds, query.maxStuds)) return
+      }
+      if (query.connectorTypes?.length) {
+        if (!query.connectorTypes.every((family) => entry.families.includes(family))) return
+      }
       if (colorFilter) {
         const definition = this.definitions.get(entry.id)
         // Colour evidence lives on the full record; identities outside the pack
         // cannot satisfy a colour filter and are excluded rather than assumed.
-        if (!definition || !colorFilter.every((code) => definition.availableColors.includes(code))) continue
+        if (!definition || !colorFilter.every((code) => definition.availableColors.includes(code))) return
       }
 
-      let score = Math.log10(entry.f + 1) * 2
-      if (words.length) {
-        const haystack = `${entry.id} ${entry.n} ${entry.c}`.toLowerCase()
-        // A query naming a retired number should surface its replacement.
-        const aliasHit = text !== undefined && this.aliases.get(text) === entry.id
-        if (!aliasHit && !words.every((word) => haystack.includes(word))) continue
-        if (entry.id.toLowerCase() === text || aliasHit) score += 100
-        else if (entry.n.toLowerCase().startsWith(text!)) score += 20
-        else if (entry.n.toLowerCase().includes(text!)) score += 10
-      }
-      if (entry.g) score += 6
-      if (entry.s) score += 2
+      const relevance = tokens.length ? scoreText(entry, text, tokens, aliasTarget === entry.id) : 0
+      if (relevance === null) return
+
+      tiers[entry.tier] += 1
+      if (tier !== 'all' && entry.tier !== tier) return
+
+      let score = relevance + Math.log10(entry.frequency + 1) * 3
+      if (entry.geometry) score += 14
+      else if (entry.tier === 'modelled') score += 5
+      if (entry.connections) score += 2
       scored.push({ entry, score })
     }
 
-    return scored
-      .sort((a, b) => b.score - a.score || a.entry.n.localeCompare(b.entry.n))
-      .slice(0, limit)
-      .map((item) => toRecord(item.entry))
+    for (const entry of this.modelled) consider(entry)
+    for (const entry of this.catalogued) consider(entry)
+
+    scored.sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.entry.frequency - a.entry.frequency ||
+        a.entry.name.localeCompare(b.entry.name) ||
+        a.entry.id.localeCompare(b.entry.id),
+    )
+
+    return {
+      records: scored.slice(offset, offset + limit).map((item) => toRecord(item.entry)),
+      total: scored.length,
+      offset,
+      tiers,
+      cataloguePending: this.catalogued.length === 0 && this.externalIdentityCount > 0,
+    }
   }
 
   /** Connector families present anywhere in the pack, for UI facets. */
@@ -229,18 +356,153 @@ export class CatalogRegistry {
   }
 }
 
-function toRecord(entry: RawSearchEntry): CatalogSearchRecord {
+function toRecord(entry: IndexedEntry): CatalogSearchRecord {
   return {
     id: entry.id,
-    name: entry.n,
-    category: entry.c,
-    dimensions: entry.d,
-    frequency: entry.f,
-    connectorFamilies: entry.k,
-    geometryAvailable: entry.g === 1,
-    connectionsAvailable: entry.s === 1,
-    helper: entry.h === 1,
+    name: entry.name,
+    category: entry.category,
+    dimensions: entry.studs,
+    frequency: entry.frequency,
+    connectorFamilies: entry.families,
+    geometryAvailable: entry.geometry,
+    connectionsAvailable: entry.connections,
+    helper: entry.helper,
+    tier: entry.tier,
+    ...(entry.variantOf ? { variantOf: entry.variantOf } : {}),
+    ...(entry.material ? { material: entry.material } : {}),
   }
+}
+
+const NO_FAMILIES: ConnectionFamily[] = []
+
+function indexModelled(raw: RawSearchEntry): IndexedEntry {
+  return {
+    id: raw.id,
+    lowerId: raw.id.toLowerCase(),
+    name: raw.n,
+    lowerName: raw.n.toLowerCase(),
+    category: raw.c,
+    tier: raw.g === 1 ? 'placeable' : 'modelled',
+    hay: `${raw.id} ${raw.n} ${raw.c}`.toLowerCase(),
+    studs: raw.d,
+    frequency: raw.f,
+    families: raw.k,
+    geometry: raw.g === 1,
+    connections: raw.s === 1,
+    helper: raw.h === 1,
+  }
+}
+
+function indexCatalogued(raw: RawExternalEntry): IndexedEntry {
+  return {
+    id: raw.id,
+    lowerId: raw.id.toLowerCase(),
+    name: raw.n,
+    lowerName: raw.n.toLowerCase(),
+    category: raw.c,
+    tier: 'catalogued',
+    hay: `${raw.id} ${raw.n} ${raw.c}`.toLowerCase(),
+    studs: null,
+    frequency: raw.f,
+    families: NO_FAMILIES,
+    geometry: false,
+    connections: false,
+    helper: false,
+    ...(raw.p ? { variantOf: raw.p } : {}),
+    ...(raw.m ? { material: raw.m } : {}),
+  }
+}
+
+/**
+ * Splits a query into tokens, folding "2 x 4" into the single dimension token
+ * a person means by it.
+ *
+ * Without this, "2 x 4 brick" tokenizes into a bare `x` that matches most of
+ * the library and two numbers that match nothing useful, which is why the old
+ * search returned worse results the more precisely you described the part.
+ */
+export function tokenize(text: string): string[] {
+  if (!text) return []
+  const joined = text.replace(/(\d)\s*[x×]\s*(?=\d)/g, '$1x')
+  return joined.split(/[\s,]+/).map((token) => token.trim()).filter(Boolean)
+}
+
+const DIMENSION = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:x(\d+(?:\.\d+)?))?$/
+
+/** Parses "2x4" or "1x2x5" into its numbers, or null when the token is not one. */
+export function parseDimensionToken(token: string): number[] | null {
+  const match = DIMENSION.exec(token)
+  if (!match) return null
+  return match.slice(1).filter((value) => value !== undefined).map(Number)
+}
+
+/** True when `token` occurs in `hay` at the start of a word. */
+function atWordStart(hay: string, token: string): boolean {
+  let at = hay.indexOf(token)
+  while (at >= 0) {
+    const before = at === 0 ? '' : hay[at - 1]
+    if (!before || !/[a-z0-9]/.test(before)) return true
+    at = hay.indexOf(token, at + 1)
+  }
+  return false
+}
+
+/**
+ * True when a dimension token matches a part's measured envelope.
+ *
+ * Two numbers describe a footprint, and a 2 x 4 and a 4 x 2 are the same brick
+ * held differently, so the comparison is order-insensitive. Three numbers pin
+ * the height as well.
+ */
+function envelopeMatchesToken(studs: Vec3 | null, wanted: number[]): boolean {
+  if (!studs) return false
+  const [width, height, depth] = studs
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.051
+  if (wanted.length === 2) {
+    const footprint = [width, depth].sort((a, b) => a - b)
+    const query = [...wanted].sort((a, b) => a - b)
+    return close(footprint[0], query[0]) && close(footprint[1], query[1])
+  }
+  const actual = [width, height, depth].sort((a, b) => a - b)
+  const query = [...wanted].sort((a, b) => a - b)
+  return actual.every((value, index) => close(value, query[index]))
+}
+
+/**
+ * Relevance for one entry, or null when it does not match at all.
+ *
+ * Every token has to land somewhere — narrowing a search must never widen the
+ * result set — but *where* it lands is what decides the order.
+ */
+function scoreText(entry: IndexedEntry, text: string, tokens: string[], aliasHit: boolean): number | null {
+  if (aliasHit) return 200
+
+  let score = 0
+  for (const token of tokens) {
+    const dimension = parseDimensionToken(token)
+    if (dimension) {
+      if (envelopeMatchesToken(entry.studs, dimension)) {
+        // A measured envelope is stronger evidence than a number in a name.
+        score += 26
+        continue
+      }
+      // LDraw writes dimensions spaced out, so "2x4" has to find "2 x 4".
+      const spaced = dimension.join(' x ')
+      if (entry.hay.includes(spaced)) {
+        score += 16
+        continue
+      }
+    }
+    if (!entry.hay.includes(token)) return null
+    score += atWordStart(entry.hay, token) ? 12 : 4
+  }
+
+  if (entry.lowerId === text) score += 200
+  else if (entry.lowerId.startsWith(text)) score += 55
+  if (entry.lowerName === text) score += 90
+  else if (entry.lowerName.startsWith(text)) score += 45
+  else if (entry.lowerName.includes(text)) score += 18
+  return score
 }
 
 export const catalog = new CatalogRegistry()
@@ -248,6 +510,7 @@ export const catalog = new CatalogRegistry()
 export const getPartDefinition = (id: string): PartDefinition | undefined => catalog.get(id)
 export const getColor = (code: number): ColorDefinition => catalog.color(code)
 export const searchCatalog = (query: CatalogSearchQuery): CatalogSearchRecord[] => catalog.search(query)
+export const searchCatalogPage = (query: CatalogSearchQuery): CatalogSearchPage => catalog.searchPage(query)
 
 /** Bounding size in LDU, or a zero box when the part has no compiled geometry. */
 export const partSizeLdu = (definition: PartDefinition | undefined): Vec3 =>

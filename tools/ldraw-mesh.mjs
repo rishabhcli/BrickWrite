@@ -374,6 +374,7 @@ export function compileMesh(ref, resolve, options = {}) {
     hash: createHash('sha256').update(buffer).digest('hex'),
     bounds,
     missing,
+    volumeLdu3: signedVolume(geometry),
     stats: {
       vertices: geometry.positions.length / 3,
       triangles: geometry.indices.length / 3,
@@ -381,4 +382,34 @@ export function compileMesh(ref, resolve, options = {}) {
       slices: geometry.slices.map((slice) => slice.colour),
     },
   }
+}
+
+/**
+ * Enclosed volume of the compiled mesh, by the divergence theorem.
+ *
+ * Summing each triangle's signed tetrahedron against the origin gives the exact
+ * volume of a closed surface, which is what makes a mass — and therefore a
+ * centre of mass, a tipping margin and a load on a stud — a measurement rather
+ * than a guess from a bounding box. LDraw parts are modelled closed and BFC-
+ * certified, so the sign is meaningful; the absolute value guards the handful
+ * that are not, and a part whose surface is open simply reports a number that
+ * the runtime labels as derived from geometry rather than assumed.
+ */
+function signedVolume(geometry) {
+  const { positions, indices } = geometry
+  let total = 0
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = indices[index] * 3
+    const b = indices[index + 1] * 3
+    const c = indices[index + 2] * 3
+    const ax = positions[a], ay = positions[a + 1], az = positions[a + 2]
+    const bx = positions[b], by = positions[b + 1], bz = positions[b + 2]
+    const cx = positions[c], cy = positions[c + 1], cz = positions[c + 2]
+    total += (
+      ax * (by * cz - bz * cy)
+      - ay * (bx * cz - bz * cx)
+      + az * (bx * cy - by * cx)
+    )
+  }
+  return Math.abs(total) / 6
 }

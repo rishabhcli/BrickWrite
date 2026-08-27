@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "node tools/e2e-smoke.mjs",
     "catalog:sources": "node tools/fetch-sources.mjs",
-    "catalog:build": "node --max-old-space-size=8192 tools/catalog-compiler.mjs --ldraw .sources/ldraw --shadow .sources/LDCadShadowLibrary-main --rebrickable .sources/rebrickable --out public --version 2026-07 --pack-size 900",
+    "catalog:build": "node --max-old-space-size=8192 tools/catalog-compiler.mjs --ldraw .sources/ldraw --shadow .sources/LDCadShadowLibrary-main --rebrickable .sources/rebrickable --out public --version 2026-07 --pack-size 900 --pack-extra 3035,3020,3001,3010,62360,3004,3937,3938,87079,2412b,3070b,60592,60593,60594,60596,60601,38320,60616b,3023b,3024,3005",
     "catalog:fixture": "rm -rf .catalog-fixture && node tools/catalog-compiler.mjs --ldraw tools/fixtures/ldraw --shadow tools/fixtures/shadow --rebrickable tools/fixtures/rebrickable --out .catalog-fixture --version fixture-1",
     "catalog:test-fixture": "node tools/make-test-fixture.mjs",
     "check": "npm run test && npm run build",

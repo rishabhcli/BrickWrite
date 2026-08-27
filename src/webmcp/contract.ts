@@ -234,7 +234,14 @@ export const CatalogSearchSchema = z.object({
   colors: z.array(z.number().int()).max(24).optional(),
   requireGeometry: z.boolean().optional(),
   includeHelpers: z.boolean().optional(),
+  /**
+   * Which knowledge tier to search. Defaults to every loaded tier, so a
+   * question about whether a part exists is not silently answered from the
+   * subset this build happens to be able to place.
+   */
+  tier: z.enum(['placeable', 'modelled', 'catalogued', 'all']).optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).max(100_000).optional(),
 })
 
 /** Derives the JSON Schema a tool advertises from its runtime schema. */

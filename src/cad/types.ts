@@ -115,6 +115,15 @@ export interface PartDimensions {
   /** Convenience: [width in studs, height in plates, depth in studs]. */
   studs: Vec3
   bounds: PartBoundsLdu
+  /**
+   * Enclosed volume of the compiled surface, in LDU³.
+   *
+   * Measured by the compiler with the divergence theorem, which is what lets
+   * mass — and therefore centre of mass, load share and tipping margin — be a
+   * measurement rather than a bounding-box guess. Absent on records compiled
+   * before volume was captured.
+   */
+  volumeLdu3?: number
 }
 
 export interface GeometryAsset {
@@ -181,6 +190,21 @@ export interface PartDefinition {
 }
 
 /** Compact record covering every catalog identity, including uncompiled parts. */
+/**
+ * How much this build actually knows about an identity.
+ *
+ *   placeable   compiled geometry and connectors — it can be built with
+ *   modelled    LDraw models it, so shape and connections are known, but this
+ *               build carries no compiled mesh for it
+ *   catalogued  the wider LEGO catalogue records that it exists, with a name,
+ *               a category and set-appearance evidence, and nothing more
+ *
+ * The distinction is the whole point of publishing all three: "we have never
+ * heard of that part" and "that part exists and we cannot build with it" are
+ * different answers, and an operator or an agent needs to be told which one.
+ */
+export type CatalogTier = 'placeable' | 'modelled' | 'catalogued'
+
 export interface CatalogSearchRecord {
   id: string
   name: string
@@ -192,6 +216,11 @@ export interface CatalogSearchRecord {
   geometryAvailable: boolean
   connectionsAvailable: boolean
   helper: boolean
+  tier: CatalogTier
+  /** Base design this identity decorates, for a printed or mould variant. */
+  variantOf?: string
+  /** Material, when the catalogue records something other than plastic. */
+  material?: string
 }
 
 export interface ColorDefinition {
@@ -249,6 +278,30 @@ export interface Constraint {
   hard: boolean
 }
 
+/**
+ * A named sub-build captured once and stamped wherever it is needed.
+ *
+ * A real modular building reuses a bay, a balcony or a window unit a dozen
+ * times; authoring each copy separately is both slow and the reason repeated
+ * detail drifts out of alignment. Parts are stored in the module's own frame —
+ * origin at its minimum corner on its base plane — so a stamp is a translation
+ * and a quarter turn, never a re-derivation.
+ */
+export interface ModuleDefinition {
+  id: string
+  name: string
+  parts: Array<{
+    definitionId: string
+    color: number
+    /** Pose relative to the module origin, in LDU. */
+    transform: Transform
+  }>
+  /** Footprint and height in LDU, measured when the module was captured. */
+  sizeLdu: Vec3
+  createdAtRevision: number
+  author: Actor
+}
+
 export interface ModelDocument {
   /** 2 introduced matrix transforms and persistent connection edges. */
   schemaVersion: 2
@@ -264,6 +317,11 @@ export interface ModelDocument {
   steps: BuildStep[]
   notes: BuilderNote[]
   constraints: Constraint[]
+  /**
+   * Reusable sub-builds. Optional so that a document written before modules
+   * existed still loads: absence means "none captured", not "unreadable".
+   */
+  modules?: ModuleDefinition[]
 }
 
 export type CadOperation =
@@ -281,6 +339,8 @@ export type CadOperation =
   | { type: 'subassembly.lock'; subassemblyId: string; locked: boolean }
   | { type: 'constraint.set'; constraint: Constraint }
   | { type: 'constraint.remove'; constraintId: string }
+  | { type: 'module.define'; module: ModuleDefinition }
+  | { type: 'module.remove'; moduleId: string }
   /**
    * Replaces the build sequence and reassigns every part to its new step.
    * Steps and part membership have to move together or the document would
@@ -407,7 +467,27 @@ export interface CatalogSearchQuery {
   requireGeometry?: boolean
   /** Include LDraw "~" helper parts, which are not meant for direct building. */
   includeHelpers?: boolean
+  /**
+   * Which knowledge tier to search. `placeable` is what a build command needs;
+   * `all` is what "does this part exist?" needs. Defaults to every tier that is
+   * loaded, so a search never silently narrows to what happens to be resident.
+   */
+  tier?: CatalogTier | 'all'
   limit?: number
+  /** Result offset, so a caller can page through a large match set. */
+  offset?: number
+}
+
+/** One page of catalog results, with the counts needed to page and to face. */
+export interface CatalogSearchPage {
+  records: CatalogSearchRecord[]
+  /** Matches across every tier, not just the page or the requested tier. */
+  total: number
+  offset: number
+  /** Matches per tier under the same filters, for facet counts. */
+  tiers: Record<CatalogTier, number>
+  /** True when the wider catalogue index is not resident, so `catalogued` is 0. */
+  cataloguePending: boolean
 }
 
 export interface EngineSnapshot {

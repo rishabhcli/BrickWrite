@@ -1,6 +1,5 @@
 import {
   BoxSelect,
-  Boxes,
   BringToFront,
   Check,
   CircleHelp,
@@ -27,7 +26,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { findArticulatedJoints } from './cad/articulation'
 import { planSharedMutation, SharedCapabilityError, type SharedMutationId } from './cad/capabilities'
-import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './cad/catalog'
+import { catalog, originForSurface, searchCatalog, STUD_LDU, surfaceAbove } from './cad/catalog'
 import { IDENTITY_BASIS, rotateLocal } from './cad/math'
 import { createId } from './cad/ids'
 import { cadEngine } from './cad/engine'
@@ -35,15 +34,51 @@ import { getDocumentBounds, getPartBounds } from './cad/geometry'
 import { parseLDraw } from './cad/ldraw'
 import { bestSnapTransform } from './cad/snapping'
 import { session, type SessionStatus } from './cad/session'
-import type { CadOperation, CatalogSearchRecord, PartInstance, Transform, Vec3 } from './cad/types'
-import { CadViewport, type CameraView, type EditorTool, type RenderMode } from './editor/CadViewport'
+import type { CadOperation, CatalogSearchRecord, PartDefinition, PartInstance, Transform, Vec3 } from './cad/types'
+import { CadViewport, type CameraView, type EditorTool, type PlacementRequest, type RenderMode } from './editor/CadViewport'
 import { CommandDeck } from './editor/CommandDeck'
 import { ExportCenter } from './editor/ExportCenter'
 import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline, type ArticulationControl } from './editor/Panels'
 import { ProjectMenu } from './editor/ProjectMenu'
 import { ShortcutGuide } from './editor/ShortcutGuide'
+import { markWelcomeSeen, WelcomeGuide, welcomeUnseen } from './editor/WelcomeGuide'
 import { useCad } from './editor/useCad'
 import { webMcpAdapter } from './webmcp/adapter'
+
+/**
+ * What each diagnostic view is showing.
+ *
+ * The modes render real kernel state — connector genders, collision pairs,
+ * subassembly grouping — but the colours only mean something to someone who
+ * already knows the conventions, so each one says what it is.
+ */
+const RENDER_MODE_COPY: Record<Exclude<RenderMode, 'beauty'>, { title: string; detail: string; keys?: Array<{ label: string; swatch: string }> }> = {
+  orthographic: {
+    title: 'Orthographic',
+    detail: 'Parallel projection, so equal lengths measure equal on screen at any depth.',
+  },
+  connections: {
+    title: 'Connector map',
+    detail: 'Every compiled LDCad connector on every placed part, at its solved world position.',
+    keys: [
+      { label: 'Male — studs, pins, bars', swatch: '#f4aa45' },
+      { label: 'Female — anti-studs, clips, sockets', swatch: '#7cefe7' },
+    ],
+  },
+  violations: {
+    title: 'Collision report',
+    detail: 'Parts in a confirmed collision pair. Mating clearance is already subtracted, so legal stacking is not flagged.',
+    keys: [{ label: 'In a collision pair', swatch: '#ff5c48' }],
+  },
+  silhouette: {
+    title: 'Silhouette',
+    detail: 'Colour removed, so form and overhangs read without the palette competing.',
+  },
+  exploded: {
+    title: 'Exploded',
+    detail: 'Subassemblies pushed apart along their own axis. Positions are display-only; the document is unchanged.',
+  },
+}
 
 interface ToastState {
   kind: 'success' | 'error' | 'info'
@@ -62,8 +97,10 @@ export default function App() {
   const [captureRequestId, setCaptureRequestId] = useState<string | null>(null)
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [shortcutOpen, setShortcutOpen] = useState(false)
+  const [welcomeOpen, setWelcomeOpen] = useState(() => welcomeUnseen())
   const [commandOpen, setCommandOpen] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
+  const [placement, setPlacement] = useState<PlacementRequest | null>(null)
   const [toolStatus, setToolStatus] = useState({ native: false, toolCount: 0, mode: state.autonomy })
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() => session.status)
 
@@ -176,6 +213,20 @@ export default function App() {
     }
   }, [runSharedMutation, tool])
 
+  /** Region select. Additive by default, because it is reached by holding shift. */
+  const handleSelectMany = useCallback((partIds: string[], additive: boolean) => {
+    const snapshot = cadEngine.getSnapshot()
+    const next = additive ? new Set([...snapshot.selection, ...partIds]) : new Set(partIds)
+    cadEngine.setSelection([...next])
+    if (partIds.length) {
+      setToast({
+        kind: 'info',
+        title: `${partIds.length} part${partIds.length === 1 ? '' : 's'} selected`,
+        detail: `${next.size} in the selection. Shift-drag again to add more, or click empty space to clear.`,
+      })
+    }
+  }, [])
+
   const handleTransform = useCallback((partId: string, transform: Transform) => {
     const snapshot = cadEngine.getSnapshot()
     const part = snapshot.document.parts[partId]
@@ -183,6 +234,76 @@ export default function App() {
     dispatch(snapped ? 'Snap part to connectors' : 'Transform part', [{ type: 'part.transform', partId, transform: snapped ?? transform }])
   }, [dispatch, gridLdu])
 
+  /**
+   * Builds the document record for a part at an already-resolved pose.
+   *
+   * Placement and quick-add differ only in how they arrive at the transform, so
+   * everything downstream of that — subassembly, step, colour legality — is
+   * decided in one place.
+   */
+  const buildPartAt = useCallback((definition: PartDefinition, transform: Transform): PartInstance => {
+    const snapshot = cadEngine.getSnapshot()
+    const selected = snapshot.selection[0] ? snapshot.document.parts[snapshot.selection[0]] : undefined
+    const availableColor = definition.availableColors.includes(activeColor)
+      ? activeColor
+      : (definition.availableColors[0] ?? activeColor)
+    return {
+      id: createId('part'),
+      definitionId: definition.canonicalId,
+      color: availableColor,
+      transform,
+      subassemblyId: selected?.subassemblyId
+        ?? Object.values(snapshot.document.subassemblies).find((item) => !item.locked)?.id
+        ?? Object.keys(snapshot.document.subassemblies)[0],
+      stepId: snapshot.document.steps.at(-1)?.id ?? 'step_1',
+      provenance: 'human',
+      protected: false,
+    }
+  }, [activeColor])
+
+  /**
+   * Arms a catalog part for click-to-place.
+   *
+   * Dropping a brick where the operator is looking is the interaction a CAD tool
+   * is expected to have; the immediate-add path below stays for the keyboard and
+   * for the agent, but it is no longer the only way in.
+   */
+  const armPart = useCallback((record: CatalogSearchRecord) => {
+    const definition = catalog.get(record.id)
+    if (!definition) {
+      setToast({
+        kind: 'error',
+        title: 'Part cannot be placed',
+        detail: `${record.name} is a real catalog identity, but this build has no compiled geometry for it.`,
+      })
+      return
+    }
+    const color = definition.availableColors.includes(activeColor)
+      ? activeColor
+      : (definition.availableColors[0] ?? activeColor)
+    setPlacement({ definitionId: definition.canonicalId, color, quarterTurns: 0 })
+    setTool('select')
+  }, [activeColor])
+
+  const placeArmed = useCallback((transform: Transform) => {
+    if (!placement) return
+    const definition = catalog.get(placement.definitionId)
+    if (!definition) return
+    const part = buildPartAt(definition, transform)
+    if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
+      cadEngine.setSelection([part.id])
+      // Staying armed is what makes building a wall bearable: the operator keeps
+      // clicking, and each click lands another brick.
+    }
+  }, [buildPartAt, dispatch, placement])
+
+  /**
+   * Immediate add, used by the palette's `+` button and by keyboard flows.
+   *
+   * The pose is proposed from the selection or the model's edge and then handed
+   * to the connector solver, so a quick add mates to the build instead of
+   * floating beside it.
+   */
   const addPart = useCallback((record: CatalogSearchRecord) => {
     const definition = catalog.get(record.id)
     if (!definition) {
@@ -199,38 +320,30 @@ export default function App() {
     const size = definition.dimensions?.ldu ?? [STUD_LDU, 0, STUD_LDU]
     let position: Vec3
     if (selected) {
-      // Land on top of the selection. LDraw is Y-down, so "on top" is the
-      // selection's minimum Y, offset by the new part's own top overhang.
+      // Land on the selection's own exposed stud plane where it has one, so the
+      // brick sits on top rather than merely above.
+      const selectedDefinition = catalog.get(selected.definitionId)
+      const studs = surfaceAbove(selectedDefinition, selected.transform.position[1])
       const bounds = getPartBounds(selected)
-      const local = definition.dimensions?.bounds
       position = [
         selected.transform.position[0],
-        bounds.min[1] - (local ? local.min[1] : 0),
+        originForSurface(definition, studs ?? bounds.min[1]),
         selected.transform.position[2],
       ]
     } else if (snapshot.validation.partCount) {
-      position = [documentBounds.max[0] + size[0] / 2 + STUD_LDU, 0, 0]
+      position = [documentBounds.max[0] + size[0] / 2 + STUD_LDU, originForSurface(definition, 0), 0]
     } else {
-      position = [0, 0, 0]
+      position = [0, originForSurface(definition, 0), 0]
     }
-    const availableColor = definition.availableColors.includes(activeColor)
-      ? activeColor
-      : (definition.availableColors[0] ?? activeColor)
-    const part: PartInstance = {
-      id: createId('part'),
-      definitionId: definition.canonicalId,
-      color: availableColor,
-      transform: { position, basis: IDENTITY_BASIS },
-      subassemblyId: selected?.subassemblyId ?? Object.values(snapshot.document.subassemblies).find((item) => !item.locked)?.id ?? Object.keys(snapshot.document.subassemblies)[0],
-      stepId: snapshot.document.steps.at(-1)?.id ?? 'step_1',
-      provenance: 'human',
-      protected: false,
-    }
-    if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
-      cadEngine.setSelection([part.id])
+    const cursor: Transform = { position, basis: IDENTITY_BASIS }
+    const part = buildPartAt(definition, cursor)
+    const snapped = bestSnapTransform(part, snapshot.document, cursor, { radiusLdu: STUD_LDU })
+    const placed = snapped ? { ...part, transform: snapped } : part
+    if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part: placed }])) {
+      cadEngine.setSelection([placed.id])
       setTool('move')
     }
-  }, [activeColor, dispatch])
+  }, [buildPartAt, dispatch])
 
   const duplicateSelection = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
@@ -401,6 +514,7 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement
       const modifier = event.metaKey || event.ctrlKey
+      if (welcomeOpen) return
       if (commandOpen) {
         if (event.key === 'Escape' || (modifier && event.key === '/')) {
           event.preventDefault()
@@ -439,7 +553,8 @@ export default function App() {
         // Menus and dialogs own their own Escape lifecycle. Returning here
         // prevents closing an export panel from also rejecting a CAD proposal.
         if (document.querySelector('.export-panel, .project-panel')) return
-        if (playbackStep !== null) setPlaybackStep(null)
+        if (placement) setPlacement(null)
+        else if (playbackStep !== null) setPlaybackStep(null)
         else {
           const proposal = cadEngine.getSnapshot().proposals[0]
           if (proposal) cadEngine.rejectProposal(proposal.id)
@@ -461,7 +576,12 @@ export default function App() {
         event.preventDefault()
         deleteSelection()
       } else if (event.key.toLowerCase() === 'g') setTool('move')
-      else if (event.key.toLowerCase() === 'r') setTool('rotate')
+      else if (event.key.toLowerCase() === 'r') {
+        // While a ghost follows the cursor, R turns the ghost. Only once nothing
+        // is armed does it mean "pick up the rotate tool".
+        if (placement) setPlacement({ ...placement, quarterTurns: placement.quarterTurns + 1 })
+        else setTool('rotate')
+      }
       else if (event.key.toLowerCase() === 'c') setTool('connect')
       else if (event.key.toLowerCase() === 'v' || event.key === '1') setTool('select')
       else if (event.key.toLowerCase() === 'f') {
@@ -477,13 +597,29 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [commandOpen, deleteSelection, duplicateSelection, playbackStep, protectSelection, shortcutOpen])
+  }, [commandOpen, deleteSelection, duplicateSelection, placement, playbackStep, protectSelection, shortcutOpen, welcomeOpen])
 
   const selectionLabel = useMemo(() => {
     if (!state.selection.length) return 'No selection'
     if (state.selection.length === 1 && selectedDefinition) return `${selectedDefinition.name} · ${selectedPart?.id}`
     return `${state.selection.length} parts selected`
   }, [selectedDefinition, selectedPart?.id, state.selection.length])
+
+  const placementDefinition = placement ? catalog.get(placement.definitionId) : undefined
+
+  /**
+   * One line that says what the viewport will do with the next click.
+   *
+   * The status strip previously echoed the tool's own name back at the operator,
+   * which told them nothing they had not just clicked.
+   */
+  const viewportHint = useMemo(() => {
+    if (placement) return 'Click to place · R to turn'
+    if (tool === 'connect') return state.selection.length === 1 ? 'Pick the part to mate onto' : 'Select the part to move first'
+    if (tool === 'move') return state.selection.length === 1 ? `Drag the arrows · ${gridLdu} LDU snap` : 'Select one part to move it'
+    if (tool === 'rotate') return state.selection.length === 1 ? 'Drag a ring to turn' : 'Select one part to turn it'
+    return state.selection.length ? `${state.selection.length} selected · double-click for the module` : 'Click a part · shift-drag to box select'
+  }, [gridLdu, placement, state.selection.length, tool])
 
   const renderedDocument = useMemo(() => {
     if (playbackStep === null) return state.document
@@ -539,10 +675,10 @@ export default function App() {
         </div>
         <div className="rail-divider" />
         <div className="toolgroup compact-tools">
-          <IconButton icon={<Copy />} label="Duplicate" onClick={duplicateSelection} disabled={!state.selection.length} />
+          <IconButton icon={<Copy />} label="Duplicate selection" shortcut="⌘D" onClick={duplicateSelection} disabled={!state.selection.length} />
           <IconButton icon={<Rotate3d />} label="Quarter turn" onClick={rotateSelection} disabled={!state.selection.length} />
-          <IconButton icon={<Lock />} label="Protect selection" onClick={() => protectSelection(true)} disabled={!state.selection.length} />
-          <IconButton icon={<Trash2 />} label="Remove selection" onClick={deleteSelection} disabled={!state.selection.length} />
+          <IconButton icon={<Lock />} label="Protect selection from agent edits" shortcut="L" onClick={() => protectSelection(true)} disabled={!state.selection.length} />
+          <IconButton icon={<Trash2 />} label="Remove selection" shortcut="Delete" onClick={deleteSelection} disabled={!state.selection.length} />
         </div>
         <div className="rail-divider" />
         <label className="grid-picker">
@@ -555,12 +691,11 @@ export default function App() {
           </select>
         </label>
         <div className="rail-spacer" />
-        <div className="toolgroup compact-tools camera-tools">
-          <IconButton icon={<Eye />} label="Isometric view" onClick={() => setCameraView('isometric')} />
-          <IconButton icon={<BringToFront />} label="Front view" onClick={() => setCameraView('front')} />
-          <IconButton icon={<Maximize2 />} label="Top view" onClick={() => setCameraView('top')} />
-          <IconButton icon={<Focus />} label="Fit model" onClick={() => { setCameraView('isometric'); setCameraResetKey((value) => value + 1) }} />
-          <IconButton icon={<Boxes />} label="Play instruction steps" onClick={() => setPlaybackStep(playbackStep === null ? 0 : null)} />
+        <div className="toolgroup camera-tools" role="group" aria-label="Camera view">
+          <IconButton icon={<Eye />} label="Isometric view" active={cameraView === 'isometric'} onClick={() => setCameraView('isometric')} />
+          <IconButton icon={<BringToFront />} label="Front view" active={cameraView === 'front'} onClick={() => setCameraView('front')} />
+          <IconButton icon={<Maximize2 />} label="Top view" active={cameraView === 'top'} onClick={() => setCameraView('top')} />
+          <IconButton icon={<Focus />} label="Fit model to view" shortcut="F" onClick={() => { setCameraView('isometric'); setCameraResetKey((value) => value + 1) }} />
         </div>
         <label className="render-picker">
           <Layers3 size={14} />
@@ -576,16 +711,22 @@ export default function App() {
         </label>
         <div className="rail-divider" />
         <div className="toolgroup compact-tools">
-          <IconButton icon={<Undo2 />} label="Undo" onClick={() => cadEngine.undo('human')} disabled={!state.canUndo} />
-          <IconButton icon={<Redo2 />} label="Redo" onClick={() => cadEngine.redo('human')} disabled={!state.canRedo} />
-          <IconButton icon={<Command />} label="Command deck" shortcut="Meta+/ Control+/" onClick={() => { setShortcutOpen(false); setCommandOpen(true) }} />
-          <IconButton icon={<CircleHelp />} label="Keyboard shortcuts" onClick={() => { setCommandOpen(false); setShortcutOpen(true) }} />
+          <IconButton icon={<Undo2 />} label={state.canUndo ? `Undo ${state.transactions.at(-1)?.label ?? ''}`.trim() : 'Nothing to undo'} shortcut="⌘Z" onClick={() => cadEngine.undo('human')} disabled={!state.canUndo} />
+          <IconButton icon={<Redo2 />} label="Redo" shortcut="⇧⌘Z" onClick={() => cadEngine.redo('human')} disabled={!state.canRedo} />
+          <IconButton icon={<Command />} label="Command deck" shortcut="⌘/" onClick={() => { setShortcutOpen(false); setCommandOpen(true) }} />
+          <IconButton icon={<CircleHelp />} label="Keyboard shortcuts" shortcut="?" onClick={() => { setCommandOpen(false); setShortcutOpen(true) }} />
         </div>
         <ExportCenter state={state} onImport={importModel} onNotice={setToast} />
       </nav>
 
       <div className="workspace">
-        <CatalogPanel activeColor={activeColor} onColorChange={setActiveColor} onAdd={addPart} />
+        <CatalogPanel
+          activeColor={activeColor}
+          armedId={placement?.definitionId ?? null}
+          onColorChange={setActiveColor}
+          onAdd={addPart}
+          onArm={armPart}
+        />
         <section className="viewport-shell" aria-label="Three-dimensional CAD viewport" data-render-mode={renderMode}>
           <CadViewport
             document={renderedDocument}
@@ -596,9 +737,12 @@ export default function App() {
             cameraView={cameraView}
             cameraResetKey={cameraResetKey}
             renderMode={renderMode}
+            placement={placement}
             onSelect={handleSelect}
+            onSelectMany={handleSelectMany}
             onClearSelection={() => cadEngine.setSelection([])}
             onTransform={handleTransform}
+            onPlace={placeArmed}
             onCanvasReady={(canvas) => { window.__brickwrightCanvas = canvas }}
           />
           <div className="viewport-corners" aria-hidden="true"><i /><i /><i /><i /></div>
@@ -615,9 +759,53 @@ export default function App() {
           </div>
           <div className="viewport-status">
             <span><i /> LIVE KERNEL</span>
-            <b>{tool === 'connect' && state.selection.length === 1 ? 'Choose a compatible target' : tool === 'move' ? `${gridLdu} LDU snap` : tool}</b>
+            <b>{viewportHint}</b>
           </div>
-          {state.proposals.length === 0 && (
+          {renderMode !== 'beauty' && (
+            <div className="render-legend" role="status">
+              <strong>{RENDER_MODE_COPY[renderMode].title}</strong>
+              <p>{RENDER_MODE_COPY[renderMode].detail}</p>
+              {RENDER_MODE_COPY[renderMode].keys && (
+                <ul>
+                  {RENDER_MODE_COPY[renderMode].keys!.map((entry) => (
+                    <li key={entry.label}><i style={{ background: entry.swatch }} />{entry.label}</li>
+                  ))}
+                </ul>
+              )}
+              <button onClick={() => setRenderMode('beauty')}>BACK TO BEAUTY</button>
+            </div>
+          )}
+          {placement && placementDefinition && (
+            <div className="placement-hud" role="status">
+              <span className="placement-pulse" />
+              <div>
+                <small>PLACING</small>
+                <strong>{placementDefinition.name}</strong>
+              </div>
+              <p>Click in the viewport to drop it · <kbd>R</kbd> turn · <kbd>Esc</kbd> cancel</p>
+              <button onClick={() => setPlacement(null)} aria-label="Cancel placement"><X size={13} /></button>
+            </div>
+          )}
+          {state.validation.partCount === 0 && !placement && (
+            <div className="viewport-empty">
+              <div className="viewport-empty-mark" aria-hidden="true"><span /><span /><span /></div>
+              <strong>Nothing placed yet</strong>
+              <p>
+                Choose a part on the left, then click here to drop it. Placement is solved against the part's real
+                LDraw connectors, so the first brick sets the frame everything else mates into.
+              </p>
+              <button
+                onClick={() => {
+                  const first = searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0]
+                    ?? searchCatalog({ requireGeometry: true, limit: 1 })[0]
+                  if (first) armPart(first)
+                }}
+              >
+                Pick a starter brick
+              </button>
+            </div>
+          )}
+          {state.proposals.length === 0 && state.validation.partCount > 0 && (
             <button className="agent-suggest" onClick={createDemoProposal}>
               <Sparkles size={14} />
               <span><small>AGENT WORKFLOW</small>Create a ghost reinforcement proposal</span>
@@ -658,13 +846,16 @@ export default function App() {
       <Timeline
         onSequence={regenerateBuildOrder}
         state={state}
+        playbackStep={playbackStep}
+        onPlayStep={setPlaybackStep}
         onAccept={acceptProposal}
         onReject={(id) => cadEngine.rejectProposal(id)}
         onSelectIds={(ids) => cadEngine.setSelection(ids)}
       />
 
       <CommandDeck open={commandOpen} state={state} onClose={() => setCommandOpen(false)} onRun={runSharedMutation} />
-      <ShortcutGuide open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
+      <ShortcutGuide open={shortcutOpen} onClose={() => setShortcutOpen(false)} onReplayWelcome={() => { setShortcutOpen(false); setWelcomeOpen(true) }} />
+      <WelcomeGuide open={welcomeOpen} onClose={() => { markWelcomeSeen(); setWelcomeOpen(false) }} />
 
       {toast && (
         <div className={`toast ${toast.kind}`} role="status">
@@ -681,8 +872,20 @@ function ToolButton({ icon, label, shortcut, active, onClick }: { icon: React.Re
   return <button className={`tool-button ${active ? 'active' : ''}`} onClick={onClick} aria-pressed={active} aria-keyshortcuts={shortcut}>{icon}<span>{label}</span><kbd>{shortcut}</kbd></button>
 }
 
-function IconButton({ icon, label, onClick, disabled, shortcut }: { icon: React.ReactElement; label: string; onClick: () => void; disabled?: boolean; shortcut?: string }) {
-  return <button className="icon-button" onClick={onClick} disabled={disabled} aria-label={label} aria-keyshortcuts={shortcut} title={label}>{icon}</button>
+function IconButton({ icon, label, onClick, disabled, shortcut, active }: { icon: React.ReactElement; label: string; onClick: () => void; disabled?: boolean; shortcut?: string; active?: boolean }) {
+  return (
+    <button
+      className={`icon-button ${active ? 'active' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={active}
+      aria-keyshortcuts={shortcut}
+      title={shortcut ? `${label} (${shortcut})` : label}
+    >
+      {icon}
+    </button>
+  )
 }
 
 function Metric({ label, value, good }: { label: string; value: string; good?: boolean }) {

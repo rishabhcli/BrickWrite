@@ -4,6 +4,7 @@ import type {
   CadOperation,
   ConnectionEdge,
   Constraint,
+  ModuleDefinition,
   ModelDocument,
   PartInstance,
   Subassembly,
@@ -36,6 +37,7 @@ export type EntityMutation =
   | { kind: 'steps'; value: BuildStep[] }
   | { kind: 'notes'; value: BuilderNote[] }
   | { kind: 'constraints'; value: Constraint[] }
+  | { kind: 'modules'; value: ModuleDefinition[] }
 
 export interface TouchedEntities {
   readonly partIds: readonly string[]
@@ -91,6 +93,9 @@ export function applyMutations(document: ModelDocument, mutations: readonly Enti
         break
       case 'constraints':
         next.constraints = mutation.value
+        break
+      case 'modules':
+        next.modules = mutation.value
         break
     }
   }
@@ -151,6 +156,12 @@ export function invertMutations(
         if (!seen.has('constraints')) {
           seen.add('constraints')
           inverse.push({ kind: 'constraints', value: clone(document.constraints) })
+        }
+        break
+      case 'modules':
+        if (!seen.has('modules')) {
+          seen.add('modules')
+          inverse.push({ kind: 'modules', value: clone(document.modules ?? []) })
         }
         break
     }
@@ -300,6 +311,17 @@ export function mutationsForOperations(
       }
       case 'constraint.remove':
         emit({ kind: 'constraints', value: working.constraints.filter((constraint) => constraint.id !== operation.constraintId) })
+        break
+      case 'module.define': {
+        const modules = clone(working.modules ?? [])
+        const index = modules.findIndex((module) => module.id === operation.module.id)
+        if (index >= 0) modules[index] = clone(operation.module)
+        else modules.push(clone(operation.module))
+        emit({ kind: 'modules', value: modules })
+        break
+      }
+      case 'module.remove':
+        emit({ kind: 'modules', value: (working.modules ?? []).filter((module) => module.id !== operation.moduleId) })
         break
       case 'steps.replace': {
         emit({ kind: 'steps', value: operation.steps.map((step) => ({ ...step, partIds: [...step.partIds] })) })

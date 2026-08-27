@@ -45,17 +45,30 @@ export function surfaceMaterialFor(colorCode: number, appearance: PartAppearance
       depthWrite: false, emissive: '#4b0e09', emissiveIntensity: 0.8, side: THREE.DoubleSide,
     })
   } else {
+    // Injection-moulded ABS: a satin dielectric with a thin, slightly rough
+    // clearcoat. The numbers are the ones that make a brick read as plastic
+    // rather than as painted resin — a roughness near 0.28 keeps the broad
+    // softbox highlight without turning the face into a mirror, and the
+    // clearcoat supplies the second, tighter specular that polished ABS has.
+    // Transparent elements are true transmission at ABS's own index of
+    // refraction, so they bend what is behind them instead of just fading.
     material = new THREE.MeshPhysicalMaterial({
       color: color.hex,
-      roughness: metallic ? 0.22 : transparent ? 0.08 : 0.42,
-      metalness: metallic ? 0.85 : 0.0,
-      clearcoat: transparent ? 0.6 : 0.15,
-      clearcoatRoughness: 0.35,
-      transmission: transparent ? 0.55 : 0,
-      thickness: transparent ? 2.5 : 0,
+      roughness: metallic ? 0.2 : transparent ? 0.06 : 0.28,
+      metalness: metallic ? 0.9 : 0.0,
+      clearcoat: metallic ? 0.2 : transparent ? 0.85 : 0.42,
+      clearcoatRoughness: transparent ? 0.06 : 0.22,
+      // Deliberately *not* `transmission`. Physical transmission renders the
+      // whole scene again into a transmission target for every transmissive
+      // draw: on a glazed building it took a 1,464-part model from 106 draw
+      // calls a frame to 3,278. Alpha with a strong clearcoat and ABS's own
+      // index of refraction reads as trans-plastic at a constant cost, which is
+      // the right trade for a tool that has to hold thousands of parts.
       ior: 1.52,
+      specularIntensity: 1,
+      envMapIntensity: metallic ? 1.35 : 1,
       transparent,
-      opacity: transparent ? Math.max(0.55, color.alpha) : 1,
+      opacity: transparent ? Math.max(0.72, color.alpha) : 1,
       emissive: appearance === 'selected' ? '#3a2606' : '#000000',
       emissiveIntensity: appearance === 'selected' ? 0.55 : 0,
     })
@@ -74,7 +87,7 @@ function edgeMaterial(colorCode: number, appearance: PartAppearance): THREE.Line
   const material = new THREE.LineBasicMaterial({
     color: appearance === 'selected' ? '#f7b04a' : appearance === 'ghost' ? '#bafff5' : base.edge,
     transparent: true,
-    opacity: appearance === 'selected' ? 0.95 : appearance === 'ghost' ? 0.4 : 0.34,
+    opacity: appearance === 'selected' ? 0.95 : appearance === 'ghost' ? 0.4 : 0.26,
     depthWrite: false,
   })
   edgeMaterialCache.set(key, material)

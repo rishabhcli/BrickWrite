@@ -7,9 +7,10 @@ viewport and undo stack.
 ![Brickwright CAD console](docs/assets/brickwright-console.png)
 
 This repository is a working vertical slice, not a mock chat interface. You can search the
-real LDraw library, place real parts, select, transform, rotate, recolour, connect, protect,
-duplicate, validate, undo, export and replay the model manually. A WebMCP adapter exposes
-those same semantics as dynamic Site Tools.
+real LDraw library, click a part into the viewport and watch it mate on real connectors, drag
+it with a transform gizmo, box-select a region, rotate, recolour, connect, protect, duplicate,
+validate, undo, export and replay the model manually. A WebMCP adapter exposes those same
+semantics as dynamic Site Tools.
 
 ## Run it
 
@@ -42,7 +43,9 @@ runtime assets. Measured output of the committed build (`catalog/2026-07`):
 
 | Measurement | Value |
 | --- | --- |
-| LDraw catalog identities | **22,941** (17,982 parts + 4,959 shortcuts) |
+| Total searchable identities | **81,774** |
+| …LDraw-modelled identities | **22,941** (17,982 parts + 4,959 shortcuts) |
+| …catalogued-only identities, from the Rebrickable catalogue | **58,833** |
 | …of which LDraw `~` helper parts, hidden from default search | 2,741 |
 | Retired part numbers resolved to their replacement | **1,150** (e.g. `3023` → `3023b`) |
 | Parts with authoritative LDCad connection metadata | **17,364** (75.7%) |
@@ -56,9 +59,32 @@ runtime assets. Measured output of the committed build (`catalog/2026-07`):
 | Unresolved LDraw references during geometry compilation | **0** |
 | LDraw source licensing observed | 22,941 files CC BY 4.0 |
 
-Those two tiers are deliberately distinct. Every catalog identity is searchable and
-inspectable; only the pack is placeable. Asking the agent to place a search-only part
-returns a teaching error rather than a guess:
+### Three tiers, and search says which one it found
+
+The index answers for the whole catalogue, and every result carries how much this build
+actually knows about it:
+
+| Tier | Count | What is known | What you can do |
+| --- | ---: | --- | --- |
+| `placeable` | **900** | Compiled geometry, measured envelope, LDCad connectors | Build with it |
+| `modelled` | **22,041** | LDraw models the shape and connections; no mesh in this build | Inspect it |
+| `catalogued` | **58,833** | Name, category and official-set appearances, and nothing else | Confirm it is real |
+
+That distinction is the point. *"We have never heard of that part"* and *"that part is real
+and this build cannot place it"* are different answers, and both a human and an agent need
+to be told which one they are getting. `catalog_search` reports `tier` on every hit, facet
+counts across all three, and `cataloguedTierSearched` so a zero is never mistaken for a fact.
+
+The wider catalogue is a separate 7 MB payload, hash-verified like every other asset and
+fetched the first time anybody searches past the modelled library — an editing session never
+pays for it.
+
+Search is ranked rather than filtered: an exact part number wins, then a name match, then a
+measured envelope, then a word buried mid-string, with official-set frequency breaking ties.
+`2 x 4`, `2x4`, `3001`, `slope 45` and `minifig head` all do what they look like they should,
+and results page rather than stopping at an arbitrary cap.
+
+Asking the agent to place a search-only part returns a teaching error rather than a guess:
 
 ```text
 [GEOMETRY_UNAVAILABLE] Part 3023 (Plate 1 x 2) exists in catalog 2026-07 but has no
@@ -68,7 +94,8 @@ Repair: call catalog_search with requireGeometry=true and choose a part that can
 
 There is no procedural fallback catalog. If the compiled assets are missing, Brickwright
 refuses to start and says so, because *"is this a real LEGO part?"* must always have a
-defensible answer.
+defensible answer — and with 81,774 indexed identities, that answer now covers the catalogue
+rather than the subset this build can draw.
 
 LDraw renames parts across updates and leaves the retired number behind as an alias file.
 Those numbers stay in circulation for years, so a rename is treated as an authoritative
@@ -100,6 +127,11 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   React are derived views, never the source of truth.
 - **Real compiled LDraw geometry** streamed as content-addressed binary meshes, shared per
   definition, with per-slice materials for colours baked into a part.
+- **Direct manipulation that is measured, not assumed** — a part is placed by clicking where
+  it goes, with a ghost that resolves through the same connector solver a commit uses, and
+  moved with a translate/rotate gizmo whose drawn handles the browser acceptance run measures
+  in screen pixels. Shift-drag selects a region. Nothing in the viewport bypasses the kernel:
+  a drop and a drag are each one atomic, reversible transaction.
 - **Enforced asset integrity** — catalog payloads and meshes are byte-counted and SHA-256
   verified before parsing; the mesh decoder rejects malformed counts, slices, bounds,
   non-finite coordinates and out-of-range indices before anything reaches Three.js.
@@ -161,6 +193,107 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   relays a stack trace. A versioned tool profile hash lets a plan be refused when the surface
   it was made against no longer exists.
 
+## Building at scale: one instruction, a whole storey
+
+Placing a model brick by brick is slow, and it is where quality is lost. A wall
+authored one part at a time by a language model has stacked seams, unbonded courses and
+corners that do not tie. `src/cad/assembly.ts` is a parametric assembly solver that does the
+bricklaying, and the kernel then checks the result like any other edit.
+
+```js
+// One call. Not 62.
+await window.brickwright.invoke('action_mutate', {
+  action: 'build_enclosure',
+  expectedRevision: 7,
+  args: { widthStuds: 20, depthStuds: 16, courses: 5, floor: true, color: 4,
+          openings: [{ atStud: 8, widthStuds: 4, fromCourse: 0, toCourse: 3 }] },
+})
+// → 84 parts in 5 courses, every course staggered against the one below.
+
+await window.brickwright.invoke('action_mutate', { action: 'stack_selection', args: { copies: 4 } })
+// → 336 parts placed in 4 storeys, each 136 LDU above the last.
+```
+
+Measured on that exact pair of calls: **420 parts, 3,372 mated connectors, 0 collisions, 0
+loose groups, one connected component**, sequenced into **53 verified build steps in 324 ms**.
+
+| Generator | What it solves |
+| --- | --- |
+| **`build_structure`** | **A whole building.** Deck, storeys, real window and door frames seated in the openings, a contrasting band between storeys, and a roof deck with a parapet — one instruction, one transaction |
+| `build_wall` | A bonded run: courses offset so no seam runs through two of them, exact coverage from real part lengths, openings that hold real elements |
+| `build_enclosure` | Four walls whose corners interlock — the X and Z runs alternate which goes full length each course — over a deck the walls stand on |
+| `build_field` | A floor, roof or baseplate, with staggered rows and an optional second cross-bonded layer that makes it a rigid slab rather than loose plates |
+| `stack_selection` | A tower from one storey: the selection is measured between its own mating planes and repeated upward, snapped to the plate grid |
+| `build_hinged_flap` | A flap that opens: a hinge line and a panel the kernel reads as a real revolute joint and carries the rigid island with |
+| `capture_module` / `stamp_module` | Author a bay once and place it everywhere. A module is captured into its own frame, so it stamps onto the ground wherever it was built, and a quarter turn rotates it about its own footprint |
+
+### A city block in four instructions
+
+```js
+const call = (action, args) => window.brickwright.invoke('action_mutate',
+  { action, expectedRevision: window.brickwright.getDocument().revision, args })
+
+await call('build_structure', { widthStuds: 16, depthStuds: 14, storeys: 3, coursesPerStorey: 6,
+                                color: 4, bandColor: 15, windowsPerSide: 2, door: true })
+await call('capture_module',  { name: 'Corner block' })
+await call('stamp_module',    { module: 'Corner block', atLdu: [360, 0, 0], copies: 2,
+                                spacingLdu: [360, 0, 0], color: 14 })
+await call('stamp_module',    { module: 'Corner block', atLdu: [0, 0, 320], quarterTurns: 1, color: 2 })
+```
+
+Measured: **1,304 parts, 8,832 mated connectors, 0 collisions, 4 buildings, in 6.6 seconds.** Each
+call is one undoable transaction.
+
+An opening is not just a hole. `build_wall` and `build_structure` seat a real compiled window
+or door frame in it, chosen by measured footprint, and the element decides the course span —
+a frame that does not reach the top of its hole would leave a gap. Where the pack has no frame
+of that width, the plan says so and cuts a bare opening instead of pretending.
+
+The courses immediately above and below an opening **bridge its edges** rather than placing
+their own seam there. Without that, a doorway's two edges continue as one unbroken vertical
+joint through the whole wall and the run beside it comes away as a separate column — sound in
+the render, in pieces when you pick it up.
+
+Nothing here estimates. Lengths and course pitch come from the compiled envelope of parts
+this build can actually place, never from a hardcoded table. Every plan returns a report —
+part count, courses, the full bill, and **every course it could not fully bond** — so a
+caller can check the work instead of trusting it. And it is all ordinary `part.add`
+operations, so the revision guard, protected regions, hard constraints and triangle-confirmed
+collision detection all still apply, a whole building previews as a ghost before it is
+accepted, and one `⌘Z` reverses it.
+
+The same generators are in the human Command Deck under **ASSEMBLE**, because parity between
+the two operators is an invariant of this project rather than a slogan.
+
+## Physics, and what it is honest about
+
+`src/cad/statics.ts` answers what collision cannot: does the model stand up, and what is
+holding it together. The compiler measures each part's **exact enclosed volume** from its
+compiled surface, so mass, centre of mass, the support polygon and the tipping margin are
+measurements rather than bounding-box guesses. The showcase rover reports **67.8 g, stable
+with 80 LDU of margin, on an 8 × 12 stud footprint**.
+
+Two numbers are not measurements and say so in every report that uses them:
+
+- **Mass runs 8–15% heavy.** A 2 × 4 brick computes at 2.67 g against a moulded 2.32 g,
+  because LDraw models an idealized solid. The bias is uniform, so centre of mass, load share
+  and tipping margin are unaffected — and it is stated rather than scaled away.
+- **Clutch capacity is an assumption.** LEGO publishes none; 100 gf per stud is the
+  conservative end of independent measurements, and it is carried in the report.
+
+Clutch resists being *pulled apart*, so the analysis walks upward from whatever rests on the
+ground and treats anything the walk never reaches as hanging, with the whole cluster's mass on
+the connections into it. A brick resting on a brick is compression and is not flagged.
+
+## Looking like plastic
+
+The viewport generates its own studio environment — a three-band sky, an overhead softbox and
+a low bounce, prefiltered through `PMREMGenerator` — because a build guide that phones out for
+an HDR is not self-contained. Materials are injection-moulded ABS: a satin dielectric under a
+tighter clearcoat, lit to agree with the softbox baked into the environment. Window frames are
+seated in white and glazed in Trans-Clear rather than inheriting the wall colour, which is what
+stops a generated facade reading as a wall with holes in it.
+
 ## Tool surface
 
 | Always readable | Propose mode | Build mode |
@@ -174,15 +307,15 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 | `builder_feedback_get` |  |  |
 | `capabilities_search` / `capabilities_help` / `action_read` |  |  |
 
-Behind `action_read` / `action_mutate`: LDraw and MPD export, BOM, catalog coverage, weak
-attachments, duplicate, mirror and note responses. Annotations are hints only — revision
+Behind `action_read` / `action_mutate`: the four parametric assembly generators above, LDraw
+and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror and note responses. Annotations are hints only — revision
 checks, protected-region enforcement, geometry availability, colour policy and collision
 rejection live in the CAD kernel.
 
 ## Verification
 
 ```bash
-npm run check            # 195 deterministic tests + strict TS + production build
+npm run check            # 310 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL: catalog, meshes, WebMCP, persistence and delivery output
 npm run verify:all       # both gates above
@@ -192,7 +325,27 @@ The browser run asserts relationships rather than magic numbers: that the placea
 strict subset of the catalog, that compiled `.bwmesh` assets actually reach the GPU, that
 preflight does not mutate, that acceptance is one revision, that an unplaceable identity is
 refused, that a stale plan is rejected, and that the export's type-1 line count matches the
-document. It also opens the delivery center, verifies a hierarchical MPD, generates the real
+document — and imports back as the same build.
+
+It asserts that a generated building is actually good: that one call produces a whole storey,
+that the report says running bond and the kernel agrees there are no collisions, that the bill
+accounts for every part placed, that two generator calls are exactly two undoable
+transactions, and that the result still sequences into a verified instruction set. It then
+raises a three-storey building with seated windows and a door from a single instruction,
+captures it as a module, stamps a second copy of it, and asserts the block is collision-free
+and that the stamp placed exactly as many parts as the module holds.
+
+It also asserts that the index reaches the whole catalogue: that the total exceeds the
+modelled library by tens of thousands of identities, that an exact part number ranks first,
+that a whole-catalogue search still surfaces buildable parts rather than burying them, that
+paging is deterministic across repeated calls, and that the panel a human uses reports the
+same 81,774 identities the agent sees.
+
+It also asserts the things an interface can get wrong while the code beneath it is correct:
+that the transform gizmo's *drawn* handles span enough screen pixels to grab, that dragging
+them commits exactly one transaction, that a viewport click places exactly one part, that
+shift-drag selects a region, that the build sequence is still on screen after an edit, and
+that the first-run guide appears once and not again. It also opens the delivery center, verifies a hierarchical MPD, generates the real
 printable guide and asserts that its step images are embedded rather than remotely fetched.
 
 Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); remaining

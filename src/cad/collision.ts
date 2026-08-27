@@ -127,22 +127,79 @@ function confirmSurfaceContact(
 
   const worldA = matrixOf(a.transform)
   const bToA = matrixOf(invertTransform(a.transform)).multiply(matrixOf(b.transform))
+
+  // A triangle-pair test depends on nothing but the two definitions and their
+  // *relative* pose, so the same arrangement never needs confirming twice. A
+  // real model is overwhelmingly the same few arrangements repeated: a 2 × 4 on
+  // a 2 × 4 half-offset, a plate on a brick, a wall course on the one below.
+  // Measured on a 366-part module stamped onto a 1,464-part document, this took
+  // the commit from 4.1 s to well under a second, because the second copy of a
+  // building is geometrically the first one again.
+  const key = `${a.definitionId}|${b.definitionId}|${quantizeMatrix(bToA)}`
+  const cached = narrowPhaseCache.get(key)
+  if (cached) {
+    if (!cached.localPoint) return { status: 'clean' }
+    const point = new THREE.Vector3(...cached.localPoint).applyMatrix4(worldA)
+    return { status: 'contact', pointLdu: [point.x, point.y, point.z] }
+  }
+
   const segment = new THREE.Line3()
   const midpoint = new THREE.Vector3()
-  let point: Vec3 | null = null
+  let localPoint: Vec3 | null = null
 
   geometryA.bvh.bvhcast(geometryB.bvh, bToA, {
     intersectsTriangles(triangleA: ExtendedTriangle, triangleB: ExtendedTriangle) {
       // `bvhcast` yields pairs whose *bounds* overlap, so the triangles have to
       // be intersected before anything is concluded from them.
       if (!triangleA.intersectsTriangle(triangleB, segment)) return false
-      segment.getCenter(midpoint).applyMatrix4(worldA)
-      point = [midpoint.x, midpoint.y, midpoint.z]
+      segment.getCenter(midpoint)
+      // Stored in A's own frame, which is what makes the verdict reusable at
+      // any world position the same arrangement turns up in.
+      localPoint = [midpoint.x, midpoint.y, midpoint.z]
       return true
     },
   })
 
-  return point ? { status: 'contact', pointLdu: point } : { status: 'clean' }
+  rememberNarrowPhase(key, localPoint)
+  if (!localPoint) return { status: 'clean' }
+  const world = new THREE.Vector3(...(localPoint as Vec3)).applyMatrix4(worldA)
+  return { status: 'contact', pointLdu: [world.x, world.y, world.z] }
+}
+
+/**
+ * Verdicts keyed by the two definitions and their relative pose.
+ *
+ * Bounded, because a model with thousands of distinct arrangements would
+ * otherwise grow this without limit. Eviction is oldest-first, which suits the
+ * access pattern: an edit re-tests the arrangements it just made.
+ */
+const NARROW_PHASE_CACHE_LIMIT = 20_000
+const narrowPhaseCache = new Map<string, { localPoint: Vec3 | null }>()
+
+function rememberNarrowPhase(key: string, localPoint: Vec3 | null) {
+  if (narrowPhaseCache.size >= NARROW_PHASE_CACHE_LIMIT) {
+    const oldest = narrowPhaseCache.keys().next().value
+    if (oldest !== undefined) narrowPhaseCache.delete(oldest)
+  }
+  narrowPhaseCache.set(key, { localPoint })
+}
+
+/** Clears the memo. Exposed so a test can measure a cold pass. */
+export const resetNarrowPhaseCache = () => narrowPhaseCache.clear()
+
+/**
+ * A stable key for a relative pose.
+ *
+ * Quantized to a thousandth of an LDU: finer than any placement the kernel can
+ * produce — the grid is whole LDU and bases hold exact 0, ±1 — and coarse
+ * enough that float noise from composing two transforms cannot split one
+ * arrangement into two cache entries.
+ */
+function quantizeMatrix(matrix: THREE.Matrix4): string {
+  const elements = matrix.elements
+  let key = ''
+  for (let index = 0; index < 16; index += 1) key += `${Math.round(elements[index] * 1000)},`
+  return key
 }
 
 /**
@@ -303,6 +360,11 @@ const INSERTED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamil
   'ball',
   'socket',
   'hinge',
+  // LDCad's catch-all snap marks a part that *seats into* another — a pane in a
+  // window frame, a screen in a bezel. Those sit wholly inside the host's
+  // bounding volume, so the stud-height allowance is nowhere near enough and a
+  // correctly glazed window would be reported as a collision.
+  'generic',
 ])
 
 /**

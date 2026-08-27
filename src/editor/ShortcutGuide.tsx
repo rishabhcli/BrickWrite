@@ -4,27 +4,29 @@ import { useEffect, useRef } from 'react'
 interface ShortcutGuideProps {
   open: boolean
   onClose: () => void
+  /** Reopens the first-run orientation, so dismissing it is reversible. */
+  onReplayWelcome?: () => void
 }
 
 const groups = [
   {
     title: 'Create & edit',
     items: [
-      ['V / 1', 'Select'], ['G', 'Move'], ['R', 'Rotate'], ['C', 'Connect'],
+      ['V / 1', 'Select'], ['⇧ drag', 'Box select'], ['G', 'Move'], ['R', 'Rotate'], ['C', 'Connect'],
       ['⌘ D', 'Duplicate'], ['Delete', 'Remove'], ['L', 'Lock or unlock'],
     ],
   },
   {
     title: 'Navigate',
-    items: [['F', 'Frame the model'], ['⌘ K', 'Search parts'], ['⌘ /', 'Command deck'], ['Esc', 'Cancel preview'], ['?', 'This guide']],
+    items: [['F', 'Frame the model'], ['⌘ K', 'Search parts'], ['⌘ /', 'Command deck'], ['Esc', 'Cancel placement or preview'], ['?', 'This guide']],
   },
   {
     title: 'History',
-    items: [['⌘ Z', 'Undo'], ['⇧ ⌘ Z', 'Redo'], ['Enter', 'Accept proposal']],
+    items: [['⌘ Z', 'Undo'], ['⇧ ⌘ Z', 'Redo'], ['Enter', 'Accept proposal'], ['R', 'Turn the part being placed']],
   },
 ] as const
 
-export function ShortcutGuide({ open, onClose }: ShortcutGuideProps) {
+export function ShortcutGuide({ open, onClose, onReplayWelcome }: ShortcutGuideProps) {
   const close = useRef<HTMLButtonElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
 
@@ -47,10 +49,20 @@ export function ShortcutGuide({ open, onClose }: ShortcutGuideProps) {
         aria-modal="true"
         aria-labelledby="shortcut-title"
         onKeyDown={(event) => {
-          // The close control is the modal's only focusable element.
-          if (event.key === 'Tab') {
+          // Focus stays inside the dialog. It now holds more than one control,
+          // so the trap cycles through them rather than pinning the close button.
+          if (event.key !== 'Tab') return
+          const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+          if (focusable.length === 0) return
+          const first = focusable[0]
+          const last = focusable[focusable.length - 1]
+          const active = document.activeElement
+          if (event.shiftKey && (active === first || !event.currentTarget.contains(active))) {
             event.preventDefault()
-            close.current?.focus()
+            last.focus()
+          } else if (!event.shiftKey && active === last) {
+            event.preventDefault()
+            first.focus()
           }
         }}
       >
@@ -70,7 +82,10 @@ export function ShortcutGuide({ open, onClose }: ShortcutGuideProps) {
             </section>
           ))}
         </div>
-        <footer>Human and agent edits share one revisioned history. Keyboard commands never bypass the CAD kernel.</footer>
+        <footer>
+          <span>Human and agent edits share one revisioned history. Keyboard commands never bypass the CAD kernel.</span>
+          {onReplayWelcome && <button className="shortcut-replay" onClick={onReplayWelcome}>Show the welcome guide</button>}
+        </footer>
       </section>
     </div>
   )

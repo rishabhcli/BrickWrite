@@ -1,4 +1,5 @@
 import {
+  Blocks,
   Boxes,
   Check,
   Command,
@@ -25,6 +26,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { findArticulatedJoints } from '../cad/articulation'
+import { getColor } from '../cad/catalog'
+import { describeModule, documentModules } from '../cad/modules'
 import {
   SHARED_MUTATION_CAPABILITIES,
   type SharedMutationId,
@@ -38,7 +41,10 @@ interface CommandDeckProps {
   onRun: (capability: SharedMutationId, args?: Record<string, unknown>) => boolean
 }
 
-const GROUP_ORDER = ['project', 'transform', 'mechanism', 'structure', 'constraints', 'collaborate', 'sequence'] as const
+const GROUP_ORDER = ['assemble', 'project', 'transform', 'mechanism', 'structure', 'constraints', 'collaborate', 'sequence'] as const
+
+/** Everyday building colours offered to the generators, in LDraw code order. */
+const BUILD_COLORS = [15, 71, 72, 0, 4, 14, 1, 2, 25, 320, 191, 27, 70, 47]
 const SELECTION_ACTIONS = new Set<SharedMutationId>([
   'duplicate_selection',
   'mirror_selection',
@@ -48,6 +54,7 @@ const SELECTION_ACTIONS = new Set<SharedMutationId>([
 ])
 
 const groupIcon = (group: string): ReactNode => {
+  if (group === 'assemble') return <Blocks size={14} />
   if (group === 'project') return <FilePenLine size={14} />
   if (group === 'transform') return <Move3d size={14} />
   if (group === 'mechanism') return <GitBranch size={14} />
@@ -123,8 +130,31 @@ export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
   const [paletteText, setPaletteText] = useState('')
   const [constraintHard, setConstraintHard] = useState(true)
   const [constraintId, setConstraintId] = useState('')
+  // Parametric assembly. Defaults describe a small building storey rather than
+  // a degenerate one, so the first run produces something worth looking at.
+  const [runStuds, setRunStuds] = useState(16)
+  const [runDepthStuds, setRunDepthStuds] = useState(12)
+  const [courses, setCourses] = useState(4)
+  const [wallAxis, setWallAxis] = useState<'x' | 'z'>('x')
+  const [wallFamily, setWallFamily] = useState<'brick' | 'plate' | 'tile'>('brick')
+  const [wallDepth, setWallDepth] = useState(1)
+  const [buildColor, setBuildColor] = useState(71)
+  const [withFloor, setWithFloor] = useState(true)
+  const [rigidFloor, setRigidFloor] = useState(true)
+  const [withDoor, setWithDoor] = useState(true)
+  const [doorWidth, setDoorWidth] = useState(0)
+  const [storeys, setStoreys] = useState(3)
+  const [windowsPerSide, setWindowsPerSide] = useState(2)
+  // -1 means "no contrasting band", which the capability treats as absent.
+  const [bandColor, setBandColor] = useState(15)
+  const [moduleName, setModuleName] = useState('')
+  const [moduleId, setModuleId] = useState('')
+  const [stampAt, setStampAt] = useState<[number, number, number]>([0, 0, 0])
+  const [stampTurns, setStampTurns] = useState(0)
+  const [stampCopies, setStampCopies] = useState(1)
 
   const parts = useMemo(() => Object.values(state.document.parts), [state.document.parts])
+  const modules = useMemo(() => documentModules(state.document), [state.document])
   const subassemblies = useMemo(() => Object.values(state.document.subassemblies), [state.document.subassemblies])
   const openNotes = useMemo(() => state.document.notes.filter((note) => note.status === 'open'), [state.document.notes])
   const joints = useMemo(
@@ -163,6 +193,7 @@ export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
     setPaletteText(Array.isArray(palette?.value) ? (palette.value as number[]).join(', ') : '')
     setConstraintHard(dimensions?.hard ?? budget?.hard ?? true)
     setConstraintId(state.document.constraints[0]?.id ?? '')
+    setModuleId(documentModules(state.document)[0]?.id ?? '')
     requestAnimationFrame(() => search.current?.focus())
     return () => {
       returnFocus.current?.focus()
@@ -218,6 +249,47 @@ export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
       case 'set_piece_budget': return { maxParts, hard: constraintHard }
       case 'set_palette': return { colors: paletteCodes, hard: constraintHard }
       case 'remove_constraint': return { constraintId }
+      case 'build_wall': return {
+        lengthStuds: runStuds,
+        courses,
+        axis: wallAxis,
+        family: wallFamily,
+        depthStuds: wallDepth,
+        color: buildColor,
+        ...(doorWidth > 0
+          ? { openings: [{ atStud: Math.max(0, Math.floor((runStuds - doorWidth) / 2)), widthStuds: doorWidth, fromCourse: 0, toCourse: Math.max(0, courses - 2) }] }
+          : {}),
+      }
+      case 'build_enclosure': return {
+        widthStuds: runStuds,
+        depthStuds: runDepthStuds,
+        courses,
+        family: wallFamily === 'tile' ? 'brick' : wallFamily,
+        wallDepthStuds: wallDepth,
+        color: buildColor,
+        floor: withFloor,
+        floorLayers: rigidFloor ? 2 : 1,
+        ...(doorWidth > 0
+          ? { openings: [{ atStud: Math.max(0, Math.floor((runStuds - doorWidth) / 2)), widthStuds: doorWidth, fromCourse: 0, toCourse: Math.max(0, courses - 2) }] }
+          : {}),
+      }
+      case 'build_field': return { widthStuds: runStuds, depthStuds: runDepthStuds, layers: rigidFloor ? 2 : 1, family: wallFamily === 'brick' ? 'plate' : wallFamily, color: buildColor }
+      case 'build_hinged_flap': return { widthStuds: runStuds, reachStuds: runDepthStuds, color: buildColor }
+      case 'stack_selection': return { copies: storeys }
+      case 'build_structure': return {
+        widthStuds: runStuds,
+        depthStuds: runDepthStuds,
+        storeys,
+        coursesPerStorey: courses,
+        color: buildColor,
+        ...(bandColor >= 0 ? { bandColor } : {}),
+        windowsPerSide,
+        windowWidthStuds: 2,
+        door: withDoor,
+        }
+      case 'capture_module': return { name: moduleName }
+      case 'stamp_module': return { module: moduleId, atLdu: stampAt, quarterTurns: stampTurns, copies: stampCopies }
+      case 'remove_module': return { module: moduleId }
     }
   }
 
@@ -336,6 +408,145 @@ export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
                 </>
               )}
               {active === 'mirror_selection' && <NumberControl label="Mirror plane X" value={axis} suffix="LDU" onChange={setAxis} />}
+              {active === 'build_hinged_flap' && (
+                <>
+                  <div className="command-grid">
+                    <NumberControl label="Hinge width" value={runStuds} min={2} max={64} suffix="studs" onChange={setRunStuds} />
+                    <NumberControl label="Flap reach" value={runDepthStuds} min={1} max={64} suffix="studs" onChange={setRunDepthStuds} />
+                  </div>
+                  <SelectControl
+                    label="Colour"
+                    value={String(buildColor)}
+                    onChange={(value) => setBuildColor(Number(value))}
+                    options={BUILD_COLORS.map((code) => ({ value: String(code), label: getColor(code).name }))}
+                  />
+                  <p className="command-hint">
+                    A hinge line and a plate panel. The joint is a real revolute in the connection graph, so the inspector — or
+                    the agent — can swing it, and everything rigidly attached to the flap moves with it.
+                  </p>
+                </>
+              )}
+              {(active === 'build_wall' || active === 'build_enclosure' || active === 'build_field') && (
+                <>
+                  <div className="command-grid">
+                    <NumberControl label={active === 'build_wall' ? 'Run' : 'Width'} value={runStuds} min={1} max={256} suffix="studs" onChange={setRunStuds} />
+                    {active !== 'build_wall' && <NumberControl label="Depth" value={runDepthStuds} min={1} max={256} suffix="studs" onChange={setRunDepthStuds} />}
+                    {active !== 'build_field' && <NumberControl label="Courses" value={courses} min={1} max={64} suffix="high" onChange={setCourses} />}
+                  </div>
+                  <div className="command-grid">
+                    <SelectControl
+                      label="Part family"
+                      value={wallFamily}
+                      onChange={(value) => setWallFamily(value as 'brick' | 'plate' | 'tile')}
+                      options={[{ value: 'brick', label: 'Bricks' }, { value: 'plate', label: 'Plates' }, { value: 'tile', label: 'Tiles' }]}
+                    />
+                    {active !== 'build_field' && (
+                      <SelectControl
+                        label="Wall thickness"
+                        value={String(wallDepth)}
+                        onChange={(value) => setWallDepth(Number(value))}
+                        options={[{ value: '1', label: '1 stud' }, { value: '2', label: '2 studs' }]}
+                      />
+                    )}
+                    {active === 'build_wall' && (
+                      <SelectControl label="Runs along" value={wallAxis} onChange={(value) => setWallAxis(value as 'x' | 'z')} options={[{ value: 'x', label: 'X axis' }, { value: 'z', label: 'Z axis' }]} />
+                    )}
+                  </div>
+                  <SelectControl
+                    label="Colour"
+                    value={String(buildColor)}
+                    onChange={(value) => setBuildColor(Number(value))}
+                    options={BUILD_COLORS.map((code) => ({ value: String(code), label: getColor(code).name }))}
+                  />
+                  {active !== 'build_field' && (
+                    <NumberControl label="Doorway width (0 for none)" value={doorWidth} min={0} max={64} suffix="studs" onChange={setDoorWidth} />
+                  )}
+                  {active === 'build_enclosure' && <ToggleControl checked={withFloor} onChange={setWithFloor} label="Lay a plate deck under the walls" />}
+                  {(active === 'build_field' || (active === 'build_enclosure' && withFloor)) && (
+                    <ToggleControl
+                      checked={rigidFloor}
+                      onChange={setRigidFloor}
+                      label="Cross-bond the deck into a rigid slab (two layers)"
+                    />
+                  )}
+                  <p className="command-hint">
+                    Courses are staggered against each other and corners interlock. The result is one transaction, checked for
+                    collisions by the kernel before it commits — and reversible with a single undo.
+                  </p>
+                </>
+              )}
+              {active === 'build_structure' && (
+                <>
+                  <div className="command-grid">
+                    <NumberControl label="Width" value={runStuds} min={6} max={128} suffix="studs" onChange={setRunStuds} />
+                    <NumberControl label="Depth" value={runDepthStuds} min={6} max={128} suffix="studs" onChange={setRunDepthStuds} />
+                  </div>
+                  <div className="command-grid">
+                    <NumberControl label="Storeys" value={storeys} min={1} max={24} onChange={setStoreys} />
+                    <NumberControl label="Courses per storey" value={courses} min={2} max={12} onChange={setCourses} />
+                    <NumberControl label="Windows per side" value={windowsPerSide} min={0} max={8} onChange={setWindowsPerSide} />
+                  </div>
+                  <div className="command-grid">
+                    <SelectControl
+                      label="Wall colour"
+                      value={String(buildColor)}
+                      onChange={(value) => setBuildColor(Number(value))}
+                      options={BUILD_COLORS.map((code) => ({ value: String(code), label: getColor(code).name }))}
+                    />
+                    <SelectControl
+                      label="Band colour"
+                      value={String(bandColor)}
+                      onChange={(value) => setBandColor(Number(value))}
+                      options={[{ value: '-1', label: 'No band' }, ...BUILD_COLORS.map((code) => ({ value: String(code), label: getColor(code).name }))]}
+                    />
+                  </div>
+                  <ToggleControl checked={withDoor} onChange={setWithDoor} label="Put a door frame on the ground floor" />
+                  <p className="command-hint">
+                    One transaction: a deck and walls per storey, real window and door frames seated in the openings, a
+                    contrasting band between storeys and a parapet on top. The kernel checks the whole thing for collisions
+                    before it commits, and one undo takes it all back.
+                  </p>
+                </>
+              )}
+              {(active === 'capture_module' || active === 'stamp_module' || active === 'remove_module') && (
+                <>
+                  {active === 'capture_module' && (
+                    <>
+                      <TextControl label="Module name" value={moduleName} onChange={setModuleName} maxLength={80} />
+                      <p className="command-hint">
+                        The {state.selection.length} selected part{state.selection.length === 1 ? '' : 's'} are captured into their
+                        own frame, so the module stamps onto the ground wherever it was built.
+                      </p>
+                    </>
+                  )}
+                  {active !== 'capture_module' && (
+                    <SelectControl
+                      label="Module"
+                      value={moduleId}
+                      onChange={setModuleId}
+                      options={modules.map((module) => ({ value: module.id, label: `${module.name} · ${describeModule(module)}` }))}
+                    />
+                  )}
+                  {active === 'stamp_module' && (
+                    <>
+                      <VectorControl label="Stamp at" value={stampAt} onChange={setStampAt} />
+                      <div className="command-grid">
+                        <NumberControl label="Quarter turns" value={stampTurns} min={0} max={3} onChange={setStampTurns} />
+                        <NumberControl label="Copies" value={stampCopies} min={1} max={64} onChange={setStampCopies} />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              {active === 'stack_selection' && (
+                <>
+                  <NumberControl label="Additional storeys" value={storeys} min={1} max={32} suffix="copies" onChange={setStoreys} />
+                  <p className="command-hint">
+                    The selection is measured and repeated upward by its own height, snapped to the plate grid, so one storey
+                    becomes a tower without working out the offset.
+                  </p>
+                </>
+              )}
               {active === 'connect_parts' && (
                 <div className="command-pair">
                   <SelectControl label="Moving part" value={movingPartId} onChange={setMovingPartId} options={parts.map((part) => ({ value: part.id, label: `${part.definitionId} · ${part.id}` }))} />

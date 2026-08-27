@@ -7,6 +7,7 @@ import {
   type ProjectRepository,
   type ProjectSummary,
 } from './persistence'
+import { createBlankDocument } from './sample'
 import { loadLocalDocument, clearLocalDocument } from './storage'
 import type { ModelDocument } from './types'
 
@@ -216,13 +217,40 @@ class Session {
    * slug collides the second time the same fork name is used — and a collision
    * here would overwrite somebody's project.
    */
-  async forkProject(name?: string): Promise<ProjectSwitch> {
-    const source = await this.partWithCurrent()
-    const forkName = name?.trim() || `${source.name} (fork)`
-    const base = `doc_${forkName.toLowerCase().replace(/\W+/g, '_')}`
+  /**
+   * Starts an empty project.
+   *
+   * Forking was previously the only way to get a second document, which meant
+   * every new project began as a copy of the showcase rover. Building something
+   * of your own should not start by deleting someone else's model.
+   */
+  async createProject(name?: string): Promise<ProjectSwitch> {
+    // Flush the outgoing document first: adopting a new one detaches autosave
+    // from it, and an unwritten tail would be lost.
+    await this.partWithCurrent()
+    const projectName = name?.trim() || 'Untitled build'
+    const document: ModelDocument = {
+      ...createBlankDocument(projectName),
+      id: await this.uniqueProjectId(projectName),
+      createdAt: new Date().toISOString(),
+    }
+    const restore = this.adopt(document, 0)
+    await this.repository.saveCheckpoint(cadEngine.getSnapshot().document)
+    return { ok: true, restore }
+  }
+
+  private async uniqueProjectId(name: string): Promise<string> {
+    const base = `doc_${name.toLowerCase().replace(/\W+/g, '_')}`
     const taken = new Set((await this.repository.listProjects()).map((project) => project.projectId))
     let id = base
     for (let suffix = 2; taken.has(id); suffix += 1) id = `${base}_${suffix}`
+    return id
+  }
+
+  async forkProject(name?: string): Promise<ProjectSwitch> {
+    const source = await this.partWithCurrent()
+    const forkName = name?.trim() || `${source.name} (fork)`
+    const id = await this.uniqueProjectId(forkName)
 
     const fork: ModelDocument = {
       ...structuredClone(source),

@@ -1,5 +1,7 @@
 {
   "catalogIdentities": 22941,
+  "externalIdentities": 58833,
+  "totalIdentities": 81774,
   "byLdrawKind": {
     "Part": 17982,
     "Shortcut": 4959

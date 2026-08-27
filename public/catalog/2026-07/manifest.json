@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "catalogVersion": "2026-07",
-  "generatedAt": "2026-08-27T15:25:26.609Z",
+  "generatedAt": "2026-08-27T23:25:07.690Z",
   "sources": {
     "ldraw": {
       "root": "ldraw",
@@ -20,13 +20,19 @@
   "files": {
     "parts": {
       "path": "catalog/2026-07/parts.json",
-      "hash": "sha256:517fca74d87fad2461f16e412ae297adb44be4d936a77ccf62436ae919f1bed6",
-      "bytes": 2441999
+      "hash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
+      "bytes": 2461298
     },
     "search": {
       "path": "catalog/2026-07/search.json",
       "hash": "sha256:72a3eea51991a365ae3bfe4a482a8da69ea32c1c3416f456b8e808ed4c49fa91",
       "bytes": 3453610
+    },
+    "searchExternal": {
+      "path": "catalog/2026-07/search-external.json",
+      "hash": "sha256:fa003fc49ce82b2da4c34107c19b8f3274d68937550a979e4a78e47e62406fa4",
+      "bytes": 7720944,
+      "lazy": true
     },
     "colors": {
       "path": "catalog/2026-07/colors.json",
@@ -41,6 +47,7 @@
   },
   "counts": {
     "parts": 22941,
+    "externalIdentities": 58833,
     "packParts": 900,
     "thumbnails": 900,
     "connectors": 324331,
@@ -49,6 +56,8 @@
   },
   "coverage": {
     "catalogIdentities": 22941,
+    "externalIdentities": 58833,
+    "totalIdentities": 81774,
     "byLdrawKind": {
       "Part": 17982,
       "Shortcut": 4959

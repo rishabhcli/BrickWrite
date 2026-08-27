@@ -18,6 +18,14 @@ const IDS = [
   // Studs-not-on-top brackets and headlight bricks: the cases a translation-only
   // solver cannot place, so the snap tests need them.
   '4070', '87087', '99781', '11211',
+  // Longer runs, so the assembly generators have a realistic set of lengths to
+  // partition a course into rather than an artificially short one.
+  '3008', '3622', '3666', '3460', '3032', '3037',
+  // Windows and door frames, so a generated opening can be tested against a
+  // real element seated in it rather than against a hole.
+  '60592', '60593', '60594', '60596', '60616b',
+  // Panes, so a glazed window can be tested rather than only a frame.
+  '60601', '38320',
 ]
 
 const [, , catalogRoot = 'public', version = '2026-07', out = 'src/cad/__fixtures__/catalog.fixture.json'] = process.argv

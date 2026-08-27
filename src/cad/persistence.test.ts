@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
 import { MemoryDriver, ProjectAutosave, ProjectRepository } from './persistence'
+import { captureModule } from './modules'
 import { createEmptyDocument } from './sample'
 import type { ModelDocument, PartInstance, Transaction } from './types'
 
@@ -75,6 +76,26 @@ describe('project repository', () => {
 
     const loaded = await repository.loadProject(document.id)
     expect(Object.keys(loaded!.document.connections)).toHaveLength(8)
+  })
+
+  it('replays a captured module, so a reusable sub-build survives reopening', async () => {
+    // Modules are document state, not editor state: a bay captured on Tuesday
+    // has to still be stampable on Wednesday, through the same log the parts
+    // travel in rather than through a side channel.
+    const repository = new ProjectRepository(new MemoryDriver())
+    const engine = new CadEngine(createEmptyDocument())
+    const document = engine.getSnapshot().document
+    await repository.saveCheckpoint(document)
+    const added = engine.execute('Base', [{ type: 'part.add', part: part('base') }], 'human', 0)
+    const module = captureModule(engine.getSnapshot().document, ['base'], 'Bay', 'human', 'module_bay')
+    const defined = engine.execute('Capture', [{ type: 'module.define', module }], 'human', 1)
+    if (added.ok) await repository.appendTransaction(document.id, added.value)
+    if (defined.ok) await repository.appendTransaction(document.id, defined.value)
+
+    const loaded = await repository.loadProject(document.id)
+    expect(loaded!.document.modules).toHaveLength(1)
+    expect(loaded!.document.modules![0].name).toBe('Bay')
+    expect(loaded!.document.modules![0].parts).toHaveLength(1)
   })
 
   it('stops replay at a gap rather than applying the log out of order', async () => {

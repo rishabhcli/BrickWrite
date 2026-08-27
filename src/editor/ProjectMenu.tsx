@@ -1,6 +1,8 @@
-import { AlertTriangle, Check, ChevronDown, Copy, GitBranch, Save, Scale, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, Copy, FilePlus2, GitBranch, PencilLine, Save, Scale, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { planSharedMutation, SharedCapabilityError } from '../cad/capabilities'
 import { catalog } from '../cad/catalog'
+import { cadEngine } from '../cad/engine'
 import { session, type SessionStatus } from '../cad/session'
 import type { ProjectSummary } from '../cad/persistence'
 
@@ -51,7 +53,12 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [licences, setLicences] = useState<LicenceManifest | null>(null)
   const [forkName, setForkName] = useState('')
+  const [renameValue, setRenameValue] = useState(documentName)
   const [busy, setBusy] = useState(false)
+
+  // The field tracks the document, so an agent rename or an undo is reflected
+  // rather than leaving a stale value the operator might re-commit.
+  useEffect(() => setRenameValue(documentName), [documentName])
 
   const refresh = useCallback(async () => {
     setProjects(await session.listProjects())
@@ -99,6 +106,29 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
     },
     [onNotice, refresh],
   )
+
+  const commitRename = useCallback(() => {
+    const name = renameValue.trim()
+    if (!name || name === documentName) return
+    try {
+      const plan = planSharedMutation('rename_document', { name }, {
+        document: cadEngine.getSnapshot().document,
+        selection: cadEngine.getSnapshot().selection,
+        actor: 'human',
+      })
+      const result = cadEngine.execute(plan.label, [...plan.operations], 'human', cadEngine.getSnapshot().document.revision)
+      onNotice(result.ok
+        ? { kind: 'success', title: 'Project renamed', detail: `The document is now “${name}” at revision ${result.value.resultRevision}.` }
+        : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message })
+    } catch (cause) {
+      const known = cause instanceof SharedCapabilityError
+      onNotice({
+        kind: 'error',
+        title: known ? `[${cause.code}]` : '[INVALID_OPERATION]',
+        detail: known ? `${cause.message} ${cause.repair}` : cause instanceof Error ? cause.message : String(cause),
+      })
+    }
+  }, [documentName, onNotice, renameValue])
 
   const restore = sessionStatus.restore
   const restoreHeadline =
@@ -159,15 +189,32 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
             </button>
           </div>
 
+          {/* Renaming goes through the command bus, not straight at the store:
+              the name is document state, so it has to be a revisioned,
+              undoable transaction like every other edit. */}
+          <div className="project-fork">
+            <input
+              value={renameValue}
+              placeholder={documentName}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') commitRename() }}
+              aria-label="Project name"
+            />
+            <button disabled={busy || !renameValue.trim() || renameValue.trim() === documentName} onClick={commitRename}>
+              <PencilLine size={12} /> Rename
+            </button>
+          </div>
+
           <div className="project-fork">
             <input
               value={forkName}
               placeholder={`${documentName} (fork)`}
               onChange={(event) => setForkName(event.target.value)}
-              aria-label="Fork name"
+              aria-label="New or forked project name"
             />
             <button
               disabled={busy}
+              title="Copy this model into a new project"
               onClick={() =>
                 void run('Fork', () => session.forkProject(forkName), 'The fork is now the open project; the original is untouched.').then(
                   () => setForkName(''),
@@ -175,6 +222,17 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               }
             >
               <GitBranch size={12} /> Fork
+            </button>
+            <button
+              disabled={busy}
+              title="Start an empty project with no parts"
+              onClick={() =>
+                void run('New project', () => session.createProject(forkName), 'An empty document is open. The previous project is checkpointed.').then(
+                  () => setForkName(''),
+                )
+              }
+            >
+              <FilePlus2 size={12} /> New
             </button>
           </div>
 

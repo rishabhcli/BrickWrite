@@ -177,6 +177,7 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
   const subassemblies = new Map(Object.entries(document.subassemblies))
   const noteIds = new Set(document.notes.map((note) => note.id))
   const constraints = new Map(document.constraints.map((constraint) => [constraint.id, constraint]))
+  const modules = new Map((document.modules ?? []).map((module) => [module.id, module]))
 
   const activeConstraints = () => ({ constraints: [...constraints.values()] })
 
@@ -338,6 +339,22 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
         return error('INVALID_OPERATION', `Constraint ${operation.constraintId} does not exist.`, 'Choose a current constraint id.')
       }
       constraints.delete(operation.constraintId)
+    }
+    if (operation.type === 'module.define') {
+      if (!operation.module.parts.length) {
+        return error('INVALID_OPERATION', `Module ${operation.module.name} contains no parts.`, 'Capture a module from a selection that holds at least one part.')
+      }
+      const unplaceable = operation.module.parts.find((entry) => !catalog.get(entry.definitionId))
+      if (unplaceable) {
+        return error('GEOMETRY_UNAVAILABLE', `Module ${operation.module.name} references ${unplaceable.definitionId}, which has no compiled geometry.`, 'Capture the module from parts this build can place.')
+      }
+      modules.set(operation.module.id, operation.module)
+    }
+    if (operation.type === 'module.remove') {
+      if (!modules.has(operation.moduleId)) {
+        return error('INVALID_OPERATION', `Module ${operation.moduleId} does not exist.`, 'Choose a current module id.')
+      }
+      modules.delete(operation.moduleId)
     }
     if (operation.type === 'note.add') {
       if (noteIds.has(operation.note.id)) {

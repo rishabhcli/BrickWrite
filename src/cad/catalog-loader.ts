@@ -18,6 +18,8 @@ export interface CatalogLoadResult {
   colorCount: number
   connectorCount: number
   aliasCount: number
+  /** Catalogued-only identities available behind the lazy index. */
+  externalIdentityCount: number
 }
 
 export class CatalogUnavailableError extends Error {
@@ -85,6 +87,10 @@ export async function loadCompiledCatalog(baseUrl = ''): Promise<CatalogLoadResu
   }
 
   catalog.install({ manifest, parts, search, colors, aliases })
+  externalDescriptor = manifest.files.searchExternal
+    ? { root, descriptor: manifest.files.searchExternal, expected: manifest.counts.externalIdentities ?? 0 }
+    : null
+  externalLoad = null
 
   return {
     version,
@@ -93,7 +99,44 @@ export async function loadCompiledCatalog(baseUrl = ''): Promise<CatalogLoadResu
     colorCount: colors.length,
     connectorCount: manifest.counts.connectors,
     aliasCount: Object.keys(aliases).length,
+    externalIdentityCount: manifest.counts.externalIdentities ?? 0,
   }
+}
+
+/**
+ * The wider LEGO catalogue, fetched the first time anybody asks for it.
+ *
+ * Seven megabytes of identity records is not something an editing session
+ * should pay for on boot, and most sessions never leave the modelled library.
+ * It is verified against the same manifest hash as every other payload, because
+ * an index that decides whether a part is real cannot be allowed to arrive
+ * unverified.
+ */
+let externalDescriptor: { root: string; descriptor: IntegrityDescriptor & { path: string }; expected: number } | null = null
+let externalLoad: Promise<number> | null = null
+
+export function externalCatalogueAvailable(): boolean {
+  return externalDescriptor !== null
+}
+
+export function loadExternalCatalogue(): Promise<number> {
+  if (catalog.catalogueLoaded) return Promise.resolve(catalog.totalIdentityCount)
+  const source = externalDescriptor
+  if (!source) return Promise.resolve(catalog.totalIdentityCount)
+  externalLoad ??= (async () => {
+    const url = `${source.root}/${source.descriptor.path.replace(/^\/+/, '')}`
+    const entries = await fetchVerifiedJson<Parameters<typeof catalog.installExternalIndex>[0]>(url, source.descriptor)
+    if (source.expected && entries.length !== source.expected) {
+      throw new Error(`The wider catalogue index holds ${entries.length} identities, but its manifest declares ${source.expected}.`)
+    }
+    catalog.installExternalIndex(entries)
+    return catalog.totalIdentityCount
+  })().catch((cause) => {
+    // A failed fetch must be retryable, not a permanently poisoned promise.
+    externalLoad = null
+    throw cause
+  })
+  return externalLoad
 }
 
 /** Warms geometry for the parts a document already references. */

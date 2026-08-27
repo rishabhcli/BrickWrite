@@ -8,10 +8,12 @@ import {
 } from '../cad/capabilities'
 import { computeBuildOrder, verifyBuildOrder } from '../cad/instructions'
 import { catalog } from '../cad/catalog'
+import { externalCatalogueAvailable, loadExternalCatalogue } from '../cad/catalog-loader'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
 import { createId } from '../cad/ids'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
+import { analyseStatics, DEFAULT_CLUTCH_GRAMS, describeSupport } from '../cad/statics'
 import { connectedComponent, findWeakAttachments } from '../cad/validation'
 import {
   assertExpectations,
@@ -106,12 +108,16 @@ const readTools: ToolDefinition[] = [
         project: { id: state.document.id, name: state.document.name, catalogVersion: state.document.catalogVersion },
         catalog: {
           version: catalog.version,
-          // Two tiers: everything searchable, and the subset with compiled
-          // geometry that can actually be placed in this build.
+          // Three tiers, from most to least known: parts with compiled geometry
+          // that can be placed, parts LDraw models but this build has no mesh
+          // for, and identities the wider LEGO catalogue records and nothing
+          // more. catalog_search reports which tier every result came from.
           identities: catalog.identityCount,
           placeable: catalog.placeableCount,
+          cataloguedIdentities: catalog.totalIdentityCount - catalog.identityCount,
+          totalIdentities: catalog.totalIdentityCount,
           colors: catalog.colors().length,
-          note: 'Parts outside the placeable set are real catalog identities without compiled geometry. add_part on one returns GEOMETRY_UNAVAILABLE.',
+          note: 'Parts outside the placeable set are real identities without compiled geometry. add_part on one returns GEOMETRY_UNAVAILABLE. Use catalog_search with tier="all" to ask whether a part exists at all.',
         },
         documentRevision: state.document.revision,
         selection: state.selection,
@@ -131,25 +137,56 @@ const readTools: ToolDefinition[] = [
   },
   {
     name: 'catalog_search',
-    description: 'Search the real-part catalog by text, category, dimensions, connector families, year, and observed LDraw colors. Returns compact handles.',
+    description:
+      'Search every catalogued LEGO identity by text, part number, size like "2 x 4", category, connector families and observed LDraw colors. '
+      + 'Results are ranked and paged, and each carries the tier that says what is actually known about it: '
+      + 'placeable (compiled geometry, can be built with), modelled (LDraw knows the shape, this build has no mesh), '
+      + 'catalogued (the part is real and nothing else is known here). Use tier="placeable" to plan a build and tier="all" to answer whether a part exists.',
     inputSchema: jsonSchemaOf(CatalogSearchSchema),
     annotations: { readOnlyHint: true },
-    execute: (input) => {
+    execute: async (input) => {
       const query = CatalogSearchSchema.parse(input ?? {})
-      const results = cadEngine.getCatalog(query as Parameters<typeof cadEngine.getCatalog>[0])
+      // Asking past the modelled library pulls the wider catalogue in once, so
+      // an agent gets the same answer a human would rather than a narrower one
+      // that depends on what the session happened to have already fetched.
+      if ((query.tier === 'catalogued' || query.tier === 'all' || query.tier === undefined) && externalCatalogueAvailable()) {
+        await loadExternalCatalogue().catch(() => undefined)
+      }
+      const page = catalog.searchPage(query as Parameters<typeof catalog.searchPage>[0])
+      const returned = page.records.length
       return json({
         catalogVersion: catalog.version,
-        identitiesSearched: catalog.identityCount,
-        placeableInBuild: catalog.placeableCount,
-        results: results.map((part) => ({
+        index: {
+          modelledIdentities: catalog.identityCount,
+          cataloguedIdentities: catalog.totalIdentityCount - catalog.identityCount,
+          totalIdentities: catalog.totalIdentityCount,
+          placeableInBuild: catalog.placeableCount,
+        },
+        matched: {
+          total: page.total,
+          byTier: page.tiers,
+          // Zero catalogued matches means two different things depending on
+          // this flag, and an agent reasoning about whether a part exists needs
+          // to be told which one it is looking at.
+          cataloguedTierSearched: !page.cataloguePending,
+        },
+        page: {
+          offset: page.offset,
+          returned,
+          nextOffset: page.offset + returned < page.total ? page.offset + returned : null,
+        },
+        results: page.records.map((part) => ({
           id: part.id,
           name: part.name,
           category: part.category,
+          tier: part.tier,
           studs: part.dimensions,
           setAppearances: part.frequency,
           connectorFamilies: part.connectorFamilies,
           placeable: part.geometryAvailable,
           connectionsKnown: part.connectionsAvailable,
+          ...(part.variantOf ? { variantOfDesign: part.variantOf } : {}),
+          ...(part.material ? { material: part.material } : {}),
         })),
       })
     },
@@ -328,11 +365,36 @@ const readTools: ToolDefinition[] = [
           catalogVersion: catalog.version,
           identities: catalog.identityCount,
           placeable: catalog.placeableCount,
+          cataloguedIdentities: catalog.totalIdentityCount - catalog.identityCount,
+          totalIdentities: catalog.totalIdentityCount,
           colors: catalog.colors().length,
           // Straight from the compiler, so the agent sees measured coverage
           // rather than an implied claim of completeness.
           coverage: catalog.info?.coverage ?? null,
           sources: catalog.info?.sources ?? null,
+        })
+      }
+      if (action === 'statics') {
+        const request = (input as { args?: { clutchGramsPerStud?: number } }).args ?? {}
+        const clutch = Number.isFinite(Number(request.clutchGramsPerStud)) ? Number(request.clutchGramsPerStud) : DEFAULT_CLUTCH_GRAMS
+        const document = cadEngine.getDocument()
+        const report = analyseStatics(document, clutch)
+        return json({
+          documentRevision: document.revision,
+          massGrams: Math.round(report.mass.grams * 10) / 10,
+          centreOfMassLdu: report.mass.centreLdu.map((value) => Math.round(value * 10) / 10),
+          measuredParts: report.mass.measuredParts,
+          unmeasuredParts: report.mass.unmeasuredParts,
+          coverage: Math.round(report.coverage * 1000) / 1000,
+          support: report.support && {
+            stable: report.support.stable,
+            marginLdu: Math.round(report.support.marginLdu * 10) / 10,
+            restingParts: report.support.restingParts,
+            footprint: describeSupport(report.support),
+          },
+          unsupportedPartIds: report.unsupportedPartIds.slice(0, 40),
+          overloaded: report.overloaded,
+          assumptions: report.assumptions,
         })
       }
       if (action === 'weak_attachments') {
@@ -471,7 +533,16 @@ const buildTools: ToolDefinition[] = [
         const result = cadEngine.execute(plan.label, [...plan.operations], 'agent', request.expectedRevision, 'action_mutate')
         if (result.ok && plan.nextSelection) cadEngine.setSelection([...plan.nextSelection])
         return result.ok
-          ? json({ ...result.value, capability: plan.capability, summary: plan.summary, selection: plan.nextSelection ?? state.selection })
+          ? json({
+            ...result.value,
+            capability: plan.capability,
+            summary: plan.summary,
+            // Measured facts, not just a sentence: a generated assembly reports
+            // its bill, its course count and every course it could not bond,
+            // so the caller can check the work instead of trusting it.
+            ...(plan.report ? { report: plan.report } : {}),
+            selection: plan.nextSelection ?? state.selection,
+          })
           : resultOf(result)
       } catch (cause) {
         const error = cause instanceof SharedCapabilityError

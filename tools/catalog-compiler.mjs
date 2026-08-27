@@ -14,7 +14,8 @@
  *
  * Outputs (see `--out`):
  *   catalog/<version>/manifest.json   counts, hashes, coverage, source pins
- *   catalog/<version>/search.json     compact record for every catalog identity
+ *   catalog/<version>/search.json     compact record for every modelled catalog identity
+ *   catalog/<version>/search-external.json  identity-only records for the wider LEGO catalogue
  *   catalog/<version>/parts.json      full records for the geometry runtime pack
  *   catalog/<version>/colors.json     LDraw colour table from LDConfig.ldr
  *   catalog/<version>/licenses.json   per-dataset attribution requirements
@@ -842,6 +843,10 @@ export async function compileCatalog(options) {
         STUDS(mesh.bounds.max[2] - mesh.bounds.min[2]),
       ],
       bounds: { min: mesh.bounds.min.map((v) => Number(v.toFixed(4))), max: mesh.bounds.max.map((v) => Number(v.toFixed(4))) },
+      // Exact enclosed volume of the compiled surface, so mass — and every
+      // static analysis that depends on it — is measured rather than inferred
+      // from a bounding box that a slope or a bracket does not fill.
+      volumeLdu3: Number(mesh.volumeLdu3.toFixed(2)),
     }
     geometryBytes += mesh.buffer.length
     triangleTotal += mesh.stats.triangles
@@ -876,8 +881,45 @@ export async function compileCatalog(options) {
   const kindCounts = {}
   for (const record of records) kindCounts[record.kind] = (kindCounts[record.kind] ?? 0) + 1
 
+  /**
+   * Every catalogued LEGO identity the modelled library does not cover.
+   *
+   * LDraw models what people build with; Rebrickable catalogues what exists.
+   * Restricting search to the 22,941 modelled identities meant that asking for
+   * a real part — a printed torso, a Duplo brick, a sticker sheet — returned
+   * nothing, with no way to tell "we have never heard of that" apart from "that
+   * is not something this build can place". These entries carry identity,
+   * category and set-appearance evidence and nothing else, and they say so.
+   */
+  const claimed = new Set()
+  for (const record of records) {
+    claimed.add(record.canonicalId)
+    if (record.identity.externalId) claimed.add(normalize(record.identity.externalId))
+  }
+  for (const alias of Object.keys(resolvedAliases)) claimed.add(normalize(alias))
+
+  const externalIndex = []
+  for (const [key, row] of rb.parts) {
+    if (claimed.has(key)) continue
+    const parent = rb.relationships.get(key)
+    externalIndex.push({
+      id: row.part_num,
+      n: row.name,
+      c: rb.categories.get(row.part_cat_id) ?? 'Unclassified',
+      f: rb.frequency.get(key) ?? 0,
+      // Printed and mould variants point at the design they decorate, so a
+      // search for one can offer the base part that *is* modelled.
+      ...(parent && rb.parts.has(parent) ? { p: rb.parts.get(parent).part_num } : {}),
+      ...(row.part_material && row.part_material !== 'Plastic' ? { m: row.part_material } : {}),
+    })
+  }
+  externalIndex.sort((a, b) => a.id.localeCompare(b.id))
+  log(`external index: ${externalIndex.length} catalogued identities with no LDraw model`)
+
   const coverage = {
     catalogIdentities: records.length,
+    externalIdentities: externalIndex.length,
+    totalIdentities: records.length + externalIndex.length,
     byLdrawKind: kindCounts,
     helperParts: records.filter((record) => record.helper).length,
     withRebrickableIdentity: records.filter((record) => record.identity.identityConfidence === 'exact').length,
@@ -918,6 +960,7 @@ export async function compileCatalog(options) {
   const partsPayload = JSON.stringify(packRecords)
   const aliasPayload = JSON.stringify(resolvedAliases)
   const searchPayload = JSON.stringify(searchIndex)
+  const externalPayload = JSON.stringify(externalIndex)
   const coloursPayload = JSON.stringify(ldrawColours)
 
   const manifest = {
@@ -932,11 +975,15 @@ export async function compileCatalog(options) {
     files: {
       parts: { path: `catalog/${version}/parts.json`, hash: `sha256:${sha256(partsPayload)}`, bytes: Buffer.byteLength(partsPayload) },
       search: { path: `catalog/${version}/search.json`, hash: `sha256:${sha256(searchPayload)}`, bytes: Buffer.byteLength(searchPayload) },
+      // Fetched on demand: the modelled index is what an editing session needs,
+      // and the wider catalogue is 7 MB that most sessions never ask for.
+      searchExternal: { path: `catalog/${version}/search-external.json`, hash: `sha256:${sha256(externalPayload)}`, bytes: Buffer.byteLength(externalPayload), lazy: true },
       colors: { path: `catalog/${version}/colors.json`, hash: `sha256:${sha256(coloursPayload)}`, bytes: Buffer.byteLength(coloursPayload) },
       aliases: { path: `catalog/${version}/aliases.json`, hash: `sha256:${sha256(aliasPayload)}`, bytes: Buffer.byteLength(aliasPayload) },
     },
     counts: {
       parts: records.length,
+      externalIdentities: externalIndex.length,
       packParts: packRecords.length,
       thumbnails,
       connectors: coverage.connectorTotal,
@@ -961,6 +1008,7 @@ export async function compileCatalog(options) {
     ),
     writeFile(path.join(catalogDirectory, 'parts.json'), partsPayload),
     writeFile(path.join(catalogDirectory, 'search.json'), searchPayload),
+    writeFile(path.join(catalogDirectory, 'search-external.json'), externalPayload),
     writeFile(path.join(catalogDirectory, 'colors.json'), coloursPayload),
     writeFile(path.join(catalogDirectory, 'aliases.json'), aliasPayload),
     writeFile(path.join(catalogDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`),

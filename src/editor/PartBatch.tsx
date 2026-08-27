@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { catalog } from '../cad/catalog'
 import { geometryCache, MAIN_COLOUR, type PartGeometry } from '../cad/mesh'
 import type { PartDefinition, PartInstance, Transform } from '../cad/types'
-import { surfaceMaterialFor } from './PartVisual'
+import { surfaceMaterialFor, type PartAppearance } from './PartVisual'
 
 /**
  * Instanced rendering for the bulk of a model.
@@ -31,8 +31,20 @@ export interface PartBatchDescriptor {
   readonly key: string
   readonly definition: PartDefinition
   readonly colorCode: number
+  readonly appearance: PartAppearance
   readonly members: readonly BatchMember[]
 }
+
+/**
+ * Selection size at which highlighted parts stay out of the batches.
+ *
+ * Below it, drawing them individually keeps the batches stable while an
+ * operator picks around — which is what they are for. Above it the trade
+ * inverts sharply: box-selecting a stamped city block put 732 parts on their
+ * own draw calls and took a 1,464-part scene from 106 calls a frame to 3,278.
+ * Past this many, selection gets its own batches instead.
+ */
+export const INDIVIDUAL_SELECTION_LIMIT = 24
 
 /**
  * Above this many batched parts, hard edges are dropped entirely.
@@ -78,10 +90,12 @@ interface PartBatchProps {
   descriptor: PartBatchDescriptor
   showEdges: boolean
   silhouette: boolean
+  /** False while a placement ghost owns the pointer, so a drop cannot also select. */
+  interactive?: boolean
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
 }
 
-export function PartBatch({ descriptor, showEdges, silhouette, onSelect }: PartBatchProps) {
+export function PartBatch({ descriptor, showEdges, silhouette, interactive = true, onSelect }: PartBatchProps) {
   const instances = useRef<THREE.InstancedMesh>(null)
   const geometry = useBatchGeometry(descriptor.definition)
   const scratch = useMemo(() => new THREE.Matrix4(), [])
@@ -93,10 +107,10 @@ export function PartBatch({ descriptor, showEdges, silhouette, onSelect }: PartB
     return geometry.slices.map((slice) =>
       surfaceMaterialFor(
         slice.colour === MAIN_COLOUR ? (silhouette ? 71 : descriptor.colorCode) : slice.colour,
-        'solid',
+        descriptor.appearance,
       ),
     )
-  }, [geometry, descriptor.colorCode, silhouette])
+  }, [geometry, descriptor.colorCode, descriptor.appearance, silhouette])
 
   useLayoutEffect(() => {
     const mesh = instances.current
@@ -107,12 +121,16 @@ export function PartBatch({ descriptor, showEdges, silhouette, onSelect }: PartB
     mesh.count = descriptor.members.length
     mesh.instanceMatrix.needsUpdate = true
     mesh.computeBoundingSphere()
+    // A raycast run outside React — the placement ghost does exactly that — gets
+    // back an object and an instance index, so the batch has to say which part
+    // each index stands for.
+    mesh.userData.members = descriptor.members
   }, [descriptor.members, geometry, scratch])
 
   if (!geometry) return null
 
   const handlePointer = (event: ThreeEvent<PointerEvent>) => {
-    if (event.instanceId === undefined) return
+    if (!interactive || event.instanceId === undefined) return
     const member = descriptor.members[event.instanceId]
     if (!member) return
     event.stopPropagation()
@@ -132,7 +150,7 @@ export function PartBatch({ descriptor, showEdges, silhouette, onSelect }: PartB
         receiveShadow
         onPointerDown={handlePointer}
         onDoubleClick={(event) => {
-          if (event.instanceId === undefined) return
+          if (!interactive || event.instanceId === undefined) return
           const member = descriptor.members[event.instanceId]
           if (!member) return
           event.stopPropagation()
@@ -162,6 +180,13 @@ function BatchEdges({ descriptor, geometry }: { descriptor: PartBatchDescriptor;
     return new THREE.LineBasicMaterial({ color: base.edge, transparent: true, opacity: 0.34, depthWrite: false })
   }, [descriptor.colorCode])
 
+  // `planBatches` builds fresh member arrays on every commit, so memoizing on
+  // array identity rebuilt every merged buffer in the model for an edit that
+  // touched one brick. The signature is what actually decides the buffer's
+  // contents, and computing it is O(members) arithmetic against O(members ×
+  // edge vertices) of matrix work.
+  const signature = useMemo(() => contentSignature(descriptor.members), [descriptor.members])
+
   const merged = useMemo(() => {
     const source = geometry.edges?.getAttribute('position')
     if (!source) return null
@@ -185,13 +210,36 @@ function BatchEdges({ descriptor, geometry }: { descriptor: PartBatchDescriptor;
     const buffer = new THREE.BufferGeometry()
     buffer.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     return buffer
-  }, [descriptor.members, geometry])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, geometry])
 
   // Merged buffers are owned by this component, so they are disposed with it.
   useEffect(() => () => merged?.dispose(), [merged])
 
   if (!merged) return null
   return <lineSegments geometry={merged} material={material} />
+}
+
+/**
+ * A cheap, order-sensitive digest of a batch's poses.
+ *
+ * FNV-1a over the quantized transforms: two batches with the same members in
+ * the same poses produce the same number, and any real change to a pose or to
+ * membership changes it. Quantizing to a hundredth of an LDU is far finer than
+ * anything the kernel can place and immune to float noise.
+ */
+function contentSignature(members: readonly BatchMember[]): number {
+  let hash = 0x811c9dc5
+  const mix = (value: number) => {
+    hash ^= Math.round(value * 100) | 0
+    hash = Math.imul(hash, 0x01000193)
+  }
+  for (const member of members) {
+    const { position, basis } = member.transform
+    mix(position[0]); mix(position[1]); mix(position[2])
+    for (let index = 0; index < 9; index += 1) mix(basis[index])
+  }
+  return hash >>> 0
 }
 
 /**
@@ -204,8 +252,9 @@ function BatchEdges({ descriptor, geometry }: { descriptor: PartBatchDescriptor;
 export function planBatches(
   members: readonly BatchMember[],
   excludedPartIds: ReadonlySet<string>,
+  appearanceOf: (partId: string) => PartAppearance = () => 'solid',
 ): { batches: PartBatchDescriptor[]; individual: BatchMember[] } {
-  const grouped = new Map<string, { definition: PartDefinition; colorCode: number; members: BatchMember[] }>()
+  const grouped = new Map<string, { definition: PartDefinition; colorCode: number; appearance: PartAppearance; members: BatchMember[] }>()
   const individual: BatchMember[] = []
 
   for (const member of members) {
@@ -215,10 +264,13 @@ export function planBatches(
       individual.push(member)
       continue
     }
-    const key = `${definition.canonicalId}:${member.part.color}`
+    // Appearance is part of the key, so a highlighted run of parts batches with
+    // the other highlighted parts rather than falling out of batching entirely.
+    const appearance = appearanceOf(member.part.id)
+    const key = `${definition.canonicalId}:${member.part.color}:${appearance}`
     const bucket = grouped.get(key)
     if (bucket) bucket.members.push(member)
-    else grouped.set(key, { definition, colorCode: member.part.color, members: [member] })
+    else grouped.set(key, { definition, colorCode: member.part.color, appearance, members: [member] })
   }
 
   return {

@@ -156,16 +156,43 @@ export function createShowcaseDocument(): ModelDocument {
   return assemble(build.parts, 'Survey rover', 1)
 }
 
+/**
+ * A part-free document that still carries the showcase's assembly and step
+ * scaffold. Fixtures build on it, so its subassembly and step ids are the ones
+ * tests place parts into.
+ *
+ * For a project a person actually starts, use `createBlankDocument`.
+ */
 export function createEmptyDocument(): ModelDocument {
   return assemble([], 'Untitled build', 0)
 }
 
-function assemble(parts: PartInstance[], name: string, revision: number): ModelDocument {
+/**
+ * A new, genuinely blank project.
+ *
+ * One unlocked assembly and one step, rather than the showcase's rover
+ * structure. A blank document that opens pre-populated with "Cockpit" and
+ * "Hull walls" is describing somebody else's model, and nothing on screen tells
+ * the operator which of those names mean anything here.
+ */
+export function createBlankDocument(name = 'Untitled build'): ModelDocument {
+  return assemble([], name, 0, {
+    subassemblies: [{ id: 'main', name: 'Main assembly', locked: false, accent: '#6bbbd6' }],
+    steps: [{ id: 'step_1', index: 1, name: 'Step 1' }],
+  })
+}
+
+function assemble(
+  parts: PartInstance[],
+  name: string,
+  revision: number,
+  structure?: { subassemblies: Array<Omit<Subassembly, 'partIds'>>; steps: Array<Omit<BuildStep, 'partIds'>> },
+): ModelDocument {
   const subassemblies: Record<string, Subassembly> = {}
-  for (const definition of SUBASSEMBLIES) {
+  for (const definition of structure?.subassemblies ?? SUBASSEMBLIES) {
     subassemblies[definition.id] = { ...definition, partIds: parts.filter((part) => part.subassemblyId === definition.id).map((part) => part.id) }
   }
-  const steps: BuildStep[] = STEPS.map((step) => ({
+  const steps: BuildStep[] = (structure?.steps ?? STEPS).map((step) => ({
     ...step,
     partIds: parts.filter((part) => part.stepId === step.id).map((part) => part.id),
   }))

@@ -73,7 +73,12 @@ the windscreen land on the planes a physical build would use.
 | Module | Responsibility |
 | --- | --- |
 | `src/cad/types.ts` | Stable document, part, connector, transaction, proposal, and validation contracts |
-| `src/cad/catalog.ts` | Compiled catalog registry, colour table, search, stacking planes |
+| `src/cad/assembly.ts` | Parametric assembly solver: bonded walls, interlocking storeys, cross-bonded decks, seated window and door frames |
+| `src/cad/modules.ts` | Reusable named sub-builds: capture into a local frame, stamp with rotation and repetition |
+| `src/cad/statics.ts` | Mass from measured volume, centre of mass, support polygon, tipping margin, hanging loads |
+| `src/editor/environment.ts` | Generated studio environment map, so plastic reflects something without fetching an HDR |
+| `src/cad/catalog.ts` | Compiled catalog registry, colour table, tiered ranked search, stacking planes |
+| `src/cad/placement.ts` | Resolves where an armed part lands, from a ray hit to a connector-solved pose |
 | `src/cad/catalog-loader.ts` | Fetches and installs the compiled catalog; hard-fails when absent |
 | `src/cad/mesh.ts` | `.bwmesh` decoder and the shared, content-addressed geometry cache |
 | `src/cad/math.ts` | Rigid-transform algebra: bases, composition, orthonormalization, pose distance |
@@ -98,17 +103,28 @@ LDCad Shadow Library ───┼─> canonical manifest + search index + colour
 Rebrickable bulk CSV ───┘                        + packed geometry assets
 ```
 
-The runtime holds two deliberately distinct tiers:
+The runtime holds three deliberately distinct tiers:
 
-| Tier | Contents | Capability |
-| --- | --- | --- |
-| **Search** | every official LDraw part and shortcut | searchable, inspectable, **not** placeable |
-| **Pack** | parts with compiled geometry and connectors | placeable, snappable, validatable |
+| Tier | Contents | Count | Capability |
+| --- | --- | ---: | --- |
+| **`placeable`** | compiled geometry and LDCad connectors | 900 | placeable, snappable, validatable |
+| **`modelled`** | every other official LDraw part and shortcut | 22,041 | searchable, inspectable, **not** placeable |
+| **`catalogued`** | Rebrickable identities LDraw does not model | 58,833 | searchable by identity only |
 
-Keeping them separate is what lets Brickwright answer *"this part exists but I cannot build
-with it yet"* instead of implying uniform coverage. `catalog_search` reports
-`placeable` per result, and `part.add` on a search-only identity returns
+Keeping them separate is what lets Brickwright distinguish *"this part exists but I cannot
+build with it yet"* from *"I have never heard of that part"*, instead of implying uniform
+coverage in either direction. `catalog_search` reports `tier` per result, facet counts across
+all three, and `matched.cataloguedTierSearched` so a zero is never read as a fact when the
+wider index simply is not resident. `part.add` on a non-placeable identity returns
 `GEOMETRY_UNAVAILABLE` with a repair hint.
+
+The `catalogued` tier ships as its own manifest-hashed payload
+(`catalog/<version>/search-external.json`, 7 MB) and is fetched the first time a search asks
+past the modelled library, so an editing session never pays for it. `src/cad/catalog.ts`
+precomputes a lowercase haystack per identity at install time and ranks in one pass: exact
+part number, then name-start, then measured-envelope match for a dimension token like `2x4`,
+then word-start, then substring, with official-set frequency breaking ties. Every token must
+land somewhere, so narrowing a query can only shrink the result set.
 
 Every compiled record carries field-level provenance: which dataset supplied the geometry,
 the connectors, the identity (and whether that identity match was exact or heuristic), and
