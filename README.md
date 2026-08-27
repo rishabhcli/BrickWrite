@@ -126,7 +126,18 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Interoperability** — `.ldr` and `.mpd` export with `STEP` boundaries and one submodel per
   subassembly; import flattens nested submodels and reports every reference it could not
   place. BOM CSV carries exact LDraw and external identities.
-- **Local-first** — autosave without an account or hosted backend.
+- **Instanced rendering** — parts sharing a definition and colour render as one
+  `InstancedMesh`, with each batch's hard edges merged into a single buffer. Measured in the
+  browser: 400 extra parts cost 14 extra draw calls, against 810 before merging.
+- **Durable local-first projects** — every committed transaction is appended to an IndexedDB
+  log on top of a periodic checkpoint, so reopening replays forward from the checkpoint.
+  Replay stops at a revision gap rather than applying a log out of order, and the save
+  indicator reports whether persistence is durable, memory-only or failing.
+- **Enforced agent contract** — one Zod declaration produces both the JSON Schema each tool
+  advertises and the validation the gateway applies, so they cannot drift. Errors pass through
+  a single redactor that strips credentials, signed URLs, blobs and filesystem paths and never
+  relays a stack trace. A versioned tool profile hash lets a plan be refused when the surface
+  it was made against no longer exists.
 
 ## Tool surface
 
@@ -149,7 +160,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 113 deterministic tests + strict TS + production build
+npm run check            # 133 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```

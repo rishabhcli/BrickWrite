@@ -24,6 +24,12 @@ declare global {
 
   interface Window {
     __brickwrightCanvas?: HTMLCanvasElement
+    __brickwrightRenderStats?: () => {
+      drawCalls: number
+      triangles: number
+      geometries: number
+      programs: number
+    }
     brickwright?: {
       tools: Map<string, ModelContextToolDefinition>
       invoke: (name: string, input?: unknown) => Promise<ModelContextToolResult>

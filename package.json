@@ -24,7 +24,8 @@
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "three": "latest"
+    "three": "latest",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "latest",

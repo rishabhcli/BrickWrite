@@ -1,9 +1,27 @@
+import { z } from 'zod'
 import { catalog } from '../cad/catalog'
-import { basisFromEulerDegrees, IDENTITY_BASIS, isOrthonormal, orthonormalize, type Mat3 } from '../cad/math'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
 import { findWeakAttachments } from '../cad/validation'
+import {
+  assertExpectations,
+  CatalogSearchSchema,
+  jsonSchemaOf,
+  MAX_OPERATIONS_PER_BATCH,
+  OperationSchema,
+  PreflightSchema,
+  toErrorEnvelope,
+  toKernelOperations,
+  TOOL_PROFILE,
+  toolProfileHash,
+} from './contract'
+
+const ApplySchema = z.object({
+  proposalId: z.string().min(1).max(120),
+  expectedToolProfileHash: z.string().optional(),
+  expectedCatalogVersion: z.string().optional(),
+})
 import type { Actor, CadOperation, ModelDocument, PartInstance, Transform, Vec3 } from '../cad/types'
 
 type ToolDefinition = ModelContextToolDefinition
@@ -29,71 +47,40 @@ function normalizeVec3(value: unknown, fallback: Vec3 = [0, 0, 0]): Vec3 {
 }
 
 /**
- * Resolves the orientation an agent supplied.
+ * Validates and translates an operation batch.
  *
- * `basis` is the exact form the kernel stores: a row-major orthonormal 3×3, the
- * same nine numbers an LDraw type-1 line carries. `rotation` remains accepted
- * as Euler degrees because it is far easier to write by hand, but it is
- * converted immediately — the document never stores angles. A basis that is not
- * orthonormal is rejected rather than silently shearing the part.
+ * Validation happens once, at the gateway, against the same schema the tool
+ * advertises. Nothing downstream re-checks shapes, and nothing malformed reaches
+ * the kernel.
  */
-function normalizeBasis(item: Record<string, unknown>, fallback: Mat3): Mat3 {
-  const raw = item.basis
-  if (Array.isArray(raw) && raw.length === 9 && raw.every((value) => Number.isFinite(value))) {
-    const candidate = raw as unknown as Mat3
-    if (!isOrthonormal(candidate, 1e-4)) {
-      throw new Error('basis must be an orthonormal row-major 3x3 matrix')
-    }
-    return orthonormalize(candidate)
-  }
-  if (Array.isArray(item.rotation)) return basisFromEulerDegrees(normalizeVec3(item.rotation))
-  return fallback
+function parseOperations(raw: unknown, document: ModelDocument): CadOperation[] {
+  const inputs = z.array(OperationSchema).min(1).max(MAX_OPERATIONS_PER_BATCH).parse(raw)
+  return toKernelOperations(inputs, {
+    parts: document.parts,
+    defaultSubassemblyId:
+      Object.values(document.subassemblies).find((item) => !item.locked)?.id ??
+      Object.keys(document.subassemblies)[0] ??
+      'main',
+    defaultStepId: document.steps.at(-1)?.id ?? 'step_1',
+    idPrefix: `agent_${Date.now().toString(36)}`,
+  })
 }
 
-function normalizeOperations(raw: unknown, document: ModelDocument): CadOperation[] {
-  if (!Array.isArray(raw)) throw new Error('operations must be an array')
-  return raw.map((candidate, index) => {
-    const item = candidate as Record<string, unknown>
-    const op = String(item.op ?? item.type ?? '')
-    if (op === 'add') {
-      const definitionId = String(item.definitionId)
-      // An unknown or unplaceable definition is *not* rejected here. The
-      // operation is built and handed to the kernel so the agent receives the
-      // kernel's specific, actionable error (PART_DEFINITION_NOT_FOUND or
-      // GEOMETRY_UNAVAILABLE) rather than a generic adapter failure.
-      const definition = catalog.get(definitionId)
-      const id = String(item.partId ?? `agent_${Date.now().toString(36)}_${index}`)
-      const subassemblyId = String(item.subassemblyId ?? Object.keys(document.subassemblies)[0] ?? 'main')
-      const stepId = String(item.stepId ?? document.steps.at(-1)?.id ?? 'step_1')
-      const part: PartInstance = {
-        id,
-        definitionId,
-        color: Number(item.color ?? definition?.availableColors[0] ?? 71),
-        transform: { position: normalizeVec3(item.position), basis: normalizeBasis(item, IDENTITY_BASIS) },
-        subassemblyId,
-        stepId,
-        provenance: 'agent',
-        protected: false,
-      }
-      return { type: 'part.add', part }
-    }
-    if (op === 'move' || op === 'transform') {
-      const partId = String(item.partId)
-      const current = document.parts[partId]
-      return {
-        type: 'part.transform',
-        partId,
-        transform: {
-          position: normalizeVec3(item.position, current?.transform.position),
-          basis: normalizeBasis(item, current?.transform.basis ?? IDENTITY_BASIS),
-        },
-      }
-    }
-    if (op === 'remove') return { type: 'part.remove', partId: String(item.partId) }
-    if (op === 'recolor') return { type: 'part.recolor', partId: String(item.partId), color: Number(item.color) }
-    if (op === 'protect') return { type: 'part.protect', partId: String(item.partId), protected: Boolean(item.protected) }
-    throw new Error(`Unsupported operation ${op || index}`)
-  })
+/**
+ * The contract fingerprint a caller can pin.
+ *
+ * Recomputed per call so an autonomy change or catalog upgrade is reflected
+ * immediately; the hash is what lets a mutation be refused when it was planned
+ * against a surface that no longer exists.
+ */
+function profileContext() {
+  const state = cadEngine.getSnapshot()
+  return {
+    toolProfile: TOOL_PROFILE,
+    profileHash: toolProfileHash([...(window.brickwright?.tools.keys() ?? [])], catalog.version),
+    catalogVersion: catalog.version,
+    documentRevision: state.document.revision,
+  }
 }
 
 /** Reflects a transform through the plane x = `axis`. */
@@ -118,6 +105,7 @@ const readTools: ToolDefinition[] = [
     execute: () => {
       const state = cadEngine.getSnapshot()
       return json({
+        ...profileContext(),
         project: { id: state.document.id, name: state.document.name, catalogVersion: state.document.catalogVersion },
         catalog: {
           version: catalog.version,
@@ -147,20 +135,11 @@ const readTools: ToolDefinition[] = [
   {
     name: 'catalog_search',
     description: 'Search the real-part catalog by text, category, dimensions, connector families, year, and observed LDraw colors. Returns compact handles.',
-    inputSchema: schema({
-      text: { type: 'string' },
-      category: { type: 'string' },
-      maxStuds: { type: 'object', description: 'Maximum envelope: { width, height, depth }. Width/depth in studs, height in plates.' },
-      minStuds: { type: 'object', description: 'Minimum envelope: { width, height, depth }.' },
-      connectorTypes: { type: 'array', items: { type: 'string' } },
-      colors: { type: 'array', items: { type: 'integer' }, description: 'Only parts with observed official-set appearances in every listed LDraw colour.' },
-      requireGeometry: { type: 'boolean', description: 'Restrict to parts that can actually be placed in this build.' },
-      includeHelpers: { type: 'boolean' },
-      limit: { type: 'integer', minimum: 1, maximum: 200 },
-    }),
+    inputSchema: jsonSchemaOf(CatalogSearchSchema),
     annotations: { readOnlyHint: true },
     execute: (input) => {
-      const results = cadEngine.getCatalog(input as Parameters<typeof cadEngine.getCatalog>[0])
+      const query = CatalogSearchSchema.parse(input ?? {})
+      const results = cadEngine.getCatalog(query as Parameters<typeof cadEngine.getCatalog>[0])
       return json({
         catalogVersion: catalog.version,
         identitiesSearched: catalog.identityCount,
@@ -371,24 +350,26 @@ const proposalTools: ToolDefinition[] = [
   {
     name: 'build_preflight',
     description: 'Dry-run an atomic batch of real CAD operations. Checks revision, protected regions, catalog identity, colors, collision, connectivity, constraints, and produces a visible ghost proposal without mutating the document.',
-    inputSchema: schema({
-      expectedRevision: revisionProperty,
-      label: { type: 'string' },
-      operations: { type: 'array', items: { type: 'object' }, maxItems: 500 },
-    }, ['expectedRevision', 'label', 'operations']),
+    // Advertised schema and enforced schema are the same declaration, so the
+    // operation vocabulary the agent is shown is exactly what the gateway accepts.
+    inputSchema: jsonSchemaOf(PreflightSchema),
     execute: (input) => {
-      const request = input as { expectedRevision: number; label: string; operations: unknown[] }
+      const document = cadEngine.getDocument()
       try {
-        return resultOf(cadEngine.preflight(request.label, normalizeOperations(request.operations, cadEngine.getDocument()), 'agent', request.expectedRevision))
+        const request = PreflightSchema.parse(input)
+        assertExpectations(request, profileContext())
+        return resultOf(
+          cadEngine.preflight(request.label, parseOperations(request.operations, document), 'agent', request.expectedRevision),
+        )
       } catch (cause) {
-        return json({ error: { code: 'INVALID_OPERATION', message: String(cause), repair: 'Call catalog_search and capabilities_help, then correct the operation payload.' } })
+        return json(toErrorEnvelope(cause, { currentRevision: document.revision }))
       }
     },
   },
   {
     name: 'proposal_create',
     description: 'Alias for build_preflight used when the intent is explicitly to leave a translucent, human-reviewable ghost edit.',
-    inputSchema: schema({ expectedRevision: revisionProperty, label: { type: 'string' }, operations: { type: 'array', items: { type: 'object' } } }, ['expectedRevision', 'label', 'operations']),
+    inputSchema: jsonSchemaOf(PreflightSchema),
     execute: (input) => proposalTools[0].execute(input),
   },
 ]
@@ -397,8 +378,17 @@ const buildTools: ToolDefinition[] = [
   {
     name: 'build_apply',
     description: 'Atomically commit a current, collision-free preflight proposal through the same command bus used by the human editor.',
-    inputSchema: schema({ proposalId: { type: 'string' } }, ['proposalId']),
-    execute: (input) => resultOf(cadEngine.applyProposal(String((input as { proposalId: string }).proposalId), 'agent')),
+    inputSchema: jsonSchemaOf(ApplySchema),
+    execute: (input) => {
+      const document = cadEngine.getDocument()
+      try {
+        const request = ApplySchema.parse(input)
+        assertExpectations(request, profileContext())
+        return resultOf(cadEngine.applyProposal(request.proposalId, 'agent'))
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: document.revision }))
+      }
+    },
   },
   {
     name: 'builder_feedback_respond',

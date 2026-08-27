@@ -24,7 +24,7 @@ interface PartVisualProps {
 /** Materials are keyed by appearance and colour, so they are shared too. */
 const materialCache = new Map<string, THREE.Material>()
 
-function surfaceMaterial(colorCode: number, appearance: PartAppearance): THREE.Material {
+export function surfaceMaterialFor(colorCode: number, appearance: PartAppearance): THREE.Material {
   const key = `${appearance}:${colorCode}`
   const cached = materialCache.get(key)
   if (cached) return cached
@@ -106,7 +106,7 @@ export function PartVisual({ definition, colorCode, appearance = 'solid', showEd
     // instance colour"; anything else is baked into the part, such as a black
     // rubber tyre or a printed face.
     return geometry.slices.map((slice) =>
-      surfaceMaterial(slice.colour === MAIN_COLOUR ? colorCode : slice.colour, appearance),
+      surfaceMaterialFor(slice.colour === MAIN_COLOUR ? colorCode : slice.colour, appearance),
     )
   }, [geometry, colorCode, appearance])
 

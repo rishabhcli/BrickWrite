@@ -9,6 +9,7 @@ import { canonicalTransform, orthonormalize } from '../cad/math'
 import { getWorldConnectors } from '../cad/snapping'
 import type { ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
 import { validateDocument } from '../cad/validation'
+import { EDGE_RENDER_BUDGET, PartBatch, planBatches, type BatchMember } from './PartBatch'
 import { PartVisual, type PartAppearance } from './PartVisual'
 
 export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
@@ -231,6 +232,44 @@ export function CadViewport({
   const subassemblyOrder = useMemo(() => Object.keys(document.subassemblies), [document.subassemblies])
   const selected = useMemo(() => new Set(selection), [selection])
 
+  const members = useMemo<BatchMember[]>(
+    () =>
+      Object.values(document.parts).map((part) => {
+        if (renderMode !== 'exploded') return { part, transform: part.transform }
+        const subassemblyIndex = Math.max(0, subassemblyOrder.indexOf(part.subassemblyId))
+        const angle = (subassemblyIndex / Math.max(1, subassemblyOrder.length)) * Math.PI * 2
+        return {
+          part,
+          transform: {
+            ...part.transform,
+            position: [
+              part.transform.position[0] + Math.cos(angle) * 140,
+              part.transform.position[1] - (subassemblyIndex % 3) * 40,
+              part.transform.position[2] + Math.sin(angle) * 140,
+            ] as Vec3,
+          },
+        }
+      }),
+    [document.parts, renderMode, subassemblyOrder],
+  )
+
+  // Anything highlighted, flagged or under a gizmo leaves the batches so they
+  // stay stable while the operator interacts.
+  const excluded = useMemo(() => {
+    const ids = new Set(selection)
+    if (renderMode === 'violations') for (const id of invalidIds) ids.add(id)
+    return ids
+  }, [selection, renderMode, invalidIds])
+
+  const plan = useMemo(() => planBatches(members, excluded), [members, excluded])
+  const edgesEnabled = members.length <= EDGE_RENDER_BUDGET
+
+  const appearanceFor = (partId: string): PartAppearance => {
+    if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
+    if (renderMode === 'silhouette') return 'silhouette'
+    return selected.has(partId) ? 'selected' : 'solid'
+  }
+
   return (
     <Canvas
       shadows
@@ -242,6 +281,25 @@ export function CadViewport({
         gl.toneMapping = THREE.ACESFilmicToneMapping
         gl.toneMappingExposure = 1.08
         onCanvasReady?.(gl.domElement)
+        // Renderer counters are exposed so the browser acceptance run can assert
+        // that draw calls track distinct part/colour combinations rather than
+        // brick count.
+        //
+        // Auto-reset is turned off deliberately: the viewport draws the gizmo
+        // helper in its own pass, and per-frame reset means whichever pass
+        // finishes last is all a sampler would see. Accumulating and resetting
+        // explicitly makes the counters cover every pass between two samples.
+        gl.info.autoReset = false
+        ;(window as unknown as { __brickwrightRenderStats?: () => unknown }).__brickwrightRenderStats = () => {
+          const sample = {
+            drawCalls: gl.info.render.calls,
+            triangles: gl.info.render.triangles,
+            geometries: gl.info.memory.geometries,
+            programs: gl.info.programs?.length ?? 0,
+          }
+          gl.info.reset()
+          return sample
+        }
       }}
       onPointerMissed={() => onClearSelection()}
     >
@@ -264,44 +322,31 @@ export function CadViewport({
       <directionalLight position={[16, 10, -16]} intensity={1.6} color="#8cddeb" />
 
       <group rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
-        {Object.values(document.parts).map((part) => {
-          const subassemblyIndex = Math.max(0, subassemblyOrder.indexOf(part.subassemblyId))
-          const angle = (subassemblyIndex / Math.max(1, subassemblyOrder.length)) * Math.PI * 2
-          const displayTransform: Transform | undefined =
-            renderMode === 'exploded'
-              ? {
-                  ...part.transform,
-                  position: [
-                    part.transform.position[0] + Math.cos(angle) * 140,
-                    part.transform.position[1] - (subassemblyIndex % 3) * 40,
-                    part.transform.position[2] + Math.sin(angle) * 140,
-                  ] as Vec3,
-                }
-              : undefined
+        {/* The bulk of the model renders as instanced batches; only parts that
+            need individual treatment are drawn on their own. */}
+        {plan.batches.map((descriptor) => (
+          <PartBatch
+            key={descriptor.key}
+            descriptor={descriptor}
+            showEdges={edgesEnabled}
+            silhouette={renderMode === 'silhouette'}
+            onSelect={onSelect}
+          />
+        ))}
 
-          const appearance: PartAppearance =
-            renderMode === 'violations' && invalidIds.has(part.id)
-              ? 'invalid'
-              : renderMode === 'silhouette'
-                ? 'silhouette'
-                : selected.has(part.id)
-                  ? 'selected'
-                  : 'solid'
-
-          return (
-            <PartObject
-              key={part.id}
-              part={part}
-              appearance={appearance}
-              canTransform={selection.length === 1 && selection[0] === part.id && renderMode === 'beauty'}
-              tool={tool}
-              gridLdu={gridLdu}
-              displayTransform={displayTransform}
-              onSelect={onSelect}
-              onTransform={onTransform}
-            />
-          )
-        })}
+        {plan.individual.map((member) => (
+          <PartObject
+            key={member.part.id}
+            part={member.part}
+            appearance={appearanceFor(member.part.id)}
+            canTransform={selection.length === 1 && selection[0] === member.part.id && renderMode === 'beauty'}
+            tool={tool}
+            gridLdu={gridLdu}
+            displayTransform={member.transform}
+            onSelect={onSelect}
+            onTransform={onTransform}
+          />
+        ))}
 
         {proposals
           .filter((proposal) => proposal.status === 'pending')

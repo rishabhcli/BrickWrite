@@ -128,6 +128,45 @@ try {
     `Expected GEOMETRY_UNAVAILABLE for ${unplaceable}, saw ${JSON.stringify(refused.structuredContent).slice(0, 240)}`,
   )
 
+  // -- the tool contract is enforced, not merely advertised -----------------
+  const contract = await page.evaluate(async () => {
+    const workspace = (await window.brickwright.invoke('workspace_get', {}))?.structuredContent
+    const model = window.brickwright.getDocument()
+    // A malformed batch must be refused by the gateway with a schema error,
+    // never coerced and handed to the kernel.
+    const malformed = await window.brickwright.invoke('build_preflight', {
+      expectedRevision: model.revision,
+      label: 'Malformed batch',
+      operations: [{ op: 'demolish', partId: 'nope' }],
+    })
+    // A sheared basis is a caller bug and is reported as one.
+    const sheared = await window.brickwright.invoke('build_preflight', {
+      expectedRevision: model.revision,
+      label: 'Sheared basis',
+      operations: [{ op: 'add', definitionId: '3005', color: 15, basis: [2, 0, 0, 0, 1, 0, 0, 0, 1] }],
+    })
+    // A plan pinned to a stale tool profile is refused rather than executed.
+    const drifted = await window.brickwright.invoke('build_preflight', {
+      expectedRevision: model.revision,
+      label: 'Stale profile',
+      expectedToolProfileHash: 'fnv1a:00000000',
+      operations: [{ op: 'add', definitionId: '3005', color: 15, position: [0, -600, 0] }],
+    })
+    return {
+      profile: workspace?.toolProfile,
+      profileHash: workspace?.profileHash,
+      malformed: malformed?.structuredContent?.error,
+      sheared: sheared?.structuredContent?.error,
+      drifted: drifted?.structuredContent?.error,
+    }
+  })
+  assert(contract.profile === 'brickwright.tools/2', `Expected a versioned tool profile, saw ${contract.profile}`)
+  assert(/^fnv1a:[0-9a-f]{8}$/.test(contract.profileHash ?? ''), `Expected a profile hash, saw ${contract.profileHash}`)
+  assert(contract.malformed?.code === 'INVALID_INPUT', `Malformed batch was not refused: ${JSON.stringify(contract.malformed)}`)
+  assert(contract.sheared?.code === 'INVALID_INPUT', `Sheared basis was not refused: ${JSON.stringify(contract.sheared)}`)
+  assert(contract.drifted?.code === 'STALE_TOOL_PROFILE', `Stale profile was not refused: ${JSON.stringify(contract.drifted)}`)
+  assert(contract.drifted?.retryable === true, 'A stale profile should be reported as retryable')
+
   // -- manual placement uses the same bus, and undo stays monotonic ---------
   await page.locator('.part-card').first().locator('.part-add').click()
   const afterAdd = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
@@ -193,6 +232,78 @@ try {
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+
+  // -- rendering cost tracks part/colour combinations, not brick count ------
+  // A 400-part agent batch is committed far from the model, then the renderer's
+  // own counters are read. Instanced batching means the draw calls should barely
+  // move, because the batch introduces only a couple of new part/colour groups.
+  const renderScale = await page.evaluate(async () => {
+    // Each sample resets the counters, so this measures exactly the frames
+    // between the two calls.
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+    const sample = async () => {
+      window.__brickwrightRenderStats?.()
+      await frame()
+      await frame()
+      return window.__brickwrightRenderStats?.()
+    }
+    const before = await sample()
+
+    const model = window.brickwright.getDocument()
+    const operations = []
+    for (let index = 0; index < 400; index += 1) {
+      operations.push({
+        op: 'add',
+        definitionId: index % 2 === 0 ? '3024' : '3005',
+        color: index % 2 === 0 ? 15 : 4,
+        // Kept close to the model so the camera refit leaves it on screen and
+        // the counters describe geometry that is genuinely being drawn.
+        position: [(index % 20) * 20 - 200, -120 - Math.floor(index / 20) * 8, Math.floor(index / 20) * 20 - 200],
+      })
+    }
+    const preflight = await window.brickwright.invoke('build_preflight', {
+      expectedRevision: model.revision,
+      label: 'Render scale batch',
+      operations,
+    })
+    const proposalId = preflight?.structuredContent?.id
+    if (!proposalId) return { error: JSON.stringify(preflight?.structuredContent).slice(0, 240) }
+    const applied = await window.brickwright.invoke('build_apply', { proposalId })
+    if (!applied?.structuredContent?.resultRevision) {
+      return { error: JSON.stringify(applied?.structuredContent).slice(0, 240) }
+    }
+    // Let the camera rig settle on the new bounds before sampling.
+    await frame()
+    await frame()
+    await frame()
+    const after = await sample()
+    return { before, after, parts: Object.keys(window.brickwright.getDocument().parts).length }
+  })
+  assert(!renderScale.error, `Render-scale batch failed: ${renderScale.error}`)
+  assert(renderScale.parts > 400, `Expected the batch to commit, saw ${renderScale.parts} parts`)
+  // Measured +14 for 400 parts. Without instancing and merged edges this was
+  // +810, so a ceiling of 40 catches a regression on either without being
+  // sensitive to shadow-pass or overlay changes.
+  assert(
+    renderScale.after.drawCalls - renderScale.before.drawCalls < 40,
+    `400 extra parts added ${renderScale.after.drawCalls - renderScale.before.drawCalls} draw calls; ` +
+      `instancing and merged edges should keep this near-flat`,
+  )
+  // The counters must describe geometry that is actually drawn, otherwise a
+  // culled frame would make any instancing claim look good.
+  assert(
+    renderScale.after.triangles > renderScale.before.triangles,
+    `Expected the batch to add rendered triangles, went ${renderScale.before.triangles} -> ${renderScale.after.triangles}`,
+  )
+  assert(
+    renderScale.after.triangles > 20_000,
+    `Expected a substantial rendered triangle count, saw ${renderScale.after.triangles}`,
+  )
+  // Undo the stress batch so the reload check sees the real project.
+  await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
+
   // -- the project survives a reload ---------------------------------------
   // Every committed transaction is appended to IndexedDB, so reopening the page
   // must restore the operator's work rather than the opening showcase.
@@ -237,10 +348,23 @@ try {
     rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
     meshAssetsFetched: geometry.meshes,
     refusedUnplaceableIdentity: unplaceable,
+    contractEnforcement: {
+      profile: contract.profile,
+      malformedBatch: contract.malformed?.code,
+      shearedBasis: contract.sheared?.code,
+      staleProfile: contract.drifted?.code,
+    },
     afterProposal,
     afterAdd,
     afterUndo,
     exportType1Lines: type1,
+    renderScale: {
+      partsAfterBatch: renderScale.parts,
+      drawCallsBefore: renderScale.before.drawCalls,
+      drawCallsAfter: renderScale.after.drawCalls,
+      drawCallsAddedBy400Parts: renderScale.after.drawCalls - renderScale.before.drawCalls,
+      trianglesAfter: renderScale.after.triangles,
+    },
     reloadRestored: afterReload,
     screenshot: 'artifacts/e2e-final.png',
   }, null, 2))
