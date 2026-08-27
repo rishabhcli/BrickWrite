@@ -608,8 +608,15 @@ try {
     return { id: model.id, name: model.name, revision: model.revision, parts: Object.keys(model.parts).length }
   })
   await page.locator('.project-fork input').fill('E2E fork')
+  const forkStarted = Date.now()
   await page.locator('.project-fork button').click()
-  await page.waitForFunction(() => window.brickwright.getDocument().name === 'E2E fork', null, { timeout: 15_000 })
+  // A fork checkpoints the outgoing project and writes a copy, so it is bounded
+  // by IndexedDB rather than by rendering. The budget is generous because a
+  // shared CI runner is roughly an order of magnitude slower than a laptop, and
+  // the duration is reported below so a real regression is visible as a number
+  // rather than as a timeout.
+  await page.waitForFunction(() => window.brickwright.getDocument().name === 'E2E fork', null, { timeout: 90_000 })
+  const forkMs = Date.now() - forkStarted
 
   // A fork must copy the work, not merely rename the pointer to it.
   const forked = await page.evaluate(() => {
@@ -742,6 +749,7 @@ try {
     reloadRestored: afterReload,
     projects: {
       restoreHeadline,
+      forkMs,
       forkedProjectId: forked.id,
       forkedParts: forked.parts,
       projectsListed: projectRows,
