@@ -95,6 +95,12 @@ const timed = <T,>(work: () => T): { value: T; ms: number } => {
   return { value, ms: performance.now() - started }
 }
 
+const median = (values: number[]): number => {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
+}
+
 describe('kernel at scale', () => {
   const COUNT = 1000
   const parts = lattice(COUNT)
@@ -179,11 +185,10 @@ describe('kernel at scale', () => {
     const fullDocuments = Array.from({ length: ROUNDS }, () => withParts(parts))
     const movedDocuments = Array.from({ length: ROUNDS }, moveP0)
 
-    // Best of five per side. A shared runner's scheduling noise lands on
-    // individual samples, so the minimum is the least contaminated estimate of
-    // what the code actually costs.
-    const fullMs = Math.min(
-      ...fullDocuments.map((document) => timed(() => validateDocument(document, { provideGeometry: () => null })).ms),
+    // Median of five per side. A shared runner's scheduling noise can make
+    // one sample abnormally fast or slow; the median resists those outliers.
+    const fullMs = median(
+      fullDocuments.map((document) => timed(() => validateDocument(document, { provideGeometry: () => null })).ms),
     )
     const samples = movedDocuments.map((document) =>
       timed(() =>
@@ -193,7 +198,7 @@ describe('kernel at scale', () => {
         }),
       ),
     )
-    const incrementalMs = Math.min(...samples.map((sample) => sample.ms))
+    const incrementalMs = median(samples.map((sample) => sample.ms))
 
     expect(samples[0].value.partCount).toBe(COUNT)
     expect(incrementalMs).toBeLessThan(fullMs * BUDGETS.incrementalFraction)
