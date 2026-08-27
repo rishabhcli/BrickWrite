@@ -945,17 +945,26 @@ export async function compileCatalog(options) {
     },
     coverage,
   }
+  const manifestPayload = `${JSON.stringify(manifest, null, 2)}\n`
+  const manifestDescriptor = {
+    path: `catalog/${version}/manifest.json`,
+    hash: `sha256:${sha256(manifestPayload)}`,
+    bytes: Buffer.byteLength(manifestPayload),
+  }
 
   await Promise.all([
     // A short-TTL pointer: the runtime resolves the current revision here, then
     // treats every versioned file underneath it as immutable.
-    writeFile(path.join(outputRoot, 'catalog', 'latest.json'), `${JSON.stringify({ catalogVersion: version, generatedAt: manifest.generatedAt })}\n`),
+    writeFile(
+      path.join(outputRoot, 'catalog', 'latest.json'),
+      `${JSON.stringify({ catalogVersion: version, generatedAt: manifest.generatedAt, manifest: manifestDescriptor })}\n`,
+    ),
     writeFile(path.join(catalogDirectory, 'parts.json'), partsPayload),
     writeFile(path.join(catalogDirectory, 'search.json'), searchPayload),
     writeFile(path.join(catalogDirectory, 'colors.json'), coloursPayload),
     writeFile(path.join(catalogDirectory, 'aliases.json'), aliasPayload),
     writeFile(path.join(catalogDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`),
-    writeFile(path.join(catalogDirectory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`),
+    writeFile(path.join(catalogDirectory, 'manifest.json'), manifestPayload),
     writeFile(
       path.join(catalogDirectory, 'licenses.json'),
       `${JSON.stringify(

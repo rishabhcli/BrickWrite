@@ -2,7 +2,7 @@ import { catalog, STUD_LDU } from './catalog'
 import { findCollisions, residentGeometryProvider, type GeometryProvider } from './collision'
 import { getDocumentBounds } from './geometry'
 import { computeOccupancy, deriveConnections } from './snapping'
-import type { CollisionIssue, ModelDocument, ValidationReport, Vec3 } from './types'
+import type { Bounds, CollisionIssue, ModelDocument, PartInstance, ValidationReport, Vec3 } from './types'
 
 /**
  * Adjacency and per-pair mating data for the current document.
@@ -60,6 +60,77 @@ function components(edges: Map<string, Set<string>>): string[][] {
     result.push(component)
   }
   return result.sort((a, b) => b.length - a.length)
+}
+
+/** Complete connected component around one or more seed parts. */
+export function connectedComponent(document: ModelDocument, seedPartIds: readonly string[]): string[] {
+  const { edges } = buildConnectionGraph(document)
+  const seen = new Set<string>()
+  const queue = seedPartIds.filter((id) => edges.has(id))
+  for (const id of queue) seen.add(id)
+  while (queue.length) {
+    const current = queue.shift()!
+    for (const neighbor of edges.get(current) ?? []) {
+      if (seen.has(neighbor)) continue
+      seen.add(neighbor)
+      queue.push(neighbor)
+    }
+  }
+  return [...seen].sort()
+}
+
+/**
+ * Constraint status on its own, without the rest of the report.
+ *
+ * Constraints read only the part list and the document envelope — none of the
+ * collision, connection-graph or colour-evidence work the full report does. The
+ * kernel enforces hard constraints on every commit, so that gate calls this
+ * instead of forcing two whole validation passes per edit.
+ */
+export function evaluateConstraints(document: ModelDocument): ValidationReport['constraints'] {
+  return constraintStatus(document, Object.values(document.parts), getDocumentBounds(document))
+}
+
+function constraintStatus(
+  document: ModelDocument,
+  parts: PartInstance[],
+  documentBounds: Bounds,
+): ValidationReport['constraints'] {
+  return document.constraints.map((constraint) => {
+    if (constraint.kind === 'piece-count') {
+      const max = Number(constraint.value)
+      return {
+        id: constraint.id,
+        label: constraint.label,
+        status: parts.length <= max ? ('pass' as const) : ('fail' as const),
+        message: `${parts.length} / ${max} parts`,
+      }
+    }
+    if (constraint.kind === 'dimensions') {
+      const maximum = constraint.value as { width: number; depth: number; height?: number }
+      const width = documentBounds.size[0] / STUD_LDU
+      const depth = documentBounds.size[2] / STUD_LDU
+      const height = documentBounds.size[1] / STUD_LDU
+      const pass = width <= maximum.width && depth <= maximum.depth && (!maximum.height || height <= maximum.height)
+      return {
+        id: constraint.id,
+        label: constraint.label,
+        status: pass ? ('pass' as const) : ('fail' as const),
+        message: `${width.toFixed(1)} × ${depth.toFixed(1)} studs`,
+      }
+    }
+    if (constraint.kind === 'palette') {
+      const allowed = constraint.value as number[]
+      const violations = parts.filter((part) => !allowed.includes(part.color)).length
+      return {
+        id: constraint.id,
+        label: constraint.label,
+        status: violations ? ('fail' as const) : ('pass' as const),
+        message: violations ? `${violations} out-of-palette parts` : 'Palette respected',
+      }
+    }
+    return { id: constraint.id, label: constraint.label, status: 'pass' as const, message: 'Active' }
+  })
 }
 
 export interface ValidationOptions {
@@ -124,41 +195,7 @@ export function validateDocument(document: ModelDocument, options: ValidationOpt
   const disconnectedPartIds = grouped.slice(1).flat()
   const documentBounds = getDocumentBounds(document)
 
-  const constraints = document.constraints.map((constraint) => {
-    if (constraint.kind === 'piece-count') {
-      const max = Number(constraint.value)
-      return {
-        id: constraint.id,
-        label: constraint.label,
-        status: parts.length <= max ? ('pass' as const) : ('fail' as const),
-        message: `${parts.length} / ${max} parts`,
-      }
-    }
-    if (constraint.kind === 'dimensions') {
-      const maximum = constraint.value as { width: number; depth: number; height?: number }
-      const width = documentBounds.size[0] / STUD_LDU
-      const depth = documentBounds.size[2] / STUD_LDU
-      const height = documentBounds.size[1] / STUD_LDU
-      const pass = width <= maximum.width && depth <= maximum.depth && (!maximum.height || height <= maximum.height)
-      return {
-        id: constraint.id,
-        label: constraint.label,
-        status: pass ? ('pass' as const) : ('fail' as const),
-        message: `${width.toFixed(1)} × ${depth.toFixed(1)} studs`,
-      }
-    }
-    if (constraint.kind === 'palette') {
-      const allowed = constraint.value as number[]
-      const violations = parts.filter((part) => !allowed.includes(part.color)).length
-      return {
-        id: constraint.id,
-        label: constraint.label,
-        status: violations ? ('fail' as const) : ('pass' as const),
-        message: violations ? `${violations} out-of-palette parts` : 'Palette respected',
-      }
-    }
-    return { id: constraint.id, label: constraint.label, status: 'pass' as const, message: 'Active' }
-  })
+  const constraints = constraintStatus(document, parts, documentBounds)
 
   return {
     revision: document.revision,

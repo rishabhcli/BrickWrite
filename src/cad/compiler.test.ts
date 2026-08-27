@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -88,6 +89,13 @@ describe('catalog compiler', () => {
     }
     expect(manifest.coverage.unresolvedReferences).toEqual([])
     expect(manifest.coverage.ldrawLicenses).toEqual({ 'CC-BY-4.0': 1 })
+  })
+
+  it('binds the immutable manifest into the mutable latest pointer', async () => {
+    const latest = JSON.parse(await readFile(path.join(out, 'catalog', 'latest.json'), 'utf8'))
+    const bytes = await readFile(path.join(out, latest.manifest.path))
+    expect(latest.manifest.bytes).toBe(bytes.length)
+    expect(latest.manifest.hash).toBe(`sha256:${createHash('sha256').update(bytes).digest('hex')}`)
   })
 
   it('is deterministic across runs', async () => {

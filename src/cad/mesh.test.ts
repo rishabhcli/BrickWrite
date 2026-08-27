@@ -140,4 +140,33 @@ describe('LDraw geometry compiler', () => {
     expect(decoded.positions).toHaveLength(decoded.normals.length)
     expect(() => decodeMesh(new Uint8Array(16).buffer)).toThrow(/Not a Brickwright mesh/)
   })
+
+  it('rejects truncated or count-forged containers before creating typed views', () => {
+    const result = compileMesh(
+      'p.dat',
+      library({ 'p.dat': ['0 BFC CERTIFY CCW', '3 16 0 0 0 10 0 0 0 0 10'].join('\n') }),
+      { parseCache: new Map() },
+    )!
+    const valid = Uint8Array.from(result.buffer).buffer
+    expect(() => decodeMesh(valid.slice(0, valid.byteLength - 4))).toThrow(/layout mismatch/i)
+
+    const forged = valid.slice(0)
+    new DataView(forged).setUint32(32, 0xffff_ffff, true)
+    expect(() => decodeMesh(forged)).toThrow(/layout mismatch/i)
+  })
+
+  it('rejects an index that points outside the declared vertex buffer', () => {
+    const result = compileMesh(
+      'p.dat',
+      library({ 'p.dat': ['0 BFC CERTIFY CCW', '3 16 0 0 0 10 0 0 0 0 10'].join('\n') }),
+      { parseCache: new Map() },
+    )!
+    const forged = Uint8Array.from(result.buffer).buffer
+    const view = new DataView(forged)
+    const vertexCount = view.getUint32(32, true)
+    const sliceCount = view.getUint32(44, true)
+    const indexOffset = 52 + sliceCount * 12 + vertexCount * 24
+    view.setUint32(indexOffset, vertexCount, true)
+    expect(() => decodeMesh(forged)).toThrow(/exceeds its .* vertices/i)
+  })
 })

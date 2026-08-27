@@ -27,6 +27,16 @@ const makePart = (id: string, x: number): PartInstance => ({
   protected: false,
 })
 
+/**
+ * Commits one part, and asserts it committed.
+ *
+ * These tests only need *a* successful transaction to move a revision forward;
+ * the position is incidental. It still has to land inside the showcase's hard
+ * `Envelope ≤ 10 × 14 studs` constraint, which the kernel enforces on every
+ * commit — the rover already spans 8 × 12 studs across x ∈ [-80, 80] LDU, so an
+ * offset outside that footprint is refused as `CONSTRAINT_VIOLATION` and the
+ * failure reads as a session bug when it is nothing of the sort.
+ */
 const place = (id: string, x: number) => {
   const result = cadEngine.execute('Place', [{ type: 'part.add', part: makePart(id, x) }], 'human')
   expect(result.ok).toBe(true)
@@ -62,7 +72,7 @@ describe('session projects', () => {
     expect(session.currentProjectId).not.toBe(originId)
     expect(cadEngine.getSnapshot().document.name).toBe('Wing study')
 
-    place('fork_part', 400)
+    place('fork_part', 0)
 
     const projects = await session.listProjects()
     const origin = projects.find((project) => project.projectId === originId)
@@ -96,7 +106,7 @@ describe('session projects', () => {
 
     // No `settled()` here on purpose: the append is still queued when the switch
     // begins, which is exactly the race the flush exists to close.
-    place('late_part', 500)
+    place('late_part', 40)
     const switched = await session.openProject(originId)
     expect(switched.ok).toBe(true)
 
@@ -107,8 +117,8 @@ describe('session projects', () => {
 
   it('checkpoints on the way out, so a reopened project needs no replay', async () => {
     const originId = session.currentProjectId
-    place('a', 300)
-    place('b', 340)
+    place('a', 0)
+    place('b', 40)
     const revision = cadEngine.getSnapshot().document.revision
     await session.forkProject('Elsewhere')
 
@@ -123,8 +133,8 @@ describe('session projects', () => {
   })
 
   it('replays the log on boot for commits made after the last checkpoint', async () => {
-    place('a', 300)
-    place('b', 340)
+    place('a', 0)
+    place('b', 40)
     const revision = cadEngine.getSnapshot().document.revision
     await session.settled()
 

@@ -1,4 +1,5 @@
 import { catalog, type CatalogPayload } from './catalog'
+import { verifyAsset, type IntegrityDescriptor } from './integrity'
 import { GeometryCache, geometryCache } from './mesh'
 
 /**
@@ -36,25 +37,52 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T
 }
 
+async function fetchVerifiedJson<T>(url: string, descriptor: IntegrityDescriptor): Promise<T> {
+  const response = await fetch(url, { cache: 'force-cache' })
+  if (!response.ok) throw new Error(`${url} → ${response.status} ${response.statusText}`)
+  const buffer = await response.arrayBuffer()
+  await verifyAsset(buffer, descriptor, url)
+  return JSON.parse(new TextDecoder().decode(buffer)) as T
+}
+
 export async function loadCompiledCatalog(baseUrl = ''): Promise<CatalogLoadResult> {
   const root = baseUrl.replace(/\/$/, '')
-  let version: string
+  let pointer: { catalogVersion: string; manifest?: IntegrityDescriptor & { path: string } }
   try {
     // The pointer is intentionally the only non-immutable request.
-    const pointer = await fetchJson<{ catalogVersion: string }>(`${root}/catalog/latest.json`)
-    version = pointer.catalogVersion
+    pointer = await fetchJson<typeof pointer>(`${root}/catalog/latest.json`)
   } catch (cause) {
     throw new CatalogUnavailableError(cause instanceof Error ? cause.message : String(cause))
   }
 
-  const prefix = `${root}/catalog/${version}`
-  const [manifest, parts, search, colors, aliases] = await Promise.all([
-    fetchJson<CatalogPayload['manifest']>(`${prefix}/manifest.json`),
-    fetchJson<CatalogPayload['parts']>(`${prefix}/parts.json`),
-    fetchJson<CatalogPayload['search']>(`${prefix}/search.json`),
-    fetchJson<CatalogPayload['colors']>(`${prefix}/colors.json`),
-    fetchJson<Record<string, string>>(`${prefix}/aliases.json`),
+  const version = pointer.catalogVersion
+  const assetUrl = (path: string) => `${root}/${path.replace(/^\/+/, '')}`
+  if (!pointer.manifest) {
+    throw new Error(`Catalog pointer ${version} does not bind its manifest to immutable bytes.`)
+  }
+  const manifest = await fetchVerifiedJson<CatalogPayload['manifest']>(assetUrl(pointer.manifest.path), pointer.manifest)
+  if (manifest.schemaVersion !== 2) throw new Error(`Catalog ${version} uses unsupported schema ${manifest.schemaVersion}.`)
+  if (manifest.catalogVersion !== version) {
+    throw new Error(`Catalog pointer requested ${version}, but its manifest identifies ${manifest.catalogVersion}.`)
+  }
+
+  const [parts, search, colors, aliases] = await Promise.all([
+    fetchVerifiedJson<CatalogPayload['parts']>(assetUrl(manifest.files.parts.path), manifest.files.parts),
+    fetchVerifiedJson<CatalogPayload['search']>(assetUrl(manifest.files.search.path), manifest.files.search),
+    fetchVerifiedJson<CatalogPayload['colors']>(assetUrl(manifest.files.colors.path), manifest.files.colors),
+    fetchVerifiedJson<Record<string, string>>(assetUrl(manifest.files.aliases.path), manifest.files.aliases),
   ])
+
+  const thumbnailCount = parts.filter((part) => Boolean(part.thumbnail)).length
+  if (
+    parts.length !== manifest.counts.packParts
+    || search.length !== manifest.counts.parts
+    || colors.length !== manifest.counts.colors
+    || Object.keys(aliases).length !== manifest.counts.aliases
+    || (manifest.counts.thumbnails !== undefined && thumbnailCount !== manifest.counts.thumbnails)
+  ) {
+    throw new Error(`Catalog ${version} counts do not match its verified payloads.`)
+  }
 
   catalog.install({ manifest, parts, search, colors, aliases })
 

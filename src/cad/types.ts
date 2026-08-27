@@ -267,6 +267,7 @@ export interface ModelDocument {
 }
 
 export type CadOperation =
+  | { type: 'document.rename'; name: string }
   | { type: 'part.add'; part: PartInstance }
   | { type: 'part.remove'; partId: string }
   | { type: 'part.transform'; partId: string; transform: Transform }
@@ -274,9 +275,12 @@ export type CadOperation =
   | { type: 'part.protect'; partId: string; protected: boolean }
   | { type: 'part.assign-subassembly'; partId: string; subassemblyId: string }
   | { type: 'subassembly.add'; subassembly: Subassembly }
+  | { type: 'subassembly.rename'; subassemblyId: string; name: string }
   | { type: 'note.add'; note: BuilderNote }
   | { type: 'note.respond'; noteId: string; response: string; resolved?: boolean }
   | { type: 'subassembly.lock'; subassemblyId: string; locked: boolean }
+  | { type: 'constraint.set'; constraint: Constraint }
+  | { type: 'constraint.remove'; constraintId: string }
   /**
    * Replaces the build sequence and reassigns every part to its new step.
    * Steps and part membership have to move together or the document would
@@ -370,6 +374,7 @@ export interface EngineErrorShape {
     | 'CATALOG_NOT_LOADED'
     | 'COLOR_UNAVAILABLE'
     | 'COLLISION'
+    | 'CONSTRAINT_VIOLATION'
     | 'PROPOSAL_NOT_FOUND'
     | 'PROPOSAL_STALE'
     | 'READ_ONLY_MODE'

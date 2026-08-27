@@ -1,11 +1,18 @@
 import { z } from 'zod'
-import { articulate, findArticulatedJoints } from '../cad/articulation'
+import { findArticulatedJoints } from '../cad/articulation'
+import {
+  planSharedMutation,
+  sharedCapability,
+  SHARED_CAPABILITIES,
+  SharedCapabilityError,
+} from '../cad/capabilities'
 import { computeBuildOrder, verifyBuildOrder } from '../cad/instructions'
 import { catalog } from '../cad/catalog'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
+import { createId } from '../cad/ids'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
-import { findWeakAttachments } from '../cad/validation'
+import { connectedComponent, findWeakAttachments } from '../cad/validation'
 import {
   assertExpectations,
   CatalogSearchSchema,
@@ -25,7 +32,7 @@ const ApplySchema = z.object({
   expectedToolProfileHash: z.string().optional(),
   expectedCatalogVersion: z.string().optional(),
 })
-import type { Actor, CadOperation, ModelDocument, PartInstance, Transform, Vec3 } from '../cad/types'
+import type { Actor, CadOperation, ModelDocument, PartInstance } from '../cad/types'
 
 type ToolDefinition = ModelContextToolDefinition
 type ToolResult = ModelContextToolResult
@@ -44,11 +51,6 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 
 const revisionProperty = { type: 'integer', description: 'Revision returned by the most recent read. Mutations reject stale revisions.' }
 
-function normalizeVec3(value: unknown, fallback: Vec3 = [0, 0, 0]): Vec3 {
-  if (!Array.isArray(value) || value.length !== 3 || value.some((item) => !Number.isFinite(item))) return fallback
-  return [value[0], value[1], value[2]]
-}
-
 /**
  * Validates and translates an operation batch.
  *
@@ -65,7 +67,8 @@ function parseOperations(raw: unknown, document: ModelDocument): CadOperation[] 
       Object.keys(document.subassemblies)[0] ??
       'main',
     defaultStepId: document.steps.at(-1)?.id ?? 'step_1',
-    idPrefix: `agent_${Date.now().toString(36)}`,
+    idPrefix: createId('agent'),
+    revision: document.revision,
   })
 }
 
@@ -83,15 +86,6 @@ function profileContext() {
     profileHash: toolProfileHash([...(window.brickwright?.tools.keys() ?? [])], catalog.version),
     catalogVersion: catalog.version,
     documentRevision: state.document.revision,
-  }
-}
-
-/** Reflects a transform through the plane x = `axis`. */
-function mirrorTransformAcrossX(transform: Transform, axis: number): Transform {
-  const b = transform.basis
-  return {
-    position: [axis - (transform.position[0] - axis), transform.position[1], transform.position[2]],
-    basis: [-b[0], b[1], b[2], -b[3], b[4], b[5], -b[6], b[7], b[8]],
   }
 }
 
@@ -221,7 +215,7 @@ const readTools: ToolDefinition[] = [
       const request = input as { view?: string; mode?: string }
       const view = request.view ?? 'isometric'
       const mode = request.mode ?? 'beauty'
-      const requestId = `capture_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const requestId = createId('capture')
       await new Promise<void>((resolve) => {
         const timeout = window.setTimeout(() => {
           window.removeEventListener('brickwright:capture-ready', ready)
@@ -285,22 +279,17 @@ const readTools: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
     execute: (input) => {
       const query = String((input as { query: string }).query).toLowerCase()
-      const capabilities = [
-        { id: 'export_ldraw', kind: 'read', summary: 'Export the exact current document as LDraw text.' },
-        { id: 'export_bom', kind: 'read', summary: 'Return an aggregated bill of materials with LDraw and BrickLink identities.' },
-        { id: 'selection_connected', kind: 'read', summary: 'Inspect the currently connected component.' },
-        { id: 'duplicate_selection', kind: 'mutate', summary: 'Duplicate selected parts by an exact LDU offset.' },
-        { id: 'mirror_selection', kind: 'mutate', summary: 'Mirror selected transforms across the X axis.' },
-        { id: 'respond_to_note', kind: 'mutate', summary: 'Attach an agent response to a spatial builder note.' },
-        { id: 'export_mpd', kind: 'read', summary: 'Export the document as a multi-part MPD with one submodel per subassembly.' },
-        { id: 'catalog_coverage', kind: 'read', summary: 'Report exactly what the compiled catalog knows: identity, geometry, connection and colour coverage.' },
-        { id: 'weak_attachments', kind: 'read', summary: 'List parts held by a single connector, the classic will-fall-off warning.' },
-        { id: 'list_joints', kind: 'read', summary: 'List articulated joints the current selection can drive, with their retained freedom.' },
-        { id: 'articulate_joint', kind: 'mutate', summary: 'Drive an articulated joint, carrying everything rigidly attached to the moving side.' },
-        { id: 'compute_build_order', kind: 'read', summary: 'Derive a build sequence from the connection graph without changing the document.' },
-        { id: 'apply_build_order', kind: 'mutate', summary: 'Replace the document build sequence with a derived, verified order.' },
-      ]
-      return json(capabilities.filter((capability) => `${capability.id} ${capability.summary}`.toLowerCase().includes(query)))
+      return json(
+        SHARED_CAPABILITIES
+          .filter((capability) => `${capability.id} ${capability.title} ${capability.summary} ${capability.group}`.toLowerCase().includes(query))
+          .map((capability) => ({
+            id: capability.id,
+            kind: capability.kind,
+            group: capability.group,
+            summary: capability.summary,
+            parity: { human: true, agent: true },
+          })),
+      )
     },
   },
   {
@@ -310,31 +299,18 @@ const readTools: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
     execute: (input) => {
       const capability = String((input as { capability: string }).capability)
-      const help: Record<string, unknown> = {
-        export_ldraw: { call: 'action_read', input: { action: 'export_ldraw' } },
-        export_bom: { call: 'action_read', input: { action: 'export_bom' } },
-        duplicate_selection: { call: 'action_mutate', input: { action: 'duplicate_selection', expectedRevision: 'integer', offsetLdu: '[x,y,z]' } },
-        mirror_selection: { call: 'action_mutate', input: { action: 'mirror_selection', expectedRevision: 'integer', axisLdu: 'number, default 0' } },
-        respond_to_note: { call: 'action_mutate', input: { action: 'respond_to_note', expectedRevision: 'integer', noteId: 'string', response: 'string' } },
-        export_mpd: { call: 'action_read', input: { action: 'export_mpd' } },
-        catalog_coverage: { call: 'action_read', input: { action: 'catalog_coverage' } },
-        weak_attachments: { call: 'action_read', input: { action: 'weak_attachments' } },
-        list_joints: { call: 'action_read', input: { action: 'list_joints' } },
-        compute_build_order: { call: 'action_read', input: { action: 'compute_build_order', args: { maxPartsPerStep: 'integer, optional' } } },
-        apply_build_order: { call: 'action_mutate', input: { action: 'apply_build_order', expectedRevision: 'integer', maxPartsPerStep: 'integer, optional' } },
-        articulate_joint: {
-          call: 'action_mutate',
-          input: {
-            action: 'articulate_joint',
-            expectedRevision: 'integer',
-            edgeId: 'string, from list_joints',
-            rotateDegrees: 'number, optional; clamped to the joint\'s retained freedom',
-            slideLdu: 'number, optional; clamped to the joint\'s axial range',
-          },
-          note: 'Stud connections are rigid once built and are never drivable. Only hinges, pins, axles, bars and ball joints appear.',
-        },
-      }
-      return json(help[capability] ?? { error: 'UNKNOWN_CAPABILITY', repair: 'Call capabilities_search with a task-oriented query.' })
+      const definition = sharedCapability(capability)
+      if (!definition) return json({ error: 'UNKNOWN_CAPABILITY', repair: 'Call capabilities_search with a task-oriented query.' })
+      return json({
+        id: definition.id,
+        title: definition.title,
+        summary: definition.summary,
+        parity: { human: 'Command Deck or primary CAD control', agent: definition.kind === 'read' ? 'action_read' : 'action_mutate' },
+        call: definition.kind === 'read' ? 'action_read' : 'action_mutate',
+        input: definition.kind === 'read'
+          ? { action: definition.id, args: definition.input }
+          : { action: definition.id, expectedRevision: 'integer', args: definition.input },
+      })
     },
   },
   {
@@ -361,6 +337,17 @@ const readTools: ToolDefinition[] = [
       }
       if (action === 'weak_attachments') {
         return json({ documentRevision: cadEngine.getSnapshot().document.revision, weak: findWeakAttachments(cadEngine.getDocument()) })
+      }
+      if (action === 'selection_connected') {
+        const state = cadEngine.getSnapshot()
+        const requested = (input as { args?: { partIds?: string[] } }).args?.partIds ?? state.selection
+        const partIds = connectedComponent(state.document, requested)
+        return json({
+          documentRevision: state.document.revision,
+          seedPartIds: requested,
+          partIds,
+          count: partIds.length,
+        })
       }
       if (action === 'compute_build_order') {
         const state = cadEngine.getSnapshot()
@@ -471,98 +458,27 @@ const buildTools: ToolDefinition[] = [
     execute: (input) => {
       const request = input as { action: string; expectedRevision: number; args?: Record<string, unknown> }
       const state = cadEngine.getSnapshot()
-      if (request.action === 'duplicate_selection') {
-        const offset = normalizeVec3(request.args?.offsetLdu, [20, 0, 0])
-        const operations: CadOperation[] = state.selection.map((id, index) => {
-          const source = state.document.parts[id]
-          return {
-            type: 'part.add',
-            part: {
-              ...structuredClone(source),
-              id: `agent_copy_${Date.now().toString(36)}_${index}`,
-              transform: { ...source.transform, position: source.transform.position.map((value, axis) => value + offset[axis]) as unknown as Vec3 },
-              provenance: 'agent',
-              protected: false,
-            },
-          }
-        })
-        return resultOf(cadEngine.execute('Duplicate selection', operations, 'agent', request.expectedRevision, 'action_mutate'))
+      const definition = sharedCapability(request.action)
+      if (!definition || definition.kind !== 'mutate') {
+        return json({ error: { code: 'INVALID_OPERATION', message: `Unknown mutation ${request.action}`, repair: 'Call capabilities_search and capabilities_help.' } })
       }
-      if (request.action === 'mirror_selection') {
-        const axis = Number(request.args?.axisLdu ?? 0)
-        const operations: CadOperation[] = state.selection.map((id) => {
-          const source = state.document.parts[id]
-          return {
-            type: 'part.transform',
-            partId: id,
-            // Mirroring across a plane negates one basis column, which flips
-            // the basis handedness exactly as LDraw expects for a mirrored
-            // reference.
-            transform: mirrorTransformAcrossX(source.transform, axis),
-          }
+      try {
+        const plan = planSharedMutation(definition.id, request.args, {
+          document: state.document,
+          selection: state.selection,
+          actor: 'agent',
         })
-        return resultOf(cadEngine.execute('Mirror selection', operations, 'agent', request.expectedRevision, 'action_mutate'))
+        const result = cadEngine.execute(plan.label, [...plan.operations], 'agent', request.expectedRevision, 'action_mutate')
+        if (result.ok && plan.nextSelection) cadEngine.setSelection([...plan.nextSelection])
+        return result.ok
+          ? json({ ...result.value, capability: plan.capability, summary: plan.summary, selection: plan.nextSelection ?? state.selection })
+          : resultOf(result)
+      } catch (cause) {
+        const error = cause instanceof SharedCapabilityError
+          ? new ContractError(cause.code, cause.message, cause.repair, cause.details)
+          : cause
+        return json(toErrorEnvelope(error, { currentRevision: state.document.revision }))
       }
-      if (request.action === 'apply_build_order') {
-        const result = computeBuildOrder(state.document, {
-          maxPartsPerStep: Number(request.args?.maxPartsPerStep) || undefined,
-        })
-        if (!result.steps.length) {
-          return json(
-            toErrorEnvelope(
-              new ContractError('INVALID_OPERATION', 'The model has no parts to sequence.', 'Place parts first.'),
-              { currentRevision: state.document.revision },
-            ),
-          )
-        }
-        return resultOf(
-          cadEngine.execute(
-            'Generate build order',
-            [{ type: 'steps.replace', steps: result.steps }],
-            'agent',
-            request.expectedRevision,
-            'action_mutate',
-          ),
-        )
-      }
-      if (request.action === 'articulate_joint') {
-        const edgeId = String(request.args?.edgeId ?? '')
-        const scope = (request.args?.partIds as string[] | undefined) ?? state.selection
-        const joint = findArticulatedJoints(state.document, scope).find((entry) => entry.edgeId === edgeId)
-        if (!joint) {
-          return json(
-            toErrorEnvelope(
-              new ContractError(
-                'INVALID_OPERATION',
-                `No drivable joint ${edgeId} for the current scope.`,
-                'Call action_read with list_joints to get current edge ids, then retry.',
-              ),
-              { currentRevision: state.document.revision },
-            ),
-          )
-        }
-        const operations = articulate(state.document, joint, {
-          rotateDegrees: request.args?.rotateDegrees === undefined ? undefined : Number(request.args.rotateDegrees),
-          slideLdu: request.args?.slideLdu === undefined ? undefined : Number(request.args.slideLdu),
-        })
-        if (!operations.length) {
-          return json(
-            toErrorEnvelope(
-              new ContractError(
-                'INVALID_OPERATION',
-                'The requested amount is outside what this joint permits, so nothing changed.',
-                'Inspect the joint freedom from list_joints and request a value it allows.',
-                { freedom: joint.joint },
-              ),
-              { currentRevision: state.document.revision },
-            ),
-          )
-        }
-        return resultOf(
-          cadEngine.execute(`Articulate ${joint.family}`, operations, 'agent', request.expectedRevision, 'action_mutate'),
-        )
-      }
-      return json({ error: { code: 'INVALID_OPERATION', message: `Unknown action ${request.action}`, repair: 'Call capabilities_search and capabilities_help.' } })
     },
   },
 ]
