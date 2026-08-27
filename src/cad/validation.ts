@@ -2,7 +2,7 @@ import { catalog, STUD_LDU } from './catalog'
 import { findCollisions, residentGeometryProvider, type GeometryProvider } from './collision'
 import { getDocumentBounds } from './geometry'
 import { computeOccupancy, deriveConnections } from './snapping'
-import type { CollisionIssue, ModelDocument, ValidationReport } from './types'
+import type { CollisionIssue, ModelDocument, ValidationReport, Vec3 } from './types'
 
 /**
  * Adjacency and per-pair mating data for the current document.
@@ -19,6 +19,27 @@ function buildConnectionGraph(document: ModelDocument) {
     edges.get(pair.b.partId)?.add(pair.a.partId)
   }
   return { edges, world, connectionCount: world.pairs.length }
+}
+
+function toIssue(contact: {
+  partA: string
+  partB: string
+  overlapLdu: Vec3
+  certainty: CollisionIssue['certainty']
+  pointLdu?: Vec3
+}): CollisionIssue {
+  return {
+    id: `collision_${contact.partA}_${contact.partB}`,
+    partA: contact.partA,
+    partB: contact.partB,
+    overlapLdu: contact.overlapLdu,
+    certainty: contact.certainty,
+    pointLdu: contact.pointLdu,
+    message:
+      contact.certainty === 'unknown'
+        ? `Parts ${contact.partA} and ${contact.partB} have overlapping bounds; their geometry is not loaded, so this is unverified.`
+        : `Parts ${contact.partA} and ${contact.partB} intersect outside an allowed connection volume.`,
+  }
 }
 
 function components(edges: Map<string, Set<string>>): string[][] {
@@ -44,6 +65,17 @@ function components(edges: Map<string, Set<string>>): string[][] {
 export interface ValidationOptions {
   /** Override the geometry source; tests supply compiled meshes directly. */
   provideGeometry?: GeometryProvider
+  /**
+   * Reuse of the previous pass, when the caller knows exactly what changed.
+   *
+   * Only pairs involving a touched part can have gained or lost a collision, so
+   * previous verdicts about untouched pairs carry forward unchanged. That turns
+   * a whole-model recheck into work proportional to the edit.
+   */
+  incremental?: {
+    previous: ValidationReport
+    touchedPartIds: readonly string[]
+  }
 }
 
 export function validateDocument(document: ModelDocument, options: ValidationOptions = {}): ValidationReport {
@@ -51,22 +83,31 @@ export function validateDocument(document: ModelDocument, options: ValidationOpt
   const graph = buildConnectionGraph(document)
 
   // -- Collision -------------------------------------------------------------
-  // Delegated to the collision kernel: box broad phase, mating-clearance
+  // Delegated to the collision kernel: grid broad phase, mating-clearance
   // allowance, then triangle confirmation for whatever survives.
-  const collisions: CollisionIssue[] = findCollisions(document, {
-    provide: options.provideGeometry ?? residentGeometryProvider,
-  }).map((contact) => ({
-    id: `collision_${contact.partA}_${contact.partB}`,
-    partA: contact.partA,
-    partB: contact.partB,
-    overlapLdu: contact.overlapLdu,
-    certainty: contact.certainty,
-    pointLdu: contact.pointLdu,
-    message:
-      contact.certainty === 'unknown'
-        ? `Parts ${contact.partA} and ${contact.partB} have overlapping bounds; their geometry is not loaded, so this is unverified.`
-        : `Parts ${contact.partA} and ${contact.partB} intersect outside an allowed connection volume.`,
-  }))
+  const provide = options.provideGeometry ?? residentGeometryProvider
+  const incremental = options.incremental
+  const touched = incremental ? new Set(incremental.touchedPartIds) : null
+
+  const recomputed = findCollisions(document, {
+    provide,
+    onlyPartIds: touched ? [...touched] : undefined,
+  }).map(toIssue)
+
+  const collisions: CollisionIssue[] = touched
+    ? [
+        // Verdicts about pairs the edit did not involve are still valid, so long
+        // as both parts still exist.
+        ...incremental!.previous.collisions.filter(
+          (issue) =>
+            !touched.has(issue.partA) &&
+            !touched.has(issue.partB) &&
+            document.parts[issue.partA] &&
+            document.parts[issue.partB],
+        ),
+        ...recomputed,
+      ]
+    : recomputed
 
   // -- Colour evidence -------------------------------------------------------
   const virtualColors: ValidationReport['virtualColors'] = parts.flatMap((part): ValidationReport['virtualColors'] => {

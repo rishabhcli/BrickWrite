@@ -32,7 +32,7 @@ import { cadEngine } from './cad/engine'
 import { getDocumentBounds, getPartBounds } from './cad/geometry'
 import { downloadText, exportLDraw, parseLDraw } from './cad/ldraw'
 import { bestSnapTransform } from './cad/snapping'
-import { saveLocalDocument } from './cad/storage'
+import { session, type SessionStatus } from './cad/session'
 import type { CadOperation, CatalogSearchRecord, PartInstance, Transform, Vec3 } from './cad/types'
 import { CadViewport, type CameraView, type EditorTool, type RenderMode } from './editor/CadViewport'
 import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline } from './editor/Panels'
@@ -58,6 +58,7 @@ export default function App() {
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [toolStatus, setToolStatus] = useState({ native: false, toolCount: 0, mode: state.autonomy })
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() => session.status)
   const importInput = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -94,9 +95,11 @@ export default function App() {
     return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame) }
   }, [cameraView, captureRequestId, renderMode])
 
+  // Persistence is driven by the session layer's commit hook, not by rendering:
+  // every committed transaction is appended to the durable log immediately.
   useEffect(() => {
-    saveLocalDocument(state.document)
     setToolStatus(webMcpAdapter.getStatus())
+    setSessionStatus(session.status)
   }, [state.autonomy, state.document])
 
   useEffect(() => {
@@ -372,7 +375,22 @@ export default function App() {
           <ChevronDown size={13} />
         </div>
         <div className="topbar-status">
-          <div className="save-state"><Save size={13} /><span>Saved</span><em>r{state.document.revision}</em></div>
+          {/* The indicator reports what persistence actually achieved: a
+              durable store, a fallback, or an outright failure. */}
+          <div
+            className={`save-state ${sessionStatus.error ? 'failing' : sessionStatus.durable ? '' : 'volatile'}`}
+            title={
+              sessionStatus.error
+                ? `Autosave failed: ${sessionStatus.error}`
+                : sessionStatus.durable
+                  ? `Every transaction is appended to IndexedDB${sessionStatus.restore?.replayedTransactions ? ` · ${sessionStatus.restore.replayedTransactions} replayed on open` : ''}`
+                  : 'IndexedDB is unavailable in this context; work is kept in memory only'
+            }
+          >
+            <Save size={13} />
+            <span>{sessionStatus.error ? 'Not saved' : sessionStatus.durable ? 'Saved' : 'In memory'}</span>
+            <em>r{state.document.revision}</em>
+          </div>
           <div className={`codex-state ${toolStatus.native ? 'connected' : 'ready'}`}>
             <span className="pulse-ring"><i /></span>
             <div><strong>{toolStatus.native ? 'Codex connected' : 'Site tools ready'}</strong><small>{toolStatus.toolCount} tools · {state.autonomy} access · catalog {catalog.version}</small></div>

@@ -192,6 +192,29 @@ try {
 
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
+
+  // -- the project survives a reload ---------------------------------------
+  // Every committed transaction is appended to IndexedDB, so reopening the page
+  // must restore the operator's work rather than the opening showcase.
+  const beforeReload = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { revision: model.revision, parts: Object.keys(model.parts).length, name: model.name }
+  })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.locator('canvas').waitFor({ timeout: 30_000 })
+  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  const afterReload = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { revision: model.revision, parts: Object.keys(model.parts).length, name: model.name }
+  })
+  assert(
+    afterReload.revision === beforeReload.revision && afterReload.parts === beforeReload.parts,
+    `Reload did not restore the project: had r${beforeReload.revision}/${beforeReload.parts} parts, ` +
+      `got r${afterReload.revision}/${afterReload.parts}`,
+  )
+  const saveState = await page.locator('.save-state span').innerText()
+  assert(saveState.trim() === 'Saved', `Expected a durable save indicator, saw "${saveState.trim()}"`)
+  assert(errors.length === 0, `Browser errors after reload: ${errors.join('; ')}`)
   assert(errors.length === 0, `Browser errors: ${errors.join('; ')}`)
 
   console.log(JSON.stringify({
@@ -218,6 +241,7 @@ try {
     afterAdd,
     afterUndo,
     exportType1Lines: type1,
+    reloadRestored: afterReload,
     screenshot: 'artifacts/e2e-final.png',
   }, null, 2))
   await browser.close()

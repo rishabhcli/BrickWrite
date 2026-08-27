@@ -25,9 +25,16 @@ let bootPromise: Promise<{ App: ComponentType; info: CatalogLoadResult }> | null
 function boot() {
   bootPromise ??= (async () => {
     const info = await loadCompiledCatalog()
-    const [editor, engine] = await Promise.all([import('./App'), import('./cad/engine')])
-    // Warm the geometry the opening document needs so the first painted frame
-    // shows real meshes instead of streaming placeholders.
+    const [editor, engine, sessionModule] = await Promise.all([
+      import('./App'),
+      import('./cad/engine'),
+      import('./cad/session'),
+    ])
+    // Restore the operator's own project *before* the editor mounts, so their
+    // work never flashes past behind the opening showcase.
+    await sessionModule.session.start()
+    // Warm the geometry that document needs so the first painted frame shows
+    // real meshes instead of streaming placeholders.
     await preloadDocumentGeometry(
       Object.values(engine.cadEngine.getDocument().parts).map((part) => part.definitionId),
     )
@@ -55,7 +62,7 @@ function BootScreen({ status }: { status: BootStatus }) {
       <div className="boot-mark"><span /><span /><span /><span /></div>
       <span className="eyebrow">BRICKWRIGHT</span>
       <h1>Compiling catalog into the CAD kernel</h1>
-      <p>Loading LDraw identities, LDCad connection metadata and the LDraw colour table.</p>
+      <p>Loading LDraw identities, LDCad connection metadata and the LDraw colour table, then restoring your project.</p>
     </main>
   )
 }

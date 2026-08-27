@@ -1,7 +1,9 @@
+export type { DocumentPatch, EntityMutation } from './patch'
 export type { Mat3, RigidTransform, Vec3 } from './math'
 export type { RigidTransform as Transform } from './math'
 
 import type { Mat3, RigidTransform, RigidTransform as Transform, Vec3 } from './math'
+import type { DocumentPatch } from './patch'
 
 export type Actor = 'human' | 'agent'
 export type AutonomyMode = 'inspect' | 'propose' | 'build'
@@ -268,7 +270,14 @@ export interface Transaction {
   baseRevision: number
   resultRevision: number
   timestamp: string
+  /** The stable operation vocabulary, retained for display and agent reporting. */
   operations: CadOperation[]
+  /**
+   * Storage-level forward and inverse mutations. Undo applies the inverse rather
+   * than restoring a whole historical document, and the touched set drives
+   * incremental revalidation.
+   */
+  patch: DocumentPatch
   affectedPartIds: string[]
   sourceTool?: string
   kind?: 'edit' | 'undo' | 'redo'

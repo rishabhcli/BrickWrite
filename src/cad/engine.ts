@@ -1,15 +1,16 @@
 import { catalog, searchCatalog } from './catalog'
 import { jointFor } from './connections'
 import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from './math'
-import { deriveConnections } from './snapping'
+import { applyMutations, invertMutations, mutationsForOperations, touchedBy, type DocumentPatch, type EntityMutation } from './patch'
+import { deriveConnections, IncrementalConnectorWorld, type MatedPair } from './snapping'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
-import { loadLocalDocument } from './storage'
 import { validateDocument } from './validation'
 import type {
   Actor,
   AutonomyMode,
   CadOperation,
   ConnectionEdge,
+  ValidationReport,
   CatalogSearchQuery,
   CatalogSearchRecord,
   CommandResult,
@@ -19,12 +20,6 @@ import type {
   Proposal,
   Transaction,
 } from './types'
-
-interface HistoryEntry {
-  before: ModelDocument
-  after: ModelDocument
-  transaction: Transaction
-}
 
 const clone = <T,>(value: T): T => structuredClone(value)
 const now = () => new Date().toISOString()
@@ -72,24 +67,30 @@ function normalizeDocument(document: ModelDocument): ModelDocument {
 const edgeId = (a: string, b: string) => `edge_${[a, b].sort().join('__')}`
 
 /**
- * Rewrites the document's connection edges from the current geometry.
+ * Connection-edge mutations needed to bring the document's recorded graph in
+ * line with its geometry.
  *
  * Edges are persisted rather than re-inferred on demand so the structural graph
  * survives save, load and export, and so each edge can carry its joint freedom
- * and provenance. An edge that still exists keeps its original revision and
- * source, so "when did this connection appear, and who made it" stays answerable
- * across later transactions.
+ * and provenance. Emitting them as *mutations* rather than writing them directly
+ * means they belong to the transaction, so undo removes the connections an edit
+ * created along with the edit itself.
+ *
+ * An edge that still exists keeps its original revision and source, so "when did
+ * this connection appear, and who made it" stays answerable across later edits.
  */
-function syncConnections(document: ModelDocument, revision: number, source: ConnectionEdge['source']): void {
-  const world = deriveConnections(document)
+function connectionMutations(
+  document: ModelDocument,
+  revision: number,
+  source: ConnectionEdge['source'],
+  scope?: { world: IncrementalConnectorWorld; touchedPartIds: readonly string[] },
+): EntityMutation[] {
   const previous = document.connections ?? {}
-  const next: Record<string, ConnectionEdge> = {}
-  for (const pair of world.pairs) {
-    const endpointA = `${pair.a.partId}/${pair.a.id}`
-    const endpointB = `${pair.b.partId}/${pair.b.id}`
-    const id = edgeId(endpointA, endpointB)
-    const existing = previous[id]
-    next[id] = existing ?? {
+  const mutations: EntityMutation[] = []
+
+  const edgeFor = (pair: MatedPair): ConnectionEdge => {
+    const id = edgeId(`${pair.a.partId}/${pair.a.id}`, `${pair.b.partId}/${pair.b.id}`)
+    return {
       id,
       a: { partId: pair.a.partId, featureId: pair.a.id },
       b: { partId: pair.b.partId, featureId: pair.b.id },
@@ -99,7 +100,37 @@ function syncConnections(document: ModelDocument, revision: number, source: Conn
       source,
     }
   }
-  document.connections = next
+
+  if (scope) {
+    // Only edges with an endpoint on a touched part can have changed, so the
+    // diff is bounded by the edit rather than by the model.
+    const touched = new Set(scope.touchedPartIds)
+    const live = new Set<string>()
+    for (const partId of touched) {
+      for (const pair of scope.world.matesFor(partId, document)) {
+        const edge = edgeFor(pair)
+        live.add(edge.id)
+        if (!previous[edge.id]) mutations.push({ kind: 'connection', id: edge.id, value: edge })
+      }
+    }
+    for (const [id, edge] of Object.entries(previous)) {
+      const involved = touched.has(edge.a.partId) || touched.has(edge.b.partId)
+      if (involved && !live.has(id)) mutations.push({ kind: 'connection', id, value: null })
+    }
+    return mutations
+  }
+
+  const world = deriveConnections(document)
+  const live = new Set<string>()
+  for (const pair of world.pairs) {
+    const edge = edgeFor(pair)
+    live.add(edge.id)
+    if (!previous[edge.id]) mutations.push({ kind: 'connection', id: edge.id, value: edge })
+  }
+  for (const id of Object.keys(previous)) {
+    if (!live.has(id)) mutations.push({ kind: 'connection', id, value: null })
+  }
+  return mutations
 }
 
 function isPartProtected(document: ModelDocument, partId: string): boolean {
@@ -211,111 +242,163 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
   return { ok: true, value: true }
 }
 
-function applyOperationsTo(document: ModelDocument, operations: CadOperation[], actor: Actor): ModelDocument {
-  const next = clone(document)
-  for (const operation of operations) {
-    switch (operation.type) {
-      case 'part.add': {
-        next.parts[operation.part.id] = { ...clone(operation.part), transform: normalizeTransform(operation.part.transform) }
-        const subassembly = next.subassemblies[operation.part.subassemblyId]
-        if (subassembly && !subassembly.partIds.includes(operation.part.id)) subassembly.partIds.push(operation.part.id)
-        const step = next.steps.find((candidate) => candidate.id === operation.part.stepId)
-        if (step && !step.partIds.includes(operation.part.id)) step.partIds.push(operation.part.id)
-        break
-      }
-      case 'part.remove': {
-        const removed = next.parts[operation.partId]
-        if (removed) {
-          const subassembly = next.subassemblies[removed.subassemblyId]
-          if (subassembly) subassembly.partIds = subassembly.partIds.filter((id) => id !== removed.id)
-          const step = next.steps.find((candidate) => candidate.id === removed.stepId)
-          if (step) step.partIds = step.partIds.filter((id) => id !== removed.id)
-          delete next.parts[removed.id]
-        }
-        break
-      }
-      case 'part.transform':
-        next.parts[operation.partId].transform = normalizeTransform(operation.transform)
-        break
-      case 'part.recolor':
-        next.parts[operation.partId].color = operation.color
-        break
-      case 'part.protect':
-        next.parts[operation.partId].protected = operation.protected
-        break
-      case 'part.assign-subassembly': {
-        const moved = next.parts[operation.partId]
-        const previous = next.subassemblies[moved.subassemblyId]
-        if (previous) previous.partIds = previous.partIds.filter((id) => id !== moved.id)
-        moved.subassemblyId = operation.subassemblyId
-        next.subassemblies[operation.subassemblyId]?.partIds.push(moved.id)
-        break
-      }
-      case 'subassembly.add':
-        next.subassemblies[operation.subassembly.id] = clone(operation.subassembly)
-        break
-      case 'subassembly.lock': {
-        const subassembly = next.subassemblies[operation.subassemblyId]
-        if (subassembly) subassembly.locked = operation.locked
-        break
-      }
-      case 'note.add':
-        next.notes.push(clone(operation.note))
-        break
-      case 'note.respond': {
-        const note = next.notes.find((candidate) => candidate.id === operation.noteId)
-        if (note) {
-          note.response = operation.response
-          if (operation.resolved) note.status = 'resolved'
-        }
-        break
-      }
-    }
+/**
+ * Builds a complete transaction patch for a batch of operations.
+ *
+ * The connection edges the edit implies are derived from the resulting geometry
+ * and appended to the same forward list, so the whole change — parts, membership,
+ * steps and connections — commits and reverts as one unit.
+ */
+function buildPatch(
+  document: ModelDocument,
+  operations: CadOperation[],
+  actor: Actor,
+  transactionId: string,
+  resultRevision: number,
+  edgeSource: ConnectionEdge['source'],
+  connectorWorld?: IncrementalConnectorWorld,
+): { patch: DocumentPatch; document: ModelDocument } {
+  const operationMutations = mutationsForOperations(document, operations, actor, transactionId).map(normalizeMutation)
+  const candidate = applyMutations(document, operationMutations)
+  const touchedPartIds = touchedBy(operationMutations).partIds
+  if (connectorWorld) connectorWorld.sync(candidate, touchedPartIds)
+  const forward = [
+    ...operationMutations,
+    ...connectionMutations(
+      candidate,
+      resultRevision,
+      edgeSource,
+      connectorWorld ? { world: connectorWorld, touchedPartIds } : undefined,
+    ),
+  ]
+  const inverse = invertMutations(document, forward)
+  const next = applyMutations(document, forward)
+  next.revision = resultRevision
+  next.updatedAt = now()
+  return {
+    patch: { baseRevision: document.revision, forward, inverse, touched: touchedBy(forward) },
+    document: next,
   }
-  for (const partId of affectedPartIds(operations)) {
-    if (next.parts[partId]) next.parts[partId].provenance = actor
-  }
-  return next
+}
+
+/**
+ * Fills in a document's connection edges without creating a transaction.
+ *
+ * Used when a document arrives from outside the command bus — the opening
+ * showcase, an import, a restored project — where there is no edit to attribute
+ * the edges to.
+ */
+function seedConnections(document: ModelDocument): ModelDocument {
+  const mutations = connectionMutations(document, document.revision, 'import-inferred')
+  return mutations.length ? applyMutations(document, mutations) : document
+}
+
+/** Applies the transform invariant to any part a mutation writes. */
+function normalizeMutation(mutation: EntityMutation): EntityMutation {
+  if (mutation.kind !== 'part' || !mutation.value) return mutation
+  return { ...mutation, value: { ...mutation.value, transform: normalizeTransform(mutation.value.transform) } }
 }
 
 export class CadEngine {
   private document: ModelDocument
   private transactions: Transaction[] = []
   private proposals = new Map<string, Proposal>()
-  private undoStack: HistoryEntry[] = []
-  private redoStack: HistoryEntry[] = []
+  // History holds transactions, not document copies: each carries its own
+  // inverse, so undo costs what the edit cost rather than what the model costs.
+  private undoStack: Transaction[] = []
+  private redoStack: Transaction[] = []
   private listeners = new Set<() => void>()
+  private commitListeners = new Set<(transaction: Transaction, document: ModelDocument) => void>()
   private autonomy: AutonomyMode = 'propose'
   private selection: string[] = []
   private snapshot: EngineSnapshot
+  /** Last report plus what the commit that produced it touched. */
+  private lastValidation: { report: ValidationReport; touchedPartIds: readonly string[] } | null = null
+  /** Connector index kept alive across revisions for the commit path. */
+  private connectorWorld = new IncrementalConnectorWorld()
 
   constructor(initialDocument: ModelDocument = createShowcaseDocument()) {
-    this.document = normalizeDocument(clone(initialDocument))
-    syncConnections(this.document, this.document.revision, 'import-inferred')
+    this.document = seedConnections(normalizeDocument(clone(initialDocument)))
+    this.connectorWorld.sync(this.document)
     this.snapshot = this.buildSnapshot()
   }
 
-  private buildSnapshot(): EngineSnapshot {
-    return {
-      document: this.document,
+  /**
+   * Builds the snapshot, deferring validation until something reads it.
+   *
+   * Validation is the most expensive derived value, and most commits never have
+   * theirs observed — a scripted build, an agent batch or a rapid sequence of
+   * edits all discard intermediate reports. Computing it eagerly made commit
+   * cost scale with model size for no benefit. The getter memoizes, so a
+   * consumer that reads it repeatedly pays once.
+   */
+  private buildSnapshot(touchedPartIds?: readonly string[]): EngineSnapshot {
+    const document = this.document
+    const previous = this.lastValidation
+    let computed: ValidationReport | null = null
+
+    const snapshot: EngineSnapshot = {
+      document,
       transactions: this.transactions,
       proposals: Array.from(this.proposals.values()),
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       autonomy: this.autonomy,
-      validation: validateDocument(this.document),
       selection: this.selection,
+      get validation() {
+        if (computed) return computed
+        // A commit that reported what it touched only needs its own
+        // neighbourhood rechecked; anything else revalidates from scratch.
+        computed = validateDocument(
+          document,
+          touchedPartIds && previous ? { incremental: { previous: previous.report, touchedPartIds } } : {},
+        )
+        return computed
+      },
     }
+    // Recorded lazily too: the next incremental pass needs whichever report was
+    // actually produced, not one computed speculatively.
+    Object.defineProperty(snapshot, '__recordValidation', {
+      enumerable: false,
+      value: () => {
+        if (computed) this.lastValidation = { report: computed, touchedPartIds: touchedPartIds ?? [] }
+      },
+    })
+    return snapshot
   }
 
-  private emit() {
-    this.snapshot = this.buildSnapshot()
+  private emit(touchedPartIds?: readonly string[]) {
+    // Hand the outgoing snapshot's report, if one was produced, to the
+    // incremental chain before replacing it.
+    ;(this.snapshot as { __recordValidation?: () => void }).__recordValidation?.()
+    this.snapshot = this.buildSnapshot(touchedPartIds)
     for (const listener of this.listeners) listener()
+  }
+
+  /** Discards cached validation, forcing the next pass to recompute in full. */
+  private invalidateValidation() {
+    this.lastValidation = null
   }
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /**
+   * Observes committed transactions.
+   *
+   * Kept separate from `subscribe` so persistence receives the transaction
+   * itself — the thing it needs to append to the log — without the kernel taking
+   * on any knowledge of storage.
+   */
+  onCommit = (listener: (transaction: Transaction, document: ModelDocument) => void) => {
+    this.commitListeners.add(listener)
+    return () => this.commitListeners.delete(listener)
+  }
+
+  private announce(transaction: Transaction) {
+    for (const listener of this.commitListeners) listener(transaction, this.document)
   }
 
   getSnapshot = () => this.snapshot
@@ -337,10 +420,11 @@ export class CadEngine {
   }
 
   replaceDocument(document: ModelDocument) {
-    this.document = normalizeDocument(clone(document))
-    // An imported or restored document has no recorded edges, so its graph is
-    // inferred once and marked as such.
-    syncConnections(this.document, this.document.revision, 'import-inferred')
+    // An imported or restored document may have no recorded edges, so its graph
+    // is inferred once and marked as such.
+    this.document = seedConnections(normalizeDocument(clone(document)))
+    this.connectorWorld.sync(this.document)
+    this.invalidateValidation()
     this.transactions = []
     this.proposals.clear()
     this.undoStack = []
@@ -374,46 +458,54 @@ export class CadEngine {
     const precondition = validateOperations(this.document, operations, actor)
     if (!precondition.ok) return precondition
 
-    const before = clone(this.document)
-    const after = applyOperationsTo(this.document, operations, actor)
+    const transactionId = makeId('txn')
+    const resultRevision = this.document.revision + 1
+    const { patch, document: after } = buildPatch(
+      this.document,
+      operations,
+      actor,
+      transactionId,
+      resultRevision,
+      'snap',
+      this.connectorWorld,
+    )
+
     if (actor === 'agent') {
       const beforeReport = validateDocument(this.document)
       const afterReport = validateDocument(after)
-      if (afterReport.collisions.length > beforeReport.collisions.length) {
+      const introduced = afterReport.collisions.length - beforeReport.collisions.length
+      if (introduced > 0) {
         return error(
           'COLLISION',
-          `Agent transaction would introduce ${afterReport.collisions.length - beforeReport.collisions.length} collision${afterReport.collisions.length - beforeReport.collisions.length === 1 ? '' : 's'}.`,
+          `Agent transaction would introduce ${introduced} collision${introduced === 1 ? '' : 's'}.`,
           'Run build_preflight, inspect the collision entities, and choose another snap candidate.',
           afterReport.collisions,
         )
       }
     }
-    const transactionId = makeId('txn')
-    after.revision = this.document.revision + 1
-    after.updatedAt = now()
-    syncConnections(after, after.revision, 'snap')
-    for (const partId of affectedPartIds(operations)) {
-      if (after.parts[partId]) after.parts[partId].createdByTransaction = transactionId
-    }
+
     const transaction: Transaction = {
       id: transactionId,
       author: actor,
       label,
-      baseRevision: this.document.revision,
-      resultRevision: after.revision,
+      baseRevision: patch.baseRevision,
+      resultRevision,
       timestamp: now(),
       operations: clone(operations),
-      affectedPartIds: affectedPartIds(operations),
+      patch,
+      affectedPartIds: [...patch.touched.partIds],
       sourceTool,
       kind: 'edit',
     }
+
     this.document = after
     this.transactions = [...this.transactions, transaction]
-    this.undoStack.push({ before, after: clone(after), transaction })
+    this.undoStack.push(transaction)
     this.redoStack = []
     this.proposals.clear()
     this.selection = this.selection.filter((id) => Boolean(after.parts[id]))
-    this.emit()
+    this.emit(patch.touched.partIds)
+    this.announce(transaction)
     return { ok: true, value: transaction }
   }
 
@@ -432,10 +524,14 @@ export class CadEngine {
     }
     const precondition = validateOperations(this.document, operations, actor)
     if (!precondition.ok) return precondition
-    const preview = applyOperationsTo(this.document, operations, actor)
-    preview.revision = this.document.revision + 1
-    preview.updatedAt = now()
-    syncConnections(preview, preview.revision, 'snap')
+    const { document: preview } = buildPatch(
+      this.document,
+      operations,
+      actor,
+      makeId('preflight'),
+      this.document.revision + 1,
+      'snap',
+    )
     const proposal: Proposal = {
       id: makeId('proposal'),
       label,
@@ -489,70 +585,108 @@ export class CadEngine {
     return { ok: true, value: proposal }
   }
 
+  /**
+   * Reverses the latest transaction by applying its inverse patch.
+   *
+   * The revision still moves forward — history is append-only, so undo is itself
+   * a transaction rather than a rewind. That keeps every agent revision check
+   * meaningful: a stale plan cannot become valid again because a human undid
+   * something.
+   */
   undo(actor: Actor = 'human'): CommandResult<Transaction> {
-    const entry = this.undoStack.at(-1)
-    if (!entry) return error('INVALID_OPERATION', 'There is no transaction to undo.', 'Continue building or choose a named checkpoint.')
-    if (actor === 'agent' && entry.transaction.affectedPartIds.some((partId) => isPartProtected(this.document, partId))) {
-      return error('PROTECTED_REGION', 'The latest transaction affects a currently protected region.', 'Ask the human to undo it or continue in an unlocked region.')
+    const undone = this.undoStack.at(-1)
+    if (!undone) {
+      return error('INVALID_OPERATION', 'There is no transaction to undo.', 'Continue building or choose a named checkpoint.')
+    }
+    if (actor === 'agent' && undone.affectedPartIds.some((partId) => isPartProtected(this.document, partId))) {
+      return error(
+        'PROTECTED_REGION',
+        'The latest transaction affects a currently protected region.',
+        'Ask the human to undo it or continue in an unlocked region.',
+      )
     }
     this.undoStack.pop()
-    const baseRevision = this.document.revision
-    const restored = clone(entry.before)
-    restored.revision = baseRevision + 1
-    restored.updatedAt = now()
-    const transaction: Transaction = {
-      id: makeId('txn'),
-      author: actor,
-      label: `Undo: ${entry.transaction.label}`,
-      baseRevision,
-      resultRevision: restored.revision,
-      timestamp: now(),
-      operations: clone(entry.transaction.operations),
-      affectedPartIds: entry.transaction.affectedPartIds,
-      sourceTool: actor === 'agent' ? 'undo_edit' : undefined,
-      kind: 'undo',
+    this.redoStack.push(undone)
+    return {
+      ok: true,
+      value: this.replay(
+        undone,
+        undone.patch.inverse,
+        `Undo: ${undone.label}`,
+        'undo',
+        actor,
+        actor === 'agent' ? 'undo_edit' : undefined,
+      ),
     }
-    this.document = restored
-    this.redoStack.push(entry)
-    this.transactions = [...this.transactions, transaction]
-    this.proposals.clear()
-    this.emit()
-    return { ok: true, value: transaction }
   }
 
   redo(actor: Actor = 'human'): CommandResult<Transaction> {
-    const entry = this.redoStack.at(-1)
-    if (!entry) return error('INVALID_OPERATION', 'There is no transaction to redo.', 'Undo a transaction first.')
-    if (actor === 'agent' && entry.transaction.affectedPartIds.some((partId) => isPartProtected(entry.after, partId))) {
-      return error('PROTECTED_REGION', 'The redo transaction affects a protected region.', 'Ask the human to redo it or continue in an unlocked region.')
+    const redone = this.redoStack.at(-1)
+    if (!redone) return error('INVALID_OPERATION', 'There is no transaction to redo.', 'Undo a transaction first.')
+    if (actor === 'agent' && redone.affectedPartIds.some((partId) => isPartProtected(this.document, partId))) {
+      return error(
+        'PROTECTED_REGION',
+        'The redo transaction affects a protected region.',
+        'Ask the human to redo it or continue in an unlocked region.',
+      )
     }
     this.redoStack.pop()
+    this.undoStack.push(redone)
+    return {
+      ok: true,
+      value: this.replay(
+        redone,
+        redone.patch.forward,
+        `Redo: ${redone.label}`,
+        'redo',
+        actor,
+        actor === 'agent' ? 'redo_edit' : undefined,
+      ),
+    }
+  }
+
+  /** Commits a mutation list as a new transaction derived from an existing one. */
+  private replay(
+    origin: Transaction,
+    mutations: readonly EntityMutation[],
+    label: string,
+    kind: 'undo' | 'redo',
+    actor: Actor,
+    sourceTool?: string,
+  ): Transaction {
     const baseRevision = this.document.revision
-    const restored = clone(entry.after)
-    restored.revision = baseRevision + 1
-    restored.updatedAt = now()
+    const resultRevision = baseRevision + 1
+    const inverse = invertMutations(this.document, mutations)
+    const next = applyMutations(this.document, mutations)
+    next.revision = resultRevision
+    next.updatedAt = now()
+
     const transaction: Transaction = {
       id: makeId('txn'),
       author: actor,
-      label: `Redo: ${entry.transaction.label}`,
+      label,
       baseRevision,
-      resultRevision: restored.revision,
+      resultRevision,
       timestamp: now(),
-      operations: clone(entry.transaction.operations),
-      affectedPartIds: entry.transaction.affectedPartIds,
-      sourceTool: actor === 'agent' ? 'redo_edit' : undefined,
-      kind: 'redo',
+      operations: clone(origin.operations),
+      patch: { baseRevision, forward: [...mutations], inverse, touched: touchedBy(mutations) },
+      affectedPartIds: origin.affectedPartIds,
+      sourceTool,
+      kind,
     }
-    this.document = restored
-    this.undoStack.push(entry)
+
+    this.document = next
+    this.connectorWorld.sync(next, transaction.patch.touched.partIds)
     this.transactions = [...this.transactions, transaction]
     this.proposals.clear()
-    this.emit()
-    return { ok: true, value: transaction }
+    this.selection = this.selection.filter((id) => Boolean(next.parts[id]))
+    this.emit(transaction.patch.touched.partIds)
+    this.announce(transaction)
+    return transaction
   }
 }
 
-export const cadEngine = new CadEngine(loadLocalDocument() ?? createShowcaseDocument())
+export const cadEngine = new CadEngine(createShowcaseDocument())
 
 export const commandBus = {
   dispatch: (

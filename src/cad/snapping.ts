@@ -127,6 +127,7 @@ const cellKey = (position: Vec3, size: number) =>
  */
 export class ConnectorSpatialIndex {
   private cells = new Map<string, WorldConnector[]>()
+  private partCells = new Map<string, Set<string>>()
   private total = 0
 
   constructor(private readonly cellSize = STUD_LDU) {}
@@ -136,7 +137,31 @@ export class ConnectorSpatialIndex {
     const bucket = this.cells.get(key)
     if (bucket) bucket.push(connector)
     else this.cells.set(key, [connector])
+    // Cells are tracked per part so a part can be withdrawn without rescanning
+    // the whole index, which is what makes incremental maintenance possible.
+    const owned = this.partCells.get(connector.partId)
+    if (owned) owned.add(key)
+    else this.partCells.set(connector.partId, new Set([key]))
     this.total += 1
+  }
+
+  /** Withdraws every connector belonging to one part. */
+  removePart(partId: string) {
+    const owned = this.partCells.get(partId)
+    if (!owned) return
+    for (const key of owned) {
+      const bucket = this.cells.get(key)
+      if (!bucket) continue
+      const kept = bucket.filter((connector) => connector.partId !== partId)
+      this.total -= bucket.length - kept.length
+      if (kept.length) this.cells.set(key, kept)
+      else this.cells.delete(key)
+    }
+    this.partCells.delete(partId)
+  }
+
+  has(partId: string): boolean {
+    return this.partCells.has(partId)
   }
 
   insertDocument(document: ModelDocument, excludedPartIds: ReadonlySet<string> = new Set()) {
@@ -442,3 +467,68 @@ export const computeOccupancy = (document: ModelDocument): ReadonlySet<string> =
   deriveConnections(document).occupied
 
 export { connectorsCompatible } from './connections'
+
+/**
+ * Connector index maintained across revisions.
+ *
+ * `deriveConnections` rebuilds everything for a given document, which is right
+ * for a one-off read but wrong on the commit path: rebuilding the whole index
+ * for every edit makes commit cost scale with model size. This keeps one index
+ * alive and withdraws-and-reinserts only the parts an edit touched, so a commit
+ * costs what the edit costs.
+ *
+ * It is deliberately *not* the source of truth for the connection graph. The
+ * document's persisted edges are, and a test asserts the two agree after a run
+ * of edits, so an incremental bug cannot quietly diverge from reality.
+ */
+export class IncrementalConnectorWorld {
+  private index = new ConnectorSpatialIndex()
+  private tracked = new Set<string>()
+
+  /** Brings the index in line with `document`, updating only what changed. */
+  sync(document: ModelDocument, touchedPartIds?: readonly string[]) {
+    if (!touchedPartIds) {
+      this.index = new ConnectorSpatialIndex()
+      this.tracked = new Set()
+      for (const part of Object.values(document.parts)) this.add(part)
+      return
+    }
+    for (const partId of touchedPartIds) {
+      if (this.tracked.has(partId)) {
+        this.index.removePart(partId)
+        this.tracked.delete(partId)
+      }
+      const part = document.parts[partId]
+      if (part) this.add(part)
+    }
+  }
+
+  private add(part: PartInstance) {
+    for (const connector of getWorldConnectors(part)) this.index.insert(connector)
+    this.tracked.add(part.id)
+  }
+
+  /** Mated connector pairs involving `partId`, against everything else indexed. */
+  matesFor(partId: string, document: ModelDocument): MatedPair[] {
+    const part = document.parts[partId]
+    if (!part) return []
+    const pairs: MatedPair[] = []
+    const seen = new Set<string>()
+    for (const moving of getWorldConnectors(part)) {
+      for (const other of this.index.query(moving.frame.position, CONTACT_TOLERANCE_LDU)) {
+        if (other.partId === partId) continue
+        if (!connectorsCompatible(moving, other)) continue
+        if (!framesMate(moving, other)) continue
+        const key = [`${moving.partId}/${moving.id}`, `${other.partId}/${other.id}`].sort().join('|')
+        if (seen.has(key)) continue
+        seen.add(key)
+        pairs.push({ a: moving, b: other })
+      }
+    }
+    return pairs
+  }
+
+  get size(): number {
+    return this.index.size
+  }
+}

@@ -145,6 +145,73 @@ function confirmSurfaceContact(
   return point ? { status: 'contact', pointLdu: point } : { status: 'clean' }
 }
 
+/**
+ * Uniform grid over world bounds.
+ *
+ * The pairwise loop it replaces is O(n²): at five thousand parts that is twelve
+ * million box comparisons for every validation pass. Bucketing by a two-stud
+ * cell means a part is only compared against the handful of parts that share a
+ * cell with it, which is what makes validation viable on a real model rather
+ * than on a showcase.
+ */
+const BROAD_PHASE_CELL_LDU = 40
+
+export class CollisionBroadPhase {
+  private cells = new Map<string, string[]>()
+  private bounds = new Map<string, PartBounds>()
+
+  insert(partBounds: PartBounds) {
+    this.bounds.set(partBounds.partId, partBounds)
+    for (const key of this.keysFor(partBounds)) {
+      const bucket = this.cells.get(key)
+      if (bucket) bucket.push(partBounds.partId)
+      else this.cells.set(key, [partBounds.partId])
+    }
+  }
+
+  private *keysFor(partBounds: PartBounds) {
+    const min = partBounds.min.map((value) => Math.floor(value / BROAD_PHASE_CELL_LDU))
+    const max = partBounds.max.map((value) => Math.floor(value / BROAD_PHASE_CELL_LDU))
+    for (let x = min[0]; x <= max[0]; x += 1) {
+      for (let y = min[1]; y <= max[1]; y += 1) {
+        for (let z = min[2]; z <= max[2]; z += 1) yield `${x}:${y}:${z}`
+      }
+    }
+  }
+
+  /** Part ids whose bounds could overlap the given part's. */
+  neighbours(partId: string): string[] {
+    const partBounds = this.bounds.get(partId)
+    if (!partBounds) return []
+    const found = new Set<string>()
+    for (const key of this.keysFor(partBounds)) {
+      for (const candidate of this.cells.get(key) ?? []) {
+        if (candidate !== partId) found.add(candidate)
+      }
+    }
+    return [...found]
+  }
+
+  boundsOf(partId: string): PartBounds | undefined {
+    return this.bounds.get(partId)
+  }
+}
+
+/** Broad-phase index for a document, memoized per revision. */
+const broadPhaseCache = new WeakMap<ModelDocument, CollisionBroadPhase>()
+
+export function deriveBroadPhase(document: ModelDocument): CollisionBroadPhase {
+  const cached = broadPhaseCache.get(document)
+  if (cached) return cached
+  const index = new CollisionBroadPhase()
+  for (const part of Object.values(document.parts)) {
+    const partBounds = getPartBounds(part)
+    if (partBounds.measured) index.insert(partBounds)
+  }
+  broadPhaseCache.set(document, index)
+  return index
+}
+
 export interface CollisionOptions {
   /** Supplies decoded geometry per definition; omitted means box-test only. */
   provide?: GeometryProvider
@@ -160,26 +227,30 @@ export interface CollisionOptions {
  * is never silently declared clean on the strength of a check that did not run.
  */
 export function findCollisions(document: ModelDocument, options: CollisionOptions = {}): CollisionContact[] {
-  const parts = Object.values(document.parts)
-  const bounds = new Map(parts.map((part) => [part.id, getPartBounds(part)]))
+  const broadPhase = deriveBroadPhase(document)
   const world = deriveConnections(document)
-  const scope = options.onlyPartIds ? new Set(options.onlyPartIds) : null
+  const subjects = options.onlyPartIds ?? Object.keys(document.parts)
   const contacts: CollisionContact[] = []
+  const tested = new Set<string>()
 
-  for (let index = 0; index < parts.length; index += 1) {
-    for (let compare = index + 1; compare < parts.length; compare += 1) {
-      const a = parts[index]
-      const b = parts[compare]
-      if (scope && !scope.has(a.id) && !scope.has(b.id)) continue
+  for (const partId of subjects) {
+    const a = document.parts[partId]
+    const boundsA = broadPhase.boundsOf(partId)
+    if (!a || !boundsA) continue
 
-      const boundsA = bounds.get(a.id)!
-      const boundsB = bounds.get(b.id)!
-      if (!boundsA.measured || !boundsB.measured) continue
+    for (const otherId of broadPhase.neighbours(partId)) {
+      const pairKey = partId < otherId ? `${partId}|${otherId}` : `${otherId}|${partId}`
+      if (tested.has(pairKey)) continue
+      tested.add(pairKey)
+
+      const b = document.parts[otherId]
+      const boundsB = broadPhase.boundsOf(otherId)
+      if (!b || !boundsB) continue
 
       const overlap = boxOverlap(boundsA, boundsB)
       if (!overlap.every((amount) => amount > 0.01)) continue
 
-      const mated = world.pairsByParts.get([a.id, b.id].sort().join('|')) ?? []
+      const mated = world.pairsByParts.get(pairKey) ?? []
 
       // Mated connectors explain a bounded amount of overlap. Anything the
       // allowance covers is legal and needs no further checking.

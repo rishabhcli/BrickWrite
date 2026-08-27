@@ -149,7 +149,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 86 deterministic tests + strict TS + production build
+npm run check            # 113 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```
