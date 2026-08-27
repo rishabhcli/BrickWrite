@@ -7,6 +7,7 @@ import {
   CircleAlert,
   CircleDot,
   Clock3,
+  ListOrdered,
   Lock,
   MessageSquareText,
   Plus,
@@ -499,11 +500,12 @@ interface TimelineProps {
   onAccept: (id: string) => void
   onReject: (id: string) => void
   onSelectIds: (ids: string[]) => void
+  onSequence: () => void
 }
 
 const transactionIcon = (transaction: Transaction) => transaction.author === 'agent' ? <Sparkles size={13} /> : <Box size={13} />
 
-export function Timeline({ state, onAccept, onReject, onSelectIds }: TimelineProps) {
+export function Timeline({ state, onAccept, onReject, onSelectIds, onSequence }: TimelineProps) {
   const latestTransactions = state.transactions.slice(-6).reverse()
   return (
     <section className="timeline" aria-label="Build history">
@@ -511,6 +513,11 @@ export function Timeline({ state, onAccept, onReject, onSelectIds }: TimelinePro
         <span className="eyebrow">SHARED HISTORY</span>
         <h3>Build sequence</h3>
         <div><Clock3 size={12} /> {state.document.steps.length} steps · {state.validation.partCount} pcs</div>
+        {/* Sequencing is a precedence problem over the connection graph, so it is
+            regenerated from the model rather than authored by hand. */}
+        <button className="sequence-button" onClick={onSequence} title="Derive a build sequence in which every part attaches to earlier structure">
+          <ListOrdered size={11} /> SEQUENCE
+        </button>
       </div>
       <div className="timeline-track">
         {state.proposals.map((proposal) => (

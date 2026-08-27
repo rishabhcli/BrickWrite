@@ -262,6 +262,12 @@ export type CadOperation =
   | { type: 'note.add'; note: BuilderNote }
   | { type: 'note.respond'; noteId: string; response: string; resolved?: boolean }
   | { type: 'subassembly.lock'; subassemblyId: string; locked: boolean }
+  /**
+   * Replaces the build sequence and reassigns every part to its new step.
+   * Steps and part membership have to move together or the document would
+   * describe a sequence that does not match the parts it orders.
+   */
+  | { type: 'steps.replace'; steps: BuildStep[] }
 
 export interface Transaction {
   id: string

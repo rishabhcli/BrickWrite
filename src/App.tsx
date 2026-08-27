@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { articulate, findArticulatedJoints } from './cad/articulation'
+import { computeBuildOrder } from './cad/instructions'
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './cad/catalog'
 import { IDENTITY_BASIS, rotateLocal } from './cad/math'
 import { exportBomCsv } from './cad/bom'
@@ -333,6 +334,32 @@ export default function App() {
     [dispatch],
   )
 
+  /**
+   * Regenerates the build sequence from the connection graph.
+   *
+   * The generated order guarantees each part attaches to structure placed
+   * earlier; where it cannot, the part begins a separately-built island and that
+   * is reported rather than glossed over.
+   */
+  const regenerateBuildOrder = useCallback(() => {
+    const snapshot = cadEngine.getSnapshot()
+    const result = computeBuildOrder(snapshot.document)
+    if (!result.steps.length) {
+      setToast({ kind: 'info', title: 'Nothing to sequence', detail: 'The model has no parts yet.' })
+      return
+    }
+    if (dispatch('Generate build order', [{ type: 'steps.replace', steps: result.steps }])) {
+      const islands = result.unsupportedPartIds.length
+      setToast({
+        kind: islands ? 'info' : 'success',
+        title: `${result.steps.length} steps generated`,
+        detail: islands
+          ? `Every part attaches to earlier structure except ${islands}, which begin separately-built subassemblies.`
+          : 'Every part attaches to structure placed in an earlier step.',
+      })
+    }
+  }, [dispatch])
+
   const createDemoProposal = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
     // Find a real exposed stud plane on the rear deck rather than assuming one:
@@ -579,6 +606,7 @@ export default function App() {
       </div>
 
       <Timeline
+        onSequence={regenerateBuildOrder}
         state={state}
         onAccept={acceptProposal}
         onReject={(id) => cadEngine.rejectProposal(id)}

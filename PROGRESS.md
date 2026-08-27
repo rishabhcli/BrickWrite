@@ -19,12 +19,12 @@
 | I — WebMCP | **Working** | Dynamic 12/17-tool inventories; **schema-driven contracts** where the advertised JSON Schema is derived from the same Zod declaration the gateway enforces; a versioned tool profile with a drift-detecting hash; a **centralized sanitized error envelope** that redacts credentials, signed URLs, data blobs and filesystem paths and never relays a stack trace; bounded batch sizes; compact reads; catalog coverage; preflight/apply; render capture; capability virtualization | Native ChatGPT desktop acceptance run; cancellation propagation into asset fetches and workers |
 | J — Agent UX | **Working slice** | Inspect/Propose/Build modes, visible ghosts, activity history, notes, locked cockpit | Transaction-wave assembly animation, anchored 3D note authoring, autonomous hierarchical planning |
 | K — Output | **Working slice** | `.ldr` and `.mpd` export with `STEP` and one submodel per subassembly; import flattens nested submodels and reports unplaceable references; exact IDs/transforms; BOM CSV | BrickLink XML; step reassignment on import |
-| L — Instructions | **Prototype** | Step-aware document, timeline, animated build playback | Dependency-based step generation, editable steps/submodels, printable instructions |
+| L — Instructions | **Working slice** | **Build order derived from the connection graph**, with the checkable guarantee that every part attaches to structure placed in an earlier step or is reported as beginning a separately-built island; deterministic; verifiable independently, including against a hand-reordered sequence. Step-aware document, timeline, animated playback | Technique-aware grouping, hiding internals until they matter, automatic sub-model selection, printable output |
 | M — Polish | **Strong slice** | Deliberate industrial CAD UI, responsive desktop layout, catalog boot/failure screens, deterministic browser acceptance run including reload-restore | Onboarding, accessibility pass, renderer batching for high part counts, deployment/CDN |
 
 ## Verified now
 
-`npm run check` — **146 tests**, strict TypeScript, production Vite build. The compiler is
+`npm run check` — **157 tests**, strict TypeScript, production Vite build. The compiler is
 driven in-process against committed fixtures, so CI asserts its semantics — colour crosswalk,
 snap-grid expansion, measured bounds, hashed files, determinism — not just that it exits zero.
 
@@ -206,6 +206,28 @@ appearance in orange. It is white.
 
 ![Driving the hinged hatch](docs/assets/brickwright-articulation.png)
 
+## Productionization pass 5
+
+**Derived build order.** Instruction steps are not a cosmetic grouping: a step is
+only meaningful if everything it introduces can actually be attached to what is
+already in front of the builder. That makes sequencing a precedence problem over
+the connection graph, not a spatial sort.
+
+Growth is frontier-first — at each point the candidates are the unplaced parts
+that already touch placed structure — with ties breaking downward, because LDraw
+is Y-down and building bottom-up is both what a person does and what keeps a step
+reachable. On the showcase this produces 7 steps covering all 35 parts with no
+warnings.
+
+The guarantee is deliberately narrow and independently checkable: **every part
+after the first step connects to structure placed earlier, unless it begins a new
+independent subassembly**, which is reported rather than glossed over.
+`verifyBuildOrder` checks that property against any sequence, including one a
+human reordered by hand, and a test asserts it catches a deliberately broken
+order. Producing genuinely *good* instructions — grouping by technique, hiding
+internals until they matter, choosing where to sub-model — is a larger problem and
+is not claimed.
+
 ## Honest evidence boundary
 
 **What changed since the last update:** the browser no longer renders generated stand-in
@@ -248,8 +270,10 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 - **WebMCP is verified in Chromium, not in ChatGPT.** The dynamic tool lifecycle is exercised
   through the fallback bridge. Native Site Tools registration still needs a run inside an
   eligible ChatGPT desktop build.
-- **Instruction playback replays authored steps.** It does not yet synthesize a build order
-  from the dependency graph.
+- **The build order is reachable, not well-designed.** It guarantees each step can be
+  attached, which is the property that makes a sequence usable at all. It does not group by
+  technique, defer internals, or decide where a sub-model would help — the things that
+  separate a workable sequence from a good instruction booklet.
 
 ## Ordered next work
 
@@ -266,7 +290,6 @@ Continuing down the same critical path:
 5. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to
    replace the family-level allowance.
 6. **Widen the geometry pack**, add compiler thumbnails and offline BVH serialization.
-7. Native ChatGPT Site Tools acceptance; instruction steps from the dependency graph;
-   BrickLink XML.
+7. Native ChatGPT Site Tools acceptance; printable instruction output; BrickLink XML.
 8. Complete the licence review: ShareAlike scope for the normalized connector dataset, and
    Rebrickable redistribution terms for the compiled derivative.

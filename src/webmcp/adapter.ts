@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { articulate, findArticulatedJoints } from '../cad/articulation'
+import { computeBuildOrder, verifyBuildOrder } from '../cad/instructions'
 import { catalog } from '../cad/catalog'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
@@ -296,6 +297,8 @@ const readTools: ToolDefinition[] = [
         { id: 'weak_attachments', kind: 'read', summary: 'List parts held by a single connector, the classic will-fall-off warning.' },
         { id: 'list_joints', kind: 'read', summary: 'List articulated joints the current selection can drive, with their retained freedom.' },
         { id: 'articulate_joint', kind: 'mutate', summary: 'Drive an articulated joint, carrying everything rigidly attached to the moving side.' },
+        { id: 'compute_build_order', kind: 'read', summary: 'Derive a build sequence from the connection graph without changing the document.' },
+        { id: 'apply_build_order', kind: 'mutate', summary: 'Replace the document build sequence with a derived, verified order.' },
       ]
       return json(capabilities.filter((capability) => `${capability.id} ${capability.summary}`.toLowerCase().includes(query)))
     },
@@ -317,6 +320,8 @@ const readTools: ToolDefinition[] = [
         catalog_coverage: { call: 'action_read', input: { action: 'catalog_coverage' } },
         weak_attachments: { call: 'action_read', input: { action: 'weak_attachments' } },
         list_joints: { call: 'action_read', input: { action: 'list_joints' } },
+        compute_build_order: { call: 'action_read', input: { action: 'compute_build_order', args: { maxPartsPerStep: 'integer, optional' } } },
+        apply_build_order: { call: 'action_mutate', input: { action: 'apply_build_order', expectedRevision: 'integer', maxPartsPerStep: 'integer, optional' } },
         articulate_joint: {
           call: 'action_mutate',
           input: {
@@ -356,6 +361,20 @@ const readTools: ToolDefinition[] = [
       }
       if (action === 'weak_attachments') {
         return json({ documentRevision: cadEngine.getSnapshot().document.revision, weak: findWeakAttachments(cadEngine.getDocument()) })
+      }
+      if (action === 'compute_build_order') {
+        const state = cadEngine.getSnapshot()
+        const result = computeBuildOrder(state.document, {
+          maxPartsPerStep: Number((input as { args?: { maxPartsPerStep?: number } }).args?.maxPartsPerStep) || undefined,
+        })
+        return json({
+          documentRevision: state.document.revision,
+          steps: result.steps.map((step) => ({ index: step.index, name: step.name, partIds: step.partIds })),
+          warnings: result.warnings,
+          guarantee:
+            'Every part attaches to structure placed in an earlier step, except those listed as beginning a new island.',
+          verified: verifyBuildOrder(state.document, result.steps).valid,
+        })
       }
       if (action === 'list_joints') {
         const state = cadEngine.getSnapshot()
@@ -483,6 +502,28 @@ const buildTools: ToolDefinition[] = [
           }
         })
         return resultOf(cadEngine.execute('Mirror selection', operations, 'agent', request.expectedRevision, 'action_mutate'))
+      }
+      if (request.action === 'apply_build_order') {
+        const result = computeBuildOrder(state.document, {
+          maxPartsPerStep: Number(request.args?.maxPartsPerStep) || undefined,
+        })
+        if (!result.steps.length) {
+          return json(
+            toErrorEnvelope(
+              new ContractError('INVALID_OPERATION', 'The model has no parts to sequence.', 'Place parts first.'),
+              { currentRevision: state.document.revision },
+            ),
+          )
+        }
+        return resultOf(
+          cadEngine.execute(
+            'Generate build order',
+            [{ type: 'steps.replace', steps: result.steps }],
+            'agent',
+            request.expectedRevision,
+            'action_mutate',
+          ),
+        )
       }
       if (request.action === 'articulate_joint') {
         const edgeId = String(request.args?.edgeId ?? '')

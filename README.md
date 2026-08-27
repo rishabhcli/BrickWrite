@@ -126,6 +126,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   bounds, count and selection metadata.
 - **Colour honesty** — 322 real LDraw colours; part/colour pairings with no observed
   official-set appearance are reported as *virtual*, not illegal.
+- **Derived build order** — sequencing is a precedence problem over the connection graph, so
+  steps are generated with the checkable guarantee that every part attaches to structure
+  placed earlier, or is reported as beginning a separately-built subassembly.
 - **Interoperability** — `.ldr` and `.mpd` export with `STEP` boundaries and one submodel per
   subassembly; import flattens nested submodels and reports every reference it could not
   place. BOM CSV carries exact LDraw and external identities.
@@ -163,7 +166,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 146 deterministic tests + strict TS + production build
+npm run check            # 157 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```

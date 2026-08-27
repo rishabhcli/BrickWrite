@@ -232,6 +232,25 @@ try {
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
+  // -- the build sequence is derived and verified, not authored -------------
+  const sequence = await page.evaluate(async () => {
+    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))?.structuredContent
+    return {
+      steps: derived?.steps?.length,
+      verified: derived?.verified,
+      warnings: derived?.warnings?.map((warning) => warning.code) ?? [],
+      totalParts: derived?.steps?.reduce((sum, step) => sum + step.partIds.length, 0),
+      documentParts: Object.keys(window.brickwright.getDocument().parts).length,
+    }
+  })
+  assert(sequence.verified === true, 'The derived build order failed its own reachability check')
+  assert(sequence.steps > 2, `Expected a multi-step sequence, saw ${sequence.steps}`)
+  assert(
+    sequence.totalParts === sequence.documentParts,
+    `Sequence covers ${sequence.totalParts} of ${sequence.documentParts} parts`,
+  )
+  assert(!sequence.warnings.includes('UNCONNECTED_PART'), 'The showcase should have no unconnected parts')
+
   // -- the model contains a real mechanism, and it can be driven ------------
   // The showcase carries a hinged rear hatch, so articulation is exercised on a
   // real assembly rather than a synthetic fixture.
@@ -382,6 +401,12 @@ try {
     rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
     meshAssetsFetched: geometry.meshes,
     refusedUnplaceableIdentity: unplaceable,
+    buildOrder: {
+      steps: sequence.steps,
+      verified: sequence.verified,
+      partsCovered: sequence.totalParts,
+      warnings: sequence.warnings,
+    },
     articulation: {
       drivableJoints: articulation.joints?.joints?.length,
       family: articulation.joints?.joints?.[0]?.family,

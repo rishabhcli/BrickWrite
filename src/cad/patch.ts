@@ -270,6 +270,18 @@ export function mutationsForOperations(
         }
         break
       }
+      case 'steps.replace': {
+        emit({ kind: 'steps', value: operation.steps.map((step) => ({ ...step, partIds: [...step.partIds] })) })
+        const owner = new Map<string, string>()
+        for (const step of operation.steps) {
+          for (const partId of step.partIds) owner.set(partId, step.id)
+        }
+        for (const part of Object.values(working.parts)) {
+          const stepId = owner.get(part.id)
+          if (stepId && stepId !== part.stepId) emit({ kind: 'part', id: part.id, value: { ...part, stepId } })
+        }
+        break
+      }
       case 'note.add':
         emit({ kind: 'notes', value: [...working.notes, clone(operation.note)] })
         break
