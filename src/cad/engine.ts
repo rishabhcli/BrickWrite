@@ -1,4 +1,7 @@
 import { catalog, searchCatalog } from './catalog'
+import { jointFor } from './connections'
+import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from './math'
+import { deriveConnections } from './snapping'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import { loadLocalDocument } from './storage'
 import { validateDocument } from './validation'
@@ -6,6 +9,7 @@ import type {
   Actor,
   AutonomyMode,
   CadOperation,
+  ConnectionEdge,
   CatalogSearchQuery,
   CatalogSearchRecord,
   CommandResult,
@@ -41,6 +45,61 @@ function affectedPartIds(operations: CadOperation[]) {
       }),
     ),
   )
+}
+
+/**
+ * Kernel invariant: a stored basis is orthonormal and free of float dust.
+ *
+ * Enforcing this on ingest rather than trusting callers keeps exported LDraw
+ * matrices stable, makes transform comparison and content hashing meaningful,
+ * and means a slightly-off matrix supplied by an agent is corrected once
+ * instead of shearing the part on every later composition.
+ */
+function normalizeTransform(transform: RigidTransform): RigidTransform {
+  const basis = isOrthonormal(transform.basis, 1e-12) ? transform.basis : orthonormalize(transform.basis)
+  return { position: transform.position, basis: cleanBasis(basis) }
+}
+
+/** Applies the transform invariant across a whole document on ingest. */
+function normalizeDocument(document: ModelDocument): ModelDocument {
+  for (const part of Object.values(document.parts)) {
+    part.transform = normalizeTransform(part.transform)
+  }
+  return document
+}
+
+/** Deterministic id for an edge, from its two endpoints. */
+const edgeId = (a: string, b: string) => `edge_${[a, b].sort().join('__')}`
+
+/**
+ * Rewrites the document's connection edges from the current geometry.
+ *
+ * Edges are persisted rather than re-inferred on demand so the structural graph
+ * survives save, load and export, and so each edge can carry its joint freedom
+ * and provenance. An edge that still exists keeps its original revision and
+ * source, so "when did this connection appear, and who made it" stays answerable
+ * across later transactions.
+ */
+function syncConnections(document: ModelDocument, revision: number, source: ConnectionEdge['source']): void {
+  const world = deriveConnections(document)
+  const previous = document.connections ?? {}
+  const next: Record<string, ConnectionEdge> = {}
+  for (const pair of world.pairs) {
+    const endpointA = `${pair.a.partId}/${pair.a.id}`
+    const endpointB = `${pair.b.partId}/${pair.b.id}`
+    const id = edgeId(endpointA, endpointB)
+    const existing = previous[id]
+    next[id] = existing ?? {
+      id,
+      a: { partId: pair.a.partId, featureId: pair.a.id },
+      b: { partId: pair.b.partId, featureId: pair.b.id },
+      family: pair.a.family,
+      joint: jointFor(pair.a.feature, pair.b.feature),
+      createdAtRevision: revision,
+      source,
+    }
+  }
+  document.connections = next
 }
 
 function isPartProtected(document: ModelDocument, partId: string): boolean {
@@ -157,7 +216,7 @@ function applyOperationsTo(document: ModelDocument, operations: CadOperation[], 
   for (const operation of operations) {
     switch (operation.type) {
       case 'part.add': {
-        next.parts[operation.part.id] = clone(operation.part)
+        next.parts[operation.part.id] = { ...clone(operation.part), transform: normalizeTransform(operation.part.transform) }
         const subassembly = next.subassemblies[operation.part.subassemblyId]
         if (subassembly && !subassembly.partIds.includes(operation.part.id)) subassembly.partIds.push(operation.part.id)
         const step = next.steps.find((candidate) => candidate.id === operation.part.stepId)
@@ -176,7 +235,7 @@ function applyOperationsTo(document: ModelDocument, operations: CadOperation[], 
         break
       }
       case 'part.transform':
-        next.parts[operation.partId].transform = clone(operation.transform)
+        next.parts[operation.partId].transform = normalizeTransform(operation.transform)
         break
       case 'part.recolor':
         next.parts[operation.partId].color = operation.color
@@ -195,6 +254,11 @@ function applyOperationsTo(document: ModelDocument, operations: CadOperation[], 
       case 'subassembly.add':
         next.subassemblies[operation.subassembly.id] = clone(operation.subassembly)
         break
+      case 'subassembly.lock': {
+        const subassembly = next.subassemblies[operation.subassemblyId]
+        if (subassembly) subassembly.locked = operation.locked
+        break
+      }
       case 'note.add':
         next.notes.push(clone(operation.note))
         break
@@ -226,7 +290,8 @@ export class CadEngine {
   private snapshot: EngineSnapshot
 
   constructor(initialDocument: ModelDocument = createShowcaseDocument()) {
-    this.document = clone(initialDocument)
+    this.document = normalizeDocument(clone(initialDocument))
+    syncConnections(this.document, this.document.revision, 'import-inferred')
     this.snapshot = this.buildSnapshot()
   }
 
@@ -272,7 +337,10 @@ export class CadEngine {
   }
 
   replaceDocument(document: ModelDocument) {
-    this.document = clone(document)
+    this.document = normalizeDocument(clone(document))
+    // An imported or restored document has no recorded edges, so its graph is
+    // inferred once and marked as such.
+    syncConnections(this.document, this.document.revision, 'import-inferred')
     this.transactions = []
     this.proposals.clear()
     this.undoStack = []
@@ -323,6 +391,7 @@ export class CadEngine {
     const transactionId = makeId('txn')
     after.revision = this.document.revision + 1
     after.updatedAt = now()
+    syncConnections(after, after.revision, 'snap')
     for (const partId of affectedPartIds(operations)) {
       if (after.parts[partId]) after.parts[partId].createdByTransaction = transactionId
     }
@@ -366,6 +435,7 @@ export class CadEngine {
     const preview = applyOperationsTo(this.document, operations, actor)
     preview.revision = this.document.revision + 1
     preview.updatedAt = now()
+    syncConnections(preview, preview.revision, 'snap')
     const proposal: Proposal = {
       id: makeId('proposal'),
       label,

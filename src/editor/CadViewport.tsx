@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { catalog, STUD_LDU } from '../cad/catalog'
 import { getDocumentBounds, snapTransformPosition } from '../cad/geometry'
+import { canonicalTransform, orthonormalize } from '../cad/math'
 import { getWorldConnectors } from '../cad/snapping'
 import type { ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
 import { validateDocument } from '../cad/validation'
@@ -28,10 +29,33 @@ const MODEL_ROOT_SCALE = 1 / STUD_LDU
 const lduToScene = (point: Vec3): THREE.Vector3 =>
   new THREE.Vector3(point[0] * MODEL_ROOT_SCALE, -point[1] * MODEL_ROOT_SCALE, -point[2] * MODEL_ROOT_SCALE)
 
-const toRadians = (rotation: Vec3): [number, number, number] =>
-  rotation.map((degrees) => (degrees * Math.PI) / 180) as [number, number, number]
+/**
+ * Builds the scene matrix for a document transform.
+ *
+ * The document holds a row-major LDraw basis; three.js wants column-major, and
+ * `Matrix4.set` takes row-major arguments, so the basis columns are passed as
+ * the matrix's rows' first three entries in the order three.js expects.
+ */
+function sceneMatrix(transform: Transform): THREE.Matrix4 {
+  const b = transform.basis
+  const [x, y, z] = transform.position
+  return new THREE.Matrix4().set(
+    b[0], b[1], b[2], x,
+    b[3], b[4], b[5], y,
+    b[6], b[7], b[8], z,
+    0, 0, 0, 1,
+  )
+}
 
-const toDegrees = (radians: number) => (radians * 180) / Math.PI
+/** Reads a document transform back out of a scene object's local matrix. */
+function documentTransform(object: THREE.Object3D): Transform {
+  const m = object.matrix.elements
+  // three.js stores column-major, so element (row, col) is elements[col * 4 + row].
+  return {
+    position: [m[12], m[13], m[14]],
+    basis: orthonormalize([m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]]),
+  }
+}
 
 interface PartObjectProps {
   part: PartInstance
@@ -58,8 +82,8 @@ function PartObject({ part, appearance, canTransform, tool, gridLdu, displayTran
   const object = (
     <group
       ref={root}
-      position={rendered.position as unknown as [number, number, number]}
-      rotation={toRadians(rendered.rotation)}
+      matrixAutoUpdate={false}
+      matrix={sceneMatrix(rendered)}
       onPointerDown={handlePointer}
       onDoubleClick={(event) => {
         event.stopPropagation()
@@ -81,15 +105,14 @@ function PartObject({ part, appearance, canTransform, tool, gridLdu, displayTran
       onMouseUp={() => {
         const object3d = root.current
         if (!object3d) return
-        // The root node already returns LDU, so quantization happens directly
-        // on the document's own units.
+        // The model root already works in LDU, so the manipulated matrix comes
+        // back in document space. Only the translation is quantized; the basis
+        // is taken as-is so an off-axis pose survives a drag.
+        object3d.updateMatrix()
+        const dragged = documentTransform(object3d)
         onTransform(part.id, {
-          position: snapTransformPosition([object3d.position.x, object3d.position.y, object3d.position.z], gridLdu),
-          rotation: [
-            Math.round(toDegrees(object3d.rotation.x) / 15) * 15,
-            Math.round(toDegrees(object3d.rotation.y) / 15) * 15,
-            Math.round(toDegrees(object3d.rotation.z) / 15) * 15,
-          ],
+          position: snapTransformPosition(dragged.position, gridLdu),
+          basis: dragged.basis,
         })
       }}
     >
@@ -104,7 +127,7 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
     return (
       !original ||
       original.color !== part.color ||
-      JSON.stringify(original.transform) !== JSON.stringify(part.transform)
+      canonicalTransform(original.transform) !== canonicalTransform(part.transform)
     )
   })
   const removed = Object.values(current.parts).filter((part) => !proposal.previewDocument.parts[part.id])
@@ -115,7 +138,7 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
         const definition = catalog.get(part.definitionId)
         if (!definition) return null
         return (
-          <group key={`ghost_${part.id}`} position={part.transform.position as unknown as [number, number, number]} rotation={toRadians(part.transform.rotation)}>
+          <group key={`ghost_${part.id}`} matrixAutoUpdate={false} matrix={sceneMatrix(part.transform)}>
             <PartVisual definition={definition} colorCode={part.color} appearance="ghost" />
           </group>
         )
@@ -124,7 +147,7 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
         const definition = catalog.get(part.definitionId)
         if (!definition) return null
         return (
-          <group key={`removed_${part.id}`} position={part.transform.position as unknown as [number, number, number]} rotation={toRadians(part.transform.rotation)}>
+          <group key={`removed_${part.id}`} matrixAutoUpdate={false} matrix={sceneMatrix(part.transform)}>
             <PartVisual definition={definition} colorCode={part.color} appearance="removed" />
           </group>
         )
@@ -289,7 +312,7 @@ export function CadViewport({
         {renderMode === 'connections' &&
           Object.values(document.parts).flatMap((part) =>
             getWorldConnectors(part).map((feature) => (
-              <mesh key={`${feature.partId}_${feature.id}`} position={feature.position as unknown as [number, number, number]}>
+              <mesh key={`${feature.partId}_${feature.id}`} position={feature.frame.position as unknown as [number, number, number]}>
                 <sphereGeometry args={[2.4, 10, 10]} />
                 <meshBasicMaterial
                   color={feature.gender === 'male' ? '#f4aa45' : '#7cefe7'}

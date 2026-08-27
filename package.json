@@ -36,6 +36,7 @@
     "@vitejs/plugin-react": "latest",
     "jsdom": "latest",
     "playwright": "^1.62.1",
+    "three-mesh-bvh": "0.9.14",
     "typescript": "latest",
     "vite": "latest",
     "vitest": "latest"

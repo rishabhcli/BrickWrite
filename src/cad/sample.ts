@@ -1,4 +1,5 @@
 import { catalog, originForSurface, surfaceAbove } from './catalog'
+import { basisFromEulerDegrees, cleanBasis } from './math'
 import type { BuildStep, ModelDocument, PartInstance, Subassembly, Vec3 } from './types'
 
 /**
@@ -58,7 +59,7 @@ class RoverBuilder {
       id: `part_${String(this.sequence).padStart(4, '0')}`,
       definitionId,
       color,
-      transform: { position: [x, y, z] as Vec3, rotation: [0, options.rotationY ?? 0, 0] as Vec3 },
+      transform: { position: [x, y, z] as Vec3, basis: cleanBasis(basisFromEulerDegrees([0, options.rotationY ?? 0, 0])) },
       subassemblyId: options.subassemblyId ?? 'hull',
       stepId: options.stepId ?? 'step_1',
       provenance: 'human',
@@ -132,7 +133,7 @@ function assemble(parts: PartInstance[], name: string, revision: number): ModelD
   }))
   const timestamp = new Date().toISOString()
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: `doc_${name.toLowerCase().replace(/\W+/g, '_')}`,
     name,
     revision,
@@ -140,6 +141,7 @@ function assemble(parts: PartInstance[], name: string, revision: number): ModelD
     createdAt: timestamp,
     updatedAt: timestamp,
     parts: Object.fromEntries(parts.map((part) => [part.id, part])),
+    connections: {},
     subassemblies,
     steps,
     notes: parts.length

@@ -1,15 +1,16 @@
 import { catalog } from './catalog'
-import { applyMatrix, eulerToMatrix, multiplyMatrix, type Matrix3 } from './math'
-import type { ModelDocument, PartInstance, Transform, Vec3 } from './types'
+import { cleanBasis, composeTransform, IDENTITY_TRANSFORM, type Mat3, type RigidTransform } from './math'
+import type { ModelDocument, PartInstance, Transform } from './types'
 
 /**
  * LDraw serialization.
  *
- * The CAD document already stores positions in LDU and rotations about the
- * LDraw axes, so export is a direct write with no coordinate conversion — which
- * is exactly why the kernel uses LDraw's native frame instead of a display
- * frame. A type-1 line is `1 <colour> x y z a b c d e f g h i <file>`, where the
- * nine values are the row-major 3×3 the document already holds.
+ * A type-1 line is `1 <colour> x y z a b c d e f g h i <file>`, where the nine
+ * values are a row-major 3×3. The kernel stores exactly that: LDU positions and
+ * an orthonormal row-major basis in LDraw's own frame. Export is therefore a
+ * direct write and import a direct read — no Euler decomposition, so arbitrary
+ * rotations, off-axis SNOT placements and mirrored matrices round-trip exactly
+ * rather than approximately.
  */
 
 const clean = (value: number) => {
@@ -20,7 +21,7 @@ const clean = (value: number) => {
 const safeName = (value: string) => value.replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || 'model'
 
 function partLine(part: PartInstance): string {
-  const matrix = eulerToMatrix(part.transform.rotation)
+  const matrix = cleanBasis(part.transform.basis)
   const [x, y, z] = part.transform.position
   const ldrawId = catalog.get(part.definitionId)?.ldrawId ?? `${part.definitionId}.dat`
   return `1 ${part.color} ${clean(x)} ${clean(y)} ${clean(z)} ${matrix.map(clean).join(' ')} ${ldrawId}`
@@ -114,44 +115,6 @@ export function exportMpd(document: ModelDocument): string {
   return `${blocks.join('\n')}\n`
 }
 
-/** Recovers Euler degrees from a row-major 3×3 built as Rx · Ry · Rz. */
-export function matrixToEuler(m: readonly number[]): Vec3 {
-  // Brick placement is overwhelmingly yaw-only. Detecting that case first keeps
-  // a 180° turn reported as [0, 180, 0] instead of the algebraically equivalent
-  // but unreadable [180, 0, 180] the general decomposition produces.
-  const isYawOnly =
-    Math.abs(m[1]) < 1e-9 && Math.abs(m[3]) < 1e-9 && Math.abs(m[5]) < 1e-9 && Math.abs(m[7]) < 1e-9 && m[4] > 0.9999
-  if (isYawOnly) return roundDegrees([0, Math.atan2(m[2], m[0]), 0])
-
-  const clamp = Math.max(-1, Math.min(1, m[2]))
-  const y = Math.asin(clamp)
-  let x: number
-  let z: number
-  if (Math.abs(clamp) < 0.9999) {
-    x = Math.atan2(-m[5], m[8])
-    z = Math.atan2(-m[1], m[0])
-  } else {
-    // Gimbal-locked: fold the remaining freedom into the X rotation.
-    x = Math.atan2(Math.sign(clamp) * m[3], m[4])
-    z = 0
-  }
-  return roundDegrees([x, y, z])
-}
-
-/**
- * Converts radians to degrees, snapping values that are a whole number of
- * degrees to within float noise. Genuinely off-angle articulated placements
- * keep four decimals rather than being quantized away.
- */
-function roundDegrees(radians: readonly [number, number, number]): Vec3 {
-  return radians.map((value) => {
-    const asDegrees = (value * 180) / Math.PI
-    const rounded = Math.round(asDegrees)
-    if (Math.abs(asDegrees - rounded) < 1e-6) return rounded === 0 ? 0 : rounded
-    return Number(asDegrees.toFixed(4))
-  }) as unknown as Vec3
-}
-
 export interface ImportReport {
   placed: number
   submodels: number
@@ -196,6 +159,7 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
   const byName = new Map(files.map((file) => [file.name, file]))
   const next = structuredClone(baseDocument)
   next.parts = {}
+  next.connections = {}
   next.subassemblies = {}
   next.steps = []
 
@@ -221,7 +185,7 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
     return next.subassemblies[id]
   }
 
-  const visit = (file: SourceFile, parentMatrix: Matrix3, parentOffset: Vec3, subassemblyId: string, depth: number) => {
+  const visit = (file: SourceFile, parent: RigidTransform, subassemblyId: string, depth: number) => {
     if (depth > 16) return
     for (const raw of file.lines) {
       const line = raw.trim()
@@ -238,11 +202,11 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
       const values = tokens.slice(2, 14).map(Number)
       if (values.some(Number.isNaN)) continue
 
-      const localOffset = values.slice(0, 3) as unknown as Vec3
-      const localMatrix = values.slice(3, 12) as unknown as Matrix3
-      const rotated = applyMatrix(parentMatrix, localOffset)
-      const offset: Vec3 = [parentOffset[0] + rotated[0], parentOffset[1] + rotated[1], parentOffset[2] + rotated[2]]
-      const matrix = multiplyMatrix(parentMatrix, localMatrix)
+      const local: RigidTransform = {
+        position: values.slice(0, 3) as unknown as Mat3 as unknown as RigidTransform['position'],
+        basis: values.slice(3, 12) as unknown as Mat3,
+      }
+      const composed = composeTransform(parent, local)
       const reference = tokens.slice(14).join(' ').replace(/\\/g, '/').trim().toLowerCase()
 
       const submodel = byName.get(reference)
@@ -250,7 +214,7 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
         const childId = `sub_${reference.replace(/\.(ldr|dat|mpd)$/i, '').replace(/[^a-z0-9_-]+/g, '_')}`
         ensureSubassembly(childId, reference.replace(/\.(ldr|dat|mpd)$/i, ''))
         submodelNames.add(reference)
-        visit(submodel, matrix, offset, childId, depth + 1)
+        visit(submodel, composed, childId, depth + 1)
         continue
       }
 
@@ -264,7 +228,7 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
 
       sequence += 1
       const id = `imported_${String(sequence).padStart(4, '0')}`
-      const transform: Transform = { position: offset, rotation: matrixToEuler(matrix) }
+      const transform: Transform = composed
       const step = ensureStep()
       const target = ensureSubassembly(subassemblyId, subassemblyId === 'imported' ? 'Imported model' : subassemblyId)
       next.parts[id] = {
@@ -285,7 +249,7 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
 
   ensureSubassembly('imported', 'Imported model')
   ensureStep()
-  visit(files[0] ?? { name: 'main', lines: [] }, [1, 0, 0, 0, 1, 0, 0, 0, 1], [0, 0, 0], 'imported', 0)
+  visit(files[0] ?? { name: 'main', lines: [] }, IDENTITY_TRANSFORM, 'imported', 0)
 
   // Drop step and subassembly shells that received nothing.
   next.steps = next.steps.filter((step) => step.partIds.length)

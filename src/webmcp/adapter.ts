@@ -1,9 +1,10 @@
 import { catalog } from '../cad/catalog'
+import { basisFromEulerDegrees, IDENTITY_BASIS, isOrthonormal, orthonormalize, type Mat3 } from '../cad/math'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
 import { findWeakAttachments } from '../cad/validation'
-import type { Actor, CadOperation, ModelDocument, PartInstance, Vec3 } from '../cad/types'
+import type { Actor, CadOperation, ModelDocument, PartInstance, Transform, Vec3 } from '../cad/types'
 
 type ToolDefinition = ModelContextToolDefinition
 type ToolResult = ModelContextToolResult
@@ -23,8 +24,30 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 const revisionProperty = { type: 'integer', description: 'Revision returned by the most recent read. Mutations reject stale revisions.' }
 
 function normalizeVec3(value: unknown, fallback: Vec3 = [0, 0, 0]): Vec3 {
-  if (!Array.isArray(value) || value.length !== 3 || value.some((item) => typeof item !== 'number')) return fallback
+  if (!Array.isArray(value) || value.length !== 3 || value.some((item) => !Number.isFinite(item))) return fallback
   return [value[0], value[1], value[2]]
+}
+
+/**
+ * Resolves the orientation an agent supplied.
+ *
+ * `basis` is the exact form the kernel stores: a row-major orthonormal 3×3, the
+ * same nine numbers an LDraw type-1 line carries. `rotation` remains accepted
+ * as Euler degrees because it is far easier to write by hand, but it is
+ * converted immediately — the document never stores angles. A basis that is not
+ * orthonormal is rejected rather than silently shearing the part.
+ */
+function normalizeBasis(item: Record<string, unknown>, fallback: Mat3): Mat3 {
+  const raw = item.basis
+  if (Array.isArray(raw) && raw.length === 9 && raw.every((value) => Number.isFinite(value))) {
+    const candidate = raw as unknown as Mat3
+    if (!isOrthonormal(candidate, 1e-4)) {
+      throw new Error('basis must be an orthonormal row-major 3x3 matrix')
+    }
+    return orthonormalize(candidate)
+  }
+  if (Array.isArray(item.rotation)) return basisFromEulerDegrees(normalizeVec3(item.rotation))
+  return fallback
 }
 
 function normalizeOperations(raw: unknown, document: ModelDocument): CadOperation[] {
@@ -46,7 +69,7 @@ function normalizeOperations(raw: unknown, document: ModelDocument): CadOperatio
         id,
         definitionId,
         color: Number(item.color ?? definition?.availableColors[0] ?? 71),
-        transform: { position: normalizeVec3(item.position), rotation: normalizeVec3(item.rotation) },
+        transform: { position: normalizeVec3(item.position), basis: normalizeBasis(item, IDENTITY_BASIS) },
         subassemblyId,
         stepId,
         provenance: 'agent',
@@ -62,7 +85,7 @@ function normalizeOperations(raw: unknown, document: ModelDocument): CadOperatio
         partId,
         transform: {
           position: normalizeVec3(item.position, current?.transform.position),
-          rotation: normalizeVec3(item.rotation, current?.transform.rotation),
+          basis: normalizeBasis(item, current?.transform.basis ?? IDENTITY_BASIS),
         },
       }
     }
@@ -71,6 +94,15 @@ function normalizeOperations(raw: unknown, document: ModelDocument): CadOperatio
     if (op === 'protect') return { type: 'part.protect', partId: String(item.partId), protected: Boolean(item.protected) }
     throw new Error(`Unsupported operation ${op || index}`)
   })
+}
+
+/** Reflects a transform through the plane x = `axis`. */
+function mirrorTransformAcrossX(transform: Transform, axis: number): Transform {
+  const b = transform.basis
+  return {
+    position: [axis - (transform.position[0] - axis), transform.position[1], transform.position[2]],
+    basis: [-b[0], b[1], b[2], -b[3], b[4], b[5], -b[6], b[7], b[8]],
+  }
 }
 
 function resultOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): ToolResult {
@@ -420,10 +452,10 @@ const buildTools: ToolDefinition[] = [
           return {
             type: 'part.transform',
             partId: id,
-            transform: {
-              position: [axis - (source.transform.position[0] - axis), source.transform.position[1], source.transform.position[2]],
-              rotation: [source.transform.rotation[0], -source.transform.rotation[1], source.transform.rotation[2]],
-            },
+            // Mirroring across a plane negates one basis column, which flips
+            // the basis handedness exactly as LDraw expects for a mirrored
+            // reference.
+            transform: mirrorTransformAcrossX(source.transform, axis),
           }
         })
         return resultOf(cadEngine.execute('Mirror selection', operations, 'agent', request.expectedRevision, 'action_mutate'))

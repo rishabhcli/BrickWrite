@@ -15,6 +15,9 @@ const IDS = [
   '3068b', '3069b', '3070b', '2431', '4162', '87079', '2412b',
   '3039', '3040b', '3298', '4286', '30363', '54200', '15068', '11477',
   '62360', '3937', '3938', '32524', '3706', '2780', '55982', '4032a',
+  // Studs-not-on-top brackets and headlight bricks: the cases a translation-only
+  // solver cannot place, so the snap tests need them.
+  '4070', '87087', '99781', '11211',
 ]
 
 const [, , catalogRoot = 'public', version = '2026-07', out = 'src/cad/__fixtures__/catalog.fixture.json'] = process.argv

@@ -1,4 +1,8 @@
-export type Vec3 = readonly [number, number, number]
+export type { Mat3, RigidTransform, Vec3 } from './math'
+export type { RigidTransform as Transform } from './math'
+
+import type { Mat3, RigidTransform, RigidTransform as Transform, Vec3 } from './math'
+
 export type Actor = 'human' | 'agent'
 export type AutonomyMode = 'inspect' | 'propose' | 'build'
 export type GeometryStatus = 'certified' | 'partial' | 'missing' | 'uncompiled'
@@ -18,13 +22,6 @@ export type ConnectionFamily =
   | 'socket'
   | 'generic'
 
-export interface Transform {
-  /** LDraw units. LDraw is Y-down, so a part stacked on top has a smaller y. */
-  position: Vec3
-  /** Euler degrees about the LDraw X, Y and Z axes. */
-  rotation: Vec3
-}
-
 /**
  * A normalized connection point compiled from the LDCad Shadow Library.
  * `pos`/`ori` are in the part's own LDraw coordinate frame.
@@ -33,14 +30,76 @@ export interface ConnectionFeature {
   id: string
   family: ConnectionFamily
   gender: 'male' | 'female' | 'neutral'
+  /** Connector origin in the part's own LDraw frame. */
   pos: Vec3
-  /** Row-major 3×3 orientation; omitted when the frame is axis-aligned. */
-  ori?: readonly number[]
+  /**
+   * Row-major 3×3 connector orientation, omitted when it is the identity.
+   * By LDCad convention the connector's axis is its frame's local +Y, which is
+   * what lets the snap solver align two frames without inspecting geometry.
+   */
+  ori?: Mat3
   group?: string
+  /** Axial extent in LDU, where the source declared one. */
   axial?: number
   slide?: boolean
   rotate?: boolean
   src: string
+}
+
+/**
+ * Relative motion a mated connector pair still permits.
+ *
+ * Derived from the connector families and the compiled slide/rotate flags
+ * rather than asserted, so a joint whose freedom is genuinely unknown says so
+ * instead of being silently treated as rigid.
+ */
+export type JointFreedom =
+  | { kind: 'fixed' }
+  | {
+      kind: 'revolute'
+      /** Rotation axis in the shared connector frame. */
+      axis: Vec3
+      continuous: boolean
+      /** Discrete step in degrees when `continuous` is false. */
+      stepDegrees?: number
+    }
+  | {
+      kind: 'prismatic'
+      axis: Vec3
+      minLdu: number
+      maxLdu: number
+    }
+  | {
+      kind: 'cylindrical'
+      axis: Vec3
+      minLdu: number
+      maxLdu: number
+      continuousRotation: boolean
+    }
+  | { kind: 'spherical' }
+  | { kind: 'unknown' }
+
+export interface ConnectionEndpoint {
+  partId: string
+  featureId: string
+}
+
+/**
+ * A committed physical connection between two placed parts.
+ *
+ * Persisting these means the structural graph survives save, load and export
+ * instead of being re-inferred from coincident points every time. Geometric
+ * inference remains the fallback for imported models, where no edge was ever
+ * recorded.
+ */
+export interface ConnectionEdge {
+  id: string
+  a: ConnectionEndpoint
+  b: ConnectionEndpoint
+  family: ConnectionFamily
+  joint: JointFreedom
+  createdAtRevision: number
+  source: 'snap' | 'explicit-connect' | 'import-inferred'
 }
 
 export interface PartBoundsLdu {
@@ -174,7 +233,8 @@ export interface Constraint {
 }
 
 export interface ModelDocument {
-  schemaVersion: 1
+  /** 2 introduced matrix transforms and persistent connection edges. */
+  schemaVersion: 2
   id: string
   name: string
   revision: number
@@ -182,6 +242,7 @@ export interface ModelDocument {
   createdAt: string
   updatedAt: string
   parts: Record<string, PartInstance>
+  connections: Record<string, ConnectionEdge>
   subassemblies: Record<string, Subassembly>
   steps: BuildStep[]
   notes: BuilderNote[]
@@ -198,6 +259,7 @@ export type CadOperation =
   | { type: 'subassembly.add'; subassembly: Subassembly }
   | { type: 'note.add'; note: BuilderNote }
   | { type: 'note.respond'; noteId: string; response: string; resolved?: boolean }
+  | { type: 'subassembly.lock'; subassemblyId: string; locked: boolean }
 
 export interface Transaction {
   id: string
@@ -224,6 +286,14 @@ export interface CollisionIssue {
   partB: string
   overlapLdu: Vec3
   message: string
+  /**
+   * How the verdict was reached. `exact` and `clearance-subtracted` were
+   * confirmed against triangle geometry; `unknown` means the geometry was not
+   * resident and only bounding boxes were compared.
+   */
+  certainty: 'exact' | 'clearance-subtracted' | 'unknown'
+  /** Document-space point on the offending contact, when geometry was available. */
+  pointLdu?: Vec3
 }
 
 export interface ValidationReport {
@@ -231,6 +301,8 @@ export interface ValidationReport {
   partCount: number
   connectionCount: number
   collisions: CollisionIssue[]
+  /** Collisions whose verdict came from bounding boxes alone. */
+  unverifiedCollisions: number
   componentCount: number
   disconnectedPartIds: string[]
   /**
@@ -263,6 +335,8 @@ export interface EngineErrorShape {
     | 'PART_NOT_FOUND'
     | 'PART_DEFINITION_NOT_FOUND'
     | 'GEOMETRY_UNAVAILABLE'
+    | 'NO_COMPATIBLE_CONNECTOR'
+    | 'CONNECTOR_OCCUPIED'
     | 'CATALOG_NOT_LOADED'
     | 'COLOR_UNAVAILABLE'
     | 'COLLISION'

@@ -74,15 +74,15 @@ try {
   assert(initial.validation.collisions.length === 0, `Showcase has ${initial.validation.collisions.length} collisions`)
   assert(initial.validation.componentCount === 1, `Showcase is in ${initial.validation.componentCount} pieces`)
   assert(initial.validation.connectionCount > 50, `Expected many mated connectors, saw ${initial.validation.connectionCount}`)
+  assert(
+    initial.validation.unverifiedCollisions === 0,
+    `Showcase has ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
+  )
 
   // -- real geometry actually reached the GPU --------------------------------
-  const geometry = await page.evaluate(() => {
-    const counts = { meshes: 0, triangles: 0 }
-    for (const request of performance.getEntriesByType('resource')) {
-      if (request.name.includes('.bwmesh')) counts.meshes += 1
-    }
-    return counts
-  })
+  const geometry = await page.evaluate(() => ({
+    meshes: performance.getEntriesByType('resource').filter((entry) => entry.name.includes('.bwmesh')).length,
+  }))
   assert(geometry.meshes > 5, `Expected compiled .bwmesh assets to be fetched, saw ${geometry.meshes}`)
 
   // -- dynamic WebMCP surface ------------------------------------------------
@@ -146,6 +146,41 @@ try {
   }))
   assert(stale.structuredContent?.error?.code === 'STALE_DOCUMENT', `Expected STALE_DOCUMENT, saw ${JSON.stringify(stale.structuredContent).slice(0, 160)}`)
 
+  // -- the collision kernel confirms against triangles, not just boxes -------
+  // A 45°-rotated brick's axis-aligned box is far larger than the brick, so a
+  // box-only test reports a solid overlap where the geometry has none. Both
+  // parts are already in the model, so their meshes are resident and the
+  // verdict is a real triangle confirmation rather than an unverified guess.
+  const rotatedProbe = await page.evaluate(async () => {
+    const model = window.brickwright.getDocument()
+    const cos45 = Math.cos(Math.PI / 4)
+    const result = await window.brickwright.invoke('build_preflight', {
+      expectedRevision: model.revision,
+      label: 'Rotated neighbour probe',
+      operations: [
+        {
+          op: 'add',
+          definitionId: '3001',
+          color: 15,
+          position: [0, -400, 0],
+          basis: [cos45, 0, cos45, 0, 1, 0, -cos45, 0, cos45],
+        },
+        { op: 'add', definitionId: '3070b', color: 25, position: [40, -400, 40] },
+      ],
+    })
+    return result?.structuredContent
+  })
+  assert(rotatedProbe?.validation, `Rotated probe preflight failed: ${JSON.stringify(rotatedProbe).slice(0, 240)}`)
+  assert(
+    rotatedProbe.validation.collisions.length === 0 && rotatedProbe.validation.unverifiedCollisions === 0,
+    `Triangle confirmation should clear the rotated box overlap, saw ` +
+      `${rotatedProbe.validation.collisions.length} collisions ` +
+      `(${rotatedProbe.validation.unverifiedCollisions} unverified)`,
+  )
+  // Discard the probe so it cannot affect the export assertions below.
+  await page.locator('.proposal-overlay button').last().click()
+  await page.locator('.proposal-overlay').waitFor({ state: 'detached' })
+
   // -- export round-trips the exact document -------------------------------
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /EXPORT LDR/i }).click()
@@ -169,7 +204,14 @@ try {
       compiledMeshes: initial.coverage.coverage.geometryCompiled,
       triangles: initial.coverage.coverage.triangleTotal,
     },
-    showcase: { revision: startRevision, parts: startParts, connections: initial.validation.connectionCount, collisions: initial.validation.collisions.length },
+    showcase: {
+      revision: startRevision,
+      parts: startParts,
+      connections: initial.validation.connectionCount,
+      collisions: initial.validation.collisions.length,
+      unverifiedCollisions: initial.validation.unverifiedCollisions,
+    },
+    rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
     meshAssetsFetched: geometry.meshes,
     refusedUnplaceableIdentity: unplaceable,
     afterProposal,

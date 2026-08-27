@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './cad/catalog'
+import { IDENTITY_BASIS, rotateLocal } from './cad/math'
 import { exportBomCsv } from './cad/bom'
 import { cadEngine } from './cad/engine'
 import { getDocumentBounds, getPartBounds } from './cad/geometry'
@@ -131,9 +132,11 @@ export default function App() {
     if (tool === 'connect' && snapshot.selection.length === 1 && snapshot.selection[0] !== partId) {
       const target = snapshot.document.parts[snapshot.selection[0]]
       const targetBounds = getPartBounds(target)
+      // Seed the solver near the target's top face and let it derive the exact
+      // pose, including any rotation the connector frames require.
       const coarseTransform: Transform = {
-        position: [target.transform.position[0], targetBounds.max[1], target.transform.position[2]],
-        rotation: clicked.transform.rotation,
+        position: [target.transform.position[0], targetBounds.min[1], target.transform.position[2]],
+        basis: clicked.transform.basis,
       }
       const nextTransform = bestSnapTransform(clicked, snapshot.document, coarseTransform, { radiusLdu: STUD_LDU, targetPartIds: [target.id] }) ?? coarseTransform
       if (dispatch(`Connect ${clicked.definitionId} to ${target.definitionId}`, [{ type: 'part.transform', partId, transform: nextTransform }])) {
@@ -192,7 +195,7 @@ export default function App() {
       id: makeId(),
       definitionId: definition.canonicalId,
       color: availableColor,
-      transform: { position, rotation: [0, 0, 0] },
+      transform: { position, basis: IDENTITY_BASIS },
       subassemblyId: selected?.subassemblyId ?? Object.values(snapshot.document.subassemblies).find((item) => !item.locked)?.id ?? Object.keys(snapshot.document.subassemblies)[0],
       stepId: snapshot.document.steps.at(-1)?.id ?? 'step_1',
       provenance: 'human',
@@ -235,7 +238,9 @@ export default function App() {
     const snapshot = cadEngine.getSnapshot()
     const operations: CadOperation[] = snapshot.selection.map((partId) => {
       const part = snapshot.document.parts[partId]
-      return { type: 'part.transform', partId, transform: { ...part.transform, rotation: [part.transform.rotation[0], part.transform.rotation[1] + 90, part.transform.rotation[2]] } }
+      // Quarter turn about the part's own vertical axis, composed on the basis
+      // so repeated turns cannot drift through Euler round-tripping.
+      return { type: 'part.transform', partId, transform: rotateLocal(part.transform, [0, 1, 0], Math.PI / 2) }
     })
     if (operations.length) dispatch('Quarter-turn selection', operations)
   }, [dispatch])
@@ -308,7 +313,7 @@ export default function App() {
         id: `agent_rack_${Date.now().toString(36)}_${index}`,
         definitionId: upright.canonicalId,
         color: 25,
-        transform: { position: [x, y, deckPlate!.transform.position[2] - 10] as Vec3, rotation: [0, 0, 0] as Vec3 },
+        transform: { position: [x, y, deckPlate!.transform.position[2] - 10] as Vec3, basis: IDENTITY_BASIS },
         subassemblyId,
         stepId,
         provenance: 'agent',

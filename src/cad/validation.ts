@@ -1,79 +1,24 @@
 import { catalog, STUD_LDU } from './catalog'
-import { getDocumentBounds, getPartBounds, type PartBounds } from './geometry'
-import { computeOccupancy, connectorsCompatible, ConnectorSpatialIndex, getWorldConnectors } from './snapping'
-import type { CollisionIssue, ModelDocument, PartInstance, ValidationReport, Vec3 } from './types'
-
-const EPSILON = 0.01
-
-/**
- * Stud engagement depth. A brick stacked on another legitimately overlaps it by
- * exactly the stud height, so an unqualified box intersection test would flag
- * every correct build as a collision.
- */
-const STUD_CLEARANCE_LDU = 4.05
+import { findCollisions, residentGeometryProvider, type GeometryProvider } from './collision'
+import { getDocumentBounds } from './geometry'
+import { computeOccupancy, deriveConnections } from './snapping'
+import type { CollisionIssue, ModelDocument, ValidationReport } from './types'
 
 /**
- * Insertion depth allowance for connectors that go *inside* another part — pins
- * in pin holes, axles in axle holes, bars in clips. Brickwright cannot yet
- * measure the true mating volume of these, so overlaps they explain are
- * reported with `unknown` certainty rather than silently accepted or rejected.
- */
-const INSERTED_CLEARANCE_LDU = 26
-
-const INSERTED_FAMILIES = new Set(['pin', 'pin-hole', 'axle', 'axle-hole', 'bar', 'clip', 'ball', 'socket'])
-
-const overlapExtents = (a: PartBounds, b: PartBounds): Vec3 => [
-  Math.min(a.max[0], b.max[0]) - Math.max(a.min[0], b.min[0]),
-  Math.min(a.max[1], b.max[1]) - Math.max(a.min[1], b.min[1]),
-  Math.min(a.max[2], b.max[2]) - Math.max(a.min[2], b.min[2]),
-]
-
-interface MatedPair {
-  a: string
-  b: string
-  family: string
-  inserted: boolean
-}
-
-/**
- * Builds the connection graph by finding coincident compatible connectors.
+ * Adjacency and per-pair mating data for the current document.
  *
- * This is the structural backbone of the document: connectivity, component
- * counts, weak-attachment analysis and legal-overlap decisions all read from it
- * rather than from geometric proximity guesses.
+ * Both come from `deriveConnections`, which is memoized per revision, so the
+ * solver, validation and the viewport share one derivation pass instead of each
+ * rebuilding the graph.
  */
-function buildConnectionGraph(parts: PartInstance[]) {
-  const index = new ConnectorSpatialIndex()
-  const features = parts.flatMap((part) => getWorldConnectors(part))
-  for (const feature of features) index.insert(feature)
-
-  const edges = new Map<string, Set<string>>(parts.map((part) => [part.id, new Set<string>()]))
-  const pairsByParts = new Map<string, MatedPair[]>()
-  const seen = new Set<string>()
-
-  for (const feature of features) {
-    for (const nearby of index.query(feature.position, 0.75)) {
-      if (nearby.partId === feature.partId) continue
-      if (!connectorsCompatible(feature, nearby)) continue
-      const key = [`${feature.partId}/${feature.id}`, `${nearby.partId}/${nearby.id}`].sort().join('|')
-      if (seen.has(key)) continue
-      seen.add(key)
-      edges.get(feature.partId)?.add(nearby.partId)
-      edges.get(nearby.partId)?.add(feature.partId)
-      const partKey = [feature.partId, nearby.partId].sort().join('|')
-      const pair: MatedPair = {
-        a: feature.id,
-        b: nearby.id,
-        family: feature.family,
-        inserted: INSERTED_FAMILIES.has(feature.family) && INSERTED_FAMILIES.has(nearby.family),
-      }
-      const bucket = pairsByParts.get(partKey)
-      if (bucket) bucket.push(pair)
-      else pairsByParts.set(partKey, [pair])
-    }
+function buildConnectionGraph(document: ModelDocument) {
+  const world = deriveConnections(document)
+  const edges = new Map<string, Set<string>>(Object.keys(document.parts).map((id) => [id, new Set<string>()]))
+  for (const pair of world.pairs) {
+    edges.get(pair.a.partId)?.add(pair.b.partId)
+    edges.get(pair.b.partId)?.add(pair.a.partId)
   }
-
-  return { edges, pairsByParts, connectionCount: seen.size, connectorCount: features.length }
+  return { edges, world, connectionCount: world.pairs.length }
 }
 
 function components(edges: Map<string, Set<string>>): string[][] {
@@ -96,39 +41,32 @@ function components(edges: Map<string, Set<string>>): string[][] {
   return result.sort((a, b) => b.length - a.length)
 }
 
-export function validateDocument(document: ModelDocument): ValidationReport {
+export interface ValidationOptions {
+  /** Override the geometry source; tests supply compiled meshes directly. */
+  provideGeometry?: GeometryProvider
+}
+
+export function validateDocument(document: ModelDocument, options: ValidationOptions = {}): ValidationReport {
   const parts = Object.values(document.parts)
-  const bounds = parts.map(getPartBounds)
-  const graph = buildConnectionGraph(parts)
+  const graph = buildConnectionGraph(document)
 
-  // -- Collision: box broad phase, then mating-clearance subtraction ---------
-  const collisions: CollisionIssue[] = []
-  for (let index = 0; index < bounds.length; index += 1) {
-    for (let compare = index + 1; compare < bounds.length; compare += 1) {
-      const a = bounds[index]
-      const b = bounds[compare]
-      if (!a.measured || !b.measured) continue
-      const overlap = overlapExtents(a, b)
-      if (!overlap.every((amount) => amount > EPSILON)) continue
-
-      const mated = graph.pairsByParts.get([a.partId, b.partId].sort().join('|')) ?? []
-      const thinnestAxis = Math.min(...overlap)
-      if (mated.length) {
-        const allowance = mated.some((pair) => pair.inserted) ? INSERTED_CLEARANCE_LDU : STUD_CLEARANCE_LDU
-        if (thinnestAxis <= allowance) continue
-      }
-
-      collisions.push({
-        id: `collision_${a.partId}_${b.partId}`,
-        partA: a.partId,
-        partB: b.partId,
-        overlapLdu: overlap,
-        message: mated.length
-          ? `Parts ${a.partId} and ${b.partId} are connected but intersect by ${thinnestAxis.toFixed(1)} LDU, beyond the allowed mating volume.`
-          : `Parts ${a.partId} and ${b.partId} intersect outside an allowed connection volume.`,
-      })
-    }
-  }
+  // -- Collision -------------------------------------------------------------
+  // Delegated to the collision kernel: box broad phase, mating-clearance
+  // allowance, then triangle confirmation for whatever survives.
+  const collisions: CollisionIssue[] = findCollisions(document, {
+    provide: options.provideGeometry ?? residentGeometryProvider,
+  }).map((contact) => ({
+    id: `collision_${contact.partA}_${contact.partB}`,
+    partA: contact.partA,
+    partB: contact.partB,
+    overlapLdu: contact.overlapLdu,
+    certainty: contact.certainty,
+    pointLdu: contact.pointLdu,
+    message:
+      contact.certainty === 'unknown'
+        ? `Parts ${contact.partA} and ${contact.partB} have overlapping bounds; their geometry is not loaded, so this is unverified.`
+        : `Parts ${contact.partA} and ${contact.partB} intersect outside an allowed connection volume.`,
+  }))
 
   // -- Colour evidence -------------------------------------------------------
   const virtualColors: ValidationReport['virtualColors'] = parts.flatMap((part): ValidationReport['virtualColors'] => {
@@ -186,6 +124,7 @@ export function validateDocument(document: ModelDocument): ValidationReport {
     partCount: parts.length,
     connectionCount: graph.connectionCount,
     collisions,
+    unverifiedCollisions: collisions.filter((issue) => issue.certainty === 'unknown').length,
     componentCount: grouped.length,
     disconnectedPartIds,
     virtualColors,
@@ -200,9 +139,8 @@ export function validateDocument(document: ModelDocument): ValidationReport {
 
 /** Parts held by exactly one connector: the classic "will fall off" warning. */
 export function findWeakAttachments(document: ModelDocument): Array<{ partId: string; connections: number }> {
-  const parts = Object.values(document.parts)
-  const { edges } = buildConnectionGraph(parts)
-  return parts
+  const { edges } = buildConnectionGraph(document)
+  return Object.values(document.parts)
     .map((part) => ({ partId: part.id, connections: edges.get(part.id)?.size ?? 0 }))
     .filter((entry) => entry.connections === 1)
 }

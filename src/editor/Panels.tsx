@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { catalog, describeSize, getColor, searchCatalog, STUD_LDU } from '../cad/catalog'
+import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../cad/math'
 import type {
   AutonomyMode,
   CatalogSearchRecord,
@@ -204,6 +205,10 @@ interface InspectorPanelProps {
 export function InspectorPanel({ state, selectedPart, definition, onTransform, onRecolor, onProtect, onSelectIds }: InspectorPanelProps) {
   const [tab, setTab] = useState<'object' | 'validate'>('object')
   const report = state.validation
+  const displayRotation = useMemo(
+    () => (selectedPart ? eulerDegreesFromBasis(selectedPart.transform.basis) : ([0, 0, 0] as const)),
+    [selectedPart],
+  )
   const dimensions = report.bounds.size.map((value) => value / STUD_LDU)
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
@@ -242,17 +247,23 @@ export function InspectorPanel({ state, selectedPart, definition, onTransform, o
                   />
                 ))}
               </div>
+              {/* Euler degrees are a display affordance only. The document
+                  stores an exact basis; these fields decompose it for editing
+                  and recompose on commit. */}
               <div className="fields-grid rotation-fields">
                 {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
                   <NumberField
                     key={`r_${axis}`}
                     label={axis}
-                    value={selectedPart.transform.rotation[index]}
+                    value={displayRotation[index]}
                     suffix="°"
                     onCommit={(value) => {
-                      const rotation = [...selectedPart.transform.rotation] as [number, number, number]
+                      const rotation = [...displayRotation] as [number, number, number]
                       rotation[index] = value
-                      onTransform(selectedPart.id, { ...selectedPart.transform, rotation })
+                      onTransform(selectedPart.id, {
+                        position: selectedPart.transform.position,
+                        basis: basisFromEulerDegrees(rotation),
+                      })
                     }}
                   />
                 ))}
@@ -363,7 +374,19 @@ export function InspectorPanel({ state, selectedPart, definition, onTransform, o
             <p>Deterministic checks at revision {report.revision}</p>
           </div>
           <section className="validation-list">
-            <ValidationRow label="Collisions" value={report.collisions.length ? `${report.collisions.length} found` : 'None'} status={report.collisions.length ? 'fail' : 'pass'} onClick={() => onSelectIds(report.collisions.flatMap((item) => [item.partA, item.partB]))} />
+            {/* Certainty is surfaced, not folded away: a verdict reached from
+                bounding boxes alone must not read the same as a triangle-exact
+                one. */}
+            <ValidationRow
+              label="Collisions"
+              value={
+                report.collisions.length
+                  ? `${report.collisions.length} found${report.unverifiedCollisions ? ` · ${report.unverifiedCollisions} unverified` : ''}`
+                  : 'None'
+              }
+              status={report.collisions.length ? (report.unverifiedCollisions === report.collisions.length ? 'warn' : 'fail') : 'pass'}
+              onClick={() => onSelectIds(report.collisions.flatMap((item) => [item.partA, item.partB]))}
+            />
             <ValidationRow label="Connections" value={`${report.connectionCount} mated`} status="pass" />
             <ValidationRow label="Loose groups" value={report.componentCount <= 1 ? 'None' : String(report.componentCount - 1)} status={report.componentCount <= 1 ? 'pass' : 'warn'} onClick={() => onSelectIds(report.disconnectedPartIds)} />
             <ValidationRow label="Colour evidence" value={report.virtualColors.length ? `${report.virtualColors.length} virtual` : 'All observed'} status={report.virtualColors.length ? 'warn' : 'pass'} onClick={() => onSelectIds(report.virtualColors.map((item) => item.partId))} />

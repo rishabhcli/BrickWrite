@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { CadEngine } from './engine'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
+import { IDENTITY_BASIS } from './math'
 import type { CadOperation, PartInstance } from './types'
 
 const makePart = (id: string, position: readonly [number, number, number] = [0, 0, 0]): PartInstance => ({
   id,
   definitionId: '3001',
   color: 72,
-  transform: { position, rotation: [0, 0, 0] },
+  transform: { position, basis: IDENTITY_BASIS },
   subassemblyId: 'hull',
   stepId: 'step_1',
   provenance: 'human',
@@ -27,7 +28,7 @@ describe('CadEngine', () => {
     engine.setAutonomy('build')
     const first = engine.execute('Place foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
     expect(first.ok && first.value.resultRevision).toBe(1)
-    const stale = engine.execute('Stale move', [{ type: 'part.transform', partId: 'a', transform: { position: [20, 0, 0], rotation: [0, 0, 0] } }], 'agent', 0)
+    const stale = engine.execute('Stale move', [{ type: 'part.transform', partId: 'a', transform: { position: [20, 0, 0], basis: IDENTITY_BASIS } }], 'agent', 0)
     expect(stale).toMatchObject({ ok: false, error: { code: 'STALE_DOCUMENT' } })
     expect(engine.getSnapshot().document.parts.a.transform.position).toEqual([0, 0, 0])
   })

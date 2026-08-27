@@ -87,8 +87,10 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 
 ## What works today
 
-- **Pure TypeScript CAD document** in LDraw's native frame — Three.js and React are derived
-  views, never the source of truth, and `.ldr` export needs no coordinate conversion.
+- **Pure TypeScript CAD document** in LDraw's native frame, storing orientation as an exact
+  orthonormal basis rather than Euler angles — the same nine numbers an LDraw type-1 line
+  carries, so arbitrary rotations and mirrored references round-trip exactly. Three.js and
+  React are derived views, never the source of truth.
 - **Real compiled LDraw geometry** streamed as content-addressed binary meshes, shared per
   definition, with per-slice materials for colours baked into a part.
 - **Authoritative connection semantics** from the LDCad Shadow Library — including details a
@@ -99,10 +101,18 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Optimistic concurrency** — every mutation checks `expectedRevision`; stale plans fail
   with repair guidance.
 - **Kernel protection** — agent edits cannot mutate protected parts or locked subassemblies.
-- **Connector-aware snapping** — spatial index, family/gender/group compatibility, occupancy
-  exclusion, exact transforms and multi-match scoring.
-- **Mating-aware collision** — allowed stud engagement is subtracted, so correct builds are
-  not reported as intersections and real interpenetration still is.
+- **6-DOF connector snapping** — the solver composes connector frames
+  (`Tm = Tt·Ft·C·Fm⁻¹`), so it derives orientation as well as position. Studs-not-on-top
+  placement, right-angle Technic and hinge halves fall out of the same expression as
+  ordinary stacking. Continuous joint parameters are solved in closed form; a mate requires
+  aligned axes, not merely coincident points.
+- **Persistent connection edges** — each mated pair is recorded with its joint freedom,
+  the revision it appeared at and its provenance, so the structural graph survives save,
+  load and export.
+- **Triangle-confirmed collision** — box broad phase, then a mated-connector clearance
+  allowance, then `three-mesh-bvh` triangle-pair confirmation. Every verdict carries its
+  certainty (`exact`, `clearance-subtracted`, `unknown`) and the UI shows it, so a result
+  reached from bounding boxes alone never reads like a verified one.
 - **Connection-graph connectivity** — components, loose groups and weak single-connector
   attachments come from actual mated connectors.
 - **Preflight + ghost proposals** — dry-run edits stay visible without mutating the document;
@@ -139,7 +149,7 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 51 deterministic tests + strict TS + production build
+npm run check            # 86 deterministic tests + strict TS + production build
 npx playwright install chromium
 npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
 ```
