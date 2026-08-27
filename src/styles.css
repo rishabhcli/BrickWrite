@@ -111,6 +111,82 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px s
 .project-identity small { display: block; color: #59676c; font-size: 7px; font-weight: 700; letter-spacing: .13em; margin-top: 3px; }
 .project-identity > svg { color: #526065; }
 
+/* Project menu ------------------------------------------------------------- */
+.project-menu { position: relative; height: 100%; display: flex; align-items: center; }
+.project-menu > .project-identity { height: 100%; background: none; border: 0; border-right: 1px solid var(--line); color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.project-menu > .project-identity:hover { background: rgba(131,231,238,.04); }
+.project-menu > .project-identity[aria-expanded='true'] { background: rgba(131,231,238,.06); }
+.project-identity .project-dot.volatile { background: var(--orange); box-shadow: 0 0 7px rgba(245,163,63,.6); }
+.project-identity .project-dot.failing { background: var(--red); box-shadow: 0 0 7px rgba(255,103,83,.6); }
+
+.project-panel {
+  position: absolute; top: 100%; left: 12px; z-index: 40; width: 392px;
+  max-height: 74vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line-hi);
+  box-shadow: 0 22px 54px rgba(0,0,0,.62);
+}
+.project-panel header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.project-panel header .eyebrow { font-family: var(--display); font-size: 8px; font-weight: 700; letter-spacing: .18em; color: var(--muted); }
+.project-panel header button { background: none; border: 0; color: var(--faint); cursor: pointer; display: grid; place-items: center; padding: 2px; }
+.project-panel header button:hover { color: var(--ink); }
+
+.restore-report { padding: 11px 12px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.restore-report strong { display: block; font-size: 11px; line-height: 1.45; }
+.restore-report small { display: block; margin-top: 4px; color: var(--faint); font-size: 9px; letter-spacing: .04em; }
+.restore-warning { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; font-size: 10px; line-height: 1.45; color: var(--orange); }
+.restore-warning svg { flex: none; margin-top: 2px; }
+
+.project-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.project-actions button,
+.project-fork button {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--panel); border: 0; color: var(--muted); cursor: pointer;
+  padding: 9px 8px; font: inherit; font-size: 10px; letter-spacing: .03em;
+}
+.project-actions button:hover:not(:disabled) { color: var(--cyan); background: rgba(131,231,238,.06); }
+.project-actions button:disabled, .project-fork button:disabled, .project-open:disabled, .project-delete:disabled { opacity: .45; cursor: default; }
+
+.project-fork { display: flex; gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.project-fork input {
+  flex: 1; min-width: 0; background: var(--panel-2); border: 0; color: var(--ink);
+  padding: 8px 10px; font: inherit; font-size: 10px;
+}
+.project-fork input::placeholder { color: var(--faint); }
+.project-fork input:focus { outline: 1px solid rgba(131,231,238,.4); outline-offset: -1px; }
+.project-fork button { flex: none; padding: 8px 12px; }
+.project-fork button:hover:not(:disabled) { color: var(--green); background: rgba(152,213,109,.07); }
+
+.project-list { list-style: none; margin: 0; padding: 0; }
+.project-list li { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
+.project-list li.current { background: rgba(131,231,238,.045); }
+.project-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; background: none; border: 0; color: inherit; cursor: pointer; text-align: left; padding: 9px 12px; font: inherit; }
+.project-open:hover:not(:disabled) { background: rgba(131,231,238,.05); }
+.project-open > svg { flex: none; color: var(--cyan); }
+.project-bullet { flex: none; width: 5px; height: 5px; margin: 0 3px; border-radius: 50%; border: 1px solid var(--line-hi); }
+.project-open > div { min-width: 0; }
+.project-open strong { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-open small { display: block; margin-top: 3px; color: var(--faint); font-size: 9px; }
+.project-delete { flex: none; width: 34px; background: none; border: 0; border-left: 1px solid var(--line); color: var(--faint); cursor: pointer; display: grid; place-items: center; }
+.project-delete:hover:not(:disabled) { color: var(--red); background: rgba(255,103,83,.08); }
+.project-empty { padding: 14px 12px; color: var(--faint); font-size: 10px; }
+
+/* Attribution ------------------------------------------------------------- */
+.project-panel.legal { width: 430px; }
+.legal-lede { margin: 0; padding: 11px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; line-height: 1.5; }
+.legal-lede code { color: var(--cyan); font-size: 10px; }
+.legal-list { list-style: none; margin: 0; padding: 0; }
+.legal-list li { padding: 11px 12px; border-bottom: 1px solid var(--line); }
+.legal-list strong { display: block; font-family: var(--display); font-size: 11px; letter-spacing: .04em; }
+.legal-list small { display: block; margin-top: 3px; color: var(--faint); font-size: 9px; }
+.legal-list em { display: block; margin-top: 5px; color: var(--cyan); font-style: normal; font-size: 9px; letter-spacing: .05em; }
+.legal-list p { margin: 7px 0 0; font-size: 10px; line-height: 1.55; color: #a9b4b7; }
+.legal-note { color: var(--muted) !important; }
+.legal-review { display: flex; gap: 6px; align-items: flex-start; color: var(--orange) !important; }
+.legal-review svg { flex: none; margin-top: 2px; }
+.legal-trademark { margin: 0; padding: 11px 12px; font-size: 9px; line-height: 1.6; color: var(--faint); border-bottom: 1px solid var(--line); }
+.legal-copy { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2); border: 0; color: var(--muted); cursor: pointer; padding: 10px; font: inherit; font-size: 10px; }
+.legal-copy:hover { color: var(--cyan); }
+
 .topbar-status { display: flex; align-items: center; height: 100%; }
 .save-state { display: flex; align-items: center; gap: 6px; color: #718085; font-size: 10px; padding: 0 13px; height: 100%; border-left: 1px solid var(--line); }
 .save-state em { color: #b2bdc0; font-family: var(--display); font-style: normal; }

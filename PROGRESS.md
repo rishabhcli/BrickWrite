@@ -257,6 +257,50 @@ palette showed hollow undersides and anti-stud tubes instead of studs.
 
 ![Palette with rendered previews](docs/assets/brickwright-palette.png)
 
+## Productionization pass 7
+
+**Projects, checkpoints and a visible restore report.** The persistence layer
+had supported multiple projects, explicit checkpoints and log replay since pass
+3, but the editor exposed none of it — the header's project chevron was a dead
+affordance. It is now a switcher.
+
+The interesting part is not the list, it is what a switch has to guarantee.
+Autosave is a serialized queue, so at the moment an operator clicks another
+project there may be appends still in flight. `session.openProject` therefore
+awaits the queue *and* writes a checkpoint for the outgoing project before
+anything replaces the document — leaving is not allowed to be a way to lose the
+last edit. Two consequences are asserted rather than assumed: reopening a
+project needs zero replay because it was checkpointed on the way out, and a
+transaction committed in the same tick as the switch is still there when the
+project is reopened.
+
+Forking is a new project id, a fresh checkpoint and an empty log, so two designs
+can never replay into each other. The id is disambiguated against the projects
+that already exist rather than assumed unique, because the name slug collides the
+second time the same fork name is used and a collision here would silently
+overwrite somebody's work. Deleting the open project is refused: autosave would
+recreate its checkpoint moments later, so the delete would appear to work and
+then undo itself.
+
+The restore report is now shown instead of inferred. The browser acceptance run
+reads it back: after a reload the panel says *"Restored from a checkpoint, 7
+transactions replayed"*, which is the crash-and-reopen path stated in the UI
+rather than claimed in a document.
+
+![Project switcher and restore report](docs/assets/brickwright-projects.png)
+
+**Attribution is now in the product.** The catalog compiler had been writing a
+per-dataset licence manifest — observed per-file licences, attribution strings,
+and explicit review-required flags — into a build artefact nobody could see.
+Attribution that only exists in a build artefact is not attribution. The panel
+lists all three datasets with their licences, shows the two outstanding review
+requirements in warning colour rather than burying them, carries the LEGO
+trademark disclaimer, and copies the whole attribution block to the clipboard.
+The acceptance run asserts the datasets, the review flags and the disclaimer are
+all present in the DOM.
+
+![Data and licences](docs/assets/brickwright-licences.png)
+
 ## Honest evidence boundary
 
 **What changed since the last update:** the browser no longer renders generated stand-in
@@ -289,9 +333,10 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 - **Hard edges still cost memory proportional to brick count.** Draw calls are flat, but the
   merged per-batch buffers are not free; above 6,000 parts edges are dropped outright, and a
   single batch past 600k edge vertices renders without them.
-- **Checkpoints and branches have no UI.** The persistence layer supports named checkpoints
-  and multiple projects, but the editor exposes neither, so there is no project switcher and
-  no way to fork a design.
+- **Projects are local and unnamed after creation.** The switcher can create, fork, open and
+  delete projects, but a document cannot be renamed once made — a fork is the only way to
+  choose a name — and there is no export/import of a project archive, so work does not move
+  between browsers.
 - **Validation is only incremental in its collision phase.** Connectivity, components,
   bounds and constraints still run a full pass per read; they are cheap relative to
   collision, but they are not scoped.
@@ -310,17 +355,18 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
 
 Continuing down the same critical path:
 
-1. **Project and checkpoint UI.** Surface the persistence layer: project switcher, named
-   checkpoints, and a visible restore report.
-2. **GPU picking pass**, so selection scales with the renderer rather than with the React
+1. **GPU picking pass**, so selection scales with the renderer rather than with the React
    event system.
+2. **Printable instruction output and BrickLink XML**, so a verified build order leaves the
+   app as something a person can build from and buy parts for.
 3. **Joint-axis drag gizmo**, so articulation is direct manipulation rather than stepped
    buttons.
-4. **Articulated manipulation.** Drive hinge, axle and ball edges from their recorded joint
-   freedoms so mechanisms move as mechanisms.
-5. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to
+4. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to
    replace the family-level allowance.
-6. **Widen the geometry pack**, add compiler thumbnails and offline BVH serialization.
-7. Native ChatGPT Site Tools acceptance; printable instruction output; BrickLink XML.
-8. Complete the licence review: ShareAlike scope for the normalized connector dataset, and
-   Rebrickable redistribution terms for the compiled derivative.
+5. **The full library behind a lazy per-part fetch**, with BVH serialized into the asset so
+   first collision does not pay for a build.
+6. **Native ChatGPT Site Tools acceptance run**, which needs an eligible ChatGPT desktop
+   build and cannot be done from here.
+7. Complete the licence review: ShareAlike scope for the normalized connector dataset, and
+   Rebrickable redistribution terms for the compiled derivative. Both requirements are now
+   stated in the product; what remains is the legal answer.

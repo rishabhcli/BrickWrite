@@ -319,6 +319,18 @@ export class ProjectAutosave {
   async settled(): Promise<void> {
     await this.queue
   }
+
+  /**
+   * Forgets the pending count, for when the editor moves to another project.
+   *
+   * The counter paces checkpoints for one log. Carrying it across a project
+   * switch would checkpoint the incoming project on a schedule earned by the
+   * outgoing one.
+   */
+  reset(): void {
+    this.pending = 0
+    this.lastError = null
+  }
 }
 
 export const createRepository = () =>

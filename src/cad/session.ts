@@ -34,6 +34,14 @@ export interface SessionStatus {
   error: string | null
 }
 
+/** Outcome of a project switch, fork or deletion. */
+export interface ProjectSwitch {
+  ok: boolean
+  code?: 'NOT_FOUND' | 'UNPLACEABLE_PARTS' | 'OPEN_PROJECT'
+  message?: string
+  restore?: SessionRestore | null
+}
+
 class Session {
   private repository: ProjectRepository = createRepository()
   private autosave = new ProjectAutosave(this.repository)
@@ -142,6 +150,107 @@ class Session {
 
   async listProjects(): Promise<ProjectSummary[]> {
     return this.repository.listProjects()
+  }
+
+  get currentProjectId(): string {
+    return cadEngine.getSnapshot().document.id
+  }
+
+  /**
+   * Flushes the open project so it can be left safely.
+   *
+   * Queued appends are awaited and a checkpoint written before anything replaces
+   * the document, because switching away must not be a way to lose edits that
+   * were still in flight.
+   */
+  private async partWithCurrent(): Promise<ModelDocument> {
+    const outgoing = cadEngine.getSnapshot().document
+    await this.autosave.settled()
+    await this.autosave.checkpointNow(outgoing)
+    return outgoing
+  }
+
+  private adopt(document: ModelDocument, replayed: number): SessionRestore {
+    cadEngine.replaceDocument(document)
+    this.autosave.reset()
+    this.restore = {
+      source: 'indexeddb',
+      revision: document.revision,
+      partCount: Object.keys(document.parts).length,
+      replayedTransactions: replayed,
+    }
+    return this.restore
+  }
+
+  /**
+   * Switches the editor to another stored project.
+   *
+   * A project this catalog revision cannot fully place is refused for the same
+   * reason `start()` refuses one: reopening a model with parts missing would
+   * misrepresent the operator's work rather than restore it.
+   */
+  async openProject(projectId: string): Promise<ProjectSwitch> {
+    const outgoing = await this.partWithCurrent()
+    if (projectId === outgoing.id) return { ok: true, restore: this.restore }
+
+    const loaded = await this.repository.loadProject(projectId)
+    if (!loaded) {
+      return { ok: false, code: 'NOT_FOUND', message: 'That project is no longer in local storage.' }
+    }
+    if (!this.usable(loaded.document)) {
+      return {
+        ok: false,
+        code: 'UNPLACEABLE_PARTS',
+        message: `"${loaded.document.name}" references parts this catalog revision cannot place, so it was left untouched.`,
+      }
+    }
+    return { ok: true, restore: this.adopt(loaded.document, loaded.replayed.length) }
+  }
+
+  /**
+   * Forks the open document into a new project.
+   *
+   * The fork gets a new project id, a fresh checkpoint and an empty log, so the
+   * two histories cannot replay into each other. Its id is disambiguated against
+   * the projects that already exist rather than assumed unique, because a name
+   * slug collides the second time the same fork name is used — and a collision
+   * here would overwrite somebody's project.
+   */
+  async forkProject(name?: string): Promise<ProjectSwitch> {
+    const source = await this.partWithCurrent()
+    const forkName = name?.trim() || `${source.name} (fork)`
+    const base = `doc_${forkName.toLowerCase().replace(/\W+/g, '_')}`
+    const taken = new Set((await this.repository.listProjects()).map((project) => project.projectId))
+    let id = base
+    for (let suffix = 2; taken.has(id); suffix += 1) id = `${base}_${suffix}`
+
+    const fork: ModelDocument = {
+      ...structuredClone(source),
+      id,
+      name: forkName,
+      createdAt: new Date().toISOString(),
+    }
+    const restore = this.adopt(fork, 0)
+    await this.repository.saveCheckpoint(cadEngine.getSnapshot().document)
+    return { ok: true, restore }
+  }
+
+  /**
+   * Deletes a stored project.
+   *
+   * The open project is refused: autosave would immediately recreate a partial
+   * checkpoint for it, so the delete would appear to work and then undo itself.
+   */
+  async deleteProject(projectId: string): Promise<ProjectSwitch> {
+    if (projectId === this.currentProjectId) {
+      return {
+        ok: false,
+        code: 'OPEN_PROJECT',
+        message: 'Switch to another project before deleting this one.',
+      }
+    }
+    await this.repository.deleteProject(projectId)
+    return { ok: true }
   }
 
   async settled(): Promise<void> {

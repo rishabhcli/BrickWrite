@@ -3,7 +3,6 @@ import {
   Boxes,
   BringToFront,
   Check,
-  ChevronDown,
   CircleDot,
   Copy,
   Download,
@@ -38,6 +37,7 @@ import { session, type SessionStatus } from './cad/session'
 import type { CadOperation, CatalogSearchRecord, PartInstance, Transform, Vec3 } from './cad/types'
 import { CadViewport, type CameraView, type EditorTool, type RenderMode } from './editor/CadViewport'
 import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline, type ArticulationControl } from './editor/Panels'
+import { ProjectMenu } from './editor/ProjectMenu'
 import { useCad } from './editor/useCad'
 import { webMcpAdapter } from './webmcp/adapter'
 
@@ -442,11 +442,13 @@ export default function App() {
           <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
           <div><strong>BRICK<span>WRIGHT</span></strong><small>PHYSICAL CAD / 01</small></div>
         </div>
-        <div className="project-identity">
-          <span className="project-dot" />
-          <div><strong>{state.document.name}</strong><small>LOCAL DOCUMENT · AUTOSAVED</small></div>
-          <ChevronDown size={13} />
-        </div>
+        <ProjectMenu
+          documentName={state.document.name}
+          documentId={state.document.id}
+          revision={state.document.revision}
+          sessionStatus={sessionStatus}
+          onNotice={setToast}
+        />
         <div className="topbar-status">
           {/* The indicator reports what persistence actually achieved: a
               durable store, a fallback, or an outright failure. */}

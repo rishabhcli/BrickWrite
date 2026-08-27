@@ -403,6 +403,76 @@ try {
   const saveState = await page.locator('.save-state span').innerText()
   assert(saveState.trim() === 'Saved', `Expected a durable save indicator, saw "${saveState.trim()}"`)
   assert(errors.length === 0, `Browser errors after reload: ${errors.join('; ')}`)
+
+  // -- projects, checkpoints and attribution -------------------------------
+  // Driven entirely through the DOM: the persistence layer supported multiple
+  // projects long before an operator could reach one, so the acceptance is that
+  // the switcher works, not that the repository does.
+  await page.locator('.project-menu .project-identity').click()
+  const restoreHeadline = (await page.locator('.restore-report strong').innerText()).trim()
+  assert(
+    /Restored from a checkpoint/.test(restoreHeadline),
+    `Expected the reopened project to report a restore, saw "${restoreHeadline}"`,
+  )
+
+  const beforeFork = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { id: model.id, name: model.name, revision: model.revision, parts: Object.keys(model.parts).length }
+  })
+  await page.locator('.project-fork input').fill('E2E fork')
+  await page.locator('.project-fork button').click()
+  await page.waitForFunction(() => window.brickwright.getDocument().name === 'E2E fork', null, { timeout: 15_000 })
+
+  // A fork must copy the work, not merely rename the pointer to it.
+  const forked = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { id: model.id, name: model.name, parts: Object.keys(model.parts).length }
+  })
+  assert(forked.id !== beforeFork.id, 'The fork reused the original project id')
+  assert(
+    forked.parts === beforeFork.parts,
+    `The fork lost geometry: original had ${beforeFork.parts} parts, fork has ${forked.parts}`,
+  )
+
+  // The row list refreshes after the fork's checkpoint is written, which is
+  // later than the document swap — so wait on the list, not on the name.
+  await page.waitForFunction(() => document.querySelectorAll('.project-list li').length >= 2, null, { timeout: 15_000 })
+  const projectRows = await page.locator('.project-list li').count()
+  const projectRowText = await page.locator('.project-list li').allInnerTexts()
+  assert(
+    projectRowText.some((row) => row.includes('E2E fork')) && projectRowText.some((row) => row.includes(beforeFork.name)),
+    `Expected both projects in the switcher, saw ${JSON.stringify(projectRowText)}`,
+  )
+
+  // Switch back and confirm the original is intact and reopened at its own
+  // revision — the fork's transactions must not have landed in its log.
+  await page.locator(`.project-open:not(:disabled)`).first().click()
+  await page.waitForFunction((id) => window.brickwright.getDocument().id === id, beforeFork.id, { timeout: 15_000 })
+  const restored = await page.evaluate(() => {
+    const model = window.brickwright.getDocument()
+    return { id: model.id, revision: model.revision, parts: Object.keys(model.parts).length }
+  })
+  assert(
+    restored.revision === beforeFork.revision && restored.parts === beforeFork.parts,
+    `Switching back changed the original: r${beforeFork.revision}/${beforeFork.parts} -> r${restored.revision}/${restored.parts}`,
+  )
+
+  // Attribution has to be reachable from the running app, not just present in a
+  // build artefact, and the review-required flags have to be visible.
+  await page.locator('.project-actions button', { hasText: 'Data' }).click()
+  await page.locator('.legal-list li').first().waitFor({ timeout: 15_000 })
+  const attribution = await page.evaluate(() => ({
+    datasets: document.querySelectorAll('.legal-list li').length,
+    reviewFlags: document.querySelectorAll('.legal-review').length,
+    mentionsLdraw: document.querySelector('.legal-list')?.textContent?.includes('LDraw') ?? false,
+    trademark: (document.querySelector('.legal-trademark')?.textContent ?? '').includes('LEGO'),
+  }))
+  assert(attribution.datasets >= 3, `Expected every compiled dataset to be listed, saw ${attribution.datasets}`)
+  assert(attribution.mentionsLdraw, 'The attribution panel does not credit the LDraw Parts Library')
+  assert(attribution.reviewFlags >= 2, `Expected the licence review flags to be shown, saw ${attribution.reviewFlags}`)
+  assert(attribution.trademark, 'The trademark disclaimer is missing from the attribution panel')
+  await page.keyboard.press('Escape')
+
   assert(errors.length === 0, `Browser errors: ${errors.join('; ')}`)
 
   console.log(JSON.stringify({
@@ -460,6 +530,15 @@ try {
       trianglesAfter: renderScale.after.triangles,
     },
     reloadRestored: afterReload,
+    projects: {
+      restoreHeadline,
+      forkedProjectId: forked.id,
+      forkedParts: forked.parts,
+      projectsListed: projectRows,
+      switchedBackTo: restored.id,
+      attributionDatasets: attribution.datasets,
+      licenceReviewFlags: attribution.reviewFlags,
+    },
     screenshot: 'artifacts/e2e-final.png',
   }, null, 2))
   await browser.close()
