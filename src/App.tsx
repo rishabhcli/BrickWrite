@@ -3,12 +3,14 @@ import {
   Boxes,
   BringToFront,
   Check,
+  CircleHelp,
   CircleDot,
+  Command,
   Copy,
-  Download,
   Eye,
   Focus,
   Grid3X3,
+  Layers3,
   Link2,
   Lock,
   Maximize2,
@@ -20,28 +22,28 @@ import {
   Sparkles,
   Trash2,
   Undo2,
-  Upload,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { articulate, findArticulatedJoints } from './cad/articulation'
-import { computeBuildOrder } from './cad/instructions'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { findArticulatedJoints } from './cad/articulation'
+import { planSharedMutation, SharedCapabilityError, type SharedMutationId } from './cad/capabilities'
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './cad/catalog'
 import { IDENTITY_BASIS, rotateLocal } from './cad/math'
-import { exportBomCsv } from './cad/bom'
+import { createId } from './cad/ids'
 import { cadEngine } from './cad/engine'
 import { getDocumentBounds, getPartBounds } from './cad/geometry'
-import { downloadText, exportLDraw, parseLDraw } from './cad/ldraw'
+import { parseLDraw } from './cad/ldraw'
 import { bestSnapTransform } from './cad/snapping'
 import { session, type SessionStatus } from './cad/session'
 import type { CadOperation, CatalogSearchRecord, PartInstance, Transform, Vec3 } from './cad/types'
 import { CadViewport, type CameraView, type EditorTool, type RenderMode } from './editor/CadViewport'
+import { CommandDeck } from './editor/CommandDeck'
+import { ExportCenter } from './editor/ExportCenter'
 import { AutonomySwitch, CatalogPanel, InspectorPanel, Timeline, type ArticulationControl } from './editor/Panels'
 import { ProjectMenu } from './editor/ProjectMenu'
+import { ShortcutGuide } from './editor/ShortcutGuide'
 import { useCad } from './editor/useCad'
 import { webMcpAdapter } from './webmcp/adapter'
-
-const makeId = () => `part_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 
 interface ToastState {
   kind: 'success' | 'error' | 'info'
@@ -56,13 +58,14 @@ export default function App() {
   const [gridLdu, setGridLdu] = useState(STUD_LDU)
   const [cameraView, setCameraView] = useState<CameraView>('isometric')
   const [renderMode, setRenderMode] = useState<RenderMode>('beauty')
+  const [cameraResetKey, setCameraResetKey] = useState(0)
   const [captureRequestId, setCaptureRequestId] = useState<string | null>(null)
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
+  const [shortcutOpen, setShortcutOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [toolStatus, setToolStatus] = useState({ native: false, toolCount: 0, mode: state.autonomy })
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() => session.status)
-  const importInput = useRef<HTMLInputElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const selectedPart = state.selection.length === 1 ? state.document.parts[state.selection[0]] : undefined
   const selectedDefinition = selectedPart ? catalog.get(selectedPart.definitionId) : undefined
@@ -126,6 +129,33 @@ export default function App() {
     return true
   }, [])
 
+  /**
+   * Human commands and WebMCP long-tail commands share the same pure planner.
+   * The only difference is attribution; both still commit through CadEngine.
+   */
+  const runSharedMutation = useCallback((capability: SharedMutationId, args: Record<string, unknown> = {}) => {
+    const snapshot = cadEngine.getSnapshot()
+    try {
+      const plan = planSharedMutation(capability, args, {
+        document: snapshot.document,
+        selection: snapshot.selection,
+        actor: 'human',
+      })
+      if (!dispatch(plan.label, [...plan.operations])) return false
+      if (plan.nextSelection) cadEngine.setSelection([...plan.nextSelection])
+      setToast({ kind: 'success', title: plan.label, detail: plan.summary })
+      return true
+    } catch (cause) {
+      const known = cause instanceof SharedCapabilityError
+      setToast({
+        kind: 'error',
+        title: known ? `[${cause.code}]` : '[INVALID_OPERATION]',
+        detail: known ? `${cause.message} ${cause.repair}` : cause instanceof Error ? cause.message : String(cause),
+      })
+      return false
+    }
+  }, [dispatch])
+
   const handleSelect = useCallback((partId: string, additive: boolean, subassembly: boolean) => {
     const snapshot = cadEngine.getSnapshot()
     const clicked = snapshot.document.parts[partId]
@@ -136,17 +166,7 @@ export default function App() {
     }
     if (tool === 'connect' && snapshot.selection.length === 1 && snapshot.selection[0] !== partId) {
       const target = snapshot.document.parts[snapshot.selection[0]]
-      const targetBounds = getPartBounds(target)
-      // Seed the solver near the target's top face and let it derive the exact
-      // pose, including any rotation the connector frames require.
-      const coarseTransform: Transform = {
-        position: [target.transform.position[0], targetBounds.min[1], target.transform.position[2]],
-        basis: clicked.transform.basis,
-      }
-      const nextTransform = bestSnapTransform(clicked, snapshot.document, coarseTransform, { radiusLdu: STUD_LDU, targetPartIds: [target.id] }) ?? coarseTransform
-      if (dispatch(`Connect ${clicked.definitionId} to ${target.definitionId}`, [{ type: 'part.transform', partId, transform: nextTransform }])) {
-        cadEngine.setSelection([partId])
-      }
+      runSharedMutation('connect_parts', { movingPartId: clicked.id, targetPartId: target.id })
       return
     }
     if (additive) {
@@ -154,7 +174,7 @@ export default function App() {
     } else {
       cadEngine.setSelection([partId])
     }
-  }, [dispatch, tool])
+  }, [runSharedMutation, tool])
 
   const handleTransform = useCallback((partId: string, transform: Transform) => {
     const snapshot = cadEngine.getSnapshot()
@@ -197,7 +217,7 @@ export default function App() {
       ? activeColor
       : (definition.availableColors[0] ?? activeColor)
     const part: PartInstance = {
-      id: makeId(),
+      id: createId('part'),
       definitionId: definition.canonicalId,
       color: availableColor,
       transform: { position, basis: IDENTITY_BASIS },
@@ -218,19 +238,8 @@ export default function App() {
     const selected = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
     const bounds = selected.map(getPartBounds)
     const offset = Math.max(...bounds.map((item) => item.max[0])) - Math.min(...bounds.map((item) => item.min[0])) + STUD_LDU
-    const additions = selected.map((part, index): CadOperation => ({
-      type: 'part.add',
-      part: {
-        ...structuredClone(part),
-        id: `${makeId()}_${index}`,
-        transform: { ...part.transform, position: [part.transform.position[0] + offset, part.transform.position[1], part.transform.position[2]] },
-        protected: false,
-      },
-    }))
-    if (dispatch(`Duplicate ${selected.length} part${selected.length === 1 ? '' : 's'}`, additions)) {
-      cadEngine.setSelection(additions.map((operation) => operation.type === 'part.add' ? operation.part.id : ''))
-    }
-  }, [dispatch])
+    runSharedMutation('duplicate_selection', { offsetLdu: [offset, 0, 0] })
+  }, [runSharedMutation])
 
   const deleteSelection = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
@@ -317,21 +326,9 @@ export default function App() {
 
   const driveJoint = useCallback(
     (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => {
-      const snapshot = cadEngine.getSnapshot()
-      const joint = findArticulatedJoints(snapshot.document, snapshot.selection).find((entry) => entry.edgeId === edgeId)
-      if (!joint) return
-      const operations = articulate(snapshot.document, joint, request)
-      if (!operations.length) {
-        setToast({
-          kind: 'info',
-          title: 'Joint did not move',
-          detail: 'That amount is outside what this interface allows, so nothing was changed.',
-        })
-        return
-      }
-      dispatch(`Articulate ${joint.family}`, operations)
+      runSharedMutation('articulate_joint', { edgeId, ...request })
     },
-    [dispatch],
+    [runSharedMutation],
   )
 
   /**
@@ -342,23 +339,8 @@ export default function App() {
    * is reported rather than glossed over.
    */
   const regenerateBuildOrder = useCallback(() => {
-    const snapshot = cadEngine.getSnapshot()
-    const result = computeBuildOrder(snapshot.document)
-    if (!result.steps.length) {
-      setToast({ kind: 'info', title: 'Nothing to sequence', detail: 'The model has no parts yet.' })
-      return
-    }
-    if (dispatch('Generate build order', [{ type: 'steps.replace', steps: result.steps }])) {
-      const islands = result.unsupportedPartIds.length
-      setToast({
-        kind: islands ? 'info' : 'success',
-        title: `${result.steps.length} steps generated`,
-        detail: islands
-          ? `Every part attaches to earlier structure except ${islands}, which begin separately-built subassemblies.`
-          : 'Every part attaches to structure placed in an earlier step.',
-      })
-    }
-  }, [dispatch])
+    runSharedMutation('apply_build_order')
+  }, [runSharedMutation])
 
   const createDemoProposal = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
@@ -386,7 +368,7 @@ export default function App() {
     const operations: CadOperation[] = [-60, 60].map((x, index) => ({
       type: 'part.add',
       part: {
-        id: `agent_rack_${Date.now().toString(36)}_${index}`,
+        id: createId(`agent_rack_${index}`),
         definitionId: upright.canonicalId,
         color: 25,
         transform: { position: [x, y, deckPlate!.transform.position[2] - 10] as Vec3, basis: IDENTITY_BASIS },
@@ -402,26 +384,100 @@ export default function App() {
       : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message })
   }, [])
 
+  const importModel = useCallback(async (file: File) => {
+    const imported = parseLDraw(await file.text(), cadEngine.getDocument())
+    cadEngine.replaceDocument(imported.document)
+    const skipped = imported.report.unknownParts.length + imported.report.withoutGeometry.length
+    setToast({
+      kind: skipped ? 'info' : 'success',
+      title: 'LDraw imported',
+      detail: skipped
+        ? `${imported.report.placed} parts placed across ${imported.report.submodels} submodels. ${skipped} references had no compiled geometry and were reported, not dropped silently.`
+        : `${imported.report.placed} parts across ${imported.report.submodels} submodels are now an editable revisioned CAD document.`,
+    })
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement
+      const modifier = event.metaKey || event.ctrlKey
+      if (commandOpen) {
+        if (event.key === 'Escape' || (modifier && event.key === '/')) {
+          event.preventDefault()
+          setCommandOpen(false)
+        }
+        // Commands never leak through a modal surface into the viewport.
+        return
+      }
+      if (shortcutOpen) {
+        if (event.key === 'Escape' || event.key === '?') {
+          event.preventDefault()
+          setShortcutOpen(false)
+        }
+        // A modal command map must not let keystrokes mutate the model behind it.
+        return
+      }
+      if (modifier && event.key === '/') {
+        event.preventDefault()
+        setShortcutOpen(false)
+        setCommandOpen(true)
+        return
+      }
+      if (modifier && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        document.querySelector<HTMLInputElement>('[data-catalog-search]')?.focus()
+        return
+      }
       if (target.matches('input, textarea, select')) return
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      if (event.key === '?') {
+        event.preventDefault()
+        setShortcutOpen((value) => !value)
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        // Menus and dialogs own their own Escape lifecycle. Returning here
+        // prevents closing an export panel from also rejecting a CAD proposal.
+        if (document.querySelector('.export-panel, .project-panel')) return
+        if (playbackStep !== null) setPlaybackStep(null)
+        else {
+          const proposal = cadEngine.getSnapshot().proposals[0]
+          if (proposal) cadEngine.rejectProposal(proposal.id)
+          setTool('select')
+          setRenderMode('beauty')
+        }
+        return
+      }
+      if (modifier && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         event.shiftKey ? cadEngine.redo('human') : cadEngine.undo('human')
-      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+      } else if (modifier && event.key.toLowerCase() === 'd') {
         event.preventDefault()
         duplicateSelection()
+      } else if (event.key === 'Enter') {
+        const proposal = cadEngine.getSnapshot().proposals[0]
+        if (proposal) acceptProposal(proposal.id)
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault()
         deleteSelection()
       } else if (event.key.toLowerCase() === 'g') setTool('move')
       else if (event.key.toLowerCase() === 'r') setTool('rotate')
-      else if (event.key.toLowerCase() === 'v') setTool('select')
+      else if (event.key.toLowerCase() === 'c') setTool('connect')
+      else if (event.key.toLowerCase() === 'v' || event.key === '1') setTool('select')
+      else if (event.key.toLowerCase() === 'f') {
+        setCameraView('isometric')
+        setCameraResetKey((value) => value + 1)
+      } else if (event.key.toLowerCase() === 'l') {
+        const snapshot = cadEngine.getSnapshot()
+        if (snapshot.selection.length) {
+          const allProtected = snapshot.selection.every((id) => snapshot.document.parts[id]?.protected)
+          protectSelection(!allProtected)
+        }
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteSelection, duplicateSelection])
+  }, [commandOpen, deleteSelection, duplicateSelection, playbackStep, protectSelection, shortcutOpen])
 
   const selectionLabel = useMemo(() => {
     if (!state.selection.length) return 'No selection'
@@ -503,38 +559,29 @@ export default function App() {
           <IconButton icon={<Eye />} label="Isometric view" onClick={() => setCameraView('isometric')} />
           <IconButton icon={<BringToFront />} label="Front view" onClick={() => setCameraView('front')} />
           <IconButton icon={<Maximize2 />} label="Top view" onClick={() => setCameraView('top')} />
-          <IconButton icon={<Focus />} label="Fit model" onClick={() => setCameraView(cameraView === 'isometric' ? 'front' : 'isometric')} />
+          <IconButton icon={<Focus />} label="Fit model" onClick={() => { setCameraView('isometric'); setCameraResetKey((value) => value + 1) }} />
           <IconButton icon={<Boxes />} label="Play instruction steps" onClick={() => setPlaybackStep(playbackStep === null ? 0 : null)} />
         </div>
+        <label className="render-picker">
+          <Layers3 size={14} />
+          <span>VIEW</span>
+          <select value={renderMode} onChange={(event) => setRenderMode(event.target.value as RenderMode)} aria-label="Viewport render mode">
+            <option value="beauty">Beauty</option>
+            <option value="orthographic">Orthographic</option>
+            <option value="connections">Connections</option>
+            <option value="violations">Violations</option>
+            <option value="silhouette">Silhouette</option>
+            <option value="exploded">Exploded</option>
+          </select>
+        </label>
         <div className="rail-divider" />
         <div className="toolgroup compact-tools">
           <IconButton icon={<Undo2 />} label="Undo" onClick={() => cadEngine.undo('human')} disabled={!state.canUndo} />
           <IconButton icon={<Redo2 />} label="Redo" onClick={() => cadEngine.redo('human')} disabled={!state.canRedo} />
+          <IconButton icon={<Command />} label="Command deck" shortcut="Meta+/ Control+/" onClick={() => { setShortcutOpen(false); setCommandOpen(true) }} />
+          <IconButton icon={<CircleHelp />} label="Keyboard shortcuts" onClick={() => { setCommandOpen(false); setShortcutOpen(true) }} />
         </div>
-        <button className="export-button" onClick={() => downloadText(`${state.document.name.replace(/\W+/g, '_')}.ldr`, exportLDraw(state.document))}><Download size={13} /> EXPORT LDR</button>
-        <button className="bom-button" onClick={() => downloadText(`${state.document.name.replace(/\W+/g, '_')}_BOM.csv`, exportBomCsv(state.document), 'text/csv')}><Boxes size={13} /> BOM</button>
-        <button className="import-button" onClick={() => importInput.current?.click()} aria-label="Import LDraw"><Upload size={14} /></button>
-        <input
-          ref={importInput}
-          hidden
-          type="file"
-          accept=".ldr,.mpd,text/plain"
-          onChange={async (event) => {
-            const file = event.target.files?.[0]
-            if (!file) return
-            const imported = parseLDraw(await file.text(), cadEngine.getDocument())
-            cadEngine.replaceDocument(imported.document)
-            const skipped = imported.report.unknownParts.length + imported.report.withoutGeometry.length
-            setToast({
-              kind: skipped ? 'info' : 'success',
-              title: 'LDraw imported',
-              detail: skipped
-                ? `${imported.report.placed} parts placed across ${imported.report.submodels} submodels. ${skipped} references had no compiled geometry and were reported, not dropped silently.`
-                : `${imported.report.placed} parts across ${imported.report.submodels} submodels are now an editable revisioned CAD document.`,
-            })
-            event.target.value = ''
-          }}
-        />
+        <ExportCenter state={state} onImport={importModel} onNotice={setToast} />
       </nav>
 
       <div className="workspace">
@@ -547,17 +594,18 @@ export default function App() {
             tool={tool}
             gridLdu={gridLdu}
             cameraView={cameraView}
+            cameraResetKey={cameraResetKey}
             renderMode={renderMode}
             onSelect={handleSelect}
             onClearSelection={() => cadEngine.setSelection([])}
             onTransform={handleTransform}
-            onCanvasReady={(canvas) => { canvasRef.current = canvas; window.__brickwrightCanvas = canvas }}
+            onCanvasReady={(canvas) => { window.__brickwrightCanvas = canvas }}
           />
           <div className="viewport-corners" aria-hidden="true"><i /><i /><i /><i /></div>
           <div className="viewport-breadcrumb"><span>ASSEMBLY</span><b>/</b><strong>{selectedPart ? state.document.subassemblies[selectedPart.subassemblyId]?.name : 'MASTER MODEL'}</strong></div>
           <div className="viewport-title-block">
-            <span className="eyebrow">LIVE ASSEMBLY / REV {state.document.revision}</span>
-            <h1>ASTRA <em>// 06</em></h1>
+            <span className="eyebrow">CATALOG-BACKED ASSEMBLY / REV {state.document.revision}</span>
+            <h1 title={state.document.name}><span>{state.document.name}</span> <em>// R{String(state.document.revision).padStart(2, '0')}</em></h1>
             <p>{selectionLabel}</p>
           </div>
           <div className="viewport-metrics">
@@ -615,6 +663,9 @@ export default function App() {
         onSelectIds={(ids) => cadEngine.setSelection(ids)}
       />
 
+      <CommandDeck open={commandOpen} state={state} onClose={() => setCommandOpen(false)} onRun={runSharedMutation} />
+      <ShortcutGuide open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
+
       {toast && (
         <div className={`toast ${toast.kind}`} role="status">
           <span>{toast.kind === 'success' ? <Check size={15} /> : toast.kind === 'error' ? <X size={15} /> : <CircleDot size={15} />}</span>
@@ -627,11 +678,11 @@ export default function App() {
 }
 
 function ToolButton({ icon, label, shortcut, active, onClick }: { icon: React.ReactElement; label: string; shortcut: string; active?: boolean; onClick: () => void }) {
-  return <button className={`tool-button ${active ? 'active' : ''}`} onClick={onClick}>{icon}<span>{label}</span><kbd>{shortcut}</kbd></button>
+  return <button className={`tool-button ${active ? 'active' : ''}`} onClick={onClick} aria-pressed={active} aria-keyshortcuts={shortcut}>{icon}<span>{label}</span><kbd>{shortcut}</kbd></button>
 }
 
-function IconButton({ icon, label, onClick, disabled }: { icon: React.ReactElement; label: string; onClick: () => void; disabled?: boolean }) {
-  return <button className="icon-button" onClick={onClick} disabled={disabled} aria-label={label} title={label}>{icon}</button>
+function IconButton({ icon, label, onClick, disabled, shortcut }: { icon: React.ReactElement; label: string; onClick: () => void; disabled?: boolean; shortcut?: string }) {
+  return <button className="icon-button" onClick={onClick} disabled={disabled} aria-label={label} aria-keyshortcuts={shortcut} title={label}>{icon}</button>
 }
 
 function Metric({ label, value, good }: { label: string; value: string; good?: boolean }) {

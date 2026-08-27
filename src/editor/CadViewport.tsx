@@ -157,7 +157,7 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
   )
 }
 
-function CameraRig({ document, view }: { document: ModelDocument; view: CameraView }) {
+function CameraRig({ document, view, resetKey }: { document: ModelDocument; view: CameraView; resetKey: number }) {
   const controls = useRef<OrbitControlsImpl>(null)
   // The camera comes from the R3F store rather than the controls ref: the ref is
   // not attached yet on the first commit, and this effect's dependencies would
@@ -192,7 +192,7 @@ function CameraRig({ document, view }: { document: ModelDocument; view: CameraVi
       controls.current.target.copy(center)
       controls.current.update()
     }
-  }, [bounds, camera, size.height, size.width, view])
+  }, [bounds, camera, resetKey, size.height, size.width, view])
 
   return <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={3} maxDistance={400} />
 }
@@ -204,6 +204,8 @@ interface CadViewportProps {
   tool: EditorTool
   gridLdu: number
   cameraView: CameraView
+  /** Increment to frame the current document even when the named view is unchanged. */
+  cameraResetKey: number
   renderMode: RenderMode
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onClearSelection: () => void
@@ -218,6 +220,7 @@ export function CadViewport({
   tool,
   gridLdu,
   cameraView,
+  cameraResetKey,
   renderMode,
   onSelect,
   onClearSelection,
@@ -272,7 +275,7 @@ export function CadViewport({
 
   return (
     <Canvas
-      shadows
+      shadows="basic"
       dpr={[1, 1.65]}
       gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => {
@@ -384,7 +387,7 @@ export function CadViewport({
         infiniteGrid
       />
       <ContactShadows position={[0, -0.014, 0]} scale={70} opacity={0.44} blur={2.6} far={26} resolution={1024} color="#000000" />
-      <CameraRig document={document} view={cameraView} />
+      <CameraRig document={document} view={cameraView} resetKey={cameraResetKey} />
       <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
         <GizmoViewport axisColors={['#ff6a55', '#8bcf65', '#6bbbd6']} labelColor="#0c1112" />
       </GizmoHelper>

@@ -287,7 +287,12 @@ kernel.
 ## Performance direction
 
 Geometry is shared per definition and content-addressed, so a thousand 2×4 bricks cost one
-vertex buffer. The next step is to replace per-part scene objects with definition/colour
-batches while keeping selection, ghost, warning and connector overlays separate, and to add
-serialized triangle BVHs after the AABB broad phase. Neither change alters the document or
-command contracts.
+vertex buffer. Definition/colour groups render through `InstancedMesh`; hard edges are merged
+once per batch, while selection, ghost, warning and transform overlays remain independent.
+The browser acceptance run proves the architectural property rather than a screenshot: a
+400-part stress batch adds 14 draw calls, not one object tree per brick.
+
+Collision uses per-definition `three-mesh-bvh` instances after the scene broad phase. The
+remaining renderer scaling boundary is picking: instanced intersections still flow through
+the React event system. A dedicated GPU ID pass and serialized offline BVHs are the next
+large-model optimizations; neither changes the canonical document or command contracts.

@@ -30,10 +30,16 @@ interface RawSearchEntry {
 }
 
 export interface CatalogManifest {
+  schemaVersion: number
   catalogVersion: string
   generatedAt: string
   sources: Record<string, unknown>
-  counts: { parts: number; packParts: number; connectors: number; colors: number }
+  files: Record<'parts' | 'search' | 'colors' | 'aliases', {
+    path: string
+    hash: string
+    bytes: number
+  }>
+  counts: { parts: number; packParts: number; connectors: number; colors: number; aliases: number; thumbnails?: number }
   coverage: Record<string, unknown>
 }
 

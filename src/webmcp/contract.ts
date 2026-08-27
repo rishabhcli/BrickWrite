@@ -108,6 +108,86 @@ const LockOperation = z.object({
   locked: z.boolean(),
 })
 
+const AssignSubassemblyOperation = z.object({
+  op: z.literal('assign-subassembly'),
+  partId: z.string().min(1).max(80),
+  subassemblyId: z.string().min(1).max(80),
+})
+
+const AddSubassemblyOperation = z.object({
+  op: z.literal('add-subassembly'),
+  subassemblyId: z.string().min(1).max(80).optional(),
+  name: z.string().trim().min(1).max(80),
+  accent: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  locked: z.boolean().optional(),
+})
+
+const RenameSubassemblyOperation = z.object({
+  op: z.literal('rename-subassembly'),
+  subassemblyId: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
+})
+
+const AddNoteOperation = z.object({
+  op: z.literal('add-note'),
+  noteId: z.string().min(1).max(80).optional(),
+  partIds: z.array(z.string().min(1).max(80)).min(1).max(500),
+  text: z.string().trim().min(1).max(800),
+})
+
+const RespondNoteOperation = z.object({
+  op: z.literal('respond-note'),
+  noteId: z.string().min(1).max(80),
+  response: z.string().trim().min(1).max(1200),
+  resolved: z.boolean().optional(),
+})
+
+const RenameDocumentOperation = z.object({
+  op: z.literal('rename-document'),
+  name: z.string().trim().min(1).max(120),
+})
+
+const ReplaceStepsOperation = z.object({
+  op: z.literal('replace-steps'),
+  steps: z.array(z.object({
+    id: z.string().min(1).max(80),
+    index: z.number().int().min(0),
+    name: z.string().trim().min(1).max(120),
+    partIds: z.array(z.string().min(1).max(80)).max(500),
+  })).min(1).max(250),
+})
+
+const SetDimensionConstraintOperation = z.object({
+  op: z.literal('set-dimension-constraint'),
+  constraintId: z.string().min(1).max(80).optional(),
+  label: z.string().trim().min(1).max(120).optional(),
+  widthStuds: z.number().finite().positive(),
+  depthStuds: z.number().finite().positive(),
+  heightStuds: z.number().finite().positive().optional(),
+  hard: z.boolean().optional(),
+})
+
+const SetPieceBudgetOperation = z.object({
+  op: z.literal('set-piece-budget'),
+  constraintId: z.string().min(1).max(80).optional(),
+  label: z.string().trim().min(1).max(120).optional(),
+  maxParts: z.number().int().min(1).max(100_000),
+  hard: z.boolean().optional(),
+})
+
+const SetPaletteConstraintOperation = z.object({
+  op: z.literal('set-palette-constraint'),
+  constraintId: z.string().min(1).max(80).optional(),
+  label: z.string().trim().min(1).max(120).optional(),
+  colors: z.array(z.number().int().min(0).max(9999)).min(1).max(64),
+  hard: z.boolean().optional(),
+})
+
+const RemoveConstraintOperation = z.object({
+  op: z.literal('remove-constraint'),
+  constraintId: z.string().min(1).max(80),
+})
+
 export const OperationSchema = z.discriminatedUnion('op', [
   AddOperation,
   MoveOperation,
@@ -115,6 +195,17 @@ export const OperationSchema = z.discriminatedUnion('op', [
   RecolorOperation,
   ProtectOperation,
   LockOperation,
+  AssignSubassemblyOperation,
+  AddSubassemblyOperation,
+  RenameSubassemblyOperation,
+  AddNoteOperation,
+  RespondNoteOperation,
+  RenameDocumentOperation,
+  ReplaceStepsOperation,
+  SetDimensionConstraintOperation,
+  SetPieceBudgetOperation,
+  SetPaletteConstraintOperation,
+  RemoveConstraintOperation,
 ])
 
 export type OperationInput = z.infer<typeof OperationSchema>
@@ -166,6 +257,7 @@ export type BrickwrightErrorCode =
   | 'NO_COMPATIBLE_CONNECTOR'
   | 'CONNECTOR_OCCUPIED'
   | 'COLLISION'
+  | 'CONSTRAINT_VIOLATION'
   | 'PROPOSAL_NOT_FOUND'
   | 'PROPOSAL_STALE'
   | 'READ_ONLY_MODE'
@@ -355,6 +447,7 @@ export function toKernelOperations(
     defaultSubassemblyId: string
     defaultStepId: string
     idPrefix: string
+    revision: number
   },
 ): CadOperation[] {
   return inputs.map((input, index): CadOperation => {
@@ -398,6 +491,78 @@ export function toKernelOperations(
         return { type: 'part.protect', partId: input.partId, protected: input.protected }
       case 'lock-subassembly':
         return { type: 'subassembly.lock', subassemblyId: input.subassemblyId, locked: input.locked }
+      case 'assign-subassembly':
+        return { type: 'part.assign-subassembly', partId: input.partId, subassemblyId: input.subassemblyId }
+      case 'add-subassembly':
+        return {
+          type: 'subassembly.add',
+          subassembly: {
+            id: input.subassemblyId ?? `${context.idPrefix}_subassembly_${index}`,
+            name: input.name,
+            partIds: [],
+            locked: input.locked ?? false,
+            accent: input.accent ?? '#e79032',
+          },
+        }
+      case 'rename-subassembly':
+        return { type: 'subassembly.rename', subassemblyId: input.subassemblyId, name: input.name }
+      case 'add-note':
+        return {
+          type: 'note.add',
+          note: {
+            id: input.noteId ?? `${context.idPrefix}_note_${index}`,
+            anchorPartIds: [...new Set(input.partIds)],
+            text: input.text,
+            status: 'open',
+            author: 'agent',
+            revisionCreated: context.revision,
+          },
+        }
+      case 'respond-note':
+        return { type: 'note.respond', noteId: input.noteId, response: input.response, resolved: input.resolved }
+      case 'rename-document':
+        return { type: 'document.rename', name: input.name }
+      case 'replace-steps':
+        return { type: 'steps.replace', steps: input.steps.map((step) => ({ ...step, partIds: [...new Set(step.partIds)] })) }
+      case 'set-dimension-constraint':
+        return {
+          type: 'constraint.set',
+          constraint: {
+            id: input.constraintId ?? `${context.idPrefix}_dimensions_${index}`,
+            kind: 'dimensions',
+            label: input.label ?? 'Maximum dimensions',
+            value: {
+              width: input.widthStuds,
+              depth: input.depthStuds,
+              ...(input.heightStuds === undefined ? {} : { height: input.heightStuds }),
+            },
+            hard: input.hard ?? true,
+          },
+        }
+      case 'set-piece-budget':
+        return {
+          type: 'constraint.set',
+          constraint: {
+            id: input.constraintId ?? `${context.idPrefix}_pieces_${index}`,
+            kind: 'piece-count',
+            label: input.label ?? 'Piece budget',
+            value: input.maxParts,
+            hard: input.hard ?? true,
+          },
+        }
+      case 'set-palette-constraint':
+        return {
+          type: 'constraint.set',
+          constraint: {
+            id: input.constraintId ?? `${context.idPrefix}_palette_${index}`,
+            kind: 'palette',
+            label: input.label ?? 'Allowed palette',
+            value: [...new Set(input.colors)],
+            hard: input.hard ?? true,
+          },
+        }
+      case 'remove-constraint':
+        return { type: 'constraint.remove', constraintId: input.constraintId }
     }
   })
 }

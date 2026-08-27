@@ -21,6 +21,7 @@ const context = {
   defaultSubassemblyId: 'hull',
   defaultStepId: 'step_1',
   idPrefix: 'agent_test',
+  revision: 7,
 }
 
 describe('operation schema', () => {
@@ -88,6 +89,13 @@ describe('operation schema', () => {
       { op: 'recolor', partId: 'p3', color: 4 },
       { op: 'protect', partId: 'p4', protected: true },
       { op: 'lock-subassembly', subassemblyId: 'cockpit', locked: true },
+      { op: 'assign-subassembly', partId: 'p5', subassemblyId: 'deck' },
+      { op: 'add-subassembly', subassemblyId: 'sensors', name: 'Sensor suite', accent: '#41d6c3' },
+      { op: 'rename-subassembly', subassemblyId: 'deck', name: 'Equipment bay' },
+      { op: 'add-note', noteId: 'note_agent', partIds: ['p1', 'p1'], text: 'Check this interface.' },
+      { op: 'respond-note', noteId: 'note_1', response: 'Cleared.', resolved: true },
+      { op: 'rename-document', name: 'Survey rover v2' },
+      { op: 'replace-steps', steps: [{ id: 'generated_1', index: 1, name: 'Foundation', partIds: ['p1', 'p1'] }] },
     ].map((input) => OperationSchema.parse(input))
     expect(toKernelOperations(inputs, context).map((operation) => operation.type)).toEqual([
       'part.add',
@@ -96,7 +104,23 @@ describe('operation schema', () => {
       'part.recolor',
       'part.protect',
       'subassembly.lock',
+      'part.assign-subassembly',
+      'subassembly.add',
+      'subassembly.rename',
+      'note.add',
+      'note.respond',
+      'document.rename',
+      'steps.replace',
     ])
+    const translated = toKernelOperations(inputs, context)
+    expect(translated[9]).toMatchObject({
+      type: 'note.add',
+      note: { id: 'note_agent', anchorPartIds: ['p1'], author: 'agent', revisionCreated: 7 },
+    })
+    expect(translated[12]).toMatchObject({
+      type: 'steps.replace',
+      steps: [{ partIds: ['p1'] }],
+    })
   })
 
   it('bounds catalog search input', () => {

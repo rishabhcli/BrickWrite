@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { verifyAsset } from './integrity'
 import type { PartDefinition, Vec3 } from './types'
 
 /**
@@ -49,11 +50,13 @@ export interface DecodedMesh {
 }
 
 export function decodeMesh(buffer: ArrayBuffer): DecodedMesh {
+  if (buffer.byteLength < 8) throw new Error(`Truncated Brickwright mesh header (${buffer.byteLength} bytes).`)
   const view = new DataView(buffer)
   const magic = view.getUint32(0, true)
   if (magic !== MAGIC) throw new Error(`Not a Brickwright mesh: magic 0x${magic.toString(16)}`)
   const version = view.getUint32(4, true)
   if (version !== 1) throw new Error(`Unsupported Brickwright mesh version ${version}`)
+  if (buffer.byteLength < HEADER_BYTES) throw new Error(`Truncated Brickwright mesh header (${buffer.byteLength} bytes).`)
 
   const bounds = {
     min: [view.getFloat32(8, true), view.getFloat32(12, true), view.getFloat32(16, true)] as Vec3,
@@ -64,14 +67,36 @@ export function decodeMesh(buffer: ArrayBuffer): DecodedMesh {
   const edgeVertexCount = view.getUint32(40, true)
   const sliceCount = view.getUint32(44, true)
 
+  if (indexCount % 3 !== 0) throw new Error(`Brickwright mesh index count ${indexCount} is not triangular.`)
+  if (edgeVertexCount % 2 !== 0) throw new Error(`Brickwright mesh edge vertex count ${edgeVertexCount} is not paired.`)
+  const expectedBytes =
+    HEADER_BYTES +
+    sliceCount * 12 +
+    vertexCount * 12 +
+    vertexCount * 12 +
+    indexCount * 4 +
+    edgeVertexCount * 12
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes !== buffer.byteLength) {
+    throw new Error(`Brickwright mesh layout mismatch: header requires ${expectedBytes} bytes, received ${buffer.byteLength}.`)
+  }
+  for (let axis = 0; axis < 3; axis += 1) {
+    if (!Number.isFinite(bounds.min[axis]) || !Number.isFinite(bounds.max[axis]) || bounds.min[axis] > bounds.max[axis]) {
+      throw new Error(`Brickwright mesh has invalid bounds on axis ${axis}.`)
+    }
+  }
+
   const slices: MeshSlice[] = []
   for (let index = 0; index < sliceCount; index += 1) {
     const offset = HEADER_BYTES + index * 12
-    slices.push({
+    const slice = {
       colour: view.getUint32(offset, true),
       start: view.getUint32(offset + 4, true),
       count: view.getUint32(offset + 8, true),
-    })
+    }
+    if (slice.start % 3 !== 0 || slice.count % 3 !== 0 || slice.start + slice.count > indexCount) {
+      throw new Error(`Brickwright mesh slice ${index} is outside the index buffer.`)
+    }
+    slices.push(slice)
   }
 
   let cursor = HEADER_BYTES + sliceCount * 12
@@ -82,6 +107,13 @@ export function decodeMesh(buffer: ArrayBuffer): DecodedMesh {
   const indices = new Uint32Array(buffer, cursor, indexCount)
   cursor += indexCount * 4
   const edges = new Float32Array(buffer, cursor, edgeVertexCount * 3)
+
+  for (const value of positions) if (!Number.isFinite(value)) throw new Error('Brickwright mesh contains a non-finite position.')
+  for (const value of normals) if (!Number.isFinite(value)) throw new Error('Brickwright mesh contains a non-finite normal.')
+  for (const value of edges) if (!Number.isFinite(value)) throw new Error('Brickwright mesh contains a non-finite edge position.')
+  for (const index of indices) {
+    if (index >= vertexCount) throw new Error(`Brickwright mesh index ${index} exceeds its ${vertexCount} vertices.`)
+  }
 
   return { positions, normals, indices, edges, slices, bounds, triangles: indexCount / 3 }
 }
@@ -174,7 +206,16 @@ export class GeometryCache {
     const promise = (async () => {
       const response = await fetch(`${this.baseUrl}/${asset.file}`)
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-      const mesh = decodeMesh(await response.arrayBuffer())
+      const buffer = await response.arrayBuffer()
+      await verifyAsset(buffer, asset, `Geometry ${definition.canonicalId}`)
+      const mesh = decodeMesh(buffer)
+      if (
+        mesh.positions.length / 3 !== asset.vertices ||
+        mesh.triangles !== asset.triangles ||
+        mesh.edges.length / 6 !== asset.edgeSegments
+      ) {
+        throw new Error(`Geometry ${definition.canonicalId} does not match its catalog metadata.`)
+      }
       return {
         surface: buildGeometry(mesh),
         edges: buildEdgeGeometry(mesh),

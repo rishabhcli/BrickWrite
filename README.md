@@ -15,13 +15,19 @@ those same semantics as dynamic Site Tools.
 
 ```bash
 nvm use                 # Node 24
-npm install
+npm run bootstrap       # exact npm ci + committed catalog integrity verification
 npm run dev             # http://localhost:4173
 ```
 
-The compiled catalog is committed, so a fresh clone runs immediately. Open the page in the
-ChatGPT desktop app's built-in browser to make native Site Tools discoverable. In a normal
-browser the same tools are exposed as a deterministic development bridge:
+The compiled catalog is committed, so a fresh clone runs immediately. `npm run dev` wraps Vite
+in `hexclave dev`, which starts the local Hexclave dashboard and injects the project ID into
+the Vite process; `hexclave.config.ts` is the source of truth for which Hexclave apps are
+installed. `npm run dev:inner` is the bare Vite server — Brickwright still boots without the
+wrapper, it just runs with no account, email or analytics layer.
+
+Open the page in the ChatGPT desktop app's built-in browser to make native Site Tools
+discoverable. In a normal browser the same tools are exposed as a deterministic development
+bridge:
 
 ```js
 await window.brickwright.invoke('workspace_get', {})
@@ -94,6 +100,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   React are derived views, never the source of truth.
 - **Real compiled LDraw geometry** streamed as content-addressed binary meshes, shared per
   definition, with per-slice materials for colours baked into a part.
+- **Enforced asset integrity** — catalog payloads and meshes are byte-counted and SHA-256
+  verified before parsing; the mesh decoder rejects malformed counts, slices, bounds,
+  non-finite coordinates and out-of-range indices before anything reaches Three.js.
 - **Authoritative connection semantics** from the LDCad Shadow Library — including details a
   nominal model would miss, such as the centre tube on a 2×2 brick.
 - **Data-derived stacking** — mating planes come from each part's own connectors, so slopes,
@@ -136,6 +145,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Interoperability** — `.ldr` and `.mpd` export with `STEP` boundaries and one submodel per
   subassembly; import flattens nested submodels and reports every reference it could not
   place. BOM CSV carries exact LDraw and external identities.
+- **Printable build guides** — one self-contained offline HTML artifact with a cover, BOM,
+  fixed-camera step renders, visually highlighted new parts, build-order verification,
+  warnings and dataset provenance. Its renderer is deterministic and testable without WebGL.
 - **Instanced rendering** — parts sharing a definition and colour render as one
   `InstancedMesh`, with each batch's hard edges merged into a single buffer. Measured in the
   browser: 400 extra parts cost 14 extra draw calls, against 810 before merging.
@@ -170,19 +182,32 @@ rejection live in the CAD kernel.
 ## Verification
 
 ```bash
-npm run check            # 166 deterministic tests + strict TS + production build
+npm run check            # 195 deterministic tests + strict TS + production build
 npx playwright install chromium
-npm run test:e2e         # real WebGL browser run: catalog load, mesh streaming, WebMCP, export
+npm run test:e2e         # real WebGL: catalog, meshes, WebMCP, persistence and delivery output
+npm run verify:all       # both gates above
 ```
 
 The browser run asserts relationships rather than magic numbers: that the placeable set is a
 strict subset of the catalog, that compiled `.bwmesh` assets actually reach the GPU, that
 preflight does not mutate, that acceptance is one revision, that an unplaceable identity is
 refused, that a stale plan is rejected, and that the export's type-1 line count matches the
-document.
+document. It also opens the delivery center, verifies a hierarchical MPD, generates the real
+printable guide and asserts that its step images are embedded rather than remotely fetched.
 
 Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); remaining
 production work is in [PROGRESS.md](PROGRESS.md).
+
+## Licence
+
+Brickwright's own source is licensed **AGPL-3.0-only** (see `LICENSE`). Because the network
+clause applies, anyone who runs a modified Brickwright as a hosted service owes their users
+the modified source.
+
+That covers the code only. The compiled catalog assets are derivatives of three independently
+licensed datasets, and their terms travel with them rather than with this licence — including
+the CC BY-SA obligation on connector metadata, which is a separate copyleft from the AGPL and
+is not satisfied by it. See below.
 
 ## Dataset attribution
 

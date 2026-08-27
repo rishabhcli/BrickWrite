@@ -71,3 +71,94 @@ describe('CadEngine', () => {
     expect(engine.getSnapshot().document.parts.a).toBeDefined()
   })
 })
+
+/**
+ * The hard-constraint gate.
+ *
+ * A `hard` constraint is the difference between a design limit the kernel
+ * enforces and one it merely reports, so the flag has to change what `execute`
+ * does — for every actor, since the limit is the operator's own declared intent
+ * rather than a physical fact discovered about the model. These tests pin the
+ * three decisions that make the gate usable: what it refuses, what it lets
+ * through, and how an operator gets out from under one.
+ */
+describe('hard design constraints', () => {
+  // The showcase spans 8 × 12 studs inside a hard `Envelope ≤ 10 × 14 studs`,
+  // so a part beyond x ∈ [-80, 80] LDU is the smallest edit that breaks it.
+  const outside = (id: string) => [{ type: 'part.add', part: makePart(id, [400, 0, 0]) }] as CadOperation[]
+
+  it('refuses a human edit that would newly break a hard constraint', () => {
+    const engine = new CadEngine(createShowcaseDocument())
+    const revision = engine.getSnapshot().document.revision
+
+    const result = engine.execute('Place far out', outside('stray'), 'human')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error.code).toBe('CONSTRAINT_VIOLATION')
+    expect(!result.ok && (result.error.details as Array<{ id: string }>)[0].id).toBe('c_size')
+    // A refused transaction must not half-apply: no part, no revision bump.
+    expect(engine.getSnapshot().document.parts.stray).toBeUndefined()
+    expect(engine.getSnapshot().document.revision).toBe(revision)
+  })
+
+  it('refuses the same edit from an agent', () => {
+    const engine = new CadEngine(createShowcaseDocument())
+    engine.setAutonomy('build')
+    const result = engine.execute('Place far out', outside('stray'), 'agent')
+    expect(!result.ok && result.error.code).toBe('CONSTRAINT_VIOLATION')
+  })
+
+  it('reports but does not refuse when the constraint is advisory', () => {
+    const document = createShowcaseDocument()
+    document.constraints = document.constraints.map((constraint) =>
+      constraint.id === 'c_size' ? { ...constraint, hard: false } : constraint,
+    )
+    const engine = new CadEngine(document)
+
+    const result = engine.execute('Place far out', outside('stray'), 'human')
+
+    expect(result.ok).toBe(true)
+    // Advisory means visible, not ignored: the report still fails the check.
+    const size = engine.getSnapshot().validation.constraints.find((entry) => entry.id === 'c_size')
+    expect(size?.status).toBe('fail')
+  })
+
+  it('lets an operator declare a target the build has not reached yet', () => {
+    // Tightening the envelope below the current 8 × 12 footprint states intent.
+    // Refusing it would make an aspirational budget impossible to express, and
+    // would contradict the refusal message's own advice to soften the limit.
+    const engine = new CadEngine(createShowcaseDocument())
+    const result = engine.execute('Tighten envelope', [
+      {
+        type: 'constraint.set',
+        constraint: { id: 'c_size', kind: 'dimensions', label: 'Envelope ≤ 5 × 5 studs', value: { width: 5, depth: 5 }, hard: true },
+      },
+    ], 'human')
+
+    expect(result.ok).toBe(true)
+    expect(engine.getSnapshot().validation.constraints.find((entry) => entry.id === 'c_size')?.status).toBe('fail')
+  })
+
+  it('does not lock the document once a hard constraint is already failing', () => {
+    // Having gone over budget, an operator still has to be able to edit — not
+    // least to edit their way back under it.
+    const engine = new CadEngine(createShowcaseDocument())
+    engine.execute('Tighten envelope', [
+      {
+        type: 'constraint.set',
+        constraint: { id: 'c_size', kind: 'dimensions', label: 'Envelope ≤ 5 × 5 studs', value: { width: 5, depth: 5 }, hard: true },
+      },
+    ], 'human')
+
+    const followUp = engine.execute('Keep building', [{ type: 'part.add', part: makePart('inside', [0, -100, 0]) }], 'human')
+    expect(followUp.ok).toBe(true)
+  })
+
+  it('releases the edit once the constraint is removed', () => {
+    const engine = new CadEngine(createShowcaseDocument())
+    expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(false)
+
+    expect(engine.execute('Drop envelope', [{ type: 'constraint.remove', constraintId: 'c_size' }], 'human').ok).toBe(true)
+    expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(true)
+  })
+})

@@ -28,6 +28,7 @@ import type {
  */
 
 export type EntityMutation =
+  | { kind: 'document-name'; value: string }
   /** `value: null` deletes the entity. */
   | { kind: 'part'; id: string; value: PartInstance | null }
   | { kind: 'subassembly'; id: string; value: Subassembly | null }
@@ -67,6 +68,9 @@ export function applyMutations(document: ModelDocument, mutations: readonly Enti
   }
   for (const mutation of mutations) {
     switch (mutation.kind) {
+      case 'document-name':
+        next.name = mutation.value
+        break
       case 'part':
         if (mutation.value) next.parts[mutation.id] = mutation.value
         else delete next.parts[mutation.id]
@@ -107,6 +111,12 @@ export function invertMutations(
   const seen = new Set<string>()
   for (const mutation of forward) {
     switch (mutation.kind) {
+      case 'document-name':
+        if (!seen.has('document-name')) {
+          seen.add('document-name')
+          inverse.push({ kind: 'document-name', value: document.name })
+        }
+        break
       case 'part':
       case 'subassembly':
       case 'connection': {
@@ -196,6 +206,9 @@ export function mutationsForOperations(
 
   for (const operation of operations) {
     switch (operation.type) {
+      case 'document.rename':
+        emit({ kind: 'document-name', value: operation.name.trim() })
+        break
       case 'part.add': {
         const part: PartInstance = {
           ...clone(operation.part),
@@ -263,6 +276,13 @@ export function mutationsForOperations(
       case 'subassembly.add':
         emit({ kind: 'subassembly', id: operation.subassembly.id, value: clone(operation.subassembly) })
         break
+      case 'subassembly.rename': {
+        const subassembly = working.subassemblies[operation.subassemblyId]
+        if (subassembly) {
+          emit({ kind: 'subassembly', id: subassembly.id, value: { ...subassembly, name: operation.name.trim() } })
+        }
+        break
+      }
       case 'subassembly.lock': {
         const subassembly = working.subassemblies[operation.subassemblyId]
         if (subassembly) {
@@ -270,6 +290,17 @@ export function mutationsForOperations(
         }
         break
       }
+      case 'constraint.set': {
+        const index = working.constraints.findIndex((constraint) => constraint.id === operation.constraint.id)
+        const constraints = clone(working.constraints)
+        if (index >= 0) constraints[index] = clone(operation.constraint)
+        else constraints.push(clone(operation.constraint))
+        emit({ kind: 'constraints', value: constraints })
+        break
+      }
+      case 'constraint.remove':
+        emit({ kind: 'constraints', value: working.constraints.filter((constraint) => constraint.id !== operation.constraintId) })
+        break
       case 'steps.replace': {
         emit({ kind: 'steps', value: operation.steps.map((step) => ({ ...step, partIds: [...step.partIds] })) })
         const owner = new Map<string, string>()
@@ -283,7 +314,13 @@ export function mutationsForOperations(
         break
       }
       case 'note.add':
-        emit({ kind: 'notes', value: [...working.notes, clone(operation.note)] })
+        emit({
+          kind: 'notes',
+          value: [
+            ...working.notes,
+            { ...clone(operation.note), author, revisionCreated: working.revision },
+          ],
+        })
         break
       case 'note.respond':
         emit({

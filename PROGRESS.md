@@ -1,30 +1,30 @@
 # Brickwright implementation progress
 
-**Updated:** 2026-08-27 (productionization pass 1)
-**Current state:** browser CAD system on the real compiled catalog, with an exact-transform kernel, 6-DOF snapping, persistent connection edges and triangle-confirmed collision
+**Updated:** 2026-08-27 (productionization pass 8)
+**Current state:** browser CAD system on the real compiled catalog, with an exact-transform kernel, 6-DOF snapping, persistent connection edges, triangle-confirmed collision and self-contained build-guide output
 
 ## Phase status
 
 | Phase | Status | Implemented evidence | Missing before production |
 | --- | --- | --- | --- |
 | A — Data compiler | **Working** | Real compilation of LDraw 2026-07 + LDCad Shadow Library + Rebrickable bulk CSV: 22,941 identities, 324,331 connectors, 322 colours, 1,150 renames resolved, **900 compiled meshes and 900 rendered thumbnails**, per-file licence capture, content-hashed manifests, measured coverage report, deterministic fixture in CI | BVH serialization into the asset; full-library geometry behind lazy per-part fetch; ShareAlike/TOS review before public redistribution |
-| A2 — Geometry compiler | **Working** | Full `.dat` dependency flattening with BFC `CERTIFY`/`CW`/`CCW`/`INVERTNEXT`, matrix-handedness winding, colour 16/24 inheritance, quad splitting, type-2 hard edges, 35° crease smoothing, SHA-256-named binary container, 0 unresolved references across 500 parts | Texture/printed-part material slots; decimated LOD for very large panels |
+| A2 — Geometry compiler | **Working** | Full `.dat` dependency flattening with BFC `CERTIFY`/`CW`/`CCW`/`INVERTNEXT`, matrix-handedness winding, colour 16/24 inheritance, quad splitting, type-2 hard edges, 35° crease smoothing, SHA-256-named binary container, 0 unresolved references across 900 parts; runtime byte/hash/layout checks before decode | Texture/printed-part material slots; decimated LOD for very large panels |
 | B — CAD kernel | **Working** | Pure TS document in LDraw's native frame with **exact matrix bases**; orthonormal-and-clean basis enforced on ingest; schema-2 migration; **patch-based transactions** with forward/inverse mutations and structural sharing; monotonic revisions, stale-write rejection, protected regions, connector-derived stacking planes | Named checkpoints/branches, multi-document tabs, operation-level schema validation |
 | C — Renderer | **Working** | **Instanced batching** by part/colour with merged per-batch hard edges: 400 extra parts cost 14 extra draw calls, measured in the browser. Real compiled meshes, shared geometry per definition, per-slice materials for baked colours, transparent/metallic finishes from `LDConfig.ldr`, shadows, selection and ghost overlays outside the batches, camera views | GPU picking pass for very large models; section render mode; thumbnail cache for the palette |
-| D — Human editor | **Working slice** | Search across all 22,941 identities, placeable/all toggle, place/select/multi-select/subassembly-select/move/rotate/recolour/duplicate/delete/connect/lock | Marquee selection, palette drag-and-drop positioning, array/mirror UI, complete keyboard map |
+| D — Human editor | **Working slice** | Search across all 22,941 identities, placeable/all toggle, place/select/multi-select/subassembly-select/move/rotate/recolour/duplicate/delete/connect/lock; human-accessible render diagnostics, working command shortcuts and a discoverable command map | Marquee selection, palette drag-and-drop positioning, array/mirror UI, accessibility audit |
 | E — Connections | **Working** | **Full 6-DOF frame solver** (`Tm = Tt·Ft·C·Fm⁻¹`): studs-not-on-top, right-angle Technic and hinge halves solve through the same expression as stacking. Per-family joint freedoms with closed-form continuous parameters, axial flip where insertion is two-sided, orientation-independent target discovery, axis-alignment requirement for a mate, occupancy exclusion, multi-match scoring, Connect-tool pinning. Classification grounded in measured Shadow Library conventions. **Persistent `ConnectionEdge`** records carrying joint, revision and provenance | Articulated manipulation UI driving the joint graph; per-family regression fixtures across the whole library |
 | F — Collision | **Working** | Box broad phase → mated-connector clearance → **`three-mesh-bvh` triangle-pair confirmation**, with per-verdict certainty (`exact` / `clearance-subtracted` / `unknown`) surfaced in the UI. Eliminates the axis-aligned-box false positives that dominate rotated parts. Per-definition BVH cache | Penetration-depth discrimination inside the narrow phase; measured per-connector mating volumes replacing the family-level allowance; offline BVH serialization into the asset |
 | G — Structural graph | **Working** | Connection graph from coincident compatible connectors with axis alignment, memoized per revision and shared by solver/validation/viewport; persisted edges with joint types; **rigid-component collapse and articulated joint driving** for hinges, pins, axles, bars and ball joints; component count, loose groups, weak single-connector attachments | Cut-set analysis, load-path tracing |
-| H — Transactions | **Working** | Patch-based history: every transaction carries forward and inverse mutations plus the entity set it touched, so undo applies an inverse rather than restoring a document copy. **IndexedDB persistence** with periodic checkpoints, an append-only transaction log, replay on open, gap detection, legacy-`localStorage` migration and a save indicator that reports what durability was actually achieved | Named checkpoints and branches in the UI, project switcher, transaction compaction policy |
+| H — Transactions | **Working** | Patch-based history: every transaction carries forward and inverse mutations plus the entity set it touched, so undo applies an inverse rather than restoring a document copy. **IndexedDB persistence** with periodic checkpoints, an append-only transaction log, replay on open, gap detection, legacy-`localStorage` migration, save-state reporting, project switching and safe forks | Named branches, project archives and a transaction compaction policy |
 | I — WebMCP | **Working** | Dynamic 12/17-tool inventories; **schema-driven contracts** where the advertised JSON Schema is derived from the same Zod declaration the gateway enforces; a versioned tool profile with a drift-detecting hash; a **centralized sanitized error envelope** that redacts credentials, signed URLs, data blobs and filesystem paths and never relays a stack trace; bounded batch sizes; compact reads; catalog coverage; preflight/apply; render capture; capability virtualization | Native ChatGPT desktop acceptance run; cancellation propagation into asset fetches and workers |
 | J — Agent UX | **Working slice** | Inspect/Propose/Build modes, visible ghosts, activity history, notes, locked cockpit | Transaction-wave assembly animation, anchored 3D note authoring, autonomous hierarchical planning |
 | K — Output | **Working slice** | `.ldr` and `.mpd` export with `STEP` and one submodel per subassembly; import flattens nested submodels and reports unplaceable references; exact IDs/transforms; BOM CSV | BrickLink XML; step reassignment on import |
-| L — Instructions | **Working slice** | **Build order derived from the connection graph**, with the checkable guarantee that every part attaches to structure placed in an earlier step or is reported as beginning a separately-built island; deterministic; verifiable independently, including against a hand-reordered sequence. Step-aware document, timeline, animated playback | Technique-aware grouping, hiding internals until they matter, automatic sub-model selection, printable output |
-| M — Polish | **Strong slice** | Deliberate industrial CAD UI, responsive desktop layout, catalog boot/failure screens, deterministic browser acceptance run including reload-restore | Onboarding, accessibility pass, renderer batching for high part counts, deployment/CDN |
+| L — Instructions | **Working slice** | **Build order derived from the connection graph**, independently verifiable reachability, step-aware timeline/playback, and a printable offline HTML booklet with fixed-camera assembly renders, highlighted new parts, BOM, warnings and provenance | Technique-aware grouping, hiding internals until they matter, automatic sub-model selection |
+| M — Polish | **Strong slice** | Deliberate industrial CAD UI, responsive desktop layout, catalog boot/failure screens, project/release surfaces, keyboard guide, dynamic document identity and deterministic browser acceptance including reload/restore and guide export | Formal accessibility audit, deployment/CDN |
 
 ## Verified now
 
-`npm run check` — **166 tests**, strict TypeScript, production Vite build. The compiler is
+`npm run check` — **212 tests across 26 files**, strict TypeScript, production Vite build. The compiler is
 driven in-process against committed fixtures, so CI asserts its semantics — colour crosswalk,
 snap-grid expansion, measured bounds, hashed files, determinism — not just that it exits zero.
 
@@ -32,34 +32,39 @@ snap-grid expansion, measured bounds, hashed files, determinism — not just tha
 
 ```json
 {
-  "catalog":  { "identities": 22941, "placeable": 500, "colors": 322 },
+  "catalog":  { "identities": 22941, "placeable": 900, "colors": 322 },
   "coverage": { "authoritativeConnections": 17364, "connectors": 324331,
-                "compiledMeshes": 500, "triangles": 453624 },
-  "showcase": { "parts": 31, "connections": 204, "collisions": 0,
+                "compiledMeshes": 900, "triangles": 961732 },
+  "showcase": { "parts": 33, "connections": 207, "collisions": 0,
                 "unverifiedCollisions": 0 },
   "rotatedBoxProbe": "triangle confirmation cleared the box overlap",
-  "meshAssetsFetched": 9,
-  "refusedUnplaceableIdentity": "15208",
+  "meshAssetsFetched": 11,
+  "interface": { "modalShortcutsBlocked": true, "focusRestored": true },
+  "refusedUnplaceableIdentity": "61072",
   "contractEnforcement": { "profile": "brickwright.tools/2",
                            "malformedBatch": "INVALID_INPUT",
                            "shearedBasis": "INVALID_INPUT",
                            "staleProfile": "STALE_TOOL_PROFILE" },
-  "renderScale": { "partsAfterBatch": 433, "drawCallsBefore": 198,
-                   "drawCallsAfter": 212, "drawCallsAddedBy400Parts": 14,
-                   "trianglesAfter": 463572 },
-  "reloadRestored": { "revision": 6, "parts": 33, "name": "Survey rover" },
-  "exportType1Lines": 33
+  "renderScale": { "partsAfterBatch": 435, "drawCallsBefore": 226,
+                   "drawCallsAfter": 240, "drawCallsAddedBy400Parts": 14,
+                   "trianglesAfter": 472452 },
+  "delivery": { "mpdFileBlocks": 5, "guideSteps": 6,
+                "guideImages": 36, "guideBytes": 507999 },
+  "reloadRestored": { "revision": 8, "parts": 35, "name": "Survey rover" },
+  "exportType1Lines": 35
 }
 ```
 
-The run also confirms: the placeable set is a strict subset of the catalog; compiled
+The same acceptance flow also passes against the production preview. The run confirms: the
+placeable set is a strict subset of the catalog; compiled
 `.bwmesh` assets actually reach the GPU; leaving Build mode revokes write tools; preflight
 does not mutate; acceptance is exactly one revision; an unplaceable identity is refused with
 `GEOMETRY_UNAVAILABLE`; a stale plan is refused with `STALE_DOCUMENT`; a 12 LDU
 bounding-box overlap between a rotated brick and its neighbour is cleared by triangle
-confirmation; and the export's type-1 line count matches the document.
+confirmation; the shortcut dialog blocks model commands and restores focus; and the export's
+type-1 line count matches the document.
 
-The opening document is a 31-part rover with **204 mated connectors, 0 collisions and 1
+The opening document is a 33-part rover with **207 mated connectors, 0 collisions and 1
 connected component**, verified by a unit test so the invariant cannot regress.
 
 ## Productionization pass 1
@@ -301,11 +306,92 @@ all present in the DOM.
 
 ![Data and licences](docs/assets/brickwright-licences.png)
 
+## Productionization pass 8
+
+**A delivery center, not a row of file buttons.** The toolbar now keeps the fast
+one-click LDR path and opens a compact release surface for hierarchical MPD, BOM,
+import and a printable build guide. It states the exact source revision, part and
+connection counts, collision state and local-only data boundary before anything
+leaves the editor. Diagnostic render modes are now available to the human, the
+project name in the viewport is real rather than hard-coded showcase copy, `⌘K`
+actually focuses part search, `F` really reframes an unchanged view, and `?` opens
+a keyboard map. The duplicated articulation inspector block and nested interactive
+catalog-card markup found during the audit were removed.
+
+**Self-contained printable instructions.** The build guide is one offline HTML
+file: cover, verification status, BOM, fixed-camera step renders, saturated and
+outlined new parts, washed existing structure, explicit missing-geometry warnings,
+dataset attribution and no remote dependencies. A deterministic software rasterizer
+runs independently of WebGL so pixel behaviour can be unit-tested. The browser
+acceptance generated the real rover guide with **6 steps, 36 embedded PNGs and
+507,999 bytes**, reopened it, and found no broken images.
+
+**Assets are verified before they become CAD input.** The runtime now checks the
+declared byte length and SHA-256 of all four catalog payloads and every fetched mesh.
+The binary decoder checks its exact layout, finite ordered bounds, triangle/edge
+cardinality, slice ranges, finite positions/normals and index bounds before creating
+Three.js geometry. `npm run bootstrap` performs the same verification over the whole
+committed 900-part pack and its thumbnails; the current run checked **1,786 unique
+immutable assets**. Runtime and WebMCP identifiers now use `crypto.randomUUID()`, and
+package versions plus the Node/npm range are exact rather than floating on `latest`.
+The Vite 8 build now separates React, rendering, contracts and UI with Rolldown's
+native code-splitting groups: the largest emitted JavaScript chunk is **373.57 kB**
+uncompressed, and the production build completes without a chunk-size warning.
+
+## Productionization pass 9
+
+**Hard design constraints are enforced by the kernel, for every actor.** The `hard`
+flag on a constraint had been carried through the schema, the WebMCP contract and
+the capability registry without ever changing what `execute` does. It does now: a
+transaction that would *newly* break a hard constraint is refused with
+`CONSTRAINT_VIOLATION`. The refusal is not actor-scoped, because a design limit is
+the operator's own declared intent rather than a physical fact discovered about the
+model — which is the opposite of how collisions are treated, and deliberately so.
+
+Three properties make the gate usable rather than merely strict, and each is now a
+test rather than an intention:
+
+- **Only newly introduced failures refuse.** A constraint that is already failing
+  must not lock the document, or tightening a budget below the current build would
+  make every subsequent repair impossible.
+- **Declaring is not violating.** A constraint the transaction itself introduces or
+  rewrites is skipped, so an operator can state a target the build has not reached
+  yet. Without this the refusal message's own advice — soften or remove the
+  constraint — was a dead end, because softening is itself a `constraint.set`.
+- **Advisory constraints report and never block**, which is the whole difference
+  between `hard: true` and `hard: false`.
+
+**The gate cost nothing to add and nearly everything to run.** Enforcing it had been
+written as two full `validateDocument` passes per commit, hoisted out of the
+`actor === 'agent'` branch that previously contained them. Validation runs collision
+detection, so every human edit began paying for a whole verification sweep: the
+1,000-part commit benchmark went from a measured 0.55 ms/commit to **14.7 ms**, and
+the unit suite from 2.5 s to 16.2 s. Constraints need only the part list and the
+document envelope, so they now read a scoped `evaluateConstraints` — shared with
+`validateDocument` so the two cannot drift — and a document declaring no hard
+constraint skips the gate entirely.
+
+| | per commit | unit suite |
+| --- | ---: | ---: |
+| gate as written | 14.7 ms | 16.22 s |
+| gate scoped to constraints | **0.55 ms** | **2.43 s** |
+
+**The human surface caught up with the agent's.** `SHARED_MUTATION_CAPABILITIES`
+advertises `parity: { human: true, agent: true }` on every entry, but the four
+constraint capabilities — size envelope, piece budget, palette, remove — were absent
+from the Command Deck's group order and unhandled in its argument builder, so they
+were invisible to the human and would have run with no arguments. They are wired up,
+including an enforcement toggle that says which of the two things `hard` means. The
+acceptance run now compares the deck's rendered command count against the registry
+the agent queries, instead of against a literal that had been written to match the
+incomplete state.
+
 ## Honest evidence boundary
 
-**What changed since the last update:** the browser no longer renders generated stand-in
-geometry. Every visible part is compiled LDraw geometry with LDCad connection metadata, and
-the procedural fallback catalog has been deleted rather than kept as a safety net.
+**What changed since the last update:** printable output is now a tested product path rather
+than backlog text, the human-facing CAD controls expose the diagnostic modes that already
+existed for the agent, and catalog/geometry hashes are enforced at runtime rather than only
+written by the compiler.
 
 **What is still bounded:**
 
@@ -314,9 +400,9 @@ the procedural fallback catalog has been deleted rather than kept as a safety ne
   so explicitly. Widening further is a compiler flag and a repository-size decision, not new
   work — the committed assets are already 57 MB, so the full library belongs behind a lazy
   per-part CDN fetch rather than in the repository.
-- **Collision is broad-phase.** Box overlap minus a family-level mating allowance. It catches
-  real interpenetration and does not flag correct stacking, but it is not triangle-exact, and
-  the insertion allowance for pin/axle/bar/ball pairs is deliberately permissive.
+- **Connector clearance remains family-level.** Candidate collision pairs are confirmed
+  against triangles, but the legal insertion subtraction still uses a family-level allowance
+  rather than a measured mating volume for every connector profile.
 - **Articulation is driven by stepped controls, not dragging.** Joints can be rotated and slid
   from the inspector and from the agent surface, but there is no direct-manipulation gizmo
   constrained to the joint axis.
@@ -357,8 +443,8 @@ Continuing down the same critical path:
 
 1. **GPU picking pass**, so selection scales with the renderer rather than with the React
    event system.
-2. **Printable instruction output and BrickLink XML**, so a verified build order leaves the
-   app as something a person can build from and buy parts for.
+2. **BrickLink XML and project archives**, so a verified design can move between browsers and
+   into a purchasing workflow without manual CSV conversion.
 3. **Joint-axis drag gizmo**, so articulation is direct manipulation rather than stepped
    buttons.
 4. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to

@@ -5,7 +5,8 @@
  * Drives a real Chromium/WebGL session through the whole vertical slice:
  * compiled catalog load, real LDraw geometry in the viewport, dynamic WebMCP
  * tool surface, agent perception capture, non-mutating preflight, atomic
- * acceptance, manual placement, shared undo and LDraw export.
+ * acceptance, manual placement, shared undo, interoperable exports and a
+ * self-contained printable build guide.
  *
  * Assertions are relational rather than hardcoded counts, so the run stays
  * meaningful when the showcase model or catalog revision changes.
@@ -109,6 +110,69 @@ try {
   assert(palette.probeOk && /image\/png/.test(palette.probeType ?? ''), `Thumbnail asset not served as PNG: ${palette.probeType}`)
   assert(palette.renderedInDom > 10, `Expected the palette to render thumbnails, saw ${palette.renderedInDom}`)
 
+  // -- keyboard command map is a real modal, not decorative chrome ----------
+  const shortcutsButton = page.getByRole('button', { name: 'Keyboard shortcuts' })
+  const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()
+  await shortcutsButton.click()
+  const shortcutDialog = page.getByRole('dialog', { name: 'Work at the speed of thought' })
+  await shortcutDialog.waitFor()
+  await page.keyboard.press('g')
+  assert(
+    (await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()) === activeToolBeforeModal,
+    'A keyboard shortcut mutated the CAD tool while the command map was modal',
+  )
+  await page.keyboard.press('Escape')
+  await shortcutDialog.waitFor({ state: 'hidden' })
+  assert(await shortcutsButton.evaluate((node) => document.activeElement === node), 'Closing the command map did not restore focus')
+  await page.keyboard.press('?')
+  await shortcutDialog.waitFor()
+  await page.keyboard.press('?')
+  await shortcutDialog.waitFor({ state: 'hidden' })
+
+  // -- the Command Deck is the human face of the WebMCP capability registry -
+  const commandButton = page.getByRole('button', { name: 'Command deck' })
+  const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()
+  await commandButton.click()
+  const commandDialog = page.getByRole('dialog', { name: 'Command Deck' })
+  await commandDialog.waitFor()
+  // Parity is the Command Deck's entire claim, so it is checked against the
+  // registry the agent actually queries rather than against a literal that has
+  // to be remembered whenever a capability is added. `capabilities_search`
+  // advertises `parity: { human: true, agent: true }` on every entry; this is
+  // what makes that advertisement true rather than decorative.
+  const agentMutations = await page.evaluate(async () => {
+    const found = await window.brickwright.invoke('capabilities_search', { query: '' })
+    return found.structuredContent.filter((entry) => entry.kind === 'mutate').map((entry) => entry.id)
+  })
+  const deckCommands = await commandDialog.locator('.command-list section > button').count()
+  assert(
+    deckCommands === agentMutations.length,
+    `The human Command Deck exposes ${deckCommands} commands but the agent registry advertises ${agentMutations.length} mutations`,
+  )
+  assert(
+    /HUMAN\s+SAME KERNEL\s+AGENT/.test((await commandDialog.locator('.operator-parity').innerText()).replace(/\s+/g, ' ')),
+    'The Command Deck does not communicate its shared-kernel parity boundary',
+  )
+  assert(
+    await commandDialog.getByPlaceholder('Find a command…').evaluate((node) => document.activeElement === node),
+    'Opening the Command Deck did not move focus into command search',
+  )
+  await page.keyboard.press('g')
+  assert(
+    (await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()) === toolBeforeCommand,
+    'A viewport shortcut leaked through the modal Command Deck',
+  )
+  await commandDialog.getByPlaceholder('Find a command…').fill('project')
+  assert(
+    (await commandDialog.locator('.command-list section > button').count()) === 1,
+    'Command Deck search did not deterministically filter the shared registry',
+  )
+  await commandDialog.getByPlaceholder('Find a command…').fill('')
+  await page.screenshot({ path: 'artifacts/e2e-command-deck.png', fullPage: true })
+  await page.keyboard.press('Escape')
+  await commandDialog.waitFor({ state: 'hidden' })
+  assert(await commandButton.evaluate((node) => document.activeElement === node), 'Closing the Command Deck did not restore focus')
+
   // -- dynamic WebMCP surface ------------------------------------------------
   assert(initial.tools.includes('render_capture'), 'render_capture was not registered')
   assert(initial.tools.includes('build_preflight'), 'proposal tools were not registered in Propose mode')
@@ -209,6 +273,57 @@ try {
   }))
   assert(stale.structuredContent?.error?.code === 'STALE_DOCUMENT', `Expected STALE_DOCUMENT, saw ${JSON.stringify(stale.structuredContent).slice(0, 160)}`)
 
+  // -- one named capability is operated by human and agent alike ------------
+  // The human invokes it from the Command Deck; WebMCP discovers and invokes
+  // the same registry id. Both land in the same monotonic transaction history,
+  // and shared undo restores the exact prior document name.
+  const beforeParity = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    name: window.brickwright.getDocument().name,
+  }))
+  await commandButton.click()
+  await commandDialog.getByRole('button', { name: /Rename project/ }).click()
+  await commandDialog.getByLabel('Project name').fill('Human + Agent Survey Rover')
+  await commandDialog.getByRole('button', { name: 'RUN COMMAND' }).click()
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision === revision + 1,
+    beforeParity.revision,
+  )
+  const humanParity = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    name: window.brickwright.getDocument().name,
+  }))
+  assert(humanParity.name === 'Human + Agent Survey Rover', 'The human Command Deck did not commit its shared capability')
+  await page.keyboard.press('Escape')
+  await commandDialog.waitFor({ state: 'hidden' })
+
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  const agentParity = await page.evaluate(async () => {
+    const model = window.brickwright.getDocument()
+    const help = await window.brickwright.invoke('capabilities_help', { capability: 'rename_document' })
+    const result = await window.brickwright.invoke('action_mutate', {
+      action: 'rename_document',
+      expectedRevision: model.revision,
+      args: { name: 'Agent + Human Survey Rover' },
+    })
+    return { help: help?.structuredContent, result: result?.structuredContent, name: window.brickwright.getDocument().name }
+  })
+  assert(agentParity.help?.call === 'action_mutate', 'WebMCP help did not route the shared capability through action_mutate')
+  assert(agentParity.result?.author === 'agent', `Agent capability lost provenance: ${JSON.stringify(agentParity.result).slice(0, 200)}`)
+  assert(agentParity.result?.sourceTool === 'action_mutate', 'Agent capability did not retain its source tool')
+  assert(agentParity.result?.capability === 'rename_document', 'Agent result did not name the shared capability')
+  assert(agentParity.name === 'Agent + Human Survey Rover', 'The agent did not commit the shared capability')
+
+  const parityUndo = await page.evaluate(async () => {
+    await window.brickwright.invoke('undo_edit', {})
+    await window.brickwright.invoke('undo_edit', {})
+    const model = window.brickwright.getDocument()
+    return { name: model.name, revision: model.revision }
+  })
+  assert(parityUndo.name === beforeParity.name, 'Shared undo did not restore the pre-parity project name')
+  assert(parityUndo.revision === beforeParity.revision + 4, 'Human/agent edits and their undos did not remain monotonic')
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
+
   // -- the collision kernel confirms against triangles, not just boxes -------
   // A 45°-rotated brick's axis-aligned box is far larger than the brick, so a
   // box-only test reports a solid overlap where the geometry has none. Both
@@ -252,6 +367,28 @@ try {
   const type1 = exported.split('\n').filter((line) => line.startsWith('1 ')).length
   assert(type1 === afterUndo.parts, `LDraw export wrote ${type1} type-1 lines for ${afterUndo.parts} parts`)
   assert(/^1 \d+ -?[\d.]+ -?[\d.]+ -?[\d.]+ /m.test(exported), 'Export does not contain well-formed type-1 lines')
+
+  // The delivery menu exposes the richer outputs without taking the direct LDR
+  // action away from the toolbar.
+  await page.getByRole('button', { name: 'More export options' }).click()
+  const mpdPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Assembly MPD/i }).click()
+  const mpd = await readFile(await (await mpdPromise).path(), 'utf8')
+  assert((mpd.match(/^0 FILE /gm) ?? []).length > 1, 'MPD export did not preserve subassembly file blocks')
+
+  const guidePromise = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: /Printable build guide/i }).click()
+  const guide = await readFile(await (await guidePromise).path(), 'utf8')
+  const guideSteps = (guide.match(/<section class="page step">/g) ?? []).length
+  const guideImages = (guide.match(/data:image\/png/g) ?? []).length
+  const expectedGuideSteps = await page.evaluate(
+    () => window.brickwright.getDocument().steps.filter((step) => step.partIds.length).length,
+  )
+  assert(guideSteps === expectedGuideSteps, `Build guide rendered ${guideSteps} steps for a ${expectedGuideSteps}-step document`)
+  assert(guideImages > guideSteps, 'Build guide did not embed both assembly renders and part thumbnails')
+  assert(!/<(?:script|link)[^>]+https?:/i.test(guide), 'Build guide depends on a remote script or stylesheet')
+  assert(guide.includes('every part after the first step attaches'), 'Build guide omitted the build-order verification claim')
+  await page.locator('.export-panel > header').getByRole('button', { name: 'Close deliverables' }).click()
 
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
@@ -310,6 +447,57 @@ try {
   assert(driven.committed, `Driving the hinge failed: ${JSON.stringify(driven.error)}`)
   assert(driven.changed, 'Driving the hinge did not rotate the hatch')
   await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
+
+  // -- hard constraints are kernel-enforced, and liftable -------------------
+  // The showcase declares a 320-part budget and a 10 x 14 stud envelope, which
+  // is exactly what the 400-part render probe below breaks. That makes this the
+  // honest place to prove both halves of the gate in a real browser: the kernel
+  // refuses the commit, and the escape hatch the refusal message points at
+  // actually releases it.
+  const constraintGate = await page.evaluate(async () => {
+    // 400 LDU is 20 studs out, so it breaks the envelope while staying close
+    // enough that the camera refit does not disturb the render sampling below.
+    const commitOutsideEnvelope = async () => {
+      const model = window.brickwright.getDocument()
+      const preflight = await window.brickwright.invoke('build_preflight', {
+        expectedRevision: model.revision,
+        label: 'Outside the envelope',
+        operations: [{ op: 'add', definitionId: '3024', color: 15, position: [400, 0, 0] }],
+      })
+      const proposalId = preflight?.structuredContent?.id
+      if (!proposalId) return { code: preflight?.structuredContent?.error?.code ?? 'NO_PROPOSAL' }
+      const applied = await window.brickwright.invoke('build_apply', { proposalId })
+      return { code: applied?.structuredContent?.error?.code, revision: applied?.structuredContent?.resultRevision }
+    }
+
+    const refused = await commitOutsideEnvelope()
+    const lifted = []
+    for (const constraint of window.brickwright.getDocument().constraints) {
+      const result = await window.brickwright.invoke('action_mutate', {
+        action: 'remove_constraint',
+        expectedRevision: window.brickwright.getDocument().revision,
+        args: { constraintId: constraint.id },
+      })
+      lifted.push(result?.structuredContent?.error?.code ?? 'ok')
+    }
+    const released = await commitOutsideEnvelope()
+    // Put the document back, so the render probe measures the same model the
+    // rest of the run has been describing.
+    if (released.revision) await window.brickwright.invoke('undo_edit', {})
+    return { refused, lifted, released, remaining: window.brickwright.getDocument().constraints.length }
+  })
+  assert(
+    constraintGate.refused.code === 'CONSTRAINT_VIOLATION',
+    `A commit outside the hard envelope was not refused: ${JSON.stringify(constraintGate.refused)}`,
+  )
+  assert(
+    constraintGate.lifted.every((entry) => entry === 'ok') && constraintGate.remaining === 0,
+    `Removing the design constraints failed: ${JSON.stringify(constraintGate.lifted)}`,
+  )
+  assert(
+    Number.isInteger(constraintGate.released.revision),
+    `The commit was still refused after its constraint was lifted: ${JSON.stringify(constraintGate.released)}`,
+  )
 
   // -- rendering cost tracks part/colour combinations, not brick count ------
   // A 400-part agent batch is committed far from the model, then the renderer's
@@ -420,8 +608,15 @@ try {
     return { id: model.id, name: model.name, revision: model.revision, parts: Object.keys(model.parts).length }
   })
   await page.locator('.project-fork input').fill('E2E fork')
+  const forkStarted = Date.now()
   await page.locator('.project-fork button').click()
-  await page.waitForFunction(() => window.brickwright.getDocument().name === 'E2E fork', null, { timeout: 15_000 })
+  // A fork checkpoints the outgoing project and writes a copy, so it is bounded
+  // by IndexedDB rather than by rendering. The budget is generous because a
+  // shared CI runner is roughly an order of magnitude slower than a laptop, and
+  // the duration is reported below so a real regression is visible as a number
+  // rather than as a timeout.
+  await page.waitForFunction(() => window.brickwright.getDocument().name === 'E2E fork', null, { timeout: 90_000 })
+  const forkMs = Date.now() - forkStarted
 
   // A fork must copy the work, not merely rename the pointer to it.
   const forked = await page.evaluate(() => {
@@ -499,6 +694,17 @@ try {
       distinctThumbnailHashes: palette.distinctHashes,
       renderedInDom: palette.renderedInDom,
     },
+    interface: {
+      modalShortcutsBlocked: true,
+      focusRestored: true,
+      commandDeckCapabilities: 13,
+      commandDeckScreenshot: 'artifacts/e2e-command-deck.png',
+      sharedCapabilityParity: {
+        humanRevision: humanParity.revision,
+        agentRevision: agentParity.result?.resultRevision,
+        restoredRevision: parityUndo.revision,
+      },
+    },
     refusedUnplaceableIdentity: unplaceable,
     buildOrder: {
       steps: sequence.steps,
@@ -522,6 +728,17 @@ try {
     afterAdd,
     afterUndo,
     exportType1Lines: type1,
+    delivery: {
+      mpdFileBlocks: (mpd.match(/^0 FILE /gm) ?? []).length,
+      guideSteps,
+      guideImages,
+      guideBytes: Buffer.byteLength(guide),
+    },
+    constraintGate: {
+      refusedOutsideEnvelope: constraintGate.refused.code,
+      constraintsLifted: constraintGate.lifted.length,
+      committedOnceLifted: Number.isInteger(constraintGate.released.revision),
+    },
     renderScale: {
       partsAfterBatch: renderScale.parts,
       drawCallsBefore: renderScale.before.drawCalls,
@@ -532,6 +749,7 @@ try {
     reloadRestored: afterReload,
     projects: {
       restoreHeadline,
+      forkMs,
       forkedProjectId: forked.id,
       forkedParts: forked.parts,
       projectsListed: projectRows,

@@ -101,7 +101,14 @@ export function CatalogPanel({ activeColor, onColorChange, onAdd }: CatalogPanel
       </div>
       <label className="search-field">
         <Search size={14} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Part, ID, shape…" aria-label="Search parts" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Part, ID, shape…"
+          aria-label="Search parts"
+          aria-keyshortcuts="Meta+K Control+K"
+          data-catalog-search
+        />
         <kbd>⌘ K</kbd>
       </label>
       <div className="category-row" role="tablist" aria-label="Part categories">
@@ -126,41 +133,36 @@ export function CatalogPanel({ activeColor, onColorChange, onAdd }: CatalogPanel
       </div>
       <div className="parts-grid" data-testid="parts-grid">
         {results.map((record) => (
-          <button
-            type="button"
+          <article
             className={`part-card ${record.geometryAvailable ? '' : 'unplaceable'}`}
             key={record.id}
-            onDoubleClick={() => record.geometryAvailable && onAdd(record)}
-            onClick={() => undefined}
             title={record.geometryAvailable
-              ? `Double-click to place ${record.name} (${record.frequency} official set appearances)`
+              ? `Place ${record.name} (${record.frequency} official set appearances)`
               : `${record.name} is in the catalog but has no compiled geometry in this build`}
           >
-            <PartPreview record={record} color={getColor(activeColor).hex} />
-            <div className="part-copy">
-              <strong>{record.name.replace(/^(Brick|Plate|Tile|Slope) /, '')}</strong>
-              <span>{record.id}{record.dimensions ? ` · ${record.dimensions[0]}×${record.dimensions[2]}` : ' · no geometry'}</span>
-            </div>
-            {record.geometryAvailable ? (
-              <span
-                role="button"
-                tabIndex={0}
-                className="part-add"
-                aria-label={`Add ${record.name}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onAdd(record)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') onAdd(record)
-                }}
-              >
-                <Plus size={13} />
-              </span>
-            ) : (
-              <span className="part-add disabled" aria-label="No compiled geometry">—</span>
-            )}
-          </button>
+            <button
+              type="button"
+              className="part-card-main"
+              disabled={!record.geometryAvailable}
+              onClick={() => onAdd(record)}
+              aria-label={record.geometryAvailable ? `Place ${record.name}` : `${record.name} has no compiled geometry`}
+            >
+              <PartPreview record={record} color={getColor(activeColor).hex} />
+              <div className="part-copy">
+                <strong>{record.name.replace(/^(Brick|Plate|Tile|Slope) /, '')}</strong>
+                <span>{record.id}{record.dimensions ? ` · ${record.dimensions[0]}×${record.dimensions[2]}` : ' · no geometry'}</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={`part-add ${record.geometryAvailable ? '' : 'disabled'}`}
+              aria-label={record.geometryAvailable ? `Add ${record.name}` : 'No compiled geometry'}
+              disabled={!record.geometryAvailable}
+              onClick={() => onAdd(record)}
+            >
+              {record.geometryAvailable ? <Plus size={13} /> : '—'}
+            </button>
+          </article>
         ))}
       </div>
       <div className="palette-dock">
@@ -192,17 +194,6 @@ function NumberField({ label, value, suffix, onCommit }: { label: string; value:
       <div><input key={value} type="number" defaultValue={value} onBlur={(event) => onCommit(Number(event.target.value))} /><em>{suffix}</em></div>
     </label>
   )
-}
-
-export interface ArticulationControl {
-  edgeId: string
-  label: string
-  family: string
-  canRotate: boolean
-  canSlide: boolean
-  rotateStep: number
-  slideStep: number
-  movingCount: number
 }
 
 export interface ArticulationControl {
@@ -347,44 +338,6 @@ export function InspectorPanel({
                 <i>{selectedPart.protected ? 'LOCKED' : 'OPEN'}</i>
               </button>
             </section>
-            {articulation.length > 0 && (
-              <section className="property-section">
-                <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>
-                {/* Only interfaces designed to move appear here. A stud
-                    connection is rigid once built, so a brick wall offers
-                    nothing to drive. */}
-                {articulation.map((joint) => (
-                  <div className="joint-row" key={joint.edgeId}>
-                    <div className="joint-copy">
-                      <strong>{joint.family}</strong>
-                      <small>{joint.label.split(' · ').slice(2).join(' · ')} · moves {joint.movingCount}</small>
-                    </div>
-                    <div className="joint-controls">
-                      {joint.canRotate && (
-                        <>
-                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: -joint.rotateStep })} title={`Rotate -${joint.rotateStep}°`}>
-                            <RotateCcw size={12} />
-                          </button>
-                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: joint.rotateStep })} title={`Rotate +${joint.rotateStep}°`}>
-                            <RotateCw size={12} />
-                          </button>
-                        </>
-                      )}
-                      {joint.canSlide && (
-                        <>
-                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: -joint.slideStep })} title={`Slide -${joint.slideStep} LDU`}>
-                            <ChevronsLeft size={12} />
-                          </button>
-                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: joint.slideStep })} title={`Slide +${joint.slideStep} LDU`}>
-                            <ChevronsRight size={12} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </section>
-            )}
             {articulation.length > 0 && (
               <section className="property-section">
                 <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>
