@@ -38,7 +38,7 @@ const packGeometry = (() => {
   return index
 })()
 
-const HAVE_PACK = ['3937', '3938', '3001', '3024'].every((id) => packGeometry.has(id))
+const HAVE_PACK = ['3937', '3938', '3024'].every((id) => packGeometry.has(id))
 
 const geometries = new Map<string, THREE.BufferGeometry | null>()
 const provide: GeometryProvider = (definitionId) => {
@@ -78,24 +78,42 @@ function assemble(parts: PartInstance[]): ModelDocument {
   return engine.getSnapshot().document
 }
 
-const hinge = () => assemble([part('base', '3937', [0, 0, 0]), part('flap', '3938', [0, 0, 0])])
+/**
+ * A hinge with a mast standing on its flap.
+ *
+ * The bare hinge is the wrong test subject: `3938` is 40 LDU across and pivots
+ * about a point inside itself, so its swept envelope barely moves and any
+ * obstacle close enough to be hit is already touching at rest. Four plates
+ * stacked on the flap give the mechanism a real radius — the tip travels from
+ * z = −10 to z = +47 over the swing — which is what makes "clear at rest,
+ * blocked part-way" an arrangement that can exist at all.
+ */
+const hinge = () =>
+  assemble([
+    part('base', '3937', [0, 0, 0]),
+    part('flap', '3938', [0, 0, 0]),
+    part('r0', '3024', [10, -8, 0]),
+    part('r1', '3024', [10, -16, 0]),
+    part('r2', '3024', [10, -24, 0]),
+    part('tip', '3024', [10, -32, 0]),
+  ])
 const jointOf = (document: ModelDocument): ArticulatedJoint => findArticulatedJoints(document, ['flap'])[0]
 
 /**
- * Places an obstacle exactly where the flap will be part-way through its swing.
+ * Places an obstacle exactly where the mast's tip will be part-way through the
+ * swing.
  *
  * Deriving the obstacle from the motion rather than guessing a coordinate is
- * what makes this test independent of the hinge's own geometry: whatever
- * `3937`/`3938` turn out to measure, the brick is in the arc.
+ * what makes this test independent of the parts' own measurements: whatever
+ * `3937`/`3938`/`3024` turn out to be, the obstacle is in the arc and nowhere
+ * near the rest pose.
  */
-function withObstacleAt(document: ModelDocument, joint: ArticulatedJoint, degrees: number, total: number): ModelDocument {
-  const posed = previewTransforms(document, joint, { rotateDegrees: degrees, slideLdu: 0 }).get('flap')
+function withObstacleAt(document: ModelDocument, joint: ArticulatedJoint, degrees: number): ModelDocument {
+  const posed = previewTransforms(document, joint, { rotateDegrees: degrees, slideLdu: 0 }).get('tip')
   if (!posed) throw new Error('The hinge produced no preview to place an obstacle against.')
-  void total
-  const obstacle = part('wall', '3001', [posed.position[0], posed.position[1], posed.position[2]])
   return {
     ...document,
-    parts: { ...document.parts, wall: obstacle },
+    parts: { ...document.parts, wall: part('wall', '3024', [...posed.position] as [number, number, number]) },
   }
 }
 
@@ -104,7 +122,7 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     clearCollisionGeometryCache()
     expect(provide('3937')).not.toBeNull()
     expect(provide('3938')).not.toBeNull()
-    expect(provide('3001')).not.toBeNull()
+    expect(provide('3024')).not.toBeNull()
   })
 
   it('reports the whole range clear when nothing is in the way', () => {
@@ -121,7 +139,7 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     const document = hinge()
     const joint = jointOf(document)
     // A brick sitting where the flap reaches at 80° of a 160° swing.
-    const blocked = withObstacleAt(document, joint, 80, 160)
+    const blocked = withObstacleAt(document, joint, 80)
     const blockedJoint = jointOf(blocked)
     const result = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide })
 
@@ -140,7 +158,7 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     // 170° is not clear, because it passed through the frame at 90°.
     const document = hinge()
     const joint = jointOf(document)
-    const blocked = withObstacleAt(document, joint, 90, 180)
+    const blocked = withObstacleAt(document, joint, 90)
     const blockedJoint = jointOf(blocked)
 
     const swept = sweepJoint(blocked, blockedJoint, { rotateDegrees: 180, slideLdu: 0 }, { provide, samples: 18 })
@@ -151,7 +169,7 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
   it('refines the boundary rather than reporting the coarse bucket', () => {
     const document = hinge()
     const joint = jointOf(document)
-    const blocked = withObstacleAt(document, joint, 80, 160)
+    const blocked = withObstacleAt(document, joint, 80)
     const blockedJoint = jointOf(blocked)
     const coarse = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide, samples: 8, refinements: 0 })
     const refined = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide, samples: 8, refinements: 8 })
@@ -188,7 +206,7 @@ describe.skipIf(!HAVE_PACK)('sweep scope', () => {
     const far = Object.fromEntries(
       Array.from({ length: 200 }, (_, index) => [
         `far_${index}`,
-        part(`far_${index}`, '3001', [4000 + index * 40, 0, 0]),
+        part(`far_${index}`, '3024', [4000 + index * 40, 0, 0]),
       ]),
     )
     const large: ModelDocument = { ...base, parts: { ...base.parts, ...far } }

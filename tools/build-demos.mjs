@@ -1396,7 +1396,7 @@ function snotKiosk(rough) {
     maxPartsPerStep: 12,
     hero: true,
     brief: {
-      prompt: 'A two-storey-high terrace block, twenty studs by fourteen, in tan, with windows down the front and a door in the middle.',
+      prompt: 'A terrace block twenty studs by fourteen, six courses high, in tan, with two windows and a door across the front, and a roof you could stand a figure on.',
       envelopeStuds: [20, null, 14],
       palette: ['Tan', 'White', 'Dark Bluish Grey', 'Dark Tan'],
       functions: ['Bonded courses', 'Seated frames', 'Walkable roof'],
@@ -1641,6 +1641,8 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
     techniques: demo.techniques,
     refinement: demo.refinement,
     hero: Boolean(demo.hero),
+    tensionAllowance: demo.tensionAllowance ?? 0,
+    tensionReason: demo.tensionReason ?? null,
     brief: demo.brief ?? null,
     camera: demo.camera,
     documentId: refined.document.id,
@@ -1663,7 +1665,6 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
       catalogPartsHash: manifest.files.parts.hash,
       renderer: 'src/cad/raster.ts — offline software rasterizer, no browser',
       authoredAt: AUTHORED_AT,
-      elapsedMs: 0,
     },
   })
   process.stdout.write(
@@ -1726,7 +1727,7 @@ const generated = `/**
  */
 import type { DemoManifest } from './types'
 
-export const DEMO_MANIFEST: DemoManifest = ${JSON.stringify(manifestPayload, null, 2)} as const
+export const DEMO_MANIFEST: DemoManifest = ${JSON.stringify(manifestPayload, null, 2)}
 
 export default DEMO_MANIFEST
 `

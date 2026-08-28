@@ -741,7 +741,11 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
       const wave = waveId ? options.waves.get(waveId) : undefined
 
       const scoped = Array.isArray(input.partIds) ? input.partIds.map(String) : []
-      const collisions = validation.collisions
+      // A refused wave's collisions are in its *preview*, not in the live
+      // document — the whole point of a preflight is that the live document
+      // never had them. Asking about a wave therefore has to look at the wave.
+      const source = wave?.validation?.collisions.length ? wave.validation.collisions : validation.collisions
+      const collisions = source
         .filter((collision) => !scoped.length || scoped.includes(collision.partA) || scoped.includes(collision.partB))
         .slice(0, 10)
         .map((collision) => {

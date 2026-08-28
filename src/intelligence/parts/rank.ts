@@ -36,6 +36,8 @@ export interface ConnectorSignal {
   score: number
   matched: ConnectionFamily[]
   missing: ConnectionFamily[]
+  /** Families the request ruled out that this part nonetheless carries. */
+  forbidden: ConnectionFamily[]
   /** False when the part is outside the compiled pack, so its connectors are unknown. */
   testable: boolean
   /** Whether a requested connector axis direction was confirmed, refuted, or untestable. */
@@ -115,7 +117,7 @@ const WEIGHT = {
   relation: 3.4,
   lexical: 2.2,
   semantic: 1.5,
-  dimensional: 1.5,
+  dimensional: 2.2,
   connector: 0.9,
   axis: 1.2,
   color: 0.5,
@@ -131,6 +133,10 @@ const WEIGHT = {
  * decoration. Unknown is never penalised: 96% of the catalog has no compiled
  * envelope, and punishing that would collapse the answer set onto the pack.
  *
+ * `forbiddenConnector` is the mirror of the connector reward: a request that
+ * says "no studs on top" has stated a fact about the answer, and a part that
+ * carries the ruled-out family is wrong rather than merely unmatched.
+ *
  * `decoration` is the one penalty that is about the question rather than the
  * part. LDraw carries roughly ten printed and stickered variants for every
  * popular design, all sharing its name; without this, "45 degree slope 2 x 2"
@@ -140,6 +146,7 @@ const PENALTY = {
   wrongSize: 1.6,
   missingConnector: 0.7,
   wrongAxis: 1.2,
+  forbiddenConnector: 1.1,
   wrongColor: 0.5,
   decoration: 1.4,
   /** LDraw "~" parts are subassembly fragments, not things a person can ask for. */
@@ -259,9 +266,10 @@ export function dimensionalSignal(query: PartQuery, document: CorpusDocument): D
         const heightHit = footprintHit && heightMatches(candidate, envelope[2], 'bricks')
         if (heightHit) met.envelope = true
         // A footprint match with the wrong height is a partial answer, not a
-        // wrong one: the person described the right part in the wrong units
-        // often enough that discarding it costs more than it saves.
-        local.push(heightHit ? 1 : footprintHit ? 0.55 : 0)
+        // wrong one - a person who says "1 x 2 x 5" and means the 1 x 2 is
+        // still pointing somewhere useful - but it must not outrank the part
+        // that matches all three numbers.
+        local.push(heightHit ? 1 : footprintHit ? 0.4 : 0)
       } else {
         if (footprintHit) met.envelope = true
         local.push(footprintHit ? 1 : 0)
@@ -308,17 +316,18 @@ const AXIS_TOLERANCE = 0.5
 
 export function connectorSignal(query: PartQuery, document: CorpusDocument): ConnectorSignal {
   const axis = axisSignal(query, document)
-  if (!query.connectors.length) {
-    return { score: 0, matched: [], missing: [], testable: true, axis }
-  }
   const present = new Set(document.families)
+  const forbidden = query.excludedConnectors.filter((family) => present.has(family))
+  if (!query.connectors.length) {
+    return { score: 0, matched: [], missing: [], forbidden, testable: true, axis }
+  }
   const matched = query.connectors.filter((family) => present.has(family))
   const missing = query.connectors.filter((family) => !present.has(family))
   // Connector families come from the search index, which covers every modelled
   // identity, so this is testable well beyond the compiled pack. It is not
   // testable for catalogued-only identities, which publish no connectors.
   const testable = document.tier !== 'catalogued'
-  return { score: matched.length / query.connectors.length, matched, missing, testable, axis }
+  return { score: matched.length / query.connectors.length, matched, missing, forbidden, testable, axis }
 }
 
 /**
@@ -406,6 +415,7 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
   if (connector.missing.length && connector.testable) {
     score -= PENALTY.missingConnector * (connector.missing.length / Math.max(1, query.connectors.length))
   }
+  if (connector.forbidden.length && connector.testable) score -= PENALTY.forbiddenConnector
   if (query.color.codes.length && color.testable && !color.satisfied) score -= PENALTY.wrongColor
   if (decorated && query.variantPreference !== 'printed' && !exactIdKind && relation?.kind !== 'printed-variant') {
     score -= PENALTY.decoration

@@ -156,21 +156,23 @@ describe('the build graph refuses structures that could not be realised', () => 
 })
 
 describe('an attachment that cannot be built is repaired or refused, never kept', () => {
-  it('repairs a collision by moving to another connector, and says which', () => {
+  it('repairs a body collision by moving to another connector, and says which', () => {
+    // A windscreen is the honest test case: six anti-studs under a six-by-three
+    // body, so two of them can claim entirely different studs and still occupy
+    // the same space. Occupancy alone cannot predict that — only the collision
+    // check can — which is exactly the situation repair exists for.
     const graph: BuildGraph = {
       version: 1,
       strategy: 'test',
       nodes: [
         brickField('deck', 8, 4),
-        { id: 'beamA', kind: 'part', colour: 4, role: 'frame', part: { query: 'brick 1 x 8', sizeStuds: [8, 3.5, 1] } },
-        { id: 'beamB', kind: 'part', colour: 4, role: 'frame', part: { query: 'brick 1 x 8', sizeStuds: [8, 3.5, 1] } },
+        { id: 'canopyA', kind: 'part', colour: 4, role: 'shell', part: { query: 'windscreen', definitionId: '62360' } },
+        { id: 'canopyB', kind: 'part', colour: 4, role: 'shell', part: { query: 'windscreen', definitionId: '62360' } },
       ],
-      edges: (['beamA', 'beamB'] as const).map((to, index) => ({
+      edges: (['canopyA', 'canopyB'] as const).map((to, index) => ({
         id: `e_${to}`,
         from: 'deck',
         to,
-        // Both beams are asked for the same stud. The first takes it; the second
-        // must find somewhere else or be refused.
         fromConnector: { family: 'stud' as const, pick: { kind: 'grid' as const, uStuds: index, vStuds: 0, level: 'top' as const } },
         toConnector: { family: 'anti-stud' as const, pick: { kind: 'grid' as const, uStuds: 0, vStuds: 0 } },
         family: 'stud' as const,
@@ -178,21 +180,25 @@ describe('an attachment that cannot be built is repaired or refused, never kept'
     }
 
     const result = realizeGraph(graph, base(), { seed: 3 })
-    const beamB = result.nodes.find((node) => node.nodeId === 'beamB')!
-    expect(['repaired', 'rejected']).toContain(beamB.status)
-    expect(beamB.reason, 'a repair or refusal must carry its reason').toBeTruthy()
+    const canopyB = result.nodes.find((node) => node.nodeId === 'canopyB')!
+    expect(['repaired', 'rejected']).toContain(canopyB.status)
+    expect(canopyB.reason, 'a repair or refusal must carry its reason').toBeTruthy()
 
-    const edgeB = result.edges.find((edge) => edge.edgeId === 'e_beamB')!
+    const edgeB = result.edges.find((edge) => edge.edgeId === 'e_canopyB')!
     expect(edgeB.attemptLog?.length ?? 0).toBeGreaterThan(0)
-    expect(edgeB.attemptLog![0]).toMatch(/collides|solver found no mating|envelope/)
+    expect(edgeB.attemptLog![0]).toMatch(/^primary: it collides with /)
+    expect(edgeB.attempts).toBeGreaterThan(1)
 
-    if (beamB.status === 'rejected') {
-      expect(beamB.partIds).toEqual([])
-      const added = result.operations.filter((operation) => operation.type === 'part.add')
-      expect(added.length).toBe(result.partCount)
+    if (canopyB.status === 'rejected') {
+      expect(canopyB.partIds).toEqual([])
     } else {
       expect(edgeB.repairKind).not.toBe('primary')
+      expect(canopyB.partIds).toHaveLength(1)
     }
+    // Whatever happened, the document holds exactly the parts the outcomes claim.
+    const added = result.operations.filter((operation) => operation.type === 'part.add')
+    expect(added.length).toBe(result.partCount)
+    expect(Object.keys(result.document.parts)).toHaveLength(result.partCount)
   })
 
   it('refuses an attachment whose part carries no such connector, naming the part', () => {
@@ -201,30 +207,33 @@ describe('an attachment that cannot be built is repaired or refused, never kept'
       strategy: 'test',
       nodes: [
         brickField('deck', 4, 4),
-        { id: 'plate', kind: 'part', colour: 4, role: 'detail', part: { query: 'plate 1 x 2', definitionId: '3023b' } },
+        { id: 'axle', kind: 'part', colour: 4, role: 'detail', part: { query: 'technic axle 6', definitionId: '3706' } },
       ],
       edges: [
         {
           id: 'impossible',
           from: 'deck',
-          to: 'plate',
+          to: 'axle',
+          // Stud to anti-stud is a legal pairing, so the graph itself is valid;
+          // a bare Technic axle simply has no anti-stud to offer. There is no
+          // repair for that, and the realiser must say so rather than seating it
+          // on something else that happens to fit.
           fromConnector: { family: 'stud', pick: { kind: 'grid', uStuds: 0, vStuds: 0, level: 'top' } },
-          // A 1 x 2 plate has no axle hole. There is no repair for this and the
-          // realiser must say so rather than seating it on something else.
-          toConnector: { family: 'axle-hole', pick: { kind: 'index', index: 0 } },
-          family: 'axle',
+          toConnector: { family: 'anti-stud', pick: { kind: 'index', index: 0 } },
+          family: 'stud',
         },
       ],
     }
 
+    expect(validateGraph(graph)).toEqual([])
     const result = realizeGraph(graph, base(), { seed: 1 })
-    const node = result.nodes.find((entry) => entry.nodeId === 'plate')!
+    const node = result.nodes.find((entry) => entry.nodeId === 'axle')!
     expect(node.status).toBe('rejected')
     expect(node.partIds).toEqual([])
-    expect(node.reason).toMatch(/axle-hole/)
+    expect(node.reason).toMatch(/anti-stud/)
     expect(result.edges.find((edge) => edge.edgeId === 'impossible')!.status).toBe('rejected')
     // The refused part is genuinely absent from the document, not merely flagged.
-    expect(Object.values(result.document.parts).some((part) => part.definitionId === '3023b')).toBe(false)
+    expect(Object.values(result.document.parts).some((part) => part.definitionId === '3706')).toBe(false)
   })
 
   it('refuses a region that would land clear of its host', () => {
@@ -405,7 +414,7 @@ describe('the brief compiler is honest about how it read the request', () => {
     expect(result.method).toBe('deterministic')
     expect(result.provenance.provider).toBe('deterministic')
     expect(result.provenance.model).toBeNull()
-    expect(result.notes.join(' ')).toContain('no model provider')
+    expect(result.notes.join(' ')).toMatch(/no model provider/i)
     expect(result.brief.partBudget).toBe(250)
   })
 

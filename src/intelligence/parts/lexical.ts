@@ -31,6 +31,15 @@ const B = 0.75
 const PREFIX_DISCOUNT = 0.65
 
 /**
+ * How many longer forms one query term may reach.
+ *
+ * LDraw spells the same idea three ways across its history - "Slope Brick 45",
+ * "Brick Sloped 45", "Sloping" - so a term has to reach more than one
+ * continuation or half the library stays invisible to the word people type.
+ */
+const PREFIX_EXPANSIONS = 3
+
+/**
  * Field weights.
  *
  * `ids` sits close to `name` because a number typed into a part search is
@@ -268,24 +277,27 @@ export class LexicalIndex {
     for (const rawTerm of terms) {
       const term = rawTerm.toLowerCase()
       const folded = foldTerm(term)
-      let posting = this.postings.get(folded) ?? this.postings.get(term)
       // A morphological near-miss is worth less than a hit, not nothing:
-      // "connects" reaching "connector" is the difference between finding the
-      // Technic pin connectors and finding nothing at all.
-      let discount = 1
-      if (!posting) {
-        const expanded = this.prefixTerms(folded, 1)[0]
-        if (!expanded) continue
-        posting = this.postings.get(expanded)
-        discount = PREFIX_DISCOUNT
+      // "slope" reaching "sloped" and "connects" reaching "connector" are the
+      // difference between finding the part and finding nothing at all. The
+      // expansions are added to the exact hit rather than used only when it
+      // misses, because both spellings are live in the same catalog.
+      const readings: Array<{ posting: Posting; discount: number }> = []
+      const exact = this.postings.get(folded) ?? this.postings.get(term)
+      if (exact) readings.push({ posting: exact, discount: 1 })
+      for (const expanded of this.prefixTerms(folded, PREFIX_EXPANSIONS)) {
+        const posting = this.postings.get(expanded)
+        if (posting) readings.push({ posting, discount: PREFIX_DISCOUNT })
       }
-      if (!posting) continue
+      if (!readings.length) continue
       matched += 1
-      const { docs, weights, idf } = posting
-      for (let i = 0; i < docs.length; i += 1) {
-        const doc = docs[i]
-        if (scores[doc] === 0) touched.push(doc)
-        scores[doc] += (discount * idf * weights[i]) / (K1 + weights[i])
+      for (const { posting, discount } of readings) {
+        const { docs, weights, idf } = posting
+        for (let i = 0; i < docs.length; i += 1) {
+          const doc = docs[i]
+          if (scores[doc] === 0) touched.push(doc)
+          scores[doc] += (discount * idf * weights[i]) / (K1 + weights[i])
+        }
       }
     }
     if (!matched) return []

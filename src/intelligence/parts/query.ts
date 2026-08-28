@@ -91,6 +91,8 @@ export interface PartQuery {
   dimensions: DimensionIntent
   color: ColorIntent
   connectors: ConnectionFamily[]
+  /** Families the request ruled out, from "no studs on top" or "without a clip". */
+  excludedConnectors: ConnectionFamily[]
   axisOrientation: AxisIntent | null
   categories: string[]
   relation: RelationIntent | null
@@ -135,13 +137,35 @@ const STOP_WORDS = new Set([
  * "1 x 2" the same request: the dimension folding in `tokenize` only recognises
  * digits, so the words have to become digits before it runs.
  */
-const NUMBER_WORDS: Array<[string, string]> = [
-  ['twenty four', '24'], ['twenty', '20'], ['sixteen', '16'], ['fifteen', '15'],
-  ['fourteen', '14'], ['thirteen', '13'], ['twelve', '12'], ['eleven', '11'],
-  ['thirty', '30'], ['forty', '40'], ['fifty', '50'], ['sixty', '60'],
-  ['zero', '0'], ['one', '1'], ['two', '2'], ['three', '3'], ['four', '4'],
-  ['five', '5'], ['six', '6'], ['seven', '7'], ['eight', '8'], ['nine', '9'], ['ten', '10'],
+const UNITS: Array<[string, number]> = [
+  ['one', 1], ['two', 2], ['three', 3], ['four', 4], ['five', 5],
+  ['six', 6], ['seven', 7], ['eight', 8], ['nine', 9],
 ]
+const TENS: Array<[string, number]> = [
+  ['twenty', 20], ['thirty', 30], ['forty', 40], ['fifty', 50],
+  ['sixty', 60], ['seventy', 70], ['eighty', 80], ['ninety', 90],
+]
+const TEENS: Array<[string, number]> = [
+  ['ten', 10], ['eleven', 11], ['twelve', 12], ['thirteen', 13], ['fourteen', 14],
+  ['fifteen', 15], ['sixteen', 16], ['seventeen', 17], ['eighteen', 18], ['nineteen', 19],
+]
+
+/**
+ * Number phrases, longest first.
+ *
+ * The compound forms are generated rather than listed because "thirty two"
+ * substituted one word at a time becomes "30 2", and a baseplate request would
+ * silently turn into two unrelated numbers.
+ */
+const NUMBER_WORDS: Array<[string, string]> = (() => {
+  const entries: Array<[string, string]> = []
+  for (const [tens, tensValue] of TENS) {
+    for (const [unit, unitValue] of UNITS) entries.push([`${tens} ${unit}`, String(tensValue + unitValue)])
+  }
+  for (const [word, value] of [...TENS, ...TEENS, ...UNITS]) entries.push([word, String(value)])
+  entries.push(['zero', '0'])
+  return entries.sort((a, b) => b[0].length - a[0].length)
+})()
 
 const APPROXIMATE_WORDS = new Set(['about', 'around', 'roughly', 'approximately', 'circa', 'nearly', 'almost', 'ish'])
 const FOOTPRINT_AXIS_WORDS = new Set(['wide', 'width', 'long', 'length', 'across', 'deep', 'depth', 'square'])
@@ -237,6 +261,15 @@ const PRINTED_WORDS = new Set(['printed', 'print', 'patterned', 'decorated', 'st
 const PLAIN_WORDS = new Set(['plain', 'unprinted', 'blank', 'undecorated', 'unpatterned', 'base', 'original'])
 const BRIDGE_WORDS = new Set(['bridge', 'bridges', 'bridging', 'span', 'spans', 'spanning', 'gap'])
 const INTERFACE_WORDS = new Set(['connections', 'connectors', 'interface', 'interchangeable', 'mates'])
+/**
+ * Words that flip the connector clause that follows them.
+ *
+ * "A piece with an anti-stud underneath and no stud on top" is two requirements,
+ * one of them negative, and reading the second as a positive request for studs
+ * inverts the answer completely.
+ */
+const NEGATION_WORDS = new Set(['no', 'without', 'not', 'lacking', 'never', 'nothing'])
+
 const HORIZONTAL_WORDS = new Set(['sideways', 'horizontal', 'horizontally', 'lateral', 'laterally', 'sidewards'])
 const VERTICAL_WORDS = new Set(['vertical', 'vertically', 'upright', 'upwards'])
 
@@ -365,6 +398,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
   }
   const color: ColorIntent = { codes: [], names: [], finishes: [], evidence: [] }
   const connectorFamilies = new Set<ConnectionFamily>()
+  const excludedFamilies = new Set<ConnectionFamily>()
   const categories = new Set<string>()
   let availability: PartQuery['availability'] = 'any'
   let axisOrientation: AxisIntent | null = null
@@ -466,7 +500,13 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     for (const entry of CONNECTOR_PHRASES) {
       const length = phraseAt(words, index, entry.words)
       if (!length) continue
-      for (const family of entry.families) connectorFamilies.add(family)
+      // A negation reaches forward across the two words a request usually puts
+      // between it and the connector: "no studs on top", "without a clip".
+      const negated =
+        NEGATION_WORDS.has(words[index - 1] ?? '') ||
+        NEGATION_WORDS.has(words[index - 2] ?? '') ||
+        NEGATION_WORDS.has(words[index - 3] ?? '')
+      for (const family of entry.families) (negated ? excludedFamilies : connectorFamilies).add(family)
       // Connector words are also real catalog vocabulary ("Brick with Clip"),
       // so they stay available to lexical retrieval instead of being consumed.
       matchedPhrase = true
@@ -554,7 +594,8 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     idTokens,
     dimensions,
     color,
-    connectors: Array.from(connectorFamilies),
+    connectors: Array.from(connectorFamilies).filter((family) => !excludedFamilies.has(family)),
+    excludedConnectors: Array.from(excludedFamilies),
     axisOrientation,
     categories: Array.from(categories),
     relation,

@@ -38,8 +38,10 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate laid a single-layer deck and cut bare holes where the openings are. Plates side by side in one plane do not clutch, so the deck came apart into loose strips.",
       "hero": true,
+      "tensionAllowance": 0,
+      "tensionReason": null,
       "brief": {
-        "prompt": "A two-storey-high terrace block, twenty studs by fourteen, in tan, with windows down the front and a door in the middle.",
+        "prompt": "A terrace block twenty studs by fourteen, six courses high, in tan, with two windows and a door across the front, and a roof you could stand a figure on.",
         "envelopeStuds": [
           20,
           null,
@@ -300,8 +302,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     },
     {
@@ -317,6 +318,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate locked the chassis with two 4 x 4 plates that left the centreline seam unbridged, so the front and rear halves were separate components.",
       "hero": false,
+      "tensionAllowance": 0,
+      "tensionReason": null,
       "brief": null,
       "camera": {
         "yaw": -34,
@@ -552,8 +555,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     },
     {
@@ -569,6 +571,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate placed the head by coordinate in front of the body. It rendered perfectly and the load path from the ground never reached it.",
       "hero": false,
+      "tensionAllowance": 0,
+      "tensionReason": null,
       "brief": null,
       "camera": {
         "yaw": 24,
@@ -803,8 +807,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     },
     {
@@ -820,6 +823,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate laid the shutter as free plates one course above the deck — a slab held by nothing, which the load-path walk never reaches.",
       "hero": false,
+      "tensionAllowance": 5,
+      "tensionReason": "The hinge top plates and the flap they carry hang from the hinge rather than resting on it, which is what a hinge is. The statics pass reports them as carried in tension and checks that the clutch assumption covers their mass.",
       "brief": null,
       "camera": {
         "yaw": -22,
@@ -1065,8 +1070,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     },
     {
@@ -1082,6 +1086,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate laid the shelf and the desktop one plate deep. Single-layer plates in one plane do not clutch each other, so the middle of both surfaces was loose.",
       "hero": false,
+      "tensionAllowance": 0,
+      "tensionReason": null,
       "brief": null,
       "camera": {
         "yaw": 42,
@@ -1306,8 +1312,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     },
     {
@@ -1323,6 +1328,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       ],
       "refinement": "The first candidate stopped at the studs-on-side course: the sideways studs were exposed and the facade was never faced.",
       "hero": false,
+      "tensionAllowance": 3,
+      "tensionReason": "The facing tiles hang off vertical studs. That is what studs-not-on-top means, and it is the one case where clutch is genuinely in tension, so the statics pass measures the load against the clutch assumption instead of waving it through.",
       "brief": null,
       "camera": {
         "yaw": 12,
@@ -1538,11 +1545,10 @@ export const DEMO_MANIFEST: DemoManifest = {
         "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
         "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
         "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
-        "authoredAt": "2026-07-01T00:00:00.000Z",
-        "elapsedMs": 0
+        "authoredAt": "2026-07-01T00:00:00.000Z"
       }
     }
   ]
-} as const
+}
 
 export default DEMO_MANIFEST

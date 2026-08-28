@@ -90,8 +90,14 @@ describe('part intent evaluation', () => {
       // module exists to avoid, so the bar is the confidence, not the ids.
       expect(best, `${entry.query} came back at ${best.toFixed(2)}`).toBeLessThan(0.35)
       expect(result.interpretation.unmatchedTerms.length, `${entry.query} reported nothing unmatched`).toBeGreaterThan(0)
-      for (const term of entry.expectUnmatched ?? []) {
-        expect(result.interpretation.unmatchedTerms, entry.query).toContain(term)
+      for (const fragment of entry.expectUnmatched ?? []) {
+        // Matched as a fragment: the parser reports the phrase it actually read
+        // ("30 studs wide"), which is more specific than the fixture needs to
+        // pin down, and pinning the exact wording would test the wording.
+        expect(
+          result.interpretation.unmatchedTerms.some((term) => term.includes(fragment)),
+          `${entry.query} -> ${JSON.stringify(result.interpretation.unmatchedTerms)}`,
+        ).toBe(true)
       }
     }
   })
