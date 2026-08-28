@@ -37,15 +37,56 @@ const SHARED_URL = process.env.BRICKWRIGHT_E2E_URL ?? 'http://127.0.0.1:4174'
 
 /** Throttling profile for the delivery gate. Stated, not implied. */
 const THROTTLE = {
-  cpuSlowdown: 4,
   // Chrome DevTools' "Fast 3G": 1.6 Mbit/s down, 750 kbit/s up, 150 ms RTT.
   downloadThroughput: (1.6 * 1024 * 1024) / 8,
   uploadThroughput: (750 * 1024) / 8,
   latency: 150,
 }
 
+/**
+ * The device this gate measures, expressed as work rather than as a multiplier.
+ *
+ * `Emulation.setCPUThrottlingRate` scales the *host* CPU, so a fixed rate does
+ * not describe a device — it describes "some fraction of whatever ran the
+ * suite". A hard-coded 4x measured 2348 ms on an M3 Max and 2608 ms on a hosted
+ * runner for the same commit: 260 ms of disagreement against 150 ms of budget
+ * headroom, which made the gate a report on the machine rather than on the page.
+ *
+ * So the throttle is calibrated instead. {@link CPU_BENCHMARK} is timed
+ * unthrottled first, and the multiplier is whatever lands that workload on
+ * `TARGET_WORKLOAD_MS`. The reference is the machine this budget was written
+ * against — 68.7 ms unthrottled on an M3 Max performance core, times the 4x
+ * this profile has always claimed — so the calibrated run reproduces the
+ * original numbers there and brings every other machine to the same device.
+ *
+ * A host too slow to reach the target cannot be sped up; the rate clamps at 1x
+ * and the run says so, because a quietly optimistic measurement is worse than a
+ * loud one.
+ */
+const TARGET_WORKLOAD_MS = 275
+const CPU_BENCHMARK_ITERATIONS = 8_000_000
+
+/** Fixed arithmetic, returned so it cannot be optimised away. */
+const CPU_BENCHMARK = (iterations) => {
+  const started = performance.now()
+  let value = 0
+  for (let i = 1; i <= iterations; i += 1) value += Math.sqrt(i) % 7
+  return { ms: performance.now() - started, value }
+}
+
 const LCP_BUDGET_MS = 2500
 const CLS_BUDGET = 0.1
+
+/**
+ * How many times the throttled load is measured.
+ *
+ * One sample is not a measurement. Four repeats of an unchanged tree came back
+ * 2344, 2356, 2932 and 2316 ms — a 616 ms spread, four times the budget's
+ * headroom, because a throttled load is sensitive to whatever else the host is
+ * doing. The median of three is what is asserted on; every sample is printed so
+ * a wide spread is visible rather than inferred.
+ */
+const DELIVERY_SAMPLES = 3
 
 const failures = []
 const notes = []
@@ -506,73 +547,108 @@ try {
   const buildUrl = `http://127.0.0.1:${served.port}`
   pass(`built and served from ${path.relative(os.tmpdir(), buildDir)}`)
 
-  const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
-  const perfPage = await perfContext.newPage()
-  const perfErrors = []
-  perfPage.on('console', (message) => { if (message.type() === 'error') perfErrors.push(message.text()) })
-  perfPage.on('pageerror', (cause) => perfErrors.push(cause.message))
-  const requests = []
-  perfPage.on('response', async (response) => {
-    const request = response.request()
-    let bytes = 0
-    try {
-      bytes = Number((await response.headerValue('content-length')) ?? 0)
-    } catch {
-      bytes = 0
-    }
-    requests.push({
-      url: new URL(response.url()).pathname,
-      type: request.resourceType(),
-      status: response.status(),
-      bytes,
+  /**
+   * One throttled load of the built page, measured end to end.
+   *
+   * Every sample gets a fresh context. A warm connection or a populated memory
+   * cache would make the second load faster than a visitor's first one, and the
+   * first one is the whole subject of this gate.
+   */
+  async function measureDelivery() {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    const consoleErrors = []
+    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+    page.on('pageerror', (cause) => consoleErrors.push(cause.message))
+    const seen = []
+    page.on('response', async (response) => {
+      const request = response.request()
+      let bytes = 0
+      try {
+        bytes = Number((await response.headerValue('content-length')) ?? 0)
+      } catch {
+        bytes = 0
+      }
+      seen.push({
+        url: new URL(response.url()).pathname,
+        type: request.resourceType(),
+        status: response.status(),
+        bytes,
+      })
     })
-  })
 
-  const session = await perfContext.newCDPSession(perfPage)
-  await session.send('Network.enable')
-  await session.send('Network.emulateNetworkConditions', {
-    offline: false,
-    latency: THROTTLE.latency,
-    downloadThroughput: THROTTLE.downloadThroughput,
-    uploadThroughput: THROTTLE.uploadThroughput,
-  })
-  await session.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE.cpuSlowdown })
+    const session = await context.newCDPSession(page)
+    await session.send('Network.enable')
 
-  await perfPage.addInitScript(() => {
-    window.__vitals = { lcp: 0, lcpElement: 'unknown', cls: 0, shifts: [] }
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        window.__vitals.lcp = entry.startTime
-        // Captured here rather than read back later: the entry's element
-        // reference is not guaranteed to survive into a later query.
-        const element = entry.element
-        window.__vitals.lcpElement = element
-          ? `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(' ')[0]}` : ''}`
-          : 'unknown'
-      }
-    }).observe({ type: 'largest-contentful-paint', buffered: true })
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (entry.hadRecentInput) continue
-        window.__vitals.cls += entry.value
-        window.__vitals.shifts.push({ value: entry.value, at: entry.startTime })
-      }
-    }).observe({ type: 'layout-shift', buffered: true })
-  })
+    // Time the host before anything is slowed down, and on a blank page so the
+    // benchmark is not competing with the site's own work.
+    await page.goto('about:blank')
+    const benchmark = await page.evaluate(CPU_BENCHMARK, CPU_BENCHMARK_ITERATIONS)
+    const slowdown = Math.min(20, Math.max(1, TARGET_WORKLOAD_MS / benchmark.ms))
 
-  await perfPage.goto(`${buildUrl}/`, { waitUntil: 'commit' })
-  // Wait for the headline, which is what a visitor is waiting for, then keep
-  // watching: the hero's preview fetch is deliberately deferred until the stage
-  // is on screen, and any shift it causes has to land inside the CLS window.
-  let painted = true
-  try {
-    await perfPage.locator('h1').first().waitFor({ timeout: 30_000 })
-  } catch {
-    painted = false
+    await session.send('Network.emulateNetworkConditions', {
+      offline: false,
+      latency: THROTTLE.latency,
+      downloadThroughput: THROTTLE.downloadThroughput,
+      uploadThroughput: THROTTLE.uploadThroughput,
+    })
+    await session.send('Emulation.setCPUThrottlingRate', { rate: slowdown })
+
+    await page.addInitScript(() => {
+      window.__vitals = { lcp: 0, lcpElement: 'unknown', cls: 0, shifts: [] }
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          window.__vitals.lcp = entry.startTime
+          // Captured here rather than read back later: the entry's element
+          // reference is not guaranteed to survive into a later query.
+          const element = entry.element
+          window.__vitals.lcpElement = element
+            ? `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(' ')[0]}` : ''}`
+            : 'unknown'
+        }
+      }).observe({ type: 'largest-contentful-paint', buffered: true })
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.hadRecentInput) continue
+          window.__vitals.cls += entry.value
+          window.__vitals.shifts.push({ value: entry.value, at: entry.startTime })
+        }
+      }).observe({ type: 'layout-shift', buffered: true })
+    })
+
+    seen.length = 0
+    await page.goto(`${buildUrl}/`, { waitUntil: 'commit' })
+    // Wait for the headline, which is what a visitor is waiting for, then keep
+    // watching: the hero's preview fetch is deliberately deferred until the stage
+    // is on screen, and any shift it causes has to land inside the CLS window.
+    let painted = true
+    try {
+      await page.locator('h1').first().waitFor({ timeout: 30_000 })
+    } catch {
+      painted = false
+    }
+    await page.waitForTimeout(4000)
+    const measured = await page.evaluate(() => window.__vitals)
+    await page.screenshot({ path: path.join(ARTIFACTS, 'landing-production.png'), fullPage: true })
+    await context.close()
+    return {
+      vitals: measured,
+      requests: seen,
+      consoleErrors,
+      painted,
+      cpu: { benchmarkMs: Number(benchmark.ms.toFixed(1)), slowdown: Number(slowdown.toFixed(2)) },
+    }
   }
-  await perfPage.waitForTimeout(4000)
+
+  const samples = []
+  for (let index = 0; index < DELIVERY_SAMPLES; index += 1) samples.push(await measureDelivery())
+  // The median sample is the one reported and asserted on, so the request log,
+  // the console output and the numbers all describe the same single load.
+  const median = [...samples].sort((left, right) => left.vitals.lcp - right.vitals.lcp)[
+    Math.floor(samples.length / 2)
+  ]
+  const { vitals, requests, consoleErrors: perfErrors, painted } = median
   check(painted, `the landing headline painted within 30 s under throttling (console: ${perfErrors.slice(0, 2).join(' | ')})`)
-  const vitals = await perfPage.evaluate(() => window.__vitals)
   const lcpElement = vitals.lcpElement ?? 'unknown'
 
   // Chunk *names* are a rolldown implementation detail; what matters is what is
@@ -600,8 +676,16 @@ try {
   const forbidden = requests.filter((entry) => /\/catalog\//.test(entry.url) || /\.bwmesh$/.test(entry.url))
   const editorChunks = carried
 
-  process.stdout.write(`\n  throttling: ${THROTTLE.cpuSlowdown}x CPU, ${(THROTTLE.downloadThroughput * 8 / 1024 / 1024).toFixed(2)} Mbit/s down, ${THROTTLE.latency} ms RTT\n`)
-  process.stdout.write(`  LCP        ${vitals.lcp.toFixed(0)} ms  (budget ${LCP_BUDGET_MS} ms) — element ${lcpElement}\n`)
+  const lcpSamples = samples.map((sample) => sample.vitals.lcp.toFixed(0)).join(', ')
+  process.stdout.write(
+    `\n  throttling: ${median.cpu.slowdown}x CPU — calibrated, host ran the benchmark in `
+      + `${median.cpu.benchmarkMs} ms against a ${TARGET_WORKLOAD_MS} ms reference device — `
+      + `${((THROTTLE.downloadThroughput * 8) / 1024 / 1024).toFixed(2)} Mbit/s down, ${THROTTLE.latency} ms RTT\n`,
+  )
+  if (median.cpu.slowdown <= 1) {
+    process.stdout.write('  note  this host is slower than the reference device, so the timings below are pessimistic\n')
+  }
+  process.stdout.write(`  LCP        ${vitals.lcp.toFixed(0)} ms  (budget ${LCP_BUDGET_MS} ms; ${DELIVERY_SAMPLES} samples: ${lcpSamples}) — element ${lcpElement}\n`)
   process.stdout.write(`  CLS        ${vitals.cls.toFixed(4)}     (budget ${CLS_BUDGET})\n`)
   process.stdout.write(`  requests   ${requests.length}\n\n`)
   for (const entry of requests) {
@@ -616,8 +700,11 @@ try {
 
   check(perfErrors.length === 0, `no console errors on the production build (${perfErrors.slice(0, 3).join(' | ')})`)
   report.performance = {
-    profile: THROTTLE,
+    profile: { ...THROTTLE, cpu: median.cpu, targetWorkloadMs: TARGET_WORKLOAD_MS },
     lcpMs: Number(vitals.lcp.toFixed(1)),
+    // Kept alongside the median so a run that only just passed is distinguishable
+    // from one that passed comfortably, without re-running anything.
+    lcpSamplesMs: samples.map((sample) => Number(sample.vitals.lcp.toFixed(1))),
     lcpElement,
     cls: Number(vitals.cls.toFixed(5)),
     layoutShifts: vitals.shifts,
@@ -630,8 +717,6 @@ try {
     transferredBytes: requests.reduce((sum, entry) => sum + entry.bytes, 0),
     requests,
   }
-  await perfPage.screenshot({ path: path.join(ARTIFACTS, 'landing-production.png'), fullPage: true })
-  await perfContext.close()
   pass('delivery gate')
 
   // -- the surfaces on their own, at every viewport ------------------------

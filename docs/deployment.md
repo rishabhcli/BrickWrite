@@ -118,7 +118,14 @@ this deployment shape:
   `hexclave` group in `vite.config.ts` must remain one chunk.
 - `tools/e2e/landing.mjs` holds the landing performance budget, including LCP.
   It preloads the display font exactly as `index.html` does, so the measurement
-  reflects what a first-time visitor gets.
+  reflects what a first-time visitor gets. Its CPU throttle is **calibrated, not
+  fixed**: `Emulation.setCPUThrottlingRate` scales the host, so a hard-coded
+  multiplier measures a different device on every machine — the same commit came
+  back 2348 ms locally and 2608 ms on a runner, against 150 ms of headroom. The
+  suite times a fixed workload unthrottled and picks the multiplier that reaches
+  a constant reference device, then reports the median of three loads with every
+  sample printed. If you change the budget, change it because the page changed,
+  not because a run was unlucky — the samples will tell you which it was.
 
 After a deploy, the four things worth checking by hand:
 
