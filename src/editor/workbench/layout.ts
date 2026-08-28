@@ -84,8 +84,8 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   palette: true,
   colors: true,
   selection: true,
-  transform: true,
-  inspector: true,
+  transform: false,
+  inspector: false,
   validate: false,
   // The quieter 300px inspector cannot hold Generate, Refine and the design
   // partner open at once. Headers stay visible; `workspace_reveal` (and a

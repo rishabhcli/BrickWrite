@@ -1198,7 +1198,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .swatches button svg { color: rgba(0, 0, 0, 0.55); }
 
 /* Transform Panel ----------------------------------------------------------- */
-.transform-panel { padding: 12px 14px 16px; display: grid; gap: 12px; min-width: 0; }
+.transform-panel { padding: 8px 10px 10px; display: grid; gap: 8px; min-width: 0; }
 .transform-panel > * { min-width: 0; }
 .transform-scope { display: grid; gap: 3px; }
 .transform-scope strong { font-size: 12px; font-weight: 700; color: var(--ink); }
@@ -1291,7 +1291,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .snap-empty { margin: 0; color: var(--muted); font-size: 9.5px; line-height: 1.5; }
 
 /* Selection Panel ----------------------------------------------------------- */
-.selection-panel { padding: 12px 14px 16px; display: grid; gap: 12px; }
+.selection-panel { padding: 8px 10px 10px; display: grid; gap: 8px; }
 .selection-summary strong { display: block; font-size: 12px; font-weight: 700; color: var(--ink); }
 .selection-summary small { display: block; margin-top: 3px; color: var(--muted); font-size: 9.5px; line-height: 1.5; }
 .selection-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }

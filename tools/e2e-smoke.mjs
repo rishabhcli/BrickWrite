@@ -1360,6 +1360,8 @@ try {
 
   // The inspector's validation report, which is also the last existing
   // assertion's target — proven reachable rather than assumed.
+  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'inspector' }))
+  await page.waitForFunction(() => document.querySelector('[data-section="inspector"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.locator('.validation-hero').waitFor({ timeout: 10_000 })
   await shot('state-validate')
@@ -1504,6 +1506,8 @@ try {
   // -- contrast -------------------------------------------------------------
   // Sampled on the text that carries meaning rather than blanket-scanned: the
   // status bar, the dock headers, the tool labels and the palette copy.
+  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'transform' }))
+  await page.waitForFunction(() => document.querySelector('.transform-action span'))
   const contrast = await page.evaluate(() => {
     const luminance = (rgb) => {
       const channel = (value) => {

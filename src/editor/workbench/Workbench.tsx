@@ -437,6 +437,20 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
               >
                 <TransformPanel workbench={workbench} />
               </DockSection>
+              <Slot
+                id="panel-right"
+                wrap={({ id, title, icon, content }) => (
+                  <DockSection
+                    id={id}
+                    title={title ?? id}
+                    icon={icon}
+                    open={sections[id] !== false}
+                    onToggle={() => toggleSection(id)}
+                  >
+                    {content}
+                  </DockSection>
+                )}
+              />
               <DockSection
                 id="inspector"
                 title="Inspector"
@@ -456,20 +470,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                   onSelectIds={(ids) => cadEngine.setSelection(ids)}
                 />
               </DockSection>
-              <Slot
-                id="panel-right"
-                wrap={({ id, title, icon, content }) => (
-                  <DockSection
-                    id={id}
-                    title={title ?? id}
-                    icon={icon}
-                    open={sections[id] !== false}
-                    onToggle={() => toggleSection(id)}
-                  >
-                    {content}
-                  </DockSection>
-                )}
-              />
             </div>
           </div>
         )}

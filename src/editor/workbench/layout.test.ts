@@ -144,6 +144,8 @@ describe('chrome', () => {
     expect(DEFAULT_SECTIONS['generation.panel']).toBe(false)
     expect(DEFAULT_SECTIONS['refinement.panel']).toBe(false)
     expect(DEFAULT_SECTIONS['agent.workbench']).toBe(false)
+    expect(DEFAULT_SECTIONS.transform).toBe(false)
+    expect(DEFAULT_SECTIONS.inspector).toBe(false)
     expect(defaultLayout().sections['generation.panel']).toBe(false)
   })
 })
