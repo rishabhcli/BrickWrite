@@ -295,8 +295,7 @@ export function CloudProjectsPanel({ api }: { api: CloudWorkbenchApi }) {
                 busy={busy === row.projectId}
                 confirming={confirming === row.projectId}
                 renaming={renaming?.id === row.projectId ? renaming.value : null}
-                claimable={cloudUsable}
-                claimBlockedReason={claimBlockedReason(configured, signedIn, api.online)}
+                claimBlockedReason={claimBlockedReason(configured, signedIn, api.online && snapshot.online)}
                 onOpen={() => openProject(row)}
                 onRenameStart={() => setRenaming({ id: row.projectId, value: row.name })}
                 onRenameChange={(value) => setRenaming({ id: row.projectId, value })}
@@ -432,7 +431,6 @@ function ProjectRow({
   busy,
   confirming,
   renaming,
-  claimable,
   claimBlockedReason: blocked,
   onOpen,
   onRenameStart,
@@ -449,7 +447,6 @@ function ProjectRow({
   busy: boolean
   confirming: boolean
   renaming: string | null
-  claimable: boolean
   claimBlockedReason: string | null
   onOpen: () => void
   onRenameStart: () => void
@@ -562,7 +559,7 @@ function ProjectRow({
               type="button"
               className="bw-cloud-btn"
               data-variant="primary"
-              disabled={busy || !claimable}
+              disabled={busy || blocked !== null}
               title={blocked ?? undefined}
               onClick={onClaim}
             >

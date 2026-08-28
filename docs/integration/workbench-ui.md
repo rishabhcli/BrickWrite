@@ -485,3 +485,10 @@ than no claim.
    here. Mouse and keyboard paths are.
 7. **The e2e navigates to `/editor`**, following the platform shell's routing. If
    that path changes, this run needs updating with it.
+8. **The acceptance run drives the Vite dev server**, so a file saved while it is
+   running triggers an HMR reload and kills the run mid-step. That is a property
+   of running it during concurrent editing, not of the editor: two failures seen
+   that way were a navigation mid-`evaluate` and a build-guide render exceeding
+   its budget under a load average of 17. Both passed unchanged on a quiet
+   repository. The build-guide budget was raised to 300 s for that reason; every
+   assertion about the guide's contents is unchanged.

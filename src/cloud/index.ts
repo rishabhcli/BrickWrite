@@ -185,3 +185,57 @@ export {
   useSyncState,
   type ProjectListState,
 } from './hooks'
+
+// ---------------------------------------------------------------------------
+// In-editor surfaces
+// ---------------------------------------------------------------------------
+//
+// The workstream's data model is above; this is how a person reaches it. Each
+// export is a zero-prop component that registers itself into a named workbench
+// slot, so `src/App.tsx` lists `CloudProjectsContribution` and nothing else in
+// the editor changes. See "In-editor surface" in
+// docs/integration/cloud-projects.md.
+
+export {
+  CloudProjectsContribution,
+  CloudProjectsPanelContribution,
+  CloudSyncStatusContribution,
+  CloudVersionHistoryContribution,
+} from './contributions'
+
+export {
+  CloudSyncProvider,
+  useCloudSync,
+  useOptionalCloudSync,
+  type CloudSyncProviderProps,
+} from './CloudSyncProvider'
+
+export {
+  CloudRuntime,
+  SIGNED_OUT_IDENTITY,
+  canReachCloud,
+  type CloudConfiguration,
+  type CloudConnection,
+  type CloudIdentity,
+  type CloudKernelBridge,
+  type CloudProjectRow,
+  type CloudRuntimeOptions,
+  type CloudRuntimeSnapshot,
+} from './runtime'
+
+export {
+  browserCloud,
+  browserCloudRuntime,
+  browserKernelBridge,
+  resetBrowserCloudRuntime,
+} from './browserRuntime'
+
+export { describeSync, type SyncReadout, type SyncReadoutInput } from './syncReadout'
+export { CloudProjectsPanel } from './ProjectsPanel'
+export { CloudSyncStatus, useProjectLinked, useSyncReadout } from './SyncStatus'
+export { CloudVersionHistory } from './VersionHistory'
+export {
+  VERSION_HISTORY_MODAL_ID,
+  type CloudWorkbenchApi,
+  type SurfaceNotice,
+} from './surface'

@@ -1,7 +1,7 @@
 import type { StorageDriver } from '../cad/persistence'
 import type { CadOperation, ModelDocument, Transaction } from '../cad/types'
 import { attachCloudSync, type CloudSyncHandle } from './attach'
-import type { AccessTokenSource, ConvexCloudResult } from './convexClient'
+import type { AccessTokenSource } from './convexClient'
 import type { CloudBackend } from './protocol'
 import { UNCONFIGURED_SYNC_STATE, type SyncState } from './outbox'
 import {
@@ -60,6 +60,23 @@ export const SIGNED_OUT_IDENTITY: CloudIdentity = {
 /** True only for an identity the deployment will authorise. */
 export const canReachCloud = (identity: CloudIdentity): identity is Extract<CloudIdentity, { status: 'signed-in' }> =>
   identity.status === 'signed-in'
+
+/**
+ * The part of `ConvexCloudResult` this runtime actually uses.
+ *
+ * Stated as its own type so a test can supply the in-process fake deployment
+ * without constructing a `ConvexClient` it would never call. `createConvexCloud`
+ * returns something assignable to this, which is checked where it is passed in.
+ */
+export type CloudConnection =
+  | {
+      status: 'ready'
+      url: string
+      backend: CloudBackend
+      setIdentity(source: AccessTokenSource | null): void
+      close(): Promise<void>
+    }
+  | { status: 'unconfigured'; reason: string }
 
 export interface CloudConfiguration {
   status: 'ready' | 'unconfigured'
@@ -127,7 +144,7 @@ export interface CloudRuntimeSnapshot {
 export interface CloudRuntimeOptions {
   kernel: CloudKernelBridge
   /** Constructed by the caller, so a test can supply a fake backend. */
-  cloud: ConvexCloudResult
+  cloud: CloudConnection
   autoDrainMs?: number
   /** Injected so a test can drive connectivity without touching `navigator`. */
   initialOnline?: boolean
@@ -147,7 +164,7 @@ export class CloudRuntime {
   private readonly links: ProjectLinks
   private readonly handle: CloudSyncHandle | null
   private readonly configuration: CloudConfiguration
-  private readonly cloud: ConvexCloudResult
+  private readonly cloud: CloudConnection
   private identity: CloudIdentity = SIGNED_OUT_IDENTITY
   private linksVersion = 0
   private sync: SyncState

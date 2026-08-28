@@ -847,7 +847,13 @@ try {
   const mpd = await readFile(await (await mpdPromise).path(), 'utf8')
   assert((mpd.match(/^0 FILE /gm) ?? []).length > 1, 'MPD export did not preserve subassembly file blocks')
 
-  const guidePromise = page.waitForEvent('download', { timeout: 120_000 })
+  // The build guide is rendered by a CPU rasteriser, one fixed-camera frame per
+  // step, so its budget is wall-clock on whatever machine is running it rather
+  // than a property of the code. Generous for the same reason the fork budget
+  // above is: a loaded shared runner is an order of magnitude slower than an
+  // idle laptop, and a real regression shows up as a failed assertion below
+  // rather than as a timeout here.
+  const guidePromise = page.waitForEvent('download', { timeout: 300_000 })
   await page.getByRole('button', { name: /Printable build guide/i }).click()
   const guide = await readFile(await (await guidePromise).path(), 'utf8')
   const guideSteps = (guide.match(/<section class="page step">/g) ?? []).length
