@@ -420,3 +420,68 @@ Beyond parity:
    does, and how to cancel.
 9. **Designed states** for empty, loading, invalid selection, unavailable part,
    offline, proposal review and first run.
+
+## 6. Acceptance gates and what proves them
+
+Command output is in the workstream report; this is where each gate is proved.
+
+| Gate | Proof | Result |
+|---|---|---|
+| Feature parity | §2 above, item by item | 0 capabilities dropped |
+| Component tests | `src/editor/workbench/*.test.ts(x)` — registry, layout, selection, shortcuts, panels | 128 tests |
+| Numeric vs gizmo equivalence | `transform.test.ts` — both paths funnel through `canonicalisePose`, compared with `canonicalTransform` | 21 tests |
+| `npm run test:e2e` | `tools/e2e-smoke.mjs` | `status: passed` |
+| find → place | keyboard-only: type, `↓`, `↵`, click viewport | +1 part, +1 revision |
+| mate via Connect | 3 stages, seeded source, reviewed preview, commit | `matedEdges: 1`, +1 revision, part count unchanged |
+| recolour | palette colour + Paint | `72 → 15` |
+| clone | Clone action | +1 part, +1 revision |
+| array | parameterised: 3 copies, Y axis, own size | +3 parts, +1 revision |
+| isolate | Isolate + status readout | `Isolated 3 of 40 parts`, revision unchanged |
+| numeric transform | typed X, read back, basis checked | field matches document, orthonormality error `0` |
+| undo | unwinds the whole workflow | back to the pre-workflow part count, revision monotonic |
+| Responsive | 1280×800, 1440×900, 1600×1000, 2560×1080 | no horizontal scroll, no region overflowing the shell, no control under 16 px, viewport ≥ 420×280 at every width |
+| Keyboard | Tab sweep + splitter arrow-key resize | 60 controls reached; dock resized 268 → 284 px from the keyboard |
+| Screen-reader labelling | every `button`, `input`, `select`, `textarea` in the mounted tree | 0 unnamed |
+| Focus trapping | Tab off the last control in the command palette | stays inside the dialog |
+| Focus restoration | open then close the palette | focus returns to the control that opened it |
+| Contrast | 10 sampled text roles | 4.71:1 – 14.72:1, all above their floor |
+| `prefers-reduced-motion` | computed transition duration | `0.15s` → `1e-05s` |
+| Visual regression | `artifacts/workbench/` | 17 states |
+
+### Visual-regression states
+
+`layout-1280x800`, `layout-1440x900`, `layout-1600x1000`, `layout-2560x1080`,
+`state-default`, `state-transform`, `state-palette-facets`, `state-connect`,
+`state-isolate`, `state-dock-collapsed`, `state-command-palette`,
+`state-keymap`, `state-keymap-conflict`, `state-validate`,
+`state-render-connections`, `state-render-exploded`, `state-timeline-history`.
+
+## 7. What is not proved here
+
+Stated plainly, because an unproved claim that reads like a proved one is worse
+than no claim.
+
+1. **Ghosting is capped at 150 parts.** It draws each part individually through
+   the renderer's ghost path, so beyond that it refuses and says to use hide or
+   isolate instead. The cap is a real limit, not a measured performance ceiling.
+2. **`localStorage` is unavailable under the unit-test runner** (jsdom in this
+   Node build). Every preference falls back to an in-memory mirror there, so the
+   *persistence across a reload* is proved only in the browser run, not in the
+   unit tests. The unit tests prove the round-trip through the same API.
+3. **Drag-and-drop from the palette into the viewport** is covered by a unit
+   test that asserts the drag payload, and by manual use. The drop itself replays
+   a pointer sequence on the canvas; the browser run exercises click-to-place,
+   not the synthesised drop.
+4. **The `connector` reference frame** uses the part's first compiled connector
+   when none is pinned. For a part whose connectors do not share an axis this is
+   a choice, not a derivation; the control says which frame it is using and
+   reports when a part has no compiled connectors at all.
+5. **Contrast is sampled on ten text roles**, not swept across every element.
+   Older decorative labels elsewhere in the sheet were not all re-measured; the
+   two shared tokens they draw from (`--muted`, `--faint`) were raised to 5.2:1
+   and 4.7:1 on the panel background.
+6. **Trackpad gestures** (pinch-zoom, two-finger orbit) are the renderer's
+   `OrbitControls`, unchanged by this workstream and not separately asserted
+   here. Mouse and keyboard paths are.
+7. **The e2e navigates to `/editor`**, following the platform shell's routing. If
+   that path changes, this run needs updating with it.

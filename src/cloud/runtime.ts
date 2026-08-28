@@ -1,7 +1,12 @@
 import type { StorageDriver } from '../cad/persistence'
 import type { CadOperation, ModelDocument, Transaction } from '../cad/types'
 import { attachCloudSync, type CloudSyncHandle } from './attach'
-import { createConvexCloud, hexclaveTokenSource, type ConvexCloudResult } from './convexClient'
+import {
+  createConvexCloud,
+  hexclaveTokenSource,
+  type AccessTokenSource,
+  type ConvexCloudResult,
+} from './convexClient'
 import { UNCONFIGURED_SYNC_STATE, type SyncState } from './outbox'
 import {
   LocalProjectStore,
@@ -120,6 +125,15 @@ export interface CloudRuntimeOptions {
   autoDrainMs?: number
   /** Injected so a test can drive connectivity without touching `navigator`. */
   initialOnline?: boolean
+  /**
+   * The access-token source for an identity, or null when it has none.
+   *
+   * Supplied by the composition root rather than derived here, because the
+   * token comes from the Hexclave client app and `src/cloud` deliberately does
+   * not import `src/hexclave`. Omitted entirely by tests using a fake backend,
+   * which authorises by identity rather than by bearer token.
+   */
+  tokenSourceFor?: (identity: CloudIdentity) => AccessTokenSource | null
 }
 
 export class CloudRuntime {
@@ -262,95 +276,3 @@ const sameIdentity = (a: CloudIdentity, b: CloudIdentity) =>
   a.status === b.status &&
   ('userId' in a ? a.userId : null) === ('userId' in b ? b.userId : null) &&
   a.reason === b.reason
-
-// ---------------------------------------------------------------------------
-// The browser runtime
-// ---------------------------------------------------------------------------
-
-let browser: CloudRuntime | null = null
-
-/**
- * The runtime the editor actually mounts, built once.
- *
- * A singleton because the things it wires are singletons: one CAD session, one
- * IndexedDB connection, one engine. Two runtimes would mean two outboxes over
- * one `meta` store, which is the race `session.driver` exists to prevent.
- *
- * Built lazily rather than at module scope so that importing `src/cloud` — for
- * a type, or for `diffDocuments` — does not construct a Convex client or open a
- * database.
- */
-export function browserCloudRuntime(overrides: Partial<CloudRuntimeOptions> = {}): CloudRuntime {
-  if (!browser) {
-    browser = new CloudRuntime({
-      kernel: overrides.kernel ?? browserKernelBridge(),
-      cloud: overrides.cloud ?? browserCloud(),
-      autoDrainMs: overrides.autoDrainMs,
-      initialOnline: overrides.initialOnline,
-    })
-  }
-  return browser
-}
-
-/** Drops the singleton. Tests use this; the application has no reason to. */
-export function resetBrowserCloudRuntime(): void {
-  browser?.dispose()
-  browser = null
-}
-
-/**
- * The Convex client for this browser, with the Hexclave token source attached.
- *
- * The account layer is optional in several supported ways of running
- * Brickwright, so its absence downgrades the cloud to "signed out" rather than
- * to "broken": the client is still constructed and still reports its URL, and
- * every call it makes answers `UNAUTHENTICATED` with a reason until somebody
- * signs in.
- */
-function browserCloud(): ConvexCloudResult {
-  return createConvexCloud({ tokenSource: hexclaveTokenSourceOrNull() ?? undefined })
-}
-
-function hexclaveTokenSourceOrNull() {
-  // Imported lazily through a dynamic require-shaped indirection would be
-  // worse: this module is only reached from the editor, where the account layer
-  // is already resolved. A failure here is reported, never thrown.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getHexclaveClientApp } = hexclaveModule()
-    const app = getHexclaveClientApp()
-    return app.status === 'ok' ? hexclaveTokenSource(app.data) : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Indirection so the import is expressed once and can be stubbed in a test.
- *
- * `src/cloud` never imports `src/hexclave` for types — `hexclaveTokenSource` is
- * structurally typed — but the browser wiring has to name the module somewhere,
- * and here is the one place.
- */
-let hexclaveModule: () => { getHexclaveClientApp: () => { status: 'ok'; data: { getAccessToken: () => Promise<string | null> } } | { status: 'error'; error: Error } } = () => {
-  throw new Error('The Hexclave module has not been installed into the cloud runtime.')
-}
-
-/** Installs the account module. Called by `src/cloud/CloudSyncProvider.tsx`. */
-export function installHexclaveModule(loader: typeof hexclaveModule): void {
-  hexclaveModule = loader
-}
-
-let kernelBridgeFactory: (() => CloudKernelBridge) | null = null
-
-/** Installs the kernel bridge factory. Called by `src/cloud/CloudSyncProvider.tsx`. */
-export function installKernelBridge(factory: () => CloudKernelBridge): void {
-  kernelBridgeFactory = factory
-}
-
-function browserKernelBridge(): CloudKernelBridge {
-  if (!kernelBridgeFactory) {
-    throw new Error('No kernel bridge is installed; mount <CloudSyncProvider /> before using the cloud runtime.')
-  }
-  return kernelBridgeFactory()
-}
