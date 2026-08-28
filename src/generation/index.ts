@@ -161,3 +161,42 @@ export {
   type GenerationEventName,
   type GenerationWireEvent,
 } from './provider'
+
+/**
+ * The in-editor surface.
+ *
+ * `GeneratePanelContribution` is the only thing `src/App.tsx` needs: it registers
+ * the dock panel, the status-bar readout and the candidate comparison dialog
+ * into the workbench extension registry and withdraws all three on unmount.
+ */
+export { GeneratePanelContribution } from './contribution'
+export { GeneratePanel, useGenerateState, COMPARE_MODAL_ID } from './GeneratePanel'
+export { GenerationStatus } from './GenerationStatus'
+export { CompareDialog } from './CompareDialog'
+export { BriefEditor } from './BriefEditor'
+export {
+  CANDIDATE_METRICS,
+  currentTick,
+  generationBusFor,
+  GenerationSession,
+  HEADLINE_METRIC_KEYS,
+  phaseProgress,
+  producedNothing,
+  selectedCandidate,
+  unresolvedConflicts,
+  type BriefCompile,
+  type BriefPhase,
+  type BriefRunner,
+  type CandidateMetricRow,
+  type ConflictChoice,
+  type GenerateOutcome,
+  type GenerateState,
+  type GenerationGhostBus,
+  type GenerationRunInput,
+  type GenerationRunner,
+  type GenerationSessionOptions,
+  type GhostReview,
+  type PhaseTick,
+  type ProviderIssue,
+  type RunPhase,
+} from './session'

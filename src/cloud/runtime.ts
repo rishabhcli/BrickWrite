@@ -167,6 +167,8 @@ export class CloudRuntime {
   private readonly cloud: CloudConnection
   private identity: CloudIdentity = SIGNED_OUT_IDENTITY
   private linksVersion = 0
+  private started = 0
+  private stopListening: (() => void) | null = null
   private sync: SyncState
   private online: boolean
   private snapshot: CloudRuntimeSnapshot
@@ -205,23 +207,40 @@ export class CloudRuntime {
    * Starts the parts of the runtime that touch the browser.
    *
    * Split out of the constructor so a test can construct a runtime without
-   * installing window listeners, and so React's StrictMode double-mount adds
-   * and removes them in pairs.
+   * installing window listeners. Reference counted, because several surfaces
+   * share one runtime and React's StrictMode mounts each of them twice: one set
+   * of connectivity listeners is correct, six is a bug that only shows up as a
+   * stutter when the network flaps.
    */
   start(): () => void {
     if (typeof window === 'undefined') return () => {}
-    const goOnline = () => {
-      this.publish({ online: true })
-      // A reconnect is new information, so the queue stops sitting out its
-      // backoff window. `reconnected()` republishes through the subscription.
-      void this.handle?.reconnected()
+    this.started += 1
+    if (this.started === 1) {
+      const goOnline = () => {
+        this.publish({ online: true })
+        // A reconnect is new information, so the queue stops sitting out its
+        // backoff window. `reconnected()` republishes through the subscription.
+        void this.handle?.reconnected()
+      }
+      const goOffline = () => this.publish({ online: false })
+      window.addEventListener('online', goOnline)
+      window.addEventListener('offline', goOffline)
+      this.stopListening = () => {
+        window.removeEventListener('online', goOnline)
+        window.removeEventListener('offline', goOffline)
+      }
+      // The browser may have gone offline between construction and mount.
+      if (navigator.onLine !== this.online) this.publish({ online: navigator.onLine })
     }
-    const goOffline = () => this.publish({ online: false })
-    window.addEventListener('online', goOnline)
-    window.addEventListener('offline', goOffline)
+    let released = false
     return () => {
-      window.removeEventListener('online', goOnline)
-      window.removeEventListener('offline', goOffline)
+      if (released) return
+      released = true
+      this.started -= 1
+      if (this.started === 0) {
+        this.stopListening?.()
+        this.stopListening = null
+      }
     }
   }
 
@@ -306,6 +325,9 @@ export class CloudRuntime {
   }
 
   dispose(): void {
+    this.stopListening?.()
+    this.stopListening = null
+    this.started = 0
     for (const stop of this.teardown.splice(0)) stop()
     if (this.cloud.status === 'ready') void this.cloud.close()
   }

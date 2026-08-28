@@ -158,7 +158,7 @@ export function makeUiHarness(options: UiHarnessOptions = {}): UiHarness {
 /** Wraps a surface in the provider with the account probe switched off. */
 export function withRuntime(runtime: CloudRuntime, children: ReactNode) {
   return (
-    <CloudSyncProvider runtime={runtime} resolveIdentity={false}>
+    <CloudSyncProvider runtime={runtime} lifecycle={false}>
       {children}
     </CloudSyncProvider>
   )

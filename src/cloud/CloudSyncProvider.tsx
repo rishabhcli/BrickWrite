@@ -46,13 +46,21 @@ export interface CloudSyncProviderProps {
   children?: ReactNode
   /** Supplied by tests; the application uses the browser singleton. */
   runtime?: CloudRuntime
-  /** Set false to skip the account-layer probe, for tests that drive identity directly. */
-  resolveIdentity?: boolean
+  /**
+   * Whether this provider owns the runtime's browser lifetime.
+   *
+   * The shell renders a slot's content where the slot lives, not where the
+   * contribution was declared, so each surface has to re-provide the runtime
+   * around whatever it renders. Exactly one of those providers should install
+   * the connectivity listeners and probe the account layer; the rest are pure
+   * context and pass `lifecycle={false}`.
+   */
+  lifecycle?: boolean
 }
 
-export function CloudSyncProvider({ children, runtime, resolveIdentity = true }: CloudSyncProviderProps) {
+export function CloudSyncProvider({ children, runtime, lifecycle = true }: CloudSyncProviderProps) {
   const resolved = useMemo(() => runtime ?? browserCloudRuntime(), [runtime])
-  useEffect(() => resolved.start(), [resolved])
+  useEffect(() => (lifecycle ? resolved.start() : undefined), [resolved, lifecycle])
 
   const snapshot = useSyncExternalStore(
     resolved.subscribe,
@@ -66,7 +74,7 @@ export function CloudSyncProvider({ children, runtime, resolveIdentity = true }:
 
   return (
     <CloudSyncContext.Provider value={value}>
-      {resolveIdentity && <CloudIdentityBridge runtime={resolved} />}
+      {lifecycle && <CloudIdentityBridge runtime={resolved} />}
       {children}
     </CloudSyncContext.Provider>
   )
