@@ -1,0 +1,33 @@
+{
+  /*
+   * The Convex deployment's own TypeScript project.
+   *
+   * `npx convex dev` writes this file and uses it to typecheck the functions
+   * before pushing them, so it is deliberately separate from `tsconfig.app.json`
+   * and `tsconfig.node.json`: these modules run in the Convex runtime, not in
+   * the browser and not in Node, and `src/` must never be compiled with the
+   * settings below.
+   *
+   * `types: ["node"]` supplies `process.env`, which `auth.config.ts` and the
+   * invitation delivery action read. The Convex runtime exposes `process.env`
+   * for deployment environment variables; no other Node API is used, and none
+   * would run there.
+   */
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ESNext",
+    "lib": ["ES2023", "dom", "ESNext.Array"],
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*"],
+  "exclude": ["./_generated"]
+}

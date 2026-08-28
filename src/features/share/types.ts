@@ -151,7 +151,12 @@ export interface PublicationSummary {
   partCount: number
   uniquePartCount: number
   stepCount: number
-  /** Envelope in studs, [width, height, depth], rounded to 0.1. */
+  /**
+   * Measured envelope, rounded to 0.1: `[width in studs, height in plates,
+   * depth in studs]`. Same convention as `PartDimensions.studs`, because a
+   * brick's height is quoted in plates by every builder who has ever counted
+   * one.
+   */
   envelopeStuds: [number, number, number]
   boundsLdu: Bounds
   bom: PublicationBomLine[]

@@ -230,6 +230,19 @@ export function exposedStudPlane(part: PartInstance): number | null {
   return surfaceAbove(catalog.get(part.definitionId), part.transform.position[1])
 }
 
+/**
+ * The plane something resting on this part would sit on.
+ *
+ * Not `bounds.min[1]`: a brick's minimum Y is the top of its *studs*, four LDU
+ * above the face the next brick's underside actually meets. Using the bounding
+ * box here would make every stacked pair look four LDU apart and every course
+ * look like a separate island. The stud plane is read from the part's own
+ * connectors; a studless element has none, and then the box top is the face.
+ */
+export function topPlaneOf(part: PartInstance): number {
+  return exposedStudPlane(part) ?? getPartBounds(part).min[1]
+}
+
 export interface StepEdge {
   readonly lowerPartId: string
   readonly upperPartId: string | null
@@ -254,7 +267,7 @@ export function findStepEdges(document: ModelDocument, partIds?: Iterable<string
 
   for (const lower of all) {
     if (!subject.has(lower.part.id)) continue
-    const topY = lower.bounds.min[1]
+    const topY = topPlaneOf(lower.part)
     const above = all.filter(
       (other) =>
         other.part.id !== lower.part.id &&

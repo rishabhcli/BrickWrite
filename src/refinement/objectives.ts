@@ -2,7 +2,7 @@ import { catalog, STUD_LDU } from '../cad/catalog'
 import { computeBuildOrder } from '../cad/instructions'
 import type { ModelDocument } from '../cad/types'
 import { analysePalette, analyseSymmetry, rarityOf } from './analyse'
-import { silhouetteOf, stackedSeamsOf, staticsOf, weakAttachmentsOf } from './cache'
+import { freeStudsOf, silhouetteOf, stackedSeamsOf, staticsOf, stepEdgesOf, weakAttachmentsOf } from './cache'
 import { boundsOfParts, silhouetteIou } from './silhouette'
 import { countSeams, extractRows } from './topology'
 import { OBJECTIVE_IDS, type MetricVector, type ObjectiveId, type RefinementScope } from './types'
@@ -249,6 +249,38 @@ export const OBJECTIVES: Record<ObjectiveId, ObjectiveDefinition> = {
         excess += Math.max(0, overhang.grams - overhang.capacityGrams)
       }
       return excess
+    },
+  },
+
+  steppedEdges: {
+    id: 'steppedEdges',
+    label: 'Stepped edges',
+    direction: 'lower-is-better',
+    unit: 'exposed treads',
+    scale: 1,
+    defaultWeight: 0.5,
+    description:
+      'Outside faces where a part\'s top is left uncovered by at least a stud — the staircase a slope or a '
+      + 'curved element closes. Measured from compiled bounds, so a chamfer is not counted as a step.',
+    measure: (document, scope) => {
+      const region = new Set(regionPartIds(document, scope))
+      return stepEdgesOf(document).filter((step) => region.has(step.lowerPartId) && step.treadStuds >= 0.9).length
+    },
+  },
+
+  exposedStuds: {
+    id: 'exposedStuds',
+    label: 'Bare studs',
+    direction: 'lower-is-better',
+    unit: 'studs',
+    scale: 4,
+    defaultWeight: 0.25,
+    description:
+      'Upward-facing studs on top of the region that carry nothing. This is the surface-finish axis: tiling a '
+      + 'deck, greebling a hull and capping a wall all reduce it, and none of them should move the outline.',
+    measure: (document, scope) => {
+      const region = new Set(regionPartIds(document, scope))
+      return freeStudsOf(document).filter((stud) => region.has(stud.partId)).length
     },
   },
 }

@@ -1,18 +1,39 @@
 import { ContactShadows, GizmoHelper, GizmoViewport, Grid, OrbitControls, OrthographicCamera, PerspectiveCamera, TransformControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { catalog, STUD_LDU } from '../cad/catalog'
+import type { ArticulatedJoint } from '../cad/articulation'
+import { catalog } from '../cad/catalog'
 import { getPartBounds, snapTransformPosition } from '../cad/geometry'
-import { canonicalTransform, orthonormalize } from '../cad/math'
+import { canonicalTransform } from '../cad/math'
 import { resolvePlacement, type PlacementRequest } from '../cad/placement'
 import { bestSnapTransform, getWorldConnectors } from '../cad/snapping'
 import type { Bounds, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
 import { validateDocument } from '../cad/validation'
 import { EDGE_RENDER_BUDGET, INDIVIDUAL_SELECTION_LIMIT, PartBatch, planBatches, type BatchMember } from './PartBatch'
-import { createStudioEnvironment } from './environment'
-import { PartVisual, type PartAppearance } from './PartVisual'
+import { createStudioEnvironment, type EnvironmentName } from './environment'
+import { PartVisual, setTransmissionEnabled, TRANSMISSION_DRAW_BUDGET, type PartAppearance } from './PartVisual'
+import { BlockingMarker, JointManipulators, SectionManipulators } from './render/Manipulators'
+import { canvasPointOf, ViewportControls, type OverlayState, type ViewportControlsHandle } from './render/ViewportControls'
+import type { RendererControlSurface } from './render/controlSurface'
+import {
+  documentTransformOf,
+  lduToScene,
+  MODEL_ROOT_ROTATION,
+  MODEL_ROOT_SCALE,
+  ROOT_MATRIX,
+  ROOT_MATRIX_INVERSE,
+  sceneMatrix,
+  sceneToLdu,
+} from './render/frame'
+import { registerPickable, unregisterPickable } from './render/idPass'
+import { PickRegistry } from './render/ids'
+import { MotionController, MOTION_DURATIONS, playbackStepAt, staggeredProgress, turntableAngle } from './render/motion'
+import { QUALITY_TIERS, type QualityTier } from './render/quality'
+import type { SectionPlane } from './render/sectionPlanes'
+import type { SweepResult } from './render/sweep'
+import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
 
 export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
 export type CameraView = 'isometric' | 'front' | 'rear' | 'left' | 'right' | 'top'
@@ -20,79 +41,56 @@ export type RenderMode = 'beauty' | 'orthographic' | 'silhouette' | 'connections
 export type { PlacementRequest }
 
 /**
- * The CAD document is stored in LDraw's own frame: LDU units, Y increasing
- * downward. Rather than converting every value, the whole model hangs off one
- * root node that rotates 180° about X and scales LDU into scene units. Children
- * therefore use raw document coordinates.
- */
-const MODEL_ROOT_ROTATION: [number, number, number] = [Math.PI, 0, 0]
-const MODEL_ROOT_SCALE = 1 / STUD_LDU
-
-/**
- * The model root's own matrix, and its inverse.
+ * The frame conversion, the pick registry, the motion policy and the control
+ * surface all live under `./render`. What remains here is the scene itself: what
+ * is drawn, in what pose, with which materials.
  *
- * Anything that has to live *outside* the root — the transform gizmo, most
- * importantly — needs both: the forward matrix to follow a document pose in
- * scene space, and the inverse to read a scene pose back as document truth.
+ * The document is stored in LDraw's own frame — LDU units, **+Y downward** — and
+ * the whole model hangs off one root node that rotates 180° about X and scales
+ * LDU into scene units, so children use raw document coordinates. See
+ * `render/frame.ts` for the matrices and every conversion that uses them.
  */
-const ROOT_MATRIX = new THREE.Matrix4()
-  .makeRotationX(MODEL_ROOT_ROTATION[0])
-  .multiply(new THREE.Matrix4().makeScale(MODEL_ROOT_SCALE, MODEL_ROOT_SCALE, MODEL_ROOT_SCALE))
-const ROOT_MATRIX_INVERSE = ROOT_MATRIX.clone().invert()
-
-/** Maps a document-space point into scene space for cameras and overlays. */
-const lduToScene = (point: Vec3): THREE.Vector3 =>
-  new THREE.Vector3(point[0] * MODEL_ROOT_SCALE, -point[1] * MODEL_ROOT_SCALE, -point[2] * MODEL_ROOT_SCALE)
-
-/** Maps a scene-space point back into document coordinates. */
-const sceneToLdu = (point: THREE.Vector3): Vec3 => {
-  const local = point.clone().applyMatrix4(ROOT_MATRIX_INVERSE)
-  return [local.x, local.y, local.z]
-}
-
-/**
- * Builds the scene matrix for a document transform.
- *
- * The document holds a row-major LDraw basis; three.js wants column-major, and
- * `Matrix4.set` takes row-major arguments, so the basis columns are passed as
- * the matrix's rows' first three entries in the order three.js expects.
- */
-function sceneMatrix(transform: Transform): THREE.Matrix4 {
-  const b = transform.basis
-  const [x, y, z] = transform.position
-  return new THREE.Matrix4().set(
-    b[0], b[1], b[2], x,
-    b[3], b[4], b[5], y,
-    b[6], b[7], b[8], z,
-    0, 0, 0, 1,
-  )
-}
-
-/** Reads a document transform out of a matrix already expressed in document space. */
-function documentTransformOf(matrix: THREE.Matrix4): Transform {
-  const m = matrix.elements
-  // three.js stores column-major, so element (row, col) is elements[col * 4 + row].
-  return {
-    position: [m[12], m[13], m[14]],
-    basis: orthonormalize([m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]]),
-  }
-}
 
 interface PartObjectProps {
   part: PartInstance
   appearance: PartAppearance
   displayTransform?: Transform
   interactive: boolean
+  idBase?: number
+  fade?: number
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
 }
 
-function PartObject({ part, appearance, displayTransform, interactive, onSelect }: PartObjectProps) {
+function PartObject({ part, appearance, displayTransform, interactive, idBase, fade = 1, onSelect }: PartObjectProps) {
   const definition = catalog.get(part.definitionId)
+  const group = useRef<THREE.Group>(null)
+
+  // Individually drawn parts join the identity pass exactly like batches do.
+  // The layer has to go on the drawn mesh rather than the group: three tests
+  // layers per renderable object, and a group is not one.
+  useLayoutEffect(() => {
+    const node = group.current
+    if (!node) return
+    const meshes: THREE.Object3D[] = []
+    node.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) meshes.push(child)
+    })
+    if (idBase === undefined) {
+      for (const mesh of meshes) unregisterPickable(mesh)
+      return
+    }
+    for (const mesh of meshes) registerPickable(mesh, idBase)
+    return () => {
+      for (const mesh of meshes) unregisterPickable(mesh)
+    }
+  }, [idBase, definition, appearance])
+
   if (!definition) return null
 
   const rendered = displayTransform ?? part.transform
   return (
     <group
+      ref={group}
       matrixAutoUpdate={false}
       matrix={sceneMatrix(rendered)}
       userData={{ partId: part.id }}
@@ -107,7 +105,7 @@ function PartObject({ part, appearance, displayTransform, interactive, onSelect 
         onSelect(part.id, false, true)
       }}
     >
-      <PartVisual definition={definition} colorCode={part.color} appearance={appearance} />
+      <PartVisual definition={definition} colorCode={part.color} appearance={appearance} fade={fade} />
     </group>
   )
 }
@@ -367,124 +365,24 @@ export interface MarqueeRect {
 }
 
 /**
- * Shift-drag box selection.
+ * The proposal reveal.
  *
- * Clicking one brick at a time is the only selection a large model does not
- * support, so the editor needed a region select. Shift is the modifier because
- * shift-click already means "add to the selection", and a shift-drag reads as
- * the same instruction over an area. `OrbitControls` claims shift-drag for
- * panning, so it is disabled for exactly the duration of the drag and restored
- * afterwards, including when the pointer is released outside the canvas.
+ * A proposal that appears fully formed gives no clue which parts it added,
+ * which is the one thing the operator has to judge before accepting it. Parts
+ * are therefore revealed in a wave — deterministic, bounded, and instantly
+ * complete under reduced motion or during a capture, because a half-revealed
+ * proposal in a screenshot would be a picture of a document state that does not
+ * exist.
  */
-function MarqueeController({
-  model,
-  onRect,
-  onSelect,
+function GhostProposal({
+  proposal,
+  current,
+  revealed,
 }: {
-  model: ModelDocument
-  onRect: (rect: MarqueeRect | null) => void
-  onSelect: (partIds: string[], additive: boolean) => void
+  proposal: Proposal
+  current: ModelDocument
+  revealed: number
 }) {
-  const { camera, gl, size, controls } = useThree()
-
-  useEffect(() => {
-    const element = gl.domElement
-    let start: { x: number; y: number } | null = null
-    let restore: boolean | null = null
-
-    const rectOf = (x: number, y: number): MarqueeRect => ({
-      left: Math.min(start!.x, x),
-      top: Math.min(start!.y, y),
-      width: Math.abs(x - start!.x),
-      height: Math.abs(y - start!.y),
-    })
-
-    const local = (event: PointerEvent) => {
-      const bounds = element.getBoundingClientRect()
-      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
-    }
-
-    const onDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !event.shiftKey) return
-      start = local(event)
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && typeof orbit.enabled === 'boolean') {
-        restore = orbit.enabled
-        orbit.enabled = false
-      }
-      onRect({ left: start.x, top: start.y, width: 0, height: 0 })
-    }
-
-    const onMove = (event: PointerEvent) => {
-      if (!start) return
-      const point = local(event)
-      onRect(rectOf(point.x, point.y))
-    }
-
-    const finish = (event: PointerEvent) => {
-      if (!start) return
-      const point = local(event)
-      const rect = rectOf(point.x, point.y)
-      start = null
-      onRect(null)
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && restore !== null) orbit.enabled = restore
-      restore = null
-
-      // A shift-click that never became a drag is a click, and the part under
-      // the cursor already handled it.
-      if (rect.width < 4 && rect.height < 4) return
-
-      const inside: string[] = []
-      const centre = new THREE.Vector3()
-      for (const part of Object.values(model.parts)) {
-        const bounds = getPartBounds(part)
-        centre.copy(
-          lduToScene([
-            (bounds.min[0] + bounds.max[0]) / 2,
-            (bounds.min[1] + bounds.max[1]) / 2,
-            (bounds.min[2] + bounds.max[2]) / 2,
-          ]),
-        )
-        const projected = centre.project(camera)
-        // Behind the camera projects to a mirrored point that would otherwise
-        // land inside the rectangle.
-        if (projected.z > 1) continue
-        const x = ((projected.x + 1) / 2) * size.width
-        const y = ((1 - projected.y) / 2) * size.height
-        if (x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height) {
-          inside.push(part.id)
-        }
-      }
-      onSelect(inside, true)
-    }
-
-    const onCancel = () => {
-      if (!start) return
-      start = null
-      onRect(null)
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && restore !== null) orbit.enabled = restore
-      restore = null
-    }
-
-    element.addEventListener('pointerdown', onDown)
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', finish)
-    window.addEventListener('pointercancel', onCancel)
-    return () => {
-      element.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', finish)
-      window.removeEventListener('pointercancel', onCancel)
-      onCancel()
-    }
-  }, [camera, controls, gl, model, onRect, onSelect, size.height, size.width])
-
-  return null
-}
-
-function GhostProposal({ proposal, current }: { proposal: Proposal; current: ModelDocument }) {
   const added = Object.values(proposal.previewDocument.parts).filter((part) => {
     const original = current.parts[part.id]
     return (
@@ -497,7 +395,7 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
 
   return (
     <group>
-      {added.map((part) => {
+      {added.slice(0, revealed).map((part) => {
         const definition = catalog.get(part.definitionId)
         if (!definition) return null
         return (
@@ -519,6 +417,83 @@ function GhostProposal({ proposal, current }: { proposal: Proposal; current: Mod
   )
 }
 
+/**
+ * Advances the timed animations.
+ *
+ * All of them are driven from one place, off one clock, so "settled" is a single
+ * question with a single answer. Anything that animated on its own schedule
+ * would be one more thing a capture could catch mid-flight.
+ */
+function AnimationDriver({
+  motion,
+  proposalPartCount,
+  turntable,
+  playback,
+  stepCount,
+  onReveal,
+  onPlayback,
+}: {
+  motion: MotionController
+  proposalPartCount: number
+  turntable: boolean
+  playback: boolean
+  stepCount: number
+  onReveal: (count: number) => void
+  onPlayback: (step: number) => void
+}) {
+  const { camera, controls } = useThree()
+  const startedAt = useRef(performance.now())
+  const lastReveal = useRef(-1)
+  const lastStep = useRef(-1)
+
+  useEffect(() => {
+    startedAt.current = performance.now()
+    lastReveal.current = -1
+    lastStep.current = -1
+  }, [proposalPartCount, playback])
+
+  useFrame(() => {
+    const animated = motion.policy.animated
+    const elapsed = performance.now() - startedAt.current
+
+    if (proposalPartCount > 0) {
+      let revealed = proposalPartCount
+      if (animated) {
+        revealed = 0
+        for (let index = 0; index < proposalPartCount; index += 1) {
+          if (staggeredProgress(index, proposalPartCount, elapsed) > 0) revealed = index + 1
+        }
+      }
+      if (revealed !== lastReveal.current) {
+        lastReveal.current = revealed
+        onReveal(revealed)
+      }
+    } else if (lastReveal.current !== 0) {
+      lastReveal.current = 0
+      onReveal(0)
+    }
+
+    if (playback && stepCount > 0) {
+      const step = animated ? playbackStepAt(elapsed, stepCount) : stepCount - 1
+      if (step !== lastStep.current) {
+        lastStep.current = step
+        onPlayback(step)
+      }
+    }
+
+    if (turntable && animated) {
+      const target = (controls as { target?: THREE.Vector3 } | null)?.target ?? new THREE.Vector3()
+      const offset = camera.position.clone().sub(target)
+      const radius = Math.hypot(offset.x, offset.z)
+      const angle = turntableAngle(elapsed)
+      camera.position.set(target.x + Math.cos(angle) * radius, camera.position.y, target.z + Math.sin(angle) * radius)
+      camera.lookAt(target)
+    }
+  })
+
+  return null
+}
+
 function CameraRig({
   bounds,
   documentId,
@@ -526,6 +501,7 @@ function CameraRig({
   exploded,
   view,
   resetKey,
+  motion,
 }: {
   /** Bounds of what is actually drawn, which in exploded view is not the stored model. */
   bounds: Bounds
@@ -535,6 +511,7 @@ function CameraRig({
   exploded: boolean
   view: CameraView
   resetKey: number
+  motion: MotionController
 }) {
   const controls = useRef<OrbitControlsImpl>(null)
   // The camera comes from the R3F store rather than the controls ref: the ref is
@@ -550,6 +527,39 @@ function CameraRig({
   const latest = useRef({ bounds, width: size.width, height: size.height })
   latest.current = { bounds, width: size.width, height: size.height }
   const framed = useRef(false)
+
+  /**
+   * An in-flight camera flight, or null.
+   *
+   * A named view or a framing reset eases rather than cutting, because a cut
+   * costs the operator the relationship between where they were and where they
+   * are — on a large model that is genuinely disorienting. Under reduced motion
+   * or during a capture the flight has zero duration, which lands on exactly the
+   * same pose without any intermediate frame.
+   */
+  const flight = useRef<{
+    from: THREE.Vector3
+    to: THREE.Vector3
+    fromTarget: THREE.Vector3
+    toTarget: THREE.Vector3
+    startedAt: number
+    durationMs: number
+  } | null>(null)
+
+  useFrame(() => {
+    const current = flight.current
+    if (!current) return
+    const t = current.durationMs > 0 ? Math.min(1, (performance.now() - current.startedAt) / current.durationMs) : 1
+    const eased = 1 - (1 - t) ** 3
+    camera.position.lerpVectors(current.from, current.to, eased)
+    const target = new THREE.Vector3().lerpVectors(current.fromTarget, current.toTarget, eased)
+    camera.lookAt(target)
+    if (controls.current) {
+      controls.current.target.copy(target)
+      controls.current.update()
+    }
+    if (t >= 1) flight.current = null
+  })
 
   useEffect(() => {
     const { bounds: current, width, height } = latest.current
@@ -568,16 +578,30 @@ function CameraRig({
       right: new THREE.Vector3(1, 0.25, 0),
       top: new THREE.Vector3(0, 1, 0.001),
     }
-    camera.position.copy(center.clone().add(directions[view].normalize().multiplyScalar(distance)))
-    camera.lookAt(center)
+    const destination = center.clone().add(directions[view].normalize().multiplyScalar(distance))
+    const duration = framed.current ? motion.duration('camera') : 0
+    if (duration > 0) {
+      flight.current = {
+        from: camera.position.clone(),
+        to: destination,
+        fromTarget: controls.current?.target.clone() ?? center.clone(),
+        toTarget: center.clone(),
+        startedAt: performance.now(),
+        durationMs: duration,
+      }
+    } else {
+      flight.current = null
+      camera.position.copy(destination)
+      camera.lookAt(center)
+      if (controls.current) {
+        controls.current.target.copy(center)
+        controls.current.update()
+      }
+    }
     if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
       ;(camera as THREE.OrthographicCamera).zoom = Math.max(8, Math.min(width, height) / (extent * 1.9))
     }
     camera.updateProjectionMatrix()
-    if (controls.current) {
-      controls.current.target.copy(center)
-      controls.current.update()
-    }
     // An empty document has nothing to frame yet, so the opening frame is still
     // owed once its parts arrive.
     framed.current = hasParts
@@ -612,6 +636,16 @@ function CameraRig({
   return <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={3} maxDistance={400} />
 }
 
+/** Optional animation channels. Every one settles deterministically. */
+export interface ViewportAnimation {
+  /** Reveal a pending proposal's parts as a wave. Defaults to on. */
+  readonly proposalReveal?: boolean
+  /** Rotate the camera continuously, for a presentation view. */
+  readonly turntable?: boolean
+  /** Step through the build sequence, revealing parts as they are placed. */
+  readonly instructionPlayback?: boolean
+}
+
 interface CadViewportProps {
   document: ModelDocument
   selection: string[]
@@ -630,6 +664,26 @@ interface CadViewportProps {
   onTransform: (partId: string, transform: Transform) => void
   onPlace?: (transform: Transform) => void
   onCanvasReady?: (canvas: HTMLCanvasElement) => void
+
+  // -- optional renderer capabilities, all defaulting to the previous behaviour
+  /** Isolation, ghosting and explicit hiding. Uncontrolled when omitted. */
+  visibility?: VisibilityState
+  onVisibilityChange?: (next: VisibilityState) => void
+  /** Clipping and section planes, in document space. Uncontrolled when omitted. */
+  sectionPlanes?: readonly SectionPlane[]
+  onSectionPlanesChange?: (next: readonly SectionPlane[]) => void
+  environment?: EnvironmentName
+  /** Overrides `prefers-reduced-motion`; null returns control to the preference. */
+  reducedMotion?: boolean | null
+  animation?: ViewportAnimation
+  /** A fixed quality tier index, or `auto` to govern from measured frame time. */
+  quality?: number | 'auto'
+  /** Receives the imperative control surface once the renderer is live. */
+  onRendererReady?: (surface: RendererControlSurface) => void
+  /** Live swept-collision result during a joint drag. */
+  onSweep?: (result: SweepResult | null) => void
+  /** Articulated joints available for the current selection. */
+  onJoints?: (joints: readonly ArticulatedJoint[]) => void
 }
 
 export function CadViewport({
@@ -648,6 +702,17 @@ export function CadViewport({
   onTransform,
   onPlace,
   onCanvasReady,
+  visibility: visibilityProp,
+  onVisibilityChange,
+  sectionPlanes: sectionPlanesProp,
+  onSectionPlanesChange,
+  environment = 'studio',
+  reducedMotion = null,
+  animation,
+  quality = 'auto',
+  onRendererReady,
+  onSweep,
+  onJoints,
 }: CadViewportProps) {
   const validation = useMemo(() => validateDocument(document), [document])
   const invalidIds = useMemo(
@@ -661,27 +726,90 @@ export function CadViewport({
   /** Pose being dragged right now, shown live instead of waiting for the commit. */
   const [dragPreview, setDragPreview] = useState<Transform | null>(null)
   const [placementPreview, setPlacementPreview] = useState<Transform | null>(null)
-  const [marquee, setMarquee] = useState<MarqueeRect | null>(null)
+  const [overlay, setOverlay] = useState<OverlayState>({ marquee: null, lasso: null, sweep: null })
+  const [jointPreview, setJointPreview] = useState<Map<string, Transform> | null>(null)
+  const [activeJointEdge, setActiveJointEdge] = useState<string | null>(null)
+  const [joints, setJoints] = useState<readonly ArticulatedJoint[]>([])
+  const [sweep, setSweep] = useState<SweepResult | null>(null)
+  const [revealed, setRevealed] = useState(0)
+  const [playbackStep, setPlaybackStep] = useState(0)
+  const [tier, setTier] = useState<QualityTier>(QUALITY_TIERS[1])
+  const controlsHandle = useRef<ViewportControlsHandle | null>(null)
+
+  // Visibility and section planes are optionally controlled: the workbench can
+  // own them, and when it does not the viewport keeps its own so the imperative
+  // surface still works.
+  const [visibilityState, setVisibilityState] = useState<VisibilityState>(DEFAULT_VISIBILITY)
+  const [sectionState, setSectionState] = useState<readonly SectionPlane[]>([])
+  const visibility = visibilityProp ?? visibilityState
+  const sectionPlanes = sectionPlanesProp ?? sectionState
+  const setVisibility = useCallback(
+    (next: VisibilityState) => {
+      setVisibilityState(next)
+      onVisibilityChange?.(next)
+    },
+    [onVisibilityChange],
+  )
+  const setSectionPlanes = useCallback(
+    (next: readonly SectionPlane[]) => {
+      setSectionState(next)
+      onSectionPlanesChange?.(next)
+    },
+    [onSectionPlanesChange],
+  )
+
+  const motion = useMemo(() => new MotionController(), [])
+  useEffect(() => motion.forceReducedMotion(reducedMotion), [motion, reducedMotion])
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = () => motion.refresh(query.matches)
+    query.addEventListener?.('change', onChange)
+    return () => query.removeEventListener?.('change', onChange)
+  }, [motion])
+
+  const registry = useMemo(() => new PickRegistry(), [])
+  const resolvedVisibility = useMemo(() => resolveVisibility(document, visibility), [document, visibility])
+
+  const stepIds = useMemo(() => {
+    if (!animation?.instructionPlayback) return null
+    const ids = new Set<string>()
+    document.steps.slice(0, playbackStep + 1).forEach((step) => step.partIds.forEach((id) => ids.add(id)))
+    return ids
+  }, [animation?.instructionPlayback, document.steps, playbackStep])
 
   const members = useMemo<BatchMember[]>(
     () =>
-      Object.values(document.parts).map((part) => {
-        if (renderMode !== 'exploded') return { part, transform: part.transform }
-        const subassemblyIndex = Math.max(0, subassemblyOrder.indexOf(part.subassemblyId))
-        const angle = (subassemblyIndex / Math.max(1, subassemblyOrder.length)) * Math.PI * 2
-        return {
-          part,
-          transform: {
-            ...part.transform,
-            position: [
-              part.transform.position[0] + Math.cos(angle) * 140,
-              part.transform.position[1] - (subassemblyIndex % 3) * 40,
-              part.transform.position[2] + Math.sin(angle) * 140,
-            ] as Vec3,
-          },
-        }
-      }),
-    [document.parts, renderMode, subassemblyOrder],
+      Object.values(document.parts)
+        .filter((part) => !resolvedVisibility.hidden.has(part.id))
+        .filter((part) => !stepIds || stepIds.has(part.id))
+        .map((part) => {
+          const displayed = jointPreview?.get(part.id) ?? part.transform
+          if (renderMode !== 'exploded') return { part, transform: displayed }
+          const subassemblyIndex = Math.max(0, subassemblyOrder.indexOf(part.subassemblyId))
+          const angle = (subassemblyIndex / Math.max(1, subassemblyOrder.length)) * Math.PI * 2
+          return {
+            part,
+            transform: {
+              ...displayed,
+              position: [
+                displayed.position[0] + Math.cos(angle) * 140,
+                displayed.position[1] - (subassemblyIndex % 3) * 40,
+                displayed.position[2] + Math.sin(angle) * 140,
+              ] as Vec3,
+            },
+          }
+        }),
+    [document.parts, jointPreview, renderMode, resolvedVisibility.hidden, stepIds, subassemblyOrder],
+  )
+
+  const solidMembers = useMemo(
+    () => members.filter((member) => !resolvedVisibility.ghosted.has(member.part.id)),
+    [members, resolvedVisibility.ghosted],
+  )
+  const ghostMembers = useMemo(
+    () => members.filter((member) => resolvedVisibility.ghosted.has(member.part.id)),
+    [members, resolvedVisibility.ghosted],
   )
 
   // Anything highlighted, flagged or under a gizmo leaves the batches so they
@@ -730,9 +858,41 @@ export function CadViewport({
     [displayBounds],
   )
 
-  const plan = useMemo(() => planBatches(members, excluded, appearanceFor), [members, excluded, appearanceFor])
-  const edgesEnabled = members.length <= EDGE_RENDER_BUDGET
+  const plan = useMemo(() => planBatches(solidMembers, excluded, appearanceFor), [solidMembers, excluded, appearanceFor])
+  const ghostPlan = useMemo(() => planBatches(ghostMembers, new Set<string>()), [ghostMembers])
+
+  /**
+   * Identity ranges for this frame's draws.
+   *
+   * Rebuilt with the plan, and *only* for what is solidly drawn: ghosted context
+   * gets no range, which is what makes "what you cannot see, you cannot select" a
+   * property of the pass rather than a filter over its output.
+   */
+  const idBases = useMemo(() => {
+    registry.reset()
+    const bases = new Map<string, number>()
+    for (const descriptor of plan.batches) {
+      bases.set(descriptor.key, registry.reserve(descriptor.members.map((member) => member.part.id)))
+    }
+    for (const member of plan.individual) {
+      bases.set(`solo:${member.part.id}`, registry.reserve([member.part.id]))
+    }
+    return bases
+  }, [plan, registry])
+
+  const edgesEnabled = tier.edges && members.length <= EDGE_RENDER_BUDGET
   const placing = Boolean(placement)
+
+  // True transmission renders the scene again per transmissive draw. It is worth
+  // that on a handful of trans-clear elements and ruinous on a glazed facade, so
+  // the count of transparent batches — not a guess about the machine — decides.
+  const transparentBatches = useMemo(
+    () => plan.batches.filter((descriptor) => catalog.color(descriptor.colorCode).alpha < 1).length,
+    [plan.batches],
+  )
+  useEffect(() => {
+    setTransmissionEnabled(transparentBatches > 0 && transparentBatches <= TRANSMISSION_DRAW_BUDGET)
+  }, [transparentBatches])
 
   const manipulated =
     selection.length === 1 && renderMode === 'beauty' && !placing && (tool === 'move' || tool === 'rotate')
@@ -748,12 +908,55 @@ export function CadViewport({
 
   const placementDefinition = placement ? catalog.get(placement.definitionId) : undefined
 
+  const pendingProposal = useMemo(() => proposals.find((proposal) => proposal.status === 'pending'), [proposals])
+  const proposalPartCount = useMemo(() => {
+    if (!pendingProposal) return 0
+    return Object.values(pendingProposal.previewDocument.parts).filter((part) => {
+      const original = document.parts[part.id]
+      return (
+        !original ||
+        original.color !== part.color ||
+        canonicalTransform(original.transform) !== canonicalTransform(part.transform)
+      )
+    }).length
+  }, [document.parts, pendingProposal])
+
+  const revealCount = animation?.proposalReveal === false ? proposalPartCount : revealed
+
+  const handleJointPreview = useCallback((preview: Map<string, Transform> | null, edgeId: string | null) => {
+    setJointPreview(preview)
+    setActiveJointEdge(edgeId)
+  }, [])
+
+  const handleSweep = useCallback(
+    (result: SweepResult | null) => {
+      setSweep(result)
+      onSweep?.(result)
+    },
+    [onSweep],
+  )
+
+  const handleJoints = useCallback(
+    (next: readonly ArticulatedJoint[]) => {
+      setJoints(next)
+      onJoints?.(next)
+    },
+    [onJoints],
+  )
+
+  useEffect(() => {
+    const surface = controlsHandle.current?.surface
+    if (surface) onRendererReady?.(surface)
+  }, [onRendererReady, revealed])
+
+  const selectMany = onSelectMany ?? (() => {})
+
   return (
     <>
     <Canvas
       shadows="soft"
-      dpr={[1, 1.65]}
-      gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' }}
+      dpr={[1, tier.maxDpr]}
+      gl={{ antialias: tier.antialias, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' }}
       onCreated={({ gl, scene }) => {
         gl.setClearColor('#0b1012')
         gl.outputColorSpace = THREE.SRGBColorSpace
@@ -761,7 +964,8 @@ export function CadViewport({
         gl.toneMappingExposure = 0.92
         // Plastic is read from what it reflects, not from what shines on it.
         // The studio is generated rather than fetched, so the viewport stays
-        // self-contained; it is disposed with the scene below.
+        // self-contained; `ViewportControls` replaces it when the environment
+        // prop changes and owns its disposal.
         scene.environment = createStudioEnvironment(gl)
         scene.environmentIntensity = 0.55
         onCanvasReady?.(gl.domElement)
@@ -786,7 +990,8 @@ export function CadViewport({
         }
       }}
       onPointerMissed={() => {
-        if (!placing) onClearSelection()
+        // Background clicks are resolved by the identity pass, which knows the
+        // difference between "no part here" and "a part the raycaster missed".
       }}
     >
       {renderMode === 'orthographic'
@@ -803,8 +1008,8 @@ export function CadViewport({
         position={[-16, 24, 13]}
         intensity={1.7}
         color="#fff4e6"
-        castShadow
-        shadow-mapSize={[2048, 2048]}
+        castShadow={tier.shadowMapSize > 0}
+        shadow-mapSize={[tier.shadowMapSize || 1, tier.shadowMapSize || 1]}
         shadow-bias={-0.0006}
         shadow-normalBias={0.02}
         shadow-radius={3}
@@ -826,7 +1031,21 @@ export function CadViewport({
             descriptor={descriptor}
             showEdges={edgesEnabled}
             silhouette={renderMode === 'silhouette'}
-            interactive={!placing}
+            interactive={false}
+            idBase={idBases.get(descriptor.key)}
+            onSelect={onSelect}
+          />
+        ))}
+
+        {/* Context outside an isolation, drawn faintly and left out of picking. */}
+        {ghostPlan.batches.map((descriptor) => (
+          <PartBatch
+            key={`ghost:${descriptor.key}`}
+            descriptor={descriptor}
+            showEdges={false}
+            silhouette={false}
+            interactive={false}
+            ghostOpacity={resolvedVisibility.ghostOpacity}
             onSelect={onSelect}
           />
         ))}
@@ -839,7 +1058,8 @@ export function CadViewport({
             displayTransform={
               dragPreview && manipulated?.id === member.part.id ? dragPreview : member.transform
             }
-            interactive={!placing}
+            interactive={false}
+            idBase={idBases.get(`solo:${member.part.id}`)}
             onSelect={onSelect}
           />
         ))}
@@ -850,11 +1070,9 @@ export function CadViewport({
           </group>
         )}
 
-        {proposals
-          .filter((proposal) => proposal.status === 'pending')
-          .map((proposal) => (
-            <GhostProposal key={proposal.id} proposal={proposal} current={document} />
-          ))}
+        {pendingProposal && (
+          <GhostProposal key={pendingProposal.id} proposal={pendingProposal} current={document} revealed={revealCount} />
+        )}
 
         {renderMode === 'connections' &&
           Object.values(document.parts).flatMap((part) =>
@@ -872,7 +1090,45 @@ export function CadViewport({
           )}
       </group>
 
-      {manipulated && (
+      <ViewportControls
+        document={document}
+        selection={selection}
+        registry={registry}
+        visibility={visibility}
+        onVisibilityChange={setVisibility}
+        sectionPlanes={sectionPlanes}
+        onSectionPlanesChange={setSectionPlanes}
+        motion={motion}
+        environment={environment}
+        quality={quality}
+        onQuality={setTier}
+        onJointPreview={handleJointPreview}
+        onOverlay={setOverlay}
+        onSelect={onSelect}
+        onSelectMany={selectMany}
+        onClearSelection={onClearSelection}
+        extent={Math.max(12, shadowExtent * 1.6)}
+        enabled={!placing}
+        handleRef={controlsHandle}
+        onJointsChange={handleJoints}
+        onSweepChange={handleSweep}
+      />
+
+      <AnimationDriver
+        motion={motion}
+        proposalPartCount={animation?.proposalReveal === false ? 0 : proposalPartCount}
+        turntable={Boolean(animation?.turntable)}
+        playback={Boolean(animation?.instructionPlayback)}
+        stepCount={document.steps.length}
+        onReveal={setRevealed}
+        onPlayback={setPlaybackStep}
+      />
+
+      <SectionHandles planes={sectionPlanes} extent={Math.max(12, shadowExtent * 1.6)} controls={controlsHandle} />
+      <JointHandles joints={joints} activeEdgeId={activeJointEdge} sweep={sweep} controls={controlsHandle} />
+      <BlockingMarker pointLdu={sweep?.blocking?.pointLdu ?? null} />
+
+      {manipulated && !activeJointEdge && (
         <SelectionManipulator
           key={manipulated.id}
           part={manipulated}
@@ -882,10 +1138,6 @@ export function CadViewport({
           onPreview={setDragPreview}
           onCommit={commitDrag}
         />
-      )}
-
-      {onSelectMany && !placing && (
-        <MarqueeController model={document} onRect={setMarquee} onSelect={onSelectMany} />
       )}
 
       {placement && onPlace && (
@@ -914,15 +1166,17 @@ export function CadViewport({
       />
       {/* Contact shadow scaled to the model, so a city block is not sitting on
           a 70-unit patch that ends halfway across it. */}
-      <ContactShadows
-        position={[0, -0.014, 0]}
-        scale={Math.max(24, shadowExtent * 2.4)}
-        opacity={0.62}
-        blur={1.9}
-        far={Math.max(18, shadowExtent)}
-        resolution={1024}
-        color="#000000"
-      />
+      {tier.contactShadowResolution > 0 && (
+        <ContactShadows
+          position={[0, -0.014, 0]}
+          scale={Math.max(24, shadowExtent * 2.4)}
+          opacity={0.62}
+          blur={1.9}
+          far={Math.max(18, shadowExtent)}
+          resolution={tier.contactShadowResolution}
+          color="#000000"
+        />
+      )}
       <CameraRig
         bounds={displayBounds}
         documentId={document.id}
@@ -930,19 +1184,138 @@ export function CadViewport({
         exploded={renderMode === 'exploded'}
         view={cameraView}
         resetKey={cameraResetKey}
+        motion={motion}
       />
+      <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
       <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
         <GizmoViewport axisColors={['#ff6a55', '#8bcf65', '#6bbbd6']} labelColor="#0c1112" />
       </GizmoHelper>
       <fog attach="fog" args={['#0b1012', 90, 220]} />
     </Canvas>
-    {marquee && (
+    {overlay.marquee && (
       <div
         className="marquee-box"
         aria-hidden="true"
-        style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+        style={{
+          left: overlay.marquee.left,
+          top: overlay.marquee.top,
+          width: overlay.marquee.width,
+          height: overlay.marquee.height,
+        }}
       />
+    )}
+    {overlay.lasso && overlay.lasso.length > 1 && (
+      <svg className="lasso-overlay" aria-hidden="true" style={LASSO_STYLE}>
+        <polygon
+          points={overlay.lasso.map(([x, y]) => `${x},${y}`).join(' ')}
+          fill="rgba(124, 239, 231, 0.08)"
+          stroke="#7cefe7"
+          strokeWidth={1.2}
+          strokeDasharray="5 4"
+        />
+      </svg>
+    )}
+    {overlay.sweep && (
+      <div className="sweep-readout" role="status" data-blocked={overlay.sweep.blocked ? 'true' : 'false'} style={SWEEP_STYLE}>
+        {overlay.sweep.text}
+      </div>
     )}
     </>
   )
 }
+
+/**
+ * Inline styles for the two overlays this workstream adds.
+ *
+ * Deliberately inline: the stylesheet is owned by the workbench, and a renderer
+ * feature that only works once somebody else's CSS lands is a feature that will
+ * ship broken. Class names are still emitted so the styling can be taken over
+ * without touching this file.
+ */
+const LASSO_STYLE: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  pointerEvents: 'none',
+  zIndex: 6,
+}
+
+const SWEEP_STYLE: React.CSSProperties = {
+  position: 'absolute',
+  left: '50%',
+  bottom: 24,
+  transform: 'translateX(-50%)',
+  padding: '6px 14px',
+  borderRadius: 4,
+  fontSize: 12,
+  letterSpacing: '0.04em',
+  pointerEvents: 'none',
+  background: 'rgba(6, 12, 14, 0.86)',
+  border: '1px solid rgba(124, 239, 231, 0.35)',
+  color: '#cfeeea',
+  zIndex: 7,
+}
+
+/** Records the current diagnostic state on the canvas, for capture metadata. */
+function CanvasMetadata({ renderMode, cameraView }: { renderMode: RenderMode; cameraView: CameraView }) {
+  const { gl } = useThree()
+  useEffect(() => {
+    gl.domElement.dataset.renderMode = renderMode
+    gl.domElement.dataset.cameraView = cameraView
+  }, [cameraView, gl, renderMode])
+  return null
+}
+
+/** Bridges the section manipulator's R3F events into the control surface. */
+function SectionHandles({
+  planes,
+  extent,
+  controls,
+}: {
+  planes: readonly SectionPlane[]
+  extent: number
+  controls: React.RefObject<ViewportControlsHandle | null>
+}) {
+  const { gl } = useThree()
+  const onGrab = useCallback(
+    (planeId: string, mode: 'offset' | 'rotate', event: ThreeEvent<PointerEvent>) => {
+      const point = canvasPointOf(event, gl.domElement)
+      controls.current?.surface.beginSectionDrag(planeId, mode, point.x, point.y)
+    },
+    [controls, gl],
+  )
+  if (!planes.length) return null
+  return <SectionManipulators planes={planes} extent={extent} onGrab={onGrab} />
+}
+
+/** Bridges the joint manipulator's R3F events into the control surface. */
+function JointHandles({
+  joints,
+  activeEdgeId,
+  sweep,
+  controls,
+}: {
+  joints: readonly ArticulatedJoint[]
+  activeEdgeId: string | null
+  sweep: SweepResult | null
+  controls: React.RefObject<ViewportControlsHandle | null>
+}) {
+  const { gl } = useThree()
+  const onGrab = useCallback(
+    (edgeId: string, handle: Parameters<RendererControlSurface['beginJointDrag']>[1], event: ThreeEvent<PointerEvent>) => {
+      const point = canvasPointOf(event, gl.domElement)
+      controls.current?.surface.beginJointDrag(edgeId, handle, point.x, point.y)
+    },
+    [controls, gl],
+  )
+  if (!joints.length) return null
+  return (
+    <JointManipulators
+      joints={joints}
+      activeEdgeId={activeEdgeId}
+      blocked={Boolean(sweep?.blocking)}
+      onGrab={onGrab}
+    />
+  )
+}
+
+export { MOTION_DURATIONS }

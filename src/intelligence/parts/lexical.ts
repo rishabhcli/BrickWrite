@@ -1,5 +1,5 @@
 import { catalog } from '../../cad/catalog'
-import type { CorpusDocument, PartCorpus } from './corpus'
+import { identityTokens, type CorpusDocument, type PartCorpus } from './corpus'
 
 /**
  * BM25F over the catalog's own words, plus an exact-identifier short circuit.
@@ -122,7 +122,7 @@ export class LexicalIndex {
       const tokens: Record<FieldName, string[]> = {
         name: lexicalTokens(document.name).map(foldTerm),
         // Identifiers are never folded: "3023b" and "3023" are different parts.
-        ids: document.identityIds.flatMap((id) => lexicalTokens(id)),
+        ids: [document.id, ...identityTokens(document.identity)].flatMap((id) => lexicalTokens(id)),
         category: lexicalTokens(document.category).map(foldTerm),
         kind: document.kind ? lexicalTokens(document.kind).map(foldTerm) : [],
       }
@@ -247,35 +247,34 @@ export class LexicalIndex {
 
 function buildIdentityIndex(documents: readonly CorpusDocument[]): Map<string, IdentityEntry> {
   const identities = new Map<string, IdentityEntry>()
-  const offer = (token: string, entry: IdentityEntry) => {
+  const offer = (token: string, id: string, kind: IdentityKind, frequency: number) => {
     const key = token.toLowerCase()
     if (!key) return
     const existing = identities.get(key)
     if (
       existing &&
-      (IDENTITY_PRIORITY[existing.kind] < IDENTITY_PRIORITY[entry.kind] ||
-        (IDENTITY_PRIORITY[existing.kind] === IDENTITY_PRIORITY[entry.kind] && existing.frequency >= entry.frequency))
+      (IDENTITY_PRIORITY[existing.kind] < IDENTITY_PRIORITY[kind] ||
+        (IDENTITY_PRIORITY[existing.kind] === IDENTITY_PRIORITY[kind] && existing.frequency >= frequency))
     ) {
       // Element numbers in particular are shared across mould revisions, so a
       // collision is resolved towards the part people actually mean: the one
       // that turns up in more official sets.
       return
     }
-    identities.set(key, entry)
+    identities.set(key, { id, kind, frequency })
   }
 
   for (const document of documents) {
-    const frequency = document.frequency
-    offer(document.id, { id: document.id, kind: 'canonical', frequency })
-    for (const raw of document.identityIds) {
-      if (raw === document.id) continue
-      let kind: IdentityKind = 'rebrickable'
-      if (/\.dat$/i.test(raw)) kind = 'ldraw'
-      else if (/^\d{6,7}$/.test(raw)) kind = 'element'
-      else if (/^\d{4,5}[a-z]?$/i.test(raw)) kind = 'design'
-      offer(raw, { id: document.id, kind, frequency })
-      if (kind === 'ldraw') offer(raw.replace(/\.dat$/i, ''), { id: document.id, kind: 'ldraw', frequency })
+    const { id, frequency, identity } = document
+    offer(id, id, 'canonical', frequency)
+    if (identity.ldraw) {
+      offer(identity.ldraw, id, 'ldraw', frequency)
+      offer(identity.ldraw.replace(/\.dat$/i, ''), id, 'ldraw', frequency)
     }
+    if (identity.rebrickable) offer(identity.rebrickable, id, 'rebrickable', frequency)
+    for (const design of identity.design) offer(design, id, 'design', frequency)
+    for (const element of identity.element) offer(element, id, 'element', frequency)
+    for (const bricklink of identity.bricklink) offer(bricklink, id, 'bricklink', frequency)
   }
   return identities
 }

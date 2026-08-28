@@ -68,6 +68,14 @@ export const PROJECT_ID_ENV_VARS = [
   'VITE_STACK_PROJECT_ID',
 ] as const
 
+/**
+ * Declared locally because `tsconfig.app.json` deliberately excludes Node types
+ * from the browser program. The guard below is a real runtime check — `process`
+ * genuinely does not exist in the shipped bundle — so the declaration only tells
+ * the type checker what the guard already establishes.
+ */
+declare const process: { env?: Record<string, string | undefined> } | undefined
+
 export type PlatformEnvironmentSource = Record<string, string | undefined>
 
 export type PlatformConfig =

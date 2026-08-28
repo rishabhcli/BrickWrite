@@ -110,7 +110,10 @@ export const append = mutation({
     const existing = await ctx.db
       .query('transactions')
       .withIndex('by_client_txn', (q) =>
-        q.eq('projectId', project._id).eq('clientTransactionId', args.clientTransactionId),
+        q
+          .eq('projectId', project._id)
+          .eq('branchId', branch._id)
+          .eq('clientTransactionId', args.clientTransactionId),
       )
       .unique()
     if (existing) {
@@ -220,15 +223,22 @@ export const listSince = query({
 
 /** Looks up one transaction by its client id, for reconciling an outbox entry. */
 export const findByClientId = query({
-  args: { projectId: v.string(), clientTransactionId: v.string() },
+  args: {
+    projectId: v.string(),
+    branchId: v.optional(v.string()),
+    clientTransactionId: v.string(),
+  },
   handler: async (ctx, args): Promise<CloudResult<CloudTransactionRecord | null>> => {
     const authorised = await authoriseProject(ctx, args.projectId, 'project.read')
     if (!authorised.ok) return authorised
+    const branchResult = await resolveBranch(ctx, authorised.value.project, args.branchId)
+    if (!branchResult.ok) return branchResult
     const row = await ctx.db
       .query('transactions')
       .withIndex('by_client_txn', (q) =>
         q
           .eq('projectId', authorised.value.project._id)
+          .eq('branchId', branchResult.value._id)
           .eq('clientTransactionId', args.clientTransactionId),
       )
       .unique()

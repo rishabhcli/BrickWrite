@@ -1,0 +1,439 @@
+/*
+ * Scoped to `.bw-agent`. The workbench mounts inside an editor shell it does
+ * not own, so every rule here is a descendant of that one class and nothing
+ * reaches an element the panel did not render. Colours are inherited from the
+ * host through custom properties with fallbacks, so the panel is legible in a
+ * shell whose theme it has never seen.
+ */
+
+.bw-agent {
+  --bw-agent-gap: 0.5rem;
+  --bw-agent-radius: 10px;
+  --bw-agent-surface: var(--surface-raised, #16181d);
+  --bw-agent-surface-sunken: var(--surface-sunken, #0f1115);
+  --bw-agent-border: var(--border-subtle, #2a2f38);
+  --bw-agent-text: var(--text-primary, #e8ebf0);
+  --bw-agent-muted: var(--text-muted, #98a2b3);
+  --bw-agent-accent: var(--accent, #e79032);
+  --bw-agent-danger: var(--danger, #ef6461);
+  --bw-agent-ok: var(--success, #4fb286);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: var(--bw-agent-text);
+  background: var(--bw-agent-surface);
+  border-left: 1px solid var(--bw-agent-border);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.bw-agent[data-collapsed='true'] {
+  height: auto;
+}
+
+.bw-agent__header {
+  display: flex;
+  align-items: center;
+  gap: var(--bw-agent-gap);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--bw-agent-border);
+}
+
+.bw-agent__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 6px;
+}
+
+.bw-agent__toggle:focus-visible,
+.bw-agent button:focus-visible,
+.bw-agent textarea:focus-visible,
+.bw-agent input:focus-visible {
+  outline: 2px solid var(--bw-agent-accent);
+  outline-offset: 2px;
+}
+
+.bw-agent__chevron {
+  transition: transform 140ms ease;
+  display: inline-block;
+}
+
+.bw-agent[data-collapsed='true'] .bw-agent__chevron {
+  transform: rotate(-90deg);
+}
+
+.bw-agent__revision {
+  font-variant-numeric: tabular-nums;
+  color: var(--bw-agent-muted);
+  font-size: 0.75rem;
+}
+
+.bw-agent__modes {
+  display: flex;
+  gap: 2px;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--bw-agent-border);
+}
+
+.bw-agent__mode {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--bw-agent-border);
+  background: var(--bw-agent-surface-sunken);
+  color: var(--bw-agent-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.bw-agent__mode[aria-checked='true'] {
+  background: var(--bw-agent-accent);
+  color: #14161a;
+  font-weight: 600;
+  border-color: var(--bw-agent-accent);
+}
+
+.bw-agent__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.bw-agent__transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.bw-agent__empty {
+  color: var(--bw-agent-muted);
+  padding: 1rem 0.25rem;
+}
+
+.bw-agent__empty h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--bw-agent-text);
+}
+
+.bw-agent__empty ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.bw-agent__message {
+  border-radius: var(--bw-agent-radius);
+  padding: 0.5rem 0.65rem;
+  background: var(--bw-agent-surface-sunken);
+  border: 1px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bw-agent__message[data-role='user'] {
+  border-color: var(--bw-agent-border);
+}
+
+.bw-agent__message[data-status='failed'] {
+  border-color: var(--bw-agent-danger);
+}
+
+.bw-agent__message[data-status='cancelled'] {
+  opacity: 0.75;
+  border-style: dashed;
+  border-color: var(--bw-agent-border);
+}
+
+.bw-agent__role {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bw-agent-muted);
+  margin-bottom: 0.2rem;
+}
+
+.bw-agent__problem {
+  margin-top: 0.35rem;
+  color: var(--bw-agent-danger);
+  font-size: 0.8rem;
+}
+
+.bw-agent__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-agent__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--bw-agent-border);
+  background: var(--bw-agent-surface);
+  color: var(--bw-agent-muted);
+}
+
+.bw-agent__chip[data-resolved='false'] {
+  border-color: var(--bw-agent-danger);
+  color: var(--bw-agent-danger);
+}
+
+.bw-agent__chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+}
+
+.bw-agent__toolcalls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--bw-agent-muted);
+}
+
+.bw-agent__toolcall[data-ok='false'] {
+  color: var(--bw-agent-danger);
+}
+
+.bw-agent__toolcall[data-ok='true'] {
+  color: var(--bw-agent-ok);
+}
+
+.bw-agent__pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--bw-agent-muted);
+  font-size: 0.78rem;
+}
+
+.bw-agent__pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bw-agent-accent);
+  animation: bw-agent-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes bw-agent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.bw-agent__waves {
+  border-top: 1px solid var(--bw-agent-border);
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.bw-agent__waves h3 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bw-agent-muted);
+}
+
+.bw-agent__wave {
+  border: 1px solid var(--bw-agent-border);
+  border-radius: var(--bw-agent-radius);
+  padding: 0.5rem 0.6rem;
+  background: var(--bw-agent-surface-sunken);
+}
+
+.bw-agent__wave[data-status='stale'] {
+  border-color: var(--bw-agent-danger);
+}
+
+.bw-agent__wave[data-status='applied'] {
+  border-color: var(--bw-agent-ok);
+  opacity: 0.8;
+}
+
+.bw-agent__wave-title {
+  font-weight: 600;
+  display: block;
+}
+
+.bw-agent__wave-meta {
+  color: var(--bw-agent-muted);
+  font-size: 0.74rem;
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.bw-agent__wave-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.bw-agent__button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--bw-agent-border);
+  background: var(--bw-agent-surface);
+  color: var(--bw-agent-text);
+  cursor: pointer;
+}
+
+.bw-agent__button[data-variant='primary'] {
+  background: var(--bw-agent-accent);
+  border-color: var(--bw-agent-accent);
+  color: #14161a;
+  font-weight: 600;
+}
+
+.bw-agent__button[data-variant='danger'] {
+  border-color: var(--bw-agent-danger);
+  color: var(--bw-agent-danger);
+}
+
+.bw-agent__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bw-agent__error {
+  margin: 0 0.75rem 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--bw-agent-danger);
+  border-radius: var(--bw-agent-radius);
+  color: var(--bw-agent-danger);
+  background: color-mix(in srgb, var(--bw-agent-danger) 8%, transparent);
+}
+
+.bw-agent__composer {
+  border-top: 1px solid var(--bw-agent-border);
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.bw-agent__composer textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  resize: vertical;
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--bw-agent-border);
+  background: var(--bw-agent-surface-sunken);
+  color: inherit;
+}
+
+.bw-agent__composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.bw-agent__hint {
+  color: var(--bw-agent-muted);
+  font-size: 0.72rem;
+  margin-left: auto;
+}
+
+.bw-agent__trace {
+  border-top: 1px solid var(--bw-agent-border);
+}
+
+.bw-agent__trace summary {
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  color: var(--bw-agent-muted);
+  font-size: 0.75rem;
+}
+
+.bw-agent__trace ol {
+  margin: 0;
+  padding: 0 0.75rem 0.6rem 1.6rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: 0.74rem;
+  color: var(--bw-agent-muted);
+}
+
+.bw-agent__trace li[data-status='failed'] {
+  color: var(--bw-agent-danger);
+}
+
+.bw-agent__trace li[data-status='pending'] {
+  color: var(--bw-agent-accent);
+}
+
+.bw-agent__visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Motion is decoration here: the pulse says "a stream is open", and the same
+ * fact is in the text beside it. Honouring the preference costs nothing.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .bw-agent__chevron,
+  .bw-agent__pulse {
+    transition: none;
+    animation: none;
+  }
+}
+
+.bw-agent[data-reduced-motion='true'] .bw-agent__chevron,
+.bw-agent[data-reduced-motion='true'] .bw-agent__pulse {
+  transition: none;
+  animation: none;
+}

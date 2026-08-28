@@ -103,8 +103,20 @@ export interface BuildNode {
  * somewhere to go.
  */
 export type ConnectorPick =
-  /** Stud coordinates from the part's minimum corner, on the mating plane. */
-  | { readonly kind: 'grid'; readonly uStuds: number; readonly vStuds: number }
+  /**
+   * Stud coordinates from the node's minimum corner, on the mating plane.
+   *
+   * `level` narrows the search to the highest or lowest plane of matching
+   * connectors first. Without it, a stud at the bottom of a wall and one at the
+   * top are the same distance away in plan and the choice between them falls to
+   * a tie-break — which is how a second storey ends up inside the first.
+   */
+  | {
+      readonly kind: 'grid'
+      readonly uStuds: number
+      readonly vStuds: number
+      readonly level?: 'top' | 'bottom'
+    }
   /** The connector furthest along a local axis. 0 = X, 1 = Y, 2 = Z. */
   | { readonly kind: 'extreme'; readonly axis: 0 | 1 | 2; readonly sense: 'min' | 'max' }
   /** Position in the family's id-sorted list, wrapped. */

@@ -84,6 +84,8 @@ export const OBJECTIVE_IDS = [
   'paletteConformance',
   'buildOrderComplexity',
   'overhangLoad',
+  'steppedEdges',
+  'exposedStuds',
 ] as const
 
 export type ObjectiveId = (typeof OBJECTIVE_IDS)[number]
@@ -201,9 +203,11 @@ export type ChangeKind = (typeof CHANGE_KINDS)[number]
 /**
  * What the UI paints on one part.
  *
- * `magnitude` is 0–1 and is comparable *within* one proposal: it is the change's
- * size against the largest change the same proposal makes, which is what a
- * heatmap needs. It is not comparable across proposals and is not a confidence.
+ * `magnitude` is an absolute 0–1 measure of how much happened to that part, not a
+ * confidence and not a share of the proposal. A part added, removed or swapped
+ * reads 1; a move scales with distance over four studs; a recolour reads 0.4.
+ * Absolute rather than normalized so that a proposal recolouring two bricks does
+ * not paint as hot as one rebuilding a wall.
  */
 export const overlayInstructionSchema = z.object({
   partId: z.string().min(1),

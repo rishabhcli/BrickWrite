@@ -1,9 +1,12 @@
 import { catalog } from '../../cad/catalog'
 import { verifyAsset } from '../../cad/integrity'
 import type {
+  CatalogSearchRecord,
   CatalogTier,
   ConnectionFamily,
+  ConnectionFeature,
   GeometryStatus,
+  PartBoundsLdu,
   PartDefinition,
   Vec3,
 } from '../../cad/types'
@@ -49,6 +52,27 @@ interface RawExternalEntry {
 
 /** Counts of `${family}/${gender}` on a part, which is its mating interface. */
 export type ConnectorProfile = ReadonlyMap<string, number>
+
+/**
+ * A connector's family together with the direction its axis points.
+ *
+ * By LDCad convention a connector's axis is its own frame's local +Y, so the
+ * axis in the part's frame is the second column of the orientation matrix, or
+ * straight up when no matrix was recorded. Keeping it is what lets "a hinge
+ * whose axis points sideways" be answered by measurement instead of by hoping
+ * the part name mentions it.
+ */
+export interface ConnectorAxis {
+  family: ConnectionFamily
+  axis: Vec3
+}
+
+/** The connector axis in the part's own LDraw frame. */
+export function connectorAxis(feature: ConnectionFeature): Vec3 {
+  const ori = feature.ori
+  // Row-major 3x3: the local +Y image is the middle column, entries 1, 4 and 7.
+  return ori ? [ori[1], ori[4], ori[7]] : [0, 1, 0]
+}
 
 /**
  * Alternate numbers, kept apart by where they came from.
@@ -109,6 +133,16 @@ export interface CorpusDocument {
   connectors: ConnectorProfile | null
   /** Positions of the part's anti-studs in LDU, for gap-bridging analysis. */
   antiStudsLdu: readonly Vec3[] | null
+  /** Axis direction per connector, for orientation questions. Pack identities only. */
+  connectorAxes: readonly ConnectorAxis[] | null
+  /**
+   * Measured extent in the part's own LDraw frame.
+   *
+   * Handedness is decided against this rather than against the name alone: two
+   * parts are genuine mirror counterparts when one box is the other reflected
+   * through x, which a name comparison can only guess at.
+   */
+  boundsLdu: PartBoundsLdu | null
   /** LDraw colour codes with an observed official-set appearance. */
   colors: readonly number[] | null
   geometryStatus: GeometryStatus | null
@@ -300,6 +334,10 @@ export function buildPartCorpus(
       antiStudsLdu: definition
         ? definition.connectors.filter((feature) => feature.family === 'anti-stud').map((feature) => feature.pos)
         : null,
+      connectorAxes: definition
+        ? definition.connectors.map((feature) => ({ family: feature.family, axis: connectorAxis(feature) }))
+        : null,
+      boundsLdu: definition?.dimensions?.bounds ?? null,
       colors: definition?.availableColors ?? null,
       geometryStatus: definition?.geometryStatus ?? null,
       text: documentText(entry.n, entry.c, families, kind),
@@ -323,6 +361,8 @@ export function buildPartCorpus(
       identity: EMPTY_IDENTITY,
       connectors: null,
       antiStudsLdu: null,
+      connectorAxes: null,
+      boundsLdu: null,
       colors: null,
       geometryStatus: null,
       text: documentText(entry.n, entry.c, [], null),
@@ -330,4 +370,45 @@ export function buildPartCorpus(
   }
 
   return { catalogVersion, documents, byId, includesCatalogued: external.length > 0 }
+}
+
+/**
+ * One document built from a compact search record.
+ *
+ * The synchronous resolver runs before the corpus has been fetched - a UI calls
+ * it on every keystroke - and the registry's own ranked search is the only
+ * candidate source available at that point. Mapping its records into the same
+ * document shape means the degraded path shares every scorer and every
+ * explanation with the warm one, instead of being a second ranking
+ * implementation that drifts.
+ */
+export function documentFromSearchRecord(record: CatalogSearchRecord): CorpusDocument {
+  const definition = catalog.get(record.id)
+  const families = record.connectorFamilies ?? []
+  return {
+    id: record.id,
+    name: record.name,
+    category: record.category,
+    tier: record.tier,
+    frequency: record.frequency,
+    studs: definition?.dimensions?.studs ?? record.dimensions,
+    nameStuds: parseNameDimensions(record.name),
+    families,
+    geometryAvailable: record.geometryAvailable,
+    helper: record.helper,
+    variantOf: record.variantOf ?? definition?.identity.baseRebrickableId ?? null,
+    kind: definition?.kind ?? null,
+    identity: definition ? documentIdentity(definition) : EMPTY_IDENTITY,
+    connectors: definition ? connectorProfile(definition) : null,
+    antiStudsLdu: definition
+      ? definition.connectors.filter((feature) => feature.family === 'anti-stud').map((feature) => feature.pos)
+      : null,
+    connectorAxes: definition
+      ? definition.connectors.map((feature) => ({ family: feature.family, axis: connectorAxis(feature) }))
+      : null,
+    boundsLdu: definition?.dimensions?.bounds ?? null,
+    colors: definition?.availableColors ?? null,
+    geometryStatus: definition?.geometryStatus ?? null,
+    text: documentText(record.name, record.category, families, definition?.kind ?? null),
+  }
 }

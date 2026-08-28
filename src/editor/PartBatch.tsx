@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { catalog } from '../cad/catalog'
 import { geometryCache, MAIN_COLOUR, type PartGeometry } from '../cad/mesh'
 import type { PartDefinition, PartInstance, Transform } from '../cad/types'
+import { registerPickable, unregisterPickable } from './render/idPass'
 import { surfaceMaterialFor, type PartAppearance } from './PartVisual'
 
 /**
@@ -19,6 +20,11 @@ import { surfaceMaterialFor, type PartAppearance } from './PartVisual'
  * instance out of a batch to highlight it would rebuild the batch on every
  * hover; rendering those few parts individually in an overlay costs a handful of
  * draw calls and leaves the batches untouched.
+ *
+ * The same instanced meshes serve the GPU identity pass. `idBase` hands a batch
+ * the first identity of a contiguous range, and the id shader adds
+ * `gl_InstanceID` to it, so picking a five-thousand-brick model costs the same
+ * draw calls as drawing it.
  */
 
 export interface BatchMember {
@@ -92,10 +98,28 @@ interface PartBatchProps {
   silhouette: boolean
   /** False while a placement ghost owns the pointer, so a drop cannot also select. */
   interactive?: boolean
+  /**
+   * First GPU identity for this batch, or undefined to leave it out of picking.
+   *
+   * Ghosted context is drawn with no base, which is what makes "what you cannot
+   * see, you cannot select" a property of the pass rather than a filter applied
+   * to its results.
+   */
+  idBase?: number
+  /** Opacity multiplier for ghosted context. 1 leaves the material untouched. */
+  ghostOpacity?: number
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
 }
 
-export function PartBatch({ descriptor, showEdges, silhouette, interactive = true, onSelect }: PartBatchProps) {
+export function PartBatch({
+  descriptor,
+  showEdges,
+  silhouette,
+  interactive = true,
+  idBase,
+  ghostOpacity = 1,
+  onSelect,
+}: PartBatchProps) {
   const instances = useRef<THREE.InstancedMesh>(null)
   const geometry = useBatchGeometry(descriptor.definition)
   const scratch = useMemo(() => new THREE.Matrix4(), [])
@@ -108,9 +132,10 @@ export function PartBatch({ descriptor, showEdges, silhouette, interactive = tru
       surfaceMaterialFor(
         slice.colour === MAIN_COLOUR ? (silhouette ? 71 : descriptor.colorCode) : slice.colour,
         descriptor.appearance,
+        ghostOpacity < 1 ? { fade: ghostOpacity } : undefined,
       ),
     )
-  }, [geometry, descriptor.colorCode, descriptor.appearance, silhouette])
+  }, [geometry, descriptor.colorCode, descriptor.appearance, silhouette, ghostOpacity])
 
   useLayoutEffect(() => {
     const mesh = instances.current
@@ -126,6 +151,21 @@ export function PartBatch({ descriptor, showEdges, silhouette, interactive = tru
     // each index stands for.
     mesh.userData.members = descriptor.members
   }, [descriptor.members, geometry, scratch])
+
+  // Identity registration follows the batch's own lifetime. Re-running it when
+  // the base changes matters: the registry is rebuilt whenever the plan changes,
+  // and a mesh still carrying last plan's base would resolve picks to the wrong
+  // parts rather than to none, which is the worse of the two failures.
+  useLayoutEffect(() => {
+    const mesh = instances.current
+    if (!mesh) return
+    if (idBase === undefined) {
+      unregisterPickable(mesh)
+      return
+    }
+    registerPickable(mesh, idBase)
+    return () => unregisterPickable(mesh)
+  }, [idBase, geometry, descriptor.members.length])
 
   if (!geometry) return null
 
@@ -158,27 +198,74 @@ export function PartBatch({ descriptor, showEdges, silhouette, interactive = tru
         }}
       />
       {showEdges && geometry.edges && !silhouette && (
-        <BatchEdges descriptor={descriptor} geometry={geometry} />
+        <BatchEdges descriptor={descriptor} geometry={geometry} opacity={0.34 * ghostOpacity} />
       )}
     </group>
   )
 }
 
 /**
- * Hard edges for a whole batch, merged into one buffer.
+ * Bakes a batch's member transforms into one merged line buffer.
  *
  * Line geometry has no instanced equivalent without a custom shader, so drawing
  * edges per part costs one call each — which measurably dominated the frame once
- * batching had flattened the surface calls. Baking each member's transform into
- * a single merged buffer restores one draw call per batch. The buffer is rebuilt
- * only when the batch's membership or poses change, which happens on commit
- * rather than per frame.
+ * batching had flattened the surface calls. Merging restores one draw call per
+ * batch. Returns null when the batch is empty or past the vertex budget, which
+ * the caller renders as "no edges" rather than as an unbounded allocation.
+ *
+ * Exported so the benchmark builds its scene from the same code the viewport
+ * does; an edge path that only the editor exercised would be the first thing to
+ * drift out of the measurement.
  */
-function BatchEdges({ descriptor, geometry }: { descriptor: PartBatchDescriptor; geometry: PartGeometry }) {
+export function buildMergedEdgeGeometry(
+  members: readonly BatchMember[],
+  edges: THREE.BufferGeometry | null,
+  vertexBudget = MERGED_EDGE_VERTEX_BUDGET,
+): THREE.BufferGeometry | null {
+  const source = edges?.getAttribute('position')
+  if (!source) return null
+  const perInstance = source.count
+  const total = perInstance * members.length
+  if (total === 0 || total > vertexBudget) return null
+
+  const positions = new Float32Array(total * 3)
+  const matrix = new THREE.Matrix4()
+  const vertex = new THREE.Vector3()
+  members.forEach((member, instance) => {
+    matrixOf(member.transform, matrix)
+    const base = instance * perInstance * 3
+    for (let index = 0; index < perInstance; index += 1) {
+      vertex.fromBufferAttribute(source, index).applyMatrix4(matrix)
+      positions[base + index * 3] = vertex.x
+      positions[base + index * 3 + 1] = vertex.y
+      positions[base + index * 3 + 2] = vertex.z
+    }
+  })
+  const buffer = new THREE.BufferGeometry()
+  buffer.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  return buffer
+}
+
+/**
+ * Hard edges for a whole batch, merged into one buffer.
+ *
+ * The buffer is rebuilt only when the batch's membership or poses change, which
+ * happens on commit rather than per frame.
+ */
+function BatchEdges({
+  descriptor,
+  geometry,
+  opacity,
+}: {
+  descriptor: PartBatchDescriptor
+  geometry: PartGeometry
+  opacity: number
+}) {
   const material = useMemo(() => {
     const base = catalog.color(descriptor.colorCode)
-    return new THREE.LineBasicMaterial({ color: base.edge, transparent: true, opacity: 0.34, depthWrite: false })
-  }, [descriptor.colorCode])
+    return new THREE.LineBasicMaterial({ color: base.edge, transparent: true, opacity, depthWrite: false })
+  }, [descriptor.colorCode, opacity])
+  useEffect(() => () => material.dispose(), [material])
 
   // `planBatches` builds fresh member arrays on every commit, so memoizing on
   // array identity rebuilt every merged buffer in the model for an edit that
@@ -187,31 +274,11 @@ function BatchEdges({ descriptor, geometry }: { descriptor: PartBatchDescriptor;
   // edge vertices) of matrix work.
   const signature = useMemo(() => contentSignature(descriptor.members), [descriptor.members])
 
-  const merged = useMemo(() => {
-    const source = geometry.edges?.getAttribute('position')
-    if (!source) return null
-    const perInstance = source.count
-    const total = perInstance * descriptor.members.length
-    if (total === 0 || total > MERGED_EDGE_VERTEX_BUDGET) return null
-
-    const positions = new Float32Array(total * 3)
-    const matrix = new THREE.Matrix4()
-    const vertex = new THREE.Vector3()
-    descriptor.members.forEach((member, instance) => {
-      matrixOf(member.transform, matrix)
-      const base = instance * perInstance * 3
-      for (let index = 0; index < perInstance; index += 1) {
-        vertex.fromBufferAttribute(source, index).applyMatrix4(matrix)
-        positions[base + index * 3] = vertex.x
-        positions[base + index * 3 + 1] = vertex.y
-        positions[base + index * 3 + 2] = vertex.z
-      }
-    })
-    const buffer = new THREE.BufferGeometry()
-    buffer.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    return buffer
+  const merged = useMemo(
+    () => buildMergedEdgeGeometry(descriptor.members, geometry.edges),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, geometry])
+    [signature, geometry],
+  )
 
   // Merged buffers are owned by this component, so they are disposed with it.
   useEffect(() => () => merged?.dispose(), [merged])

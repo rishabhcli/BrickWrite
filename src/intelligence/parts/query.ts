@@ -61,6 +61,8 @@ export interface PartQuery {
   contentTerms: string[]
   /** Canonical ids the query named outright. */
   ids: string[]
+  /** The raw tokens that resolved to those ids, so a caller can recover which register matched. */
+  idTokens: string[]
   dimensions: DimensionIntent
   color: ColorIntent
   connectors: ConnectionFamily[]
@@ -105,6 +107,15 @@ const NUMBER_WORDS = new Map<string, number>([
   ['fifteen', 15], ['sixteen', 16], ['twenty', 20], ['twentyfour', 24],
   ['thirty', 30], ['forty', 40], ['fifty', 50], ['sixty', 60],
 ])
+
+/**
+ * Words that turn the number in front of them into a measurement.
+ *
+ * Without this list "a 3-stud gap" resolves 3 to LDraw part 3, the Homemaker
+ * Drawer, and the request quietly becomes a lookup for a piece of doll's house
+ * furniture. A digit followed by a unit is a quantity, never a part number.
+ */
+const UNIT_WORDS = /^(?:studs?|plates?|bricks?|wide|width|long|length|tall|high|height|deep|depth|across|square|thick)$/
 
 const APPROXIMATE_WORDS = new Set(['about', 'around', 'roughly', 'approximately', 'circa', 'nearly', 'almost', 'ish'])
 const FOOTPRINT_AXIS_WORDS = new Set(['wide', 'width', 'long', 'length', 'across', 'deep', 'depth', 'square'])
@@ -260,12 +271,21 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
 
   const words: string[] = []
   const ids: string[] = []
+  const idTokens: string[] = []
   const dimensionEnvelopes: number[][] = []
 
-  for (const token of rawTokens) {
-    const identity = resolveIdentity(token)
+  for (let position = 0; position < rawTokens.length; position += 1) {
+    const token = rawTokens[position]
+    // A bare one- or two-digit number is a count in every phrasing except a
+    // lookup that consists of nothing else, and LDraw really does have parts
+    // numbered 1, 2 and 3 - so both readings stay available, decided by context.
+    const looksLikeQuantity =
+      /^\d+(?:\.\d+)?$/.test(token) &&
+      (UNIT_WORDS.test(rawTokens[position + 1] ?? '') || (token.length < 3 && rawTokens.length > 1))
+    const identity = looksLikeQuantity ? null : resolveIdentity(token)
     if (identity) {
       ids.push(identity)
+      idTokens.push(token)
       continue
     }
     const envelope = parseDimensionToken(token)
@@ -304,6 +324,9 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
 
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index]
+    // A word already spent on a measurement is not also a connector request:
+    // "3-stud gap" asks about a distance, not about studs on the part.
+    if (consumed[index]) continue
 
     if (APPROXIMATE_WORDS.has(word)) {
       dimensions.approximate = true
@@ -455,6 +478,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     words,
     contentTerms,
     ids,
+    idTokens,
     dimensions,
     color,
     connectors: Array.from(connectorFamilies),

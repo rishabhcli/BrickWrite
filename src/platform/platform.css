@@ -1,0 +1,425 @@
+/*
+ * Platform shell styling.
+ *
+ * Every class is `pf-` prefixed because `src/styles.css` already owns
+ * `.app-shell`, `.topbar` and the rest of the editor cockpit, and the two must
+ * not collide. Tokens come from `:root` in `styles.css` — this file introduces
+ * no palette of its own, so the frame and the editor are visibly one product.
+ */
+
+.pf-frame {
+  display: grid;
+  grid-template-rows: 52px auto minmax(0, 1fr);
+  height: 100vh;
+  background: var(--void);
+  isolation: isolate;
+}
+
+.pf-skip {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 200;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  transition: top 0.12s ease;
+}
+.pf-skip:focus-visible { top: 12px; }
+
+/* Top bar ------------------------------------------------------------------ */
+
+.pf-topbar {
+  display: grid;
+  grid-template-columns: 258px minmax(240px, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: rgba(15, 21, 23, 0.97);
+  position: relative;
+  z-index: 20;
+}
+
+.pf-brand {
+  height: 100%;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 0 17px;
+  border-right: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.pf-brand:hover { background: rgba(131, 231, 238, 0.04); }
+
+.pf-brand__mark {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 3px;
+  transform: rotate(-2deg);
+  flex: none;
+}
+.pf-brand__mark span {
+  background: var(--orange);
+  border-radius: 2px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.35), 0 0 14px rgba(245, 163, 63, 0.12);
+}
+.pf-brand__mark span:nth-child(2) { background: #db6c33; }
+.pf-brand__mark span:nth-child(3) { grid-column: span 2; background: #a84429; }
+
+.pf-brand__words strong {
+  display: block;
+  font-family: var(--display);
+  letter-spacing: 0.06em;
+  font-size: 15px;
+  line-height: 1;
+}
+.pf-brand__words strong span { color: var(--orange); }
+.pf-brand__words small {
+  display: block;
+  color: #5d6a6e;
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  margin-top: 4px;
+}
+
+.pf-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px;
+  display: flex;
+  gap: 4px;
+}
+.pf-nav__link {
+  display: block;
+  padding: 7px 12px;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.pf-nav__link:hover { color: var(--ink); background: rgba(131, 231, 238, 0.05); }
+.pf-nav__link--active {
+  color: var(--ink);
+  border-color: var(--line-hi);
+  background: rgba(131, 231, 238, 0.07);
+}
+.pf-nav__absent { color: var(--faint); }
+
+/* Account control ---------------------------------------------------------- */
+
+.pf-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  position: relative;
+  min-height: 100%;
+}
+
+.pf-account__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 7px rgba(245, 163, 63, 0.55);
+  flex: none;
+}
+.pf-account__dot--pending { background: var(--faint); box-shadow: none; }
+
+.pf-account__lines strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.pf-account__lines small {
+  display: block;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  margin-top: 3px;
+}
+
+.pf-account__trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 9px;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+.pf-account__trigger:hover { background: rgba(131, 231, 238, 0.05); border-color: var(--line-hi); }
+.pf-account__trigger[aria-expanded='true'] { background: rgba(131, 231, 238, 0.08); border-color: var(--cyan); }
+
+.pf-account__name {
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.pf-account__menu {
+  position: absolute;
+  top: calc(100% + 1px);
+  right: 12px;
+  z-index: 60;
+  width: 264px;
+  background: var(--panel);
+  border: 1px solid var(--line-hi);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.62);
+  display: flex;
+  flex-direction: column;
+}
+.pf-account__menu:focus-visible { outline: 1px solid var(--cyan); outline-offset: -1px; }
+
+.pf-account__identity {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.pf-account__identity strong { display: block; font-size: 12px; }
+.pf-account__identity small { display: block; margin-top: 4px; color: var(--faint); font-size: 10px; }
+
+.pf-account__item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.pf-account__item:last-child { border-bottom: 0; }
+.pf-account__item:hover { background: rgba(131, 231, 238, 0.06); }
+.pf-account__item--danger { color: var(--red); }
+
+.pf-chip {
+  padding: 4px 9px;
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-hi);
+  text-decoration: none;
+  color: var(--muted);
+}
+.pf-chip--warning { color: var(--orange); border-color: rgba(245, 163, 63, 0.45); }
+
+/* Offline ------------------------------------------------------------------ */
+
+.pf-offline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  background: rgba(245, 163, 63, 0.09);
+  border-bottom: 1px solid rgba(245, 163, 63, 0.3);
+  color: #f0c48a;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.pf-offline__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange);
+  flex: none;
+}
+.pf-offline strong { color: var(--orange); font-family: var(--display); letter-spacing: 0.06em; }
+
+/* Body --------------------------------------------------------------------- */
+
+.pf-frame__body {
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+.pf-frame__body:focus-visible { outline: none; }
+
+/* States ------------------------------------------------------------------- */
+
+.pf-state {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px;
+  background: radial-gradient(circle at 50% 26%, #142023 0%, #0b1012 62%);
+}
+.pf-state__inner {
+  max-width: 62ch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+.pf-state h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 22px;
+  color: #e8f1f2;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.pf-state__body p,
+.pf-state__lede {
+  max-width: 56ch;
+  color: #7b8a8f;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0 0 10px;
+}
+.pf-state__body p:last-child { margin-bottom: 0; }
+.pf-state__hint { color: #5f6d72; font-size: 11px; }
+.pf-state__hint code {
+  font-size: 10.5px;
+  color: var(--cyan);
+  background: rgba(131, 231, 238, 0.07);
+  padding: 1px 5px;
+}
+.pf-state__detail {
+  margin: 6px 0 0;
+  max-width: 76ch;
+  text-align: left;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #c48f7e;
+  background: #170f0f;
+  border: 1px solid #3a1f1c;
+  border-radius: 6px;
+  padding: 12px 14px;
+  max-height: 240px;
+  overflow: auto;
+}
+.pf-state__actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+.pf-state--error h1 { color: #f0b5a4; }
+.pf-state--warning h1 { color: #f0cfa4; }
+.pf-state--error .eyebrow { color: #c07d6c; }
+.pf-state--warning .eyebrow { color: #a58a5f; }
+.pf-state--notice .eyebrow,
+.pf-state--working .eyebrow { color: #5d7a80; }
+
+.pf-mark { display: grid; grid-template-columns: repeat(2, 12px); gap: 4px; margin-bottom: 6px; }
+.pf-mark span {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #2b6f78;
+  animation: pf-pulse 1.15s ease-in-out infinite;
+}
+.pf-mark span:nth-child(2) { animation-delay: 0.12s; }
+.pf-mark span:nth-child(3) { animation-delay: 0.36s; }
+.pf-mark span:nth-child(4) { animation-delay: 0.24s; }
+
+@keyframes pf-pulse {
+  0%, 100% { opacity: 0.28; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-mark span { animation: none; opacity: 0.7; }
+}
+
+/* Buttons ------------------------------------------------------------------ */
+
+.pf-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: none;
+  border: 1px solid var(--line-hi);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+.pf-button:hover { background: rgba(131, 231, 238, 0.07); border-color: var(--cyan); }
+.pf-button--primary {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #12181a;
+  font-weight: 600;
+}
+.pf-button--primary:hover { background: #ffb857; border-color: #ffb857; }
+.pf-button--compact { padding: 6px 11px; font-size: 10px; }
+
+/* Auth surfaces ------------------------------------------------------------ */
+
+.pf-auth {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 420px);
+  gap: 48px;
+  align-items: start;
+  padding: 64px 48px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.pf-auth__intro h1 {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 600;
+  margin: 10px 0 14px;
+  letter-spacing: -0.01em;
+}
+.pf-auth__intro p { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin: 0 0 14px; max-width: 46ch; }
+.pf-auth__switch a { color: var(--cyan); }
+.pf-auth__form {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 22px;
+}
+
+.pf-account-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 40px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.pf-account-page__header h1 {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 10px 0 12px;
+}
+.pf-account-page__header p { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin: 0; max-width: 62ch; }
+.pf-account-page__settings { border: 1px solid var(--line); background: var(--panel); }
+
+/*
+ * Content mask.
+ *
+ * Purely a marker for the analytics layer — `analytics.ts` blocks anything
+ * carrying this class from session replay. It deliberately changes nothing
+ * visually, because masked content is exactly what the operator is here to look
+ * at; the mask is for the recording, not for them.
+ */
+.pf-private { }

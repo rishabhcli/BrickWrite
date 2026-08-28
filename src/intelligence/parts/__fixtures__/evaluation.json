@@ -1,0 +1,1626 @@
+{
+  "catalogVersion": "2026-07",
+  "queries": [
+    {
+      "query": "3001",
+      "kind": "identifier",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "Canonical LDraw number."
+    },
+    {
+      "query": "part 3068b",
+      "kind": "identifier",
+      "accept": [
+        "3068b"
+      ],
+      "rationale": "Canonical number with a noise word."
+    },
+    {
+      "query": "3001.dat",
+      "kind": "identifier",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "LDraw file name."
+    },
+    {
+      "query": "3023",
+      "kind": "identifier",
+      "accept": [
+        "3023b"
+      ],
+      "rationale": "Retired number; LDraw renamed it to 3023b."
+    },
+    {
+      "query": "4497066",
+      "kind": "identifier",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "LEGO element id for Brick 2 x 4."
+    },
+    {
+      "query": "54534",
+      "kind": "identifier",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "LEGO design id recorded for Brick 2 x 4."
+    },
+    {
+      "query": "what is 87079",
+      "kind": "identifier",
+      "accept": [
+        "87079"
+      ],
+      "rationale": "Canonical number inside a question."
+    },
+    {
+      "query": "30374",
+      "kind": "identifier",
+      "accept": [
+        "30374"
+      ],
+      "rationale": "Bar 4L, the lightsaber blade."
+    },
+    {
+      "query": "2412b",
+      "kind": "identifier",
+      "accept": [
+        "2412b"
+      ],
+      "rationale": "Grille tile with a letter suffix."
+    },
+    {
+      "query": "60592",
+      "kind": "identifier",
+      "accept": [
+        "60592"
+      ],
+      "rationale": "Window 1 x 2 x 2 Flat Front."
+    },
+    {
+      "query": "brick 3001 please",
+      "kind": "identifier",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "Number with surrounding prose."
+    },
+    {
+      "query": "3070b",
+      "kind": "identifier",
+      "accept": [
+        "3070b"
+      ],
+      "rationale": "Tile 1 x 1 with Groove."
+    },
+    {
+      "query": "brick 2 x 4",
+      "kind": "dimension",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "The archetypal brick."
+    },
+    {
+      "query": "2x4 brick",
+      "kind": "dimension",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "Compact spelling of the same request."
+    },
+    {
+      "query": "4 by 2 brick",
+      "kind": "dimension",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "Spoken form; footprint is order-insensitive."
+    },
+    {
+      "query": "plate 2 x 4",
+      "kind": "dimension",
+      "accept": [
+        "3020"
+      ],
+      "rationale": "Plate of the same footprint."
+    },
+    {
+      "query": "plate 1 x 8",
+      "kind": "dimension",
+      "accept": [
+        "3460"
+      ],
+      "rationale": "Long thin plate."
+    },
+    {
+      "query": "tile 1 x 2",
+      "kind": "dimension",
+      "accept": [
+        "3069b",
+        "3069a"
+      ],
+      "rationale": "Both mould variants are the part people mean."
+    },
+    {
+      "query": "tile 2 x 2",
+      "kind": "dimension",
+      "accept": [
+        "3068b",
+        "3068a"
+      ],
+      "rationale": "Groove and no-groove variants."
+    },
+    {
+      "query": "1 x 1 brick",
+      "kind": "dimension",
+      "accept": [
+        "3005"
+      ],
+      "rationale": "Smallest ordinary brick."
+    },
+    {
+      "query": "a plate six studs long and one wide",
+      "kind": "dimension",
+      "accept": [
+        "3666"
+      ],
+      "rationale": "Plate 1 x 6."
+    },
+    {
+      "query": "eight stud long plate",
+      "kind": "dimension",
+      "accept": [
+        "3460",
+        "3034",
+        "3035"
+      ],
+      "rationale": "Any plate whose long axis is eight studs."
+    },
+    {
+      "query": "brick 1 x 6",
+      "kind": "dimension",
+      "accept": [
+        "3009"
+      ],
+      "rationale": "Named length."
+    },
+    {
+      "query": "plate 4 x 6",
+      "kind": "dimension",
+      "accept": [
+        "3032"
+      ],
+      "rationale": "Rectangular plate."
+    },
+    {
+      "query": "plate 2 x 2",
+      "kind": "dimension",
+      "accept": [
+        "3022"
+      ],
+      "rationale": "Square plate."
+    },
+    {
+      "query": "brick 2 x 2",
+      "kind": "dimension",
+      "accept": [
+        "3003"
+      ],
+      "rationale": "Square brick."
+    },
+    {
+      "query": "a 1 x 2 x 5 brick",
+      "kind": "dimension",
+      "accept": [
+        "2454b",
+        "2454a",
+        "46212",
+        "2454ad01",
+        "2454adf0",
+        "2454adf1"
+      ],
+      "rationale": "Three-number envelope."
+    },
+    {
+      "query": "baseplate 32 x 32",
+      "kind": "dimension",
+      "accept": [
+        "3811"
+      ],
+      "rationale": "Large baseplate."
+    },
+    {
+      "query": "window 1 x 4 x 3",
+      "kind": "dimension",
+      "accept": [
+        "60594",
+        "3853"
+      ],
+      "rationale": "Named window envelope."
+    },
+    {
+      "query": "sixteen by thirty two baseplate",
+      "kind": "dimension",
+      "accept": [
+        "3857"
+      ],
+      "rationale": "Number words for a baseplate."
+    },
+    {
+      "query": "plate 1 x 4",
+      "kind": "dimension",
+      "accept": [
+        "3710"
+      ],
+      "rationale": "Common plate."
+    },
+    {
+      "query": "tile 1 x 8",
+      "kind": "dimension",
+      "accept": [
+        "4162"
+      ],
+      "rationale": "Long tile."
+    },
+    {
+      "query": "smooth flat tile one by two",
+      "kind": "shape",
+      "accept": [
+        "3069b",
+        "3069a"
+      ],
+      "rationale": "Tile 1 x 2."
+    },
+    {
+      "query": "a cheese slope",
+      "kind": "shape",
+      "accept": [
+        "54200"
+      ],
+      "rationale": "The nickname for Brick Sloped 30 degrees 1 x 1 x 2/3."
+    },
+    {
+      "query": "45 degree slope 2 x 2",
+      "kind": "shape",
+      "accept": [
+        "3039"
+      ],
+      "rationale": "Brick Sloped 45 2 x 2."
+    },
+    {
+      "query": "inverted slope",
+      "kind": "shape",
+      "accept": [
+        "3747b",
+        "4871",
+        "2449",
+        "4287b",
+        "3747a"
+      ],
+      "rationale": "Any common inverted slope."
+    },
+    {
+      "query": "round 1 x 1 brick",
+      "kind": "shape",
+      "accept": [
+        "3062b",
+        "3062a"
+      ],
+      "rationale": "Brick Round 1 x 1, open and solid stud."
+    },
+    {
+      "query": "round tile 1 x 1",
+      "kind": "shape",
+      "accept": [
+        "98138",
+        "25269",
+        "24246"
+      ],
+      "rationale": "Tile Round 1 x 1 plus its quarter and half forms."
+    },
+    {
+      "query": "a cone",
+      "kind": "shape",
+      "accept": [
+        "59900",
+        "4589",
+        "11610"
+      ],
+      "rationale": "Small cone."
+    },
+    {
+      "query": "curved slope 2 x 1 with no studs",
+      "kind": "shape",
+      "accept": [
+        "11477"
+      ],
+      "rationale": "Half bow."
+    },
+    {
+      "query": "a wedge plate",
+      "kind": "shape",
+      "accept": [
+        "43722a",
+        "43723a",
+        "41769a",
+        "41770a",
+        "26601",
+        "2450",
+        "51739",
+        "2419",
+        "24307",
+        "24299",
+        "54383",
+        "30503",
+        "54384"
+      ],
+      "rationale": "Any common wedge plate."
+    },
+    {
+      "query": "arch 1 x 6",
+      "kind": "shape",
+      "accept": [
+        "3455",
+        "92950",
+        "15254",
+        "3307"
+      ],
+      "rationale": "Brick Arch 1 x 6 in its several forms."
+    },
+    {
+      "query": "a panel 1 x 2 x 1",
+      "kind": "shape",
+      "accept": [
+        "4865b",
+        "4865a",
+        "23969",
+        "93095"
+      ],
+      "rationale": "Panel variants of that envelope."
+    },
+    {
+      "query": "grille tile",
+      "kind": "shape",
+      "accept": [
+        "2412b",
+        "2877",
+        "3962b",
+        "19220",
+        "4151b",
+        "2412a",
+        "50949"
+      ],
+      "rationale": "Tile Special with grille ridges."
+    },
+    {
+      "query": "a dish",
+      "kind": "shape",
+      "accept": [
+        "4740",
+        "43898",
+        "3960",
+        "44375b"
+      ],
+      "rationale": "Radar dish."
+    },
+    {
+      "query": "headlight brick",
+      "kind": "shape",
+      "accept": [
+        "4070"
+      ],
+      "rationale": "Brick Special 1 x 1 with Headlight."
+    },
+    {
+      "query": "jumper plate",
+      "kind": "shape",
+      "accept": [
+        "15573",
+        "3794b",
+        "3794a",
+        "87580",
+        "18674",
+        "34103"
+      ],
+      "rationale": "Offset-stud plates."
+    },
+    {
+      "query": "bracket 1 x 2 to 2 x 2",
+      "kind": "shape",
+      "accept": [
+        "44728",
+        "99207"
+      ],
+      "rationale": "Bracket of that geometry, upright and inverted."
+    },
+    {
+      "query": "a technic beam",
+      "kind": "shape",
+      "accept": [
+        "32523",
+        "32316",
+        "32524",
+        "32140",
+        "6632",
+        "41677",
+        "32526",
+        "60483",
+        "40490",
+        "32525",
+        "32278",
+        "32449",
+        "41239",
+        "32009",
+        "43857",
+        "60484"
+      ],
+      "rationale": "Any common Technic beam."
+    },
+    {
+      "query": "a minifigure head",
+      "kind": "shape",
+      "accept": [
+        "3626c",
+        "28621",
+        "3626b"
+      ],
+      "rationale": "Plain minifig head shapes."
+    },
+    {
+      "query": "a door",
+      "kind": "shape",
+      "accept": [
+        "60616b",
+        "60623",
+        "60621",
+        "60616a",
+        "64390",
+        "3644"
+      ],
+      "rationale": "Full height door leaf."
+    },
+    {
+      "query": "a ladder",
+      "kind": "shape",
+      "accept": [
+        "6020",
+        "4207",
+        "420",
+        "7307",
+        "15118",
+        "421",
+        "87913",
+        "11299",
+        "4000",
+        "850",
+        "851a",
+        "852"
+      ],
+      "rationale": "Ladders and ladder-shaped bars."
+    },
+    {
+      "query": "a fence",
+      "kind": "shape",
+      "accept": [
+        "3633",
+        "3185",
+        "15332",
+        "30055",
+        "19121",
+        "21229",
+        "6079",
+        "30056",
+        "32932",
+        "3187",
+        "3186",
+        "30077"
+      ],
+      "rationale": "Fence pieces."
+    },
+    {
+      "query": "roof slope 33 degrees 3 x 2",
+      "kind": "shape",
+      "accept": [
+        "3298"
+      ],
+      "rationale": "Brick Sloped 33 3 x 2."
+    },
+    {
+      "query": "a turntable",
+      "kind": "shape",
+      "accept": [
+        "3680",
+        "3679",
+        "61485",
+        "27448",
+        "3403c01",
+        "3403",
+        "3404"
+      ],
+      "rationale": "Rotating base and top plates."
+    },
+    {
+      "query": "a propeller",
+      "kind": "shape",
+      "accept": [
+        "2479",
+        "6041",
+        "2421",
+        "92842",
+        "54568",
+        "4617b",
+        "3461",
+        "30332",
+        "3480",
+        "41530",
+        "4745",
+        "15790"
+      ],
+      "rationale": "Propellers."
+    },
+    {
+      "query": "a wheel",
+      "kind": "shape",
+      "accept": [
+        "4624",
+        "6014b",
+        "42610",
+        "55981",
+        "56145",
+        "34337",
+        "55982"
+      ],
+      "rationale": "Road wheels."
+    },
+    {
+      "query": "something that lets two plates pivot",
+      "kind": "function",
+      "accept": [
+        "73983",
+        "44302a",
+        "30383",
+        "44567a",
+        "44301b",
+        "92582"
+      ],
+      "rationale": "Hinge plates are the pivot between two plates."
+    },
+    {
+      "query": "a piece that holds a bar so it can rotate",
+      "kind": "function",
+      "accept": [
+        "15712",
+        "60897",
+        "63868",
+        "4081b",
+        "61252",
+        "48729b",
+        "60470b",
+        "11476",
+        "11090",
+        "4085c",
+        "60475b",
+        "2555",
+        "6019"
+      ],
+      "rationale": "Clip parts grip a bar."
+    },
+    {
+      "query": "a part to mount a stud sideways",
+      "kind": "function",
+      "accept": [
+        "87087",
+        "11211",
+        "4070",
+        "99781",
+        "99780"
+      ],
+      "rationale": "SNOT brackets and side-stud bricks."
+    },
+    {
+      "query": "how do I attach a wheel to an axle",
+      "kind": "function",
+      "accept": [
+        "32062",
+        "43093",
+        "4519",
+        "3705",
+        "59443",
+        "3749",
+        "32013",
+        "3706",
+        "6536",
+        "32073",
+        "6587",
+        "32034",
+        "87083",
+        "3707",
+        "32039",
+        "42003"
+      ],
+      "rationale": "Wheels with axle holes and the axles themselves."
+    },
+    {
+      "query": "a part that fills a one stud gap between plates",
+      "kind": "function",
+      "accept": [
+        "3024",
+        "3005",
+        "54200"
+      ],
+      "rationale": "A single-stud filler."
+    },
+    {
+      "query": "something to make a smooth finished surface",
+      "kind": "function",
+      "accept": [
+        "3070b",
+        "3069b",
+        "2431",
+        "3068b",
+        "87079",
+        "6636",
+        "63864",
+        "4162"
+      ],
+      "rationale": "Plain tiles are the finished surface."
+    },
+    {
+      "query": "a piece that turns",
+      "kind": "function",
+      "accept": [
+        "3680",
+        "3679",
+        "61485",
+        "27448",
+        "3403c01",
+        "99009",
+        "3403",
+        "3404",
+        "99010",
+        "18939",
+        "18938",
+        "4508",
+        "50163"
+      ],
+      "rationale": "Turntables."
+    },
+    {
+      "query": "a windscreen for a car",
+      "kind": "function",
+      "accept": [
+        "3823",
+        "2437",
+        "4176",
+        "57783",
+        "6070",
+        "92583",
+        "64453",
+        "92474",
+        "4594",
+        "11289",
+        "62360",
+        "41751",
+        "35299",
+        "87752",
+        "4872",
+        "27262",
+        "4474",
+        "45705"
+      ],
+      "rationale": "Windscreens."
+    },
+    {
+      "query": "a hinge whose axis points sideways",
+      "kind": "function",
+      "accept": [
+        "44567a",
+        "60471",
+        "50340",
+        "44567b",
+        "2452",
+        "3937",
+        "3938"
+      ],
+      "rationale": "Side-fingered hinges plus the classic hinge brick pair."
+    },
+    {
+      "query": "a part for a chimney",
+      "kind": "function",
+      "accept": [
+        "3062b",
+        "59900",
+        "4589",
+        "11610",
+        "3062a",
+        "25214"
+      ],
+      "rationale": "Round bricks and cones stack into a chimney."
+    },
+    {
+      "query": "something to hold a flag",
+      "kind": "function",
+      "accept": [
+        "4083",
+        "4735",
+        "62113",
+        "6140",
+        "6187",
+        "6190",
+        "2486",
+        "42445",
+        "30359b",
+        "99784",
+        "4873",
+        "51708",
+        "6016",
+        "30359a"
+      ],
+      "rationale": "Flagpoles and bar holders."
+    },
+    {
+      "query": "a piece to make a fence railing",
+      "kind": "function",
+      "accept": [
+        "3633",
+        "6020",
+        "3185",
+        "15332",
+        "30055",
+        "19121",
+        "21229",
+        "6079",
+        "30056",
+        "32932",
+        "3187",
+        "30095"
+      ],
+      "rationale": "Fence and railing bars."
+    },
+    {
+      "query": "a part that steers",
+      "kind": "function",
+      "accept": [
+        "3829c01",
+        "16091",
+        "2819",
+        "30663",
+        "4261",
+        "3736",
+        "32069",
+        "15460",
+        "32494",
+        "92906",
+        "92909",
+        "67811",
+        "2741",
+        "11950"
+      ],
+      "rationale": "Steering parts."
+    },
+    {
+      "query": "a part to hold a minifigure in place",
+      "kind": "function",
+      "accept": [
+        "87580",
+        "60478",
+        "33909",
+        "88072",
+        "3839b",
+        "2817",
+        "10247",
+        "4600",
+        "2444",
+        "6157",
+        "4623",
+        "18649",
+        "75937",
+        "2476a"
+      ],
+      "rationale": "Special plates minifigures stand on or clip to."
+    },
+    {
+      "query": "a lightsaber blade",
+      "kind": "function",
+      "accept": [
+        "30374"
+      ],
+      "rationale": "Bar 4L."
+    },
+    {
+      "query": "a piece that connects two technic beams",
+      "kind": "function",
+      "accept": [
+        "4274",
+        "2780",
+        "3673",
+        "18654",
+        "61332",
+        "62462",
+        "32002",
+        "6558",
+        "89678",
+        "32054",
+        "32530",
+        "22961",
+        "61184",
+        "42924",
+        "6628",
+        "65304"
+      ],
+      "rationale": "Technic pins."
+    },
+    {
+      "query": "something to cover a stud so nothing can stack on it",
+      "kind": "function",
+      "accept": [
+        "3070b",
+        "3069b",
+        "2431",
+        "3068b",
+        "87079",
+        "6636",
+        "63864",
+        "4162"
+      ],
+      "rationale": "A tile is what stops stacking."
+    },
+    {
+      "query": "a part that makes a corner between two walls",
+      "kind": "function",
+      "accept": [
+        "3005",
+        "2420",
+        "2357",
+        "2357d01",
+        "2357d02",
+        "85080dy0",
+        "85080dy1",
+        "85080dy2"
+      ],
+      "rationale": "Corner bricks and 1 x 1 bricks."
+    },
+    {
+      "query": "a transparent piece for a window opening",
+      "kind": "function",
+      "accept": [
+        "60601",
+        "57895",
+        "60602",
+        "38320",
+        "4862",
+        "3855b",
+        "2494",
+        "4448"
+      ],
+      "rationale": "Glazing panes."
+    },
+    {
+      "query": "a part that clips onto a bar and holds a tile",
+      "kind": "function",
+      "accept": [
+        "15712",
+        "60897",
+        "63868",
+        "4081b",
+        "61252",
+        "48729b",
+        "60470b",
+        "11476",
+        "11090",
+        "4085c",
+        "60475b",
+        "2555",
+        "6019"
+      ],
+      "rationale": "Clip parts."
+    },
+    {
+      "query": "a transparent windscreen about six studs wide",
+      "kind": "color",
+      "accept": [
+        "4176",
+        "92583",
+        "64453",
+        "92474",
+        "62360",
+        "41751",
+        "35299",
+        "87752",
+        "27262",
+        "4474",
+        "45705",
+        "50747",
+        "61484",
+        "41883"
+      ],
+      "rationale": "Windscreens with a six-stud axis."
+    },
+    {
+      "query": "a red 2 x 4 brick",
+      "kind": "color",
+      "accept": [
+        "3001"
+      ],
+      "rationale": "Colour is a palette constraint; the part is still Brick 2 x 4."
+    },
+    {
+      "query": "trans clear 1 x 1 round brick",
+      "kind": "color",
+      "accept": [
+        "3062b",
+        "3062a"
+      ],
+      "rationale": "The part; transparency is the colour."
+    },
+    {
+      "query": "a chrome minifigure accessory",
+      "kind": "color",
+      "accept": [
+        "3626c",
+        "90398",
+        "28621",
+        "42446",
+        "15619",
+        "3626b",
+        "10190"
+      ],
+      "rationale": "Chrome is a finish, not a part; any common minifig accessory qualifies."
+    },
+    {
+      "query": "glow in the dark 1 x 1 plate",
+      "kind": "color",
+      "accept": [
+        "3024"
+      ],
+      "rationale": "Plate 1 x 1."
+    },
+    {
+      "query": "a pearl gold 1 x 1 round tile",
+      "kind": "color",
+      "accept": [
+        "98138"
+      ],
+      "rationale": "Tile Round 1 x 1."
+    },
+    {
+      "query": "transparent 1 x 2 plate",
+      "kind": "color",
+      "accept": [
+        "3023b"
+      ],
+      "rationale": "Plate 1 x 2."
+    },
+    {
+      "query": "a white tile 2 x 4",
+      "kind": "color",
+      "accept": [
+        "87079"
+      ],
+      "rationale": "Tile 2 x 4 with Groove."
+    },
+    {
+      "query": "dark bluish grey plate 1 x 4",
+      "kind": "color",
+      "accept": [
+        "3710"
+      ],
+      "rationale": "Plate 1 x 4."
+    },
+    {
+      "query": "trans red 1 x 1 round plate",
+      "kind": "color",
+      "accept": [
+        "6141",
+        "85861",
+        "15470",
+        "53119"
+      ],
+      "rationale": "Round 1 x 1 plates."
+    },
+    {
+      "query": "a rubber tyre",
+      "kind": "color",
+      "accept": [
+        "3641",
+        "59895",
+        "87697",
+        "3139b",
+        "50951",
+        "3483",
+        "6015",
+        "30028b",
+        "50861"
+      ],
+      "rationale": "Tyres are the rubber parts."
+    },
+    {
+      "query": "a transparent 1 x 2 tile",
+      "kind": "color",
+      "accept": [
+        "3069b",
+        "3069a"
+      ],
+      "rationale": "Tile 1 x 2."
+    },
+    {
+      "query": "clip that holds a bar",
+      "kind": "connector",
+      "accept": [
+        "15712",
+        "60897",
+        "63868",
+        "4081b",
+        "61252",
+        "48729b",
+        "60470b",
+        "11476",
+        "11090",
+        "4085c",
+        "60475b",
+        "2555",
+        "6019",
+        "3484",
+        "98313",
+        "12825",
+        "78256"
+      ],
+      "rationale": "Parts with a clip connector."
+    },
+    {
+      "query": "a brick with a technic pin hole",
+      "kind": "connector",
+      "accept": [
+        "6541",
+        "32064a",
+        "73230",
+        "32064b",
+        "85943"
+      ],
+      "rationale": "Technic bricks carry pin holes."
+    },
+    {
+      "query": "a plate with a pin on the bottom",
+      "kind": "connector",
+      "accept": [
+        "10247",
+        "2444",
+        "2476a",
+        "65487",
+        "15100",
+        "2476b"
+      ],
+      "rationale": "Pin-bearing plates."
+    },
+    {
+      "query": "an axle",
+      "kind": "connector",
+      "accept": [
+        "4519",
+        "3705",
+        "3706",
+        "32073",
+        "3707",
+        "44294",
+        "3737",
+        "3708",
+        "60485",
+        "23948",
+        "3704",
+        "50450",
+        "50451"
+      ],
+      "rationale": "Plain axles."
+    },
+    {
+      "query": "part with an axle hole",
+      "kind": "connector",
+      "accept": [
+        "4032a",
+        "3941",
+        "32123b",
+        "32064a",
+        "60483",
+        "32039"
+      ],
+      "rationale": "Parts with an axle hole."
+    },
+    {
+      "query": "a ball joint",
+      "kind": "connector",
+      "accept": [
+        "14704",
+        "32474",
+        "14417",
+        "2736",
+        "14418",
+        "6628",
+        "22484",
+        "22890",
+        "30395",
+        "53585",
+        "15456",
+        "63082",
+        "14419",
+        "2508",
+        "50923",
+        "3184"
+      ],
+      "rationale": "Ball and socket parts."
+    },
+    {
+      "query": "a bar one stud long",
+      "kind": "connector",
+      "accept": [
+        "48729b",
+        "3484",
+        "4083",
+        "92690",
+        "4735",
+        "68211",
+        "62113",
+        "48729a",
+        "6140",
+        "6187"
+      ],
+      "rationale": "Short bars."
+    },
+    {
+      "query": "a socket for a ball",
+      "kind": "connector",
+      "accept": [
+        "14704",
+        "14418",
+        "32174",
+        "63082",
+        "14419",
+        "67696",
+        "48169",
+        "92013",
+        "93571",
+        "3730",
+        "3613",
+        "90609",
+        "48172",
+        "90641",
+        "90640",
+        "90617"
+      ],
+      "rationale": "Socket parts."
+    },
+    {
+      "query": "brick with studs on the side",
+      "kind": "connector",
+      "accept": [
+        "87087",
+        "11211",
+        "4070"
+      ],
+      "rationale": "Side-stud bricks."
+    },
+    {
+      "query": "a hinge brick",
+      "kind": "connector",
+      "accept": [
+        "3937",
+        "6134",
+        "3938",
+        "3831",
+        "3830",
+        "30365",
+        "30364",
+        "30386",
+        "30387"
+      ],
+      "rationale": "Hinge bricks."
+    },
+    {
+      "query": "a technic pin with friction",
+      "kind": "connector",
+      "accept": [
+        "4274",
+        "2780",
+        "3673",
+        "61332",
+        "6558",
+        "89678",
+        "32054",
+        "42924",
+        "6628",
+        "65304",
+        "65487",
+        "15100"
+      ],
+      "rationale": "Friction pins."
+    },
+    {
+      "query": "a plate with a clip on top",
+      "kind": "connector",
+      "accept": [
+        "60897",
+        "63868",
+        "4081b",
+        "61252",
+        "60470b",
+        "11476",
+        "4085c",
+        "6019",
+        "78256",
+        "60470a",
+        "4085b"
+      ],
+      "rationale": "Clip plates."
+    },
+    {
+      "query": "a bar with clips at both ends",
+      "kind": "connector",
+      "accept": [
+        "30377",
+        "6020",
+        "30350b",
+        "65886",
+        "60583b",
+        "30350c",
+        "79987",
+        "19159",
+        "60583a",
+        "30350a",
+        "47994",
+        "41890"
+      ],
+      "rationale": "Double clip bars."
+    },
+    {
+      "query": "a tile with a bar handle",
+      "kind": "connector",
+      "accept": [
+        "15712",
+        "2432",
+        "2555",
+        "12825"
+      ],
+      "rationale": "Handled tiles."
+    },
+    {
+      "query": "a piece with an anti stud underneath and no stud on top",
+      "kind": "connector",
+      "accept": [
+        "3070b",
+        "3069b",
+        "2431",
+        "3068b",
+        "87079",
+        "6636",
+        "63864",
+        "4162"
+      ],
+      "rationale": "A tile is exactly that."
+    },
+    {
+      "query": "the mirrored counterpart of wedge 41747",
+      "kind": "relation",
+      "accept": [
+        "41748"
+      ],
+      "rationale": "LDraw pairs 41747 Right with 41748 Left."
+    },
+    {
+      "query": "mirror of 43710",
+      "kind": "relation",
+      "accept": [
+        "43711"
+      ],
+      "rationale": "Sloped 4 x 2 Triple Left and Right."
+    },
+    {
+      "query": "the other hand of 29119",
+      "kind": "relation",
+      "accept": [
+        "29120"
+      ],
+      "rationale": "Stud notch wedge pair."
+    },
+    {
+      "query": "mirrored version of 41767",
+      "kind": "relation",
+      "accept": [
+        "41768"
+      ],
+      "rationale": "Angled 4 x 2 Right and Left."
+    },
+    {
+      "query": "the mirror of 43723a",
+      "kind": "relation",
+      "accept": [
+        "43722a",
+        "43723a"
+      ],
+      "rationale": "Wedge Plate 3 x 2 pair."
+    },
+    {
+      "query": "something cheaper and more common with the same connections as 3068b",
+      "kind": "relation",
+      "accept": [
+        "3070b",
+        "3069b",
+        "98138",
+        "2431",
+        "25269",
+        "3068b",
+        "87079",
+        "6636",
+        "63864",
+        "4162",
+        "24246",
+        "14769",
+        "26603",
+        "27925",
+        "14719",
+        "1748",
+        "69729"
+      ],
+      "rationale": "Anything whose interface is a plain anti-stud underside."
+    },
+    {
+      "query": "a part with the same connectors as 3070b",
+      "kind": "relation",
+      "accept": [
+        "3070b",
+        "3069b",
+        "98138",
+        "2431",
+        "25269",
+        "3068b",
+        "2412b",
+        "87079",
+        "6636",
+        "20482",
+        "63864",
+        "4162",
+        "15712",
+        "24246",
+        "2432",
+        "14769",
+        "26603",
+        "27925",
+        "15535",
+        "14719"
+      ],
+      "rationale": "Same plain-tile interface."
+    },
+    {
+      "query": "interchangeable with 3020",
+      "kind": "relation",
+      "accept": [
+        "3023b",
+        "3024",
+        "3020",
+        "3022",
+        "3710",
+        "3021",
+        "3795",
+        "3666",
+        "3623",
+        "3034",
+        "3460",
+        "3031",
+        "3032",
+        "3035"
+      ],
+      "rationale": "Plates with the same stud and anti-stud interface."
+    },
+    {
+      "query": "a part that bridges a 3-stud gap between two plates",
+      "kind": "relation",
+      "accept": [
+        "3023b",
+        "3024",
+        "3020",
+        "3022",
+        "3710",
+        "3021",
+        "3795",
+        "3666",
+        "3623",
+        "15573",
+        "3034",
+        "3460",
+        "87580",
+        "3031",
+        "3032",
+        "35480",
+        "3035",
+        "48336",
+        "2540",
+        "18674",
+        "32028",
+        "60478",
+        "32828",
+        "33909"
+      ],
+      "rationale": "A plate at least five studs long reaches across three."
+    },
+    {
+      "query": "a part that bridges a 6-stud gap",
+      "kind": "relation",
+      "accept": [
+        "3023b",
+        "3024",
+        "3020",
+        "3022",
+        "3710",
+        "3004",
+        "3070b",
+        "3069b",
+        "3021",
+        "3005",
+        "3795",
+        "3666",
+        "3010",
+        "3623",
+        "2431",
+        "3068b",
+        "3034",
+        "3009",
+        "3460",
+        "3622",
+        "87079",
+        "6636",
+        "3031",
+        "3032"
+      ],
+      "rationale": "Any part at least eight studs long."
+    },
+    {
+      "query": "a plain unprinted version of 3069bp73",
+      "kind": "relation",
+      "accept": [
+        "3069b"
+      ],
+      "rationale": "The base design the print decorates."
+    },
+    {
+      "query": "the base design behind 3068bd09",
+      "kind": "relation",
+      "accept": [
+        "3068b"
+      ],
+      "rationale": "Sticker variant to base."
+    },
+    {
+      "query": "mirror of 78443",
+      "kind": "relation",
+      "accept": [
+        "78444",
+        "78443"
+      ],
+      "rationale": "Wedge Plate 6 x 2 pair."
+    },
+    {
+      "query": "the mirrored counterpart of 3675",
+      "kind": "relation",
+      "accept": [
+        "43722a",
+        "43723a",
+        "41769a",
+        "41770a",
+        "26601",
+        "2450",
+        "51739",
+        "2419",
+        "24307",
+        "24299",
+        "54383",
+        "30503"
+      ],
+      "rationale": "Handed slope counterpart when one is recorded."
+    },
+    {
+      "query": "the left hand version of 41769a",
+      "kind": "relation",
+      "accept": [
+        "41769a",
+        "41770a",
+        "51739",
+        "65429",
+        "65426"
+      ],
+      "rationale": "Wedge Plate 4 x 2 pair."
+    },
+    {
+      "query": "a 40-stud transparent gear",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "40 studs"
+      ],
+      "rationale": "No gear is forty studs across."
+    },
+    {
+      "query": "a 30 stud wide minifigure head",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "30 studs"
+      ],
+      "rationale": "Minifig heads are one stud."
+    },
+    {
+      "query": "a chrome liquid antigravity brick",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "antigravity"
+      ],
+      "rationale": "Antigravity is not LEGO vocabulary."
+    },
+    {
+      "query": "a 64 stud long 1 x 1 round brick",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "64 studs"
+      ],
+      "rationale": "Round 1 x 1 bricks are one stud."
+    },
+    {
+      "query": "a transparent rubber tyre 50 studs across",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "50 studs"
+      ],
+      "rationale": "No tyre is fifty studs."
+    },
+    {
+      "query": "a flurbulator",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "flurbulator"
+      ],
+      "rationale": "Invented word."
+    },
+    {
+      "query": "a 25 stud tall cheese slope",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "25 studs"
+      ],
+      "rationale": "The cheese slope is one stud."
+    },
+    {
+      "query": "a zorbulon plate",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "zorbulon"
+      ],
+      "rationale": "Invented word."
+    },
+    {
+      "query": "a 48 stud wide minifigure hand",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "48 studs"
+      ],
+      "rationale": "Minifig hands are sub-stud."
+    },
+    {
+      "query": "a snorklewhacker with twelve clips",
+      "kind": "impossible",
+      "accept": [],
+      "expectUnmatched": [
+        "snorklewhacker"
+      ],
+      "rationale": "Invented word."
+    }
+  ]
+}

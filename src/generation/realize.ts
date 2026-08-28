@@ -1,5 +1,7 @@
 import {
   AssemblyError,
+  DEFAULT_GLASS_COLOR,
+  DEFAULT_TRIM_COLOR,
   MAX_GENERATED_PARTS,
   planBrickField,
   planEnclosure,
@@ -12,10 +14,9 @@ import { findCollisions, residentGeometryProvider, type GeometryProvider } from 
 import { featureFrame } from '../cad/connections'
 import { getDocumentBounds, getPartBounds } from '../cad/geometry'
 import { composeTransform, invertTransform, rotationAboutAxis, IDENTITY_BASIS } from '../cad/math'
-import { deriveConnections, findSnapCandidates } from '../cad/snapping'
+import { deriveConnections, findSnapCandidates, type WorldConnector } from '../cad/snapping'
 import type {
   CadOperation,
-  ConnectionFeature,
   ModelDocument,
   PartDefinition,
   PartInstance,
@@ -45,22 +46,22 @@ import {
 /**
  * The deterministic realiser: structure in, exact geometry out.
  *
- * This is the half of generation that is allowed to decide where things go, and
- * it decides by running the same code a human drag runs. Each attachment names
- * two connectors; the realiser resolves those to compiled `ConnectionFeature`s,
+ * This is the half of generation that decides where things go, and it decides
+ * by running the same code a human drag runs. Each attachment names two
+ * connectors; the realiser resolves those against compiled `ConnectionFeature`s,
  * builds the pose that puts them coincident, and hands *that* to
  * `findSnapCandidates`, which enumerates the matings the pair actually permits
  * and ranks them by how many further connectors land at the same time. The
  * winning candidate's transform is the part's pose. No coordinate in the output
  * was ever proposed by a model.
  *
- * Bulk fill is delegated to `src/cad/assembly.ts` rather than solved connector
- * by connector, for a reason worth stating: a wall's correctness is a property
- * of the *bond* — staggered seams, exact coverage, interlocked corners — which
- * is a global constraint over a course, not a local one over a joint. The
- * planners solve it exactly. What the realiser owns is where the region starts
- * and whether it actually attached, and both of those are verified here against
- * the kernel's own connection graph rather than assumed from the planner.
+ * Bulk fill is delegated to `src/cad/assembly.ts` rather than solved joint by
+ * joint, for a reason worth stating: a wall's correctness is a property of the
+ * *bond* — staggered seams, exact coverage, interlocked corners — which is a
+ * global constraint over a course, not a local one over a joint. The planners
+ * solve it exactly. What the realiser owns is where a region starts and whether
+ * it actually attached, and both are verified here against the kernel's own
+ * connection graph rather than assumed from the planner.
  *
  * Every placement is checked before it is kept: collisions through
  * `findCollisions`, region attachment through `connectedComponent`, envelope and
@@ -79,6 +80,14 @@ export interface NodeOutcome {
   readonly partIds: readonly string[]
   /** Why a node was repaired, rejected or skipped. Absent when realised cleanly. */
   readonly reason?: string
+  /**
+   * Every attempt that failed, in order.
+   *
+   * Reporting only the last one is actively misleading: repair walks outward, so
+   * the final failure is usually "it left the envelope four studs away" while the
+   * thing that actually went wrong was the first attempt's collision.
+   */
+  readonly attemptLog?: readonly string[]
   /** Populated when the brief's palette forced a different colour. */
   readonly colourSubstitutedFrom?: number
 }
@@ -90,7 +99,10 @@ export interface EdgeOutcome {
   readonly reason?: string
   /** Attempts consumed, including the primary. Bounded by the repair budget. */
   readonly attempts: number
-  readonly parentFeatureId?: string
+  /** Every attempt that failed, in order. */
+  readonly attemptLog?: readonly string[]
+  /** `partId/featureId` of the host connector that carried the attachment. */
+  readonly hostConnector?: string
   readonly childFeatureId?: string
   /** Further connectors that landed at the solved pose — the bond, not the joint. */
   readonly simultaneousMates?: number
@@ -146,7 +158,7 @@ const throwIfAborted = (signal: AbortSignal | undefined, stage: string) => {
   if (signal?.aborted) throw new GenerationAbortedError(stage)
 }
 
-/** Brick families the compiled pack can actually lay, cheapest substitution first. */
+/** Brick families the compiled pack can lay, in substitution order. */
 const SUBSTITUTE_FAMILIES: readonly BrickFamily[] = ['brick', 'plate', 'tile']
 
 export interface IdentityResolution {
@@ -161,7 +173,7 @@ export interface IdentityResolution {
  *
  * Only the `placeable` tier is ever returned. An identity this build merely
  * knows the name of cannot be given a pose, so offering one would produce a
- * document that renders as a hole; the intent is reported unresolvable instead.
+ * document with a hole in it; the intent is reported unresolvable instead.
  */
 export function resolvePartIdentity(intent: PartIntent, limit = 8): IdentityResolution {
   if (intent.definitionId) {
@@ -174,24 +186,20 @@ export function resolvePartIdentity(intent: PartIntent, limit = 8): IdentityReso
       definition: null,
       alternatives: [],
       explanation: record
-        ? `${intent.definitionId} is catalogued at tier "${record.tier}", which this build cannot place`
+        ? `${intent.definitionId} is catalogued at tier “${record.tier}”, which this build cannot place`
         : `${intent.definitionId} is not an identity in catalog ${catalog.version}`,
     }
   }
 
   const size = intent.sizeStuds
+  const bound = (index: 0 | 1 | 2, slack: number) => {
+    const value = size?.[index]
+    return value === null || value === undefined ? {} : { [(['width', 'height', 'depth'] as const)[index]]: value + slack }
+  }
   const envelope = size
     ? {
-        min: {
-          ...(size[0] !== null ? { width: size[0] - 0.01 } : {}),
-          ...(size[1] !== null ? { height: size[1] - 0.01 } : {}),
-          ...(size[2] !== null ? { depth: size[2] - 0.01 } : {}),
-        },
-        max: {
-          ...(size[0] !== null ? { width: size[0] + 0.01 } : {}),
-          ...(size[1] !== null ? { height: size[1] + 0.01 } : {}),
-          ...(size[2] !== null ? { depth: size[2] + 0.01 } : {}),
-        },
+        min: { ...bound(0, -0.01), ...bound(1, -0.01), ...bound(2, -0.01) },
+        max: { ...bound(0, 0.01), ...bound(1, 0.01), ...bound(2, 0.01) },
       }
     : null
 
@@ -226,19 +234,20 @@ export function resolvePartIdentity(intent: PartIntent, limit = 8): IdentityReso
 }
 
 /**
- * Every connector a reference could mean, best match first.
+ * Every connector on a part that a reference could mean, best match first.
  *
- * Returning the whole ordered list rather than one winner is what makes repair
- * possible without a second, differently-ordered search: "the next connector" is
- * simply the next element, and it is the nearest alternative by construction.
+ * Used for the *moving* side of an attachment, where the choice is made in the
+ * part's own frame before it has a pose. The host side is resolved in world
+ * space by `hostConnectors`, because a host may be a whole region rather than a
+ * single part.
  */
-export function orderFeatures(definition: PartDefinition, reference: ConnectorRef): ConnectionFeature[] {
+export function orderFeatures(definition: PartDefinition, reference: ConnectorRef): PartDefinition['connectors'] {
   const pool = definition.connectors.filter(
     (feature) => feature.family === reference.family && (!reference.gender || feature.gender === reference.gender),
   )
   if (pool.length < 2) return pool
 
-  const byId = (a: ConnectionFeature, b: ConnectionFeature) => a.id.localeCompare(b.id)
+  const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
   const pick = reference.pick
 
   if (pick.kind === 'index') {
@@ -256,15 +265,30 @@ export function orderFeatures(definition: PartDefinition, reference: ConnectorRe
   // and the axis coordinate is only a tie-break. Comparing in 3D instead would
   // let a connector on the far face win because it happens to be closer in space.
   const bounds = definition.dimensions?.bounds
-  const originU = bounds ? bounds.min[0] : 0
-  const originV = bounds ? bounds.min[2] : 0
-  const targetU = originU + (pick.uStuds + 0.5) * STUD_LDU
-  const targetV = originV + (pick.vStuds + 0.5) * STUD_LDU
-  const planarDistance = (feature: ConnectionFeature) =>
-    Math.hypot(feature.pos[0] - targetU, feature.pos[2] - targetV)
-  return [...pool].sort(
-    (a, b) => planarDistance(a) - planarDistance(b) || a.pos[1] - b.pos[1] || byId(a, b),
+  const targetU = (bounds ? bounds.min[0] : 0) + (pick.uStuds + 0.5) * STUD_LDU
+  const targetV = (bounds ? bounds.min[2] : 0) + (pick.vStuds + 0.5) * STUD_LDU
+  const levelled = filterToLevel(pool, pick.level, (feature) => feature.pos[1])
+  return [...levelled].sort(
+    (a, b) =>
+      Math.hypot(a.pos[0] - targetU, a.pos[2] - targetV) - Math.hypot(b.pos[0] - targetU, b.pos[2] - targetV) ||
+      a.pos[1] - b.pos[1] ||
+      byId(a, b),
   )
+}
+
+/**
+ * Narrows a connector pool to its highest or lowest plane.
+ *
+ * LDraw is Y-down, so "top" is the *minimum* y. One LDU of slack absorbs the
+ * float noise of composing a transform without merging two real courses, which
+ * are 8 LDU apart at the very closest.
+ */
+function filterToLevel<T>(pool: readonly T[], level: 'top' | 'bottom' | undefined, y: (item: T) => number): readonly T[] {
+  if (!level || pool.length < 2) return pool
+  const values = pool.map(y)
+  const plane = level === 'top' ? Math.min(...values) : Math.max(...values)
+  const kept = pool.filter((item) => Math.abs(y(item) - plane) <= 1)
+  return kept.length ? kept : pool
 }
 
 const withParts = (document: ModelDocument, parts: readonly PartInstance[]): ModelDocument => ({
@@ -279,15 +303,13 @@ function conformColour(colour: number, palette: readonly number[] | undefined): 
   return palette[0]
 }
 
-interface EnvelopeCheck {
-  readonly ok: boolean
-  readonly detail?: string
-}
-
-function checkEnvelope(document: ModelDocument, envelopeStuds: RealizeConstraints['envelopeStuds']): EnvelopeCheck {
+function checkEnvelope(
+  document: ModelDocument,
+  envelopeStuds: RealizeConstraints['envelopeStuds'],
+): { ok: boolean; detail?: string } {
   if (!envelopeStuds) return { ok: true }
   const size = getDocumentBounds(document).size
-  const axes: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z']
+  const axes = ['x', 'y', 'z'] as const
   for (let axis = 0; axis < 3; axis += 1) {
     const limit = envelopeStuds[axis] * STUD_LDU
     if (size[axis] > limit + 1e-6) {
@@ -308,18 +330,39 @@ function checkEnvelope(document: ModelDocument, envelopeStuds: RealizeConstraint
  * what makes cancellation safe — an aborted run has written nothing anywhere.
  */
 export function realizeGraph(graph: BuildGraph, base: ModelDocument, options: RealizeOptions = {}): RealizeResult {
-  return new Realizer(graph, base, options).run()
+  return new GraphRealizer(base, options).extend(graph)
 }
 
 interface PlacedNode {
   readonly node: BuildNode
   readonly partIds: string[]
-  /** Anchor part for children: the one an outgoing edge attaches to. */
-  readonly anchorPartId: string | null
+  /**
+   * The node's own origin corner in document LDU: minimum X, minimum Z, and the
+   * Y of the plane it was seated on. Grid picks on an outgoing edge are measured
+   * from here, so "the stud six along the deck" means the same thing whether the
+   * node is one plate or two hundred.
+   */
+  readonly originLdu: Vec3
   readonly definitionId: string | null
 }
 
-class Realizer {
+/** A host connector, carried with the composite handle repair reports it by. */
+interface HostConnector {
+  readonly handle: string
+  readonly connector: WorldConnector
+}
+
+/**
+ * A realiser that survives between phases.
+ *
+ * The pipeline grows one graph across four phases, and re-realising the whole
+ * thing each time would be both wasteful and subtly wrong: repair is seeded, so
+ * a node re-placed in a document that now contains later parts could land
+ * somewhere else than it did when the phase that owns it ran. Keeping the
+ * realiser alive means a node is placed exactly once, by the phase that proposed
+ * it, and every later phase sees the geometry that actually exists.
+ */
+export class GraphRealizer {
   private document: ModelDocument
   private readonly operations: CadOperation[] = []
   private readonly nodes: NodeOutcome[] = []
@@ -336,11 +379,9 @@ class Realizer {
   private truncated = false
   private readonly stepId: string
 
-  constructor(
-    private readonly graph: BuildGraph,
-    base: ModelDocument,
-    private readonly options: RealizeOptions,
-  ) {
+  private graph: BuildGraph = { version: 1, strategy: 'empty', nodes: [], edges: [] }
+
+  constructor(base: ModelDocument, private readonly options: RealizeOptions = {}) {
     this.document = base
     this.seed = options.seed ?? 0
     this.idPrefix = options.idPrefix ?? `gen${(options.seed ?? 0).toString(36)}`
@@ -355,10 +396,22 @@ class Realizer {
     for (const id of Object.keys(base.subassemblies)) this.subassemblies.add(id)
   }
 
-  run(): RealizeResult {
+  /** The document as realised so far, including the base. */
+  get current(): ModelDocument {
+    return this.document
+  }
+
+  /**
+   * Realises whatever `graph` adds beyond what is already placed.
+   *
+   * `graph` is the *whole* accumulated graph, not a delta, so its invariants are
+   * checked as a whole — a phase that attaches to a node an earlier phase failed
+   * to place is caught here rather than producing a floating subassembly.
+   */
+  extend(graph: BuildGraph): RealizeResult {
+    this.graph = graph
     const violations = validateGraph(this.graph)
-    const blocking = violations.filter((violation) => violation.code !== 'INCOMPATIBLE_FAMILIES')
-    if (blocking.length) {
+    if (violations.length) {
       return {
         operations: [],
         document: this.document,
@@ -373,6 +426,7 @@ class Realizer {
 
     for (const node of topologicalOrder(this.graph)) {
       throwIfAborted(this.options.signal, `realising node ${node.id}`)
+      if (this.placed.has(node.id) || this.nodes.some((outcome) => outcome.nodeId === node.id)) continue
       if (node.kind === 'protected') {
         this.adoptProtected(node)
         continue
@@ -401,18 +455,21 @@ class Realizer {
       partCount: this.placedPartCount(),
       truncated: this.truncated,
       notes: this.notes,
-      graphViolations: violations.map((violation) => `${violation.code}: ${violation.detail}`),
+      graphViolations: [],
     }
   }
 
   private placedPartCount(): number {
-    return this.nodes.reduce((total, outcome) => total + outcome.partIds.length, 0)
+    let total = 0
+    for (const outcome of this.nodes) {
+      if (outcome.kind === 'protected') continue
+      total += outcome.partIds.length
+    }
+    return total
   }
 
   private budgetExhausted(): boolean {
-    const budget = this.constraints.partBudget
-    if (budget !== null && budget !== undefined && this.placedPartCount() >= budget) return true
-    return this.placedPartCount() >= MAX_GENERATED_PARTS
+    return this.remainingBudget() <= 0
   }
 
   private remainingBudget(): number {
@@ -434,7 +491,7 @@ class Realizer {
    * A subassembly per role, created before the parts that reference it.
    *
    * The kernel refuses a `part.add` naming a subassembly that does not exist, so
-   * the operation list has to carry its own scaffolding rather than assume the
+   * the operation list carries its own scaffolding rather than assuming the
    * document already has somewhere to put the result.
    */
   private ensureSubassembly(role: string): string {
@@ -471,7 +528,7 @@ class Realizer {
     this.placed.set(node.id, {
       node,
       partIds: [partId],
-      anchorPartId: partId,
+      originLdu: getPartBounds(part).min,
       definitionId: part.definitionId,
     })
     this.nodes.push({
@@ -481,6 +538,65 @@ class Realizer {
       definitionId: part.definitionId,
       partIds: [partId],
     })
+  }
+
+  // -------------------------------------------------------------------------
+  // Host connector resolution
+  // -------------------------------------------------------------------------
+
+  /**
+   * Free connectors on a placed node that an edge's host reference could mean,
+   * best first.
+   *
+   * Resolved across every part the node produced, in *world* space and against
+   * the node's own origin corner. A region is a hundred bricks whose individual
+   * positions were decided by the bond, so naming one of them would be naming a
+   * planner implementation detail; naming a stud offset on the region is a
+   * statement about the design that survives the planner changing its mind.
+   *
+   * Occupied exclusive connectors are removed here rather than left for the
+   * solver to skip silently, so the first attempt is already one that can accept
+   * something and a failure has a reason repair can name.
+   */
+  private hostConnectors(placed: PlacedNode, reference: ConnectorRef): HostConnector[] {
+    const owned = new Set(placed.partIds)
+    const world = deriveConnections(this.document)
+    const pool = world.connectors.filter(
+      (connector) =>
+        owned.has(connector.partId) &&
+        connector.family === reference.family &&
+        (!reference.gender || connector.gender === reference.gender) &&
+        !world.occupied.has(`${connector.partId}/${connector.id}`),
+    )
+    if (pool.length < 2) return pool.map((connector) => ({ handle: `${connector.partId}/${connector.id}`, connector }))
+
+    const byHandle = (a: WorldConnector, b: WorldConnector) =>
+      `${a.partId}/${a.id}`.localeCompare(`${b.partId}/${b.id}`)
+    const pick = reference.pick
+
+    let ordered: WorldConnector[]
+    if (pick.kind === 'index') {
+      const sorted = [...pool].sort(byHandle)
+      const offset = ((Math.trunc(pick.index) % sorted.length) + sorted.length) % sorted.length
+      ordered = [...sorted.slice(offset), ...sorted.slice(0, offset)]
+    } else if (pick.kind === 'extreme') {
+      const sign = pick.sense === 'min' ? 1 : -1
+      ordered = [...pool].sort(
+        (a, b) => sign * (a.frame.position[pick.axis] - b.frame.position[pick.axis]) || byHandle(a, b),
+      )
+    } else {
+      const targetU = placed.originLdu[0] + (pick.uStuds + 0.5) * STUD_LDU
+      const targetV = placed.originLdu[2] + (pick.vStuds + 0.5) * STUD_LDU
+      const levelled = filterToLevel(pool, pick.level, (connector) => connector.frame.position[1])
+      ordered = [...levelled].sort(
+        (a, b) =>
+          Math.hypot(a.frame.position[0] - targetU, a.frame.position[2] - targetV) -
+            Math.hypot(b.frame.position[0] - targetU, b.frame.position[2] - targetV) ||
+          a.frame.position[1] - b.frame.position[1] ||
+          byHandle(a, b),
+      )
+    }
+    return ordered.map((connector) => ({ handle: `${connector.partId}/${connector.id}`, connector }))
   }
 
   // -------------------------------------------------------------------------
@@ -508,40 +624,43 @@ class Realizer {
       return
     }
 
-    const parent = this.placed.get(edge.from)
-    if (!parent?.anchorPartId) {
-      this.nodes.push({
-        nodeId: node.id,
-        kind: 'part',
-        status: 'rejected',
-        partIds: [],
-        reason: `its host node ${edge.from} was not placed`,
-      })
-      this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason: `host node ${edge.from} was not placed` })
-      return
-    }
-
-    const attempts = this.attachmentAttempts(edge, parent.anchorPartId, resolution)
-    if (!attempts.length) {
-      const reason = this.describeMissingConnectors(edge, parent.anchorPartId, resolution.definition)
+    const host = this.placed.get(edge.from)
+    if (!host) {
+      const reason = `its host node ${edge.from} was not placed`
       this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason })
       this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason })
       return
     }
 
-    let failure = 'no attempt produced a placeable pose'
+    const hosts = this.hostConnectors(host, edge.fromConnector)
+    const attempts = this.attachmentAttempts(edge, hosts, resolution)
+    if (!attempts.length) {
+      const reason = this.describeMissingConnectors(edge, host, hosts.length, resolution.definition)
+      this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason })
+      this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason })
+      return
+    }
+
+    const byHandle = new Map(hosts.map((entry) => [entry.handle, entry.connector]))
+    const log: string[] = []
     for (let index = 0; index < attempts.length; index += 1) {
       const attempt = attempts[index]
-      const outcome = this.trySingleAttachment(node, attempt, parent.anchorPartId, colour)
+      const connector = byHandle.get(attempt.parentFeatureId)
+      if (!connector) {
+        log.push(`${attempt.kind}: host connector ${attempt.parentFeatureId} was no longer free`)
+        continue
+      }
+      const outcome = this.trySingleAttachment(node, attempt, connector, colour)
       if (outcome.ok) {
         const status = attempt.kind === 'primary' ? 'realized' : 'repaired'
+        const reason = status === 'repaired' ? `${log[0] ?? 'the requested attachment failed'}; ${attempt.description}` : undefined
         this.nodes.push({
           nodeId: node.id,
           kind: 'part',
           status,
           definitionId: attempt.definitionId,
           partIds: [outcome.partId],
-          ...(status === 'repaired' ? { reason: `${failure}; ${attempt.description}` } : {}),
+          ...(reason ? { reason, attemptLog: log } : {}),
           ...(colour !== node.colour ? { colourSubstitutedFrom: node.colour } : {}),
         })
         this.edges.push({
@@ -549,19 +668,19 @@ class Realizer {
           status,
           repairKind: attempt.kind,
           attempts: index + 1,
-          parentFeatureId: attempt.parentFeatureId,
+          hostConnector: attempt.parentFeatureId,
           childFeatureId: attempt.childFeatureId,
           simultaneousMates: outcome.simultaneousMates,
-          ...(status === 'repaired' ? { reason: `${failure}; ${attempt.description}` } : {}),
+          ...(reason ? { reason, attemptLog: log } : {}),
         })
         return
       }
-      failure = outcome.reason
+      log.push(`${attempt.kind}: ${outcome.reason}`)
     }
 
-    const reason = `every one of ${attempts.length} attempt(s) failed; last: ${failure}`
-    this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason })
-    this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: attempts.length, reason })
+    const reason = `all ${attempts.length} attempt(s) failed; the requested attachment ${log[0] ?? 'could not be built'}`
+    this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason, attemptLog: log })
+    this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: attempts.length, reason, attemptLog: log })
   }
 
   private placeRootPart(node: BuildNode, definition: PartDefinition, colour: number) {
@@ -590,7 +709,7 @@ class Realizer {
     this.placed.set(node.id, {
       node,
       partIds: [part.id],
-      anchorPartId: part.id,
+      originLdu: getPartBounds(part).min,
       definitionId: definition.canonicalId,
     })
     this.nodes.push({
@@ -603,28 +722,12 @@ class Realizer {
     })
   }
 
-  /**
-   * Builds the ordered attempt list for one attachment.
-   *
-   * Occupied exclusive connectors are filtered out *here* rather than being
-   * discovered by the solver, so the first attempt is already a connector that
-   * can accept something. That is not an optimization: the solver silently skips
-   * an occupied target, which would make the primary attempt fail for a reason
-   * repair could not name.
-   */
   private attachmentAttempts(
     edge: BuildEdge,
-    parentPartId: string,
+    hosts: readonly HostConnector[],
     resolution: IdentityResolution,
   ): AttachmentAttempt[] {
-    const parentPart = this.document.parts[parentPartId]
-    const parentDefinition = getPartDefinition(parentPart.definitionId)
-    if (!parentDefinition) return []
-
-    const occupied = deriveConnections(this.document).occupied
-    const ordered = orderFeatures(parentDefinition, edge.fromConnector)
-    const free = ordered.filter((feature) => !occupied.has(`${parentPartId}/${feature.id}`))
-    if (!free.length) return []
+    if (!hosts.length) return []
 
     const candidates = [resolution.definition!, ...resolution.alternatives]
     const childFeatureIds = new Map<string, readonly string[]>()
@@ -634,54 +737,55 @@ class Realizer {
     }
     if (!childFeatureIds.has(resolution.definition!.canonicalId)) return []
 
-    // Lattice alternatives are the free connectors ranked by how far they sit
-    // from the requested one, so "shift by a stud" comes before "shift by four".
-    const requested = free[0]
-    const lattice = [...free]
+    // Lattice alternatives are the remaining free connectors ranked by how far
+    // they sit from the requested one, so "shift by a stud" comes before
+    // "shift by four".
+    const requested = hosts[0].connector.frame.position
+    const lattice = hosts
       .slice(1)
+      .slice()
       .sort(
         (a, b) =>
-          Math.hypot(a.pos[0] - requested.pos[0], a.pos[2] - requested.pos[2]) -
-            Math.hypot(b.pos[0] - requested.pos[0], b.pos[2] - requested.pos[2]) || a.id.localeCompare(b.id),
+          Math.hypot(a.connector.frame.position[0] - requested[0], a.connector.frame.position[2] - requested[2]) -
+            Math.hypot(b.connector.frame.position[0] - requested[0], b.connector.frame.position[2] - requested[2]) ||
+          a.handle.localeCompare(b.handle),
       )
-      .map((feature) => feature.id)
+      .map((entry) => entry.handle)
 
     return enumerateAttachmentAttempts({
       seed: this.seed,
       budget: this.repairBudget,
       requestedDefinitionId: resolution.definition!.canonicalId,
       candidates,
-      parentFeatureIds: free.map((feature) => feature.id),
+      parentFeatureIds: hosts.map((entry) => entry.handle),
       childFeatureIds,
       quarterTurns: edge.quarterTurns ?? 0,
       latticeFeatureIds: lattice,
     })
   }
 
-  private describeMissingConnectors(edge: BuildEdge, parentPartId: string, definition: PartDefinition): string {
-    const parentPart = this.document.parts[parentPartId]
-    const parentDefinition = getPartDefinition(parentPart.definitionId)
-    const parentHas = parentDefinition?.connectors.some((feature) => feature.family === edge.fromConnector.family)
+  private describeMissingConnectors(
+    edge: BuildEdge,
+    host: PlacedNode,
+    freeHostConnectors: number,
+    definition: PartDefinition,
+  ): string {
+    if (!freeHostConnectors) {
+      return `every ${edge.fromConnector.family} connector on node ${host.node.id} is already mated or absent`
+    }
     const childHas = definition.connectors.some((feature) => feature.family === edge.toConnector.family)
-    if (!parentHas) return `${parentDefinition?.name ?? parentPart.definitionId} has no ${edge.fromConnector.family} connector`
     if (!childHas) return `${definition.name} has no ${edge.toConnector.family} connector`
-    return `every ${edge.fromConnector.family} connector on ${parentDefinition?.name ?? parentPart.definitionId} is already mated`
+    return `no ${edge.toConnector.family} connector on ${definition.name} matched the requested gender`
   }
 
   private trySingleAttachment(
     node: BuildNode,
     attempt: AttachmentAttempt,
-    parentPartId: string,
+    hostConnector: WorldConnector,
     colour: number,
   ): { ok: true; partId: string; simultaneousMates: number } | { ok: false; reason: string } {
     const definition = getPartDefinition(attempt.definitionId)
     if (!definition) return { ok: false, reason: `${attempt.definitionId} vanished from the catalog` }
-
-    const parentPart = this.document.parts[parentPartId]
-    const worldConnector = deriveConnections(this.document).connectors.find(
-      (connector) => connector.partId === parentPartId && connector.id === attempt.parentFeatureId,
-    )
-    if (!worldConnector) return { ok: false, reason: `connector ${attempt.parentFeatureId} is not on the host part` }
 
     const childFeature = definition.connectors.find((feature) => feature.id === attempt.childFeatureId)
     if (!childFeature) return { ok: false, reason: `${definition.name} has no ${attempt.childFeatureId} connector` }
@@ -691,9 +795,10 @@ class Realizer {
     // axis. The solver treats it as intent, enumerates what the pair actually
     // permits, and ranks by simultaneous mates — which is what makes a 1 × 4
     // brick settle onto four studs rather than balance on the one named.
-    const spin = rotationAboutAxis([0, 1, 0], ((attempt.quarterTurns % 4) + 4) % 4 * (Math.PI / 2))
+    const turns = ((attempt.quarterTurns % 4) + 4) % 4
+    const spin = rotationAboutAxis([0, 1, 0], turns * (Math.PI / 2))
     const cursor = composeTransform(
-      composeTransform(worldConnector.frame, spin),
+      composeTransform(hostConnector.frame, spin),
       invertTransform(featureFrame(childFeature)),
     )
 
@@ -710,15 +815,15 @@ class Realizer {
     }
 
     const solved = findSnapCandidates(candidate, this.document, cursor, {
-      targetPartIds: [parentPartId],
-      targetFeatureId: attempt.parentFeatureId,
+      targetPartIds: [hostConnector.partId],
+      targetFeatureId: hostConnector.id,
       movingFeatureId: attempt.childFeatureId,
       radiusLdu: 32,
     })
     if (!solved.length) {
       return {
         ok: false,
-        reason: `the solver found no mating between ${parentPart.definitionId}/${attempt.parentFeatureId} and ${definition.canonicalId}/${attempt.childFeatureId}`,
+        reason: `the solver found no mating between ${attempt.parentFeatureId} and ${definition.canonicalId}/${attempt.childFeatureId}`,
       }
     }
 
@@ -732,7 +837,7 @@ class Realizer {
     this.placed.set(node.id, {
       node,
       partIds: [placed.id],
-      anchorPartId: placed.id,
+      originLdu: getPartBounds(placed).min,
       definitionId: definition.canonicalId,
     })
     return { ok: true, partId: placed.id, simultaneousMates: best.simultaneousMatches }
@@ -746,26 +851,18 @@ class Realizer {
     const colour = conformColour(node.colour, this.constraints.palette)
     const subassemblyId = this.ensureSubassembly(node.role)
 
-    let parentPartId: string | null = null
-    let orderedParentFeatures: ConnectionFeature[] = []
+    let hosts: HostConnector[] = []
     if (edge) {
-      const parent = this.placed.get(edge.from)
-      if (!parent?.anchorPartId) {
+      const host = this.placed.get(edge.from)
+      if (!host) {
         const reason = `its host node ${edge.from} was not placed`
         this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason })
         this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason })
         return
       }
-      parentPartId = parent.anchorPartId
-      const parentDefinition = getPartDefinition(this.document.parts[parentPartId].definitionId)
-      if (parentDefinition) {
-        const occupied = deriveConnections(this.document).occupied
-        orderedParentFeatures = orderFeatures(parentDefinition, edge.fromConnector).filter(
-          (feature) => !occupied.has(`${parentPartId}/${feature.id}`),
-        )
-      }
-      if (!orderedParentFeatures.length) {
-        const reason = `no free ${edge.fromConnector.family} connector remains on the host part`
+      hosts = this.hostConnectors(host, edge.fromConnector)
+      if (!hosts.length) {
+        const reason = `no free ${edge.fromConnector.family} connector remains on node ${edge.from}`
         this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason })
         this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason })
         return
@@ -776,22 +873,29 @@ class Realizer {
       seed: this.seed,
       budget: this.repairBudget,
       region: node.region!,
-      parentFeatureIds: orderedParentFeatures.map((feature) => feature.id),
+      parentFeatureIds: hosts.map((entry) => entry.handle),
       alternateFamilies: SUBSTITUTE_FAMILIES,
     })
 
-    let failure = 'no attempt produced a buildable region'
+    const byHandle = new Map(hosts.map((entry) => [entry.handle, entry.connector]))
+    const log: string[] = []
     for (let index = 0; index < attempts.length; index += 1) {
       const attempt = attempts[index]
-      const outcome = this.tryRegion(node, attempt, parentPartId, orderedParentFeatures, colour, subassemblyId)
+      const connector = attempt.parentFeatureId ? byHandle.get(attempt.parentFeatureId) : null
+      if (attempt.parentFeatureId && !connector) {
+        log.push(`${attempt.kind}: host connector ${attempt.parentFeatureId} was no longer free`)
+        continue
+      }
+      const outcome = this.tryRegion(node, attempt, connector ?? null, colour, subassemblyId)
       if (outcome.ok) {
         const status = attempt.kind === 'primary' ? 'realized' : 'repaired'
+        const reason = status === 'repaired' ? `${log[0] ?? 'the requested region failed'}; ${attempt.description}` : undefined
         this.nodes.push({
           nodeId: node.id,
           kind: 'region',
           status,
           partIds: outcome.partIds,
-          ...(status === 'repaired' ? { reason: `${failure}; ${attempt.description}` } : {}),
+          ...(reason ? { reason, attemptLog: log } : {}),
           ...(colour !== node.colour ? { colourSubstitutedFrom: node.colour } : {}),
         })
         if (edge) {
@@ -800,49 +904,43 @@ class Realizer {
             status,
             repairKind: attempt.kind,
             attempts: index + 1,
-            parentFeatureId: attempt.parentFeatureId ?? undefined,
-            ...(status === 'repaired' ? { reason: `${failure}; ${attempt.description}` } : {}),
+            ...(attempt.parentFeatureId ? { hostConnector: attempt.parentFeatureId } : {}),
+            ...(reason ? { reason, attemptLog: log } : {}),
           })
         }
         for (const warning of outcome.warnings) this.notes.push(`${node.id}: ${warning}`)
         return
       }
-      failure = outcome.reason
+      log.push(`${attempt.kind}: ${outcome.reason}`)
     }
 
-    const reason = `every one of ${attempts.length} attempt(s) failed; last: ${failure}`
-    this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason })
-    if (edge) this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: attempts.length, reason })
+    const reason = `all ${attempts.length} attempt(s) failed; the requested region ${log[0] ?? 'could not be built'}`
+    this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason, attemptLog: log })
+    if (edge) this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: attempts.length, reason, attemptLog: log })
   }
 
   private tryRegion(
     node: BuildNode,
     attempt: RegionAttempt,
-    parentPartId: string | null,
-    orderedParentFeatures: readonly ConnectionFeature[],
+    hostConnector: WorldConnector | null,
     colour: number,
     subassemblyId: string,
   ): { ok: true; partIds: string[]; warnings: string[] } | { ok: false; reason: string } {
     const region = attempt.region
+    const offset = region.offsetStuds ?? [0, 0]
     let origin: Vec3
-    if (attempt.parentFeatureId && parentPartId) {
-      const connector = deriveConnections(this.document).connectors.find(
-        (entry) => entry.partId === parentPartId && entry.id === attempt.parentFeatureId,
-      )
-      if (!connector) return { ok: false, reason: `connector ${attempt.parentFeatureId} is not on the host part` }
+    if (hostConnector) {
       // The planner's origin is a *corner*: minimum X, minimum Z, and the surface
       // Y the first course rests on. A stud connector sits at the centre of its
-      // stud, so half a stud has to come back off in each horizontal axis or the
-      // whole region lands offset by half a pitch and mates with nothing.
-      const offset = region.offsetStuds ?? [0, 0]
+      // stud, so half a stud comes back off in each horizontal axis or the whole
+      // region lands offset by half a pitch and mates with nothing.
       origin = [
-        connector.frame.position[0] - STUD_LDU / 2 + offset[0] * STUD_LDU,
-        connector.frame.position[1],
-        connector.frame.position[2] - STUD_LDU / 2 + offset[1] * STUD_LDU,
+        hostConnector.frame.position[0] - STUD_LDU / 2 + offset[0] * STUD_LDU,
+        hostConnector.frame.position[1],
+        hostConnector.frame.position[2] - STUD_LDU / 2 + offset[1] * STUD_LDU,
       ]
     } else {
       const anchor = node.anchorLdu ?? [0, 0, 0]
-      const offset = region.offsetStuds ?? [0, 0]
       origin = [anchor[0] + offset[0] * STUD_LDU, anchor[1], anchor[2] + offset[1] * STUD_LDU]
     }
 
@@ -861,16 +959,13 @@ class Realizer {
 
     const remaining = this.remainingBudget()
     if (parts.length > remaining) {
-      return {
-        ok: false,
-        reason: `it needs ${parts.length} parts and only ${remaining} remain in the budget`,
-      }
+      return { ok: false, reason: `it needs ${parts.length} parts and only ${remaining} remain in the budget` }
     }
 
     // Planner ids come from `createId`, which is random by design. Reproducibility
     // is a hard requirement here, so they are replaced by the deterministic
-    // sequence; the planner's ordering is already deterministic, so index-by-index
-    // replacement is stable.
+    // sequence; the planner's own ordering is already deterministic, so
+    // index-by-index replacement is stable.
     const renamed = parts.map((part) => ({ ...part, id: this.nextId(), provenance: 'agent' as const }))
     const next = withParts(this.document, renamed)
     const partIds = renamed.map((part) => part.id)
@@ -878,8 +973,8 @@ class Realizer {
     const rejection = this.rejectionFor(next, partIds)
     if (rejection) return { ok: false, reason: rejection }
 
-    if (parentPartId) {
-      const attached = connectedComponent(next, [parentPartId])
+    if (hostConnector) {
+      const attached = connectedComponent(next, [hostConnector.partId])
       const joined = partIds.filter((id) => attached.includes(id)).length
       if (joined === 0) {
         return {
@@ -890,15 +985,7 @@ class Realizer {
     }
 
     this.commit(next, renamed)
-    this.placed.set(node.id, {
-      node,
-      partIds,
-      // Children attach to the region's *first* part, which is its origin corner
-      // — the only member whose position is a stated property of the region
-      // rather than a consequence of the bond.
-      anchorPartId: partIds[0],
-      definitionId: renamed[0].definitionId,
-    })
+    this.placed.set(node.id, { node, partIds, originLdu: origin, definitionId: renamed[0].definitionId })
     return { ok: true, partIds, warnings: plan.warnings }
   }
 
@@ -910,6 +997,12 @@ class Realizer {
       stepId: this.stepId,
       actor: 'agent' as const,
       family: region.family,
+      // Window and door frames default to white trim and trans-clear glazing,
+      // which is right for a real facade and wrong for a build under a hard
+      // palette: two parts nobody chose would put the whole candidate outside
+      // the colours the brief asked for.
+      trimColor: conformColour(DEFAULT_TRIM_COLOR, this.constraints.palette),
+      glassColor: conformColour(DEFAULT_GLASS_COLOR, this.constraints.palette),
     }
     if (region.shape === 'wall') {
       return planWall({
@@ -957,8 +1050,10 @@ class Realizer {
   private rejectionFor(next: ModelDocument, newPartIds: readonly string[]): string | null {
     const collisions = findCollisions(next, { provide: this.provide, onlyPartIds: [...newPartIds] })
     if (collisions.length) {
+      const introduced = new Set(newPartIds)
       const first = collisions[0]
-      return `it collides with ${first.partB === newPartIds[0] ? first.partA : first.partB} (${first.certainty} verdict, ${collisions.length} contact${collisions.length === 1 ? '' : 's'})`
+      const other = introduced.has(first.partA) && !introduced.has(first.partB) ? first.partB : first.partA
+      return `it collides with ${other} (${first.certainty} verdict, ${collisions.length} contact${collisions.length === 1 ? '' : 's'})`
     }
     const envelope = checkEnvelope(next, this.constraints.envelopeStuds)
     if (!envelope.ok) return envelope.detail!
@@ -993,11 +1088,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     [chroma, 0, secondary],
   ]
   const [r, g, b] = table[sector]
-  return [
-    Math.round((r + match) * 255),
-    Math.round((g + match) * 255),
-    Math.round((b + match) * 255),
-  ]
+  return [Math.round((r + match) * 255), Math.round((g + match) * 255), Math.round((b + match) * 255)]
 }
 
 /** Basis for whole quarter turns about the vertical axis. */
@@ -1007,28 +1098,14 @@ function quarterTurnBasis(quarterTurns: number): PartInstance['transform']['basi
   return rotationAboutAxis([0, 1, 0], turns * (Math.PI / 2)).basis
 }
 
-/** Exposed for scoring: the parts a realise result introduced. */
+/** The parts a realise result introduced, in placement order. */
 export const realizedParts = (result: RealizeResult): PartInstance[] =>
   result.operations
     .filter((operation): operation is Extract<CadOperation, { type: 'part.add' }> => operation.type === 'part.add')
     .map((operation) => operation.part)
 
-/** Exposed for the envelope metric, which needs the same measurement realise used. */
+/** Measured extent in studs, using the same measurement the envelope gate uses. */
 export const measuredExtentStuds = (document: ModelDocument): [number, number, number] => {
   const size = getDocumentBounds(document).size
   return [size[0] / STUD_LDU, size[1] / STUD_LDU, size[2] / STUD_LDU]
-}
-
-/** True when every part in `partIds` still has its original pose and colour. */
-export function partsUnchanged(
-  before: ModelDocument,
-  after: ModelDocument,
-  partIds: readonly string[],
-): boolean {
-  return partIds.every((id) => {
-    const a = before.parts[id]
-    const b = after.parts[id]
-    if (!a || !b) return false
-    return JSON.stringify(a) === JSON.stringify(b) && getPartBounds(a).min.join() === getPartBounds(b).min.join()
-  })
 }

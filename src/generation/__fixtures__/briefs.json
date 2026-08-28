@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "note": "Golden briefs for the generation acceptance suite. Each prompt is written the way a person would type it, and `expect` records only what the deterministic compiler must be able to read out of it — never what the generator should build, which is the generator's decision to make and the metrics' job to measure.",
+  "briefs": [
+    {
+      "id": "vehicle-pickup",
+      "category": "vehicle",
+      "prompt": "Build a red pickup truck 14 x 8 studs, 6 studs tall, under 200 pieces, with wheels that turn",
+      "expect": { "archetype": "vehicle", "envelopeStuds": [14, 6, 8], "partBudget": 200, "palette": [4], "functions": 1 }
+    },
+    {
+      "id": "vehicle-spaceship",
+      "category": "vehicle",
+      "prompt": "A micro-scale light bluish grey spaceship 12 x 8 studs and 5 studs tall, symmetrical, no more than 150 parts",
+      "expect": { "archetype": "vehicle", "envelopeStuds": [12, 5, 8], "partBudget": 150, "palette": [71], "scale": "micro", "symmetry": "mirror-x" }
+    },
+    {
+      "id": "vehicle-bus",
+      "category": "vehicle",
+      "prompt": "Design a yellow school bus 16 x 6 studs, 7 studs tall, at most 240 pieces",
+      "expect": { "archetype": "vehicle", "envelopeStuds": [16, 7, 6], "partBudget": 240, "palette": [14] }
+    },
+    {
+      "id": "vehicle-submarine",
+      "category": "vehicle",
+      "prompt": "A blue submarine 12 x 6 studs and 6 studs tall, streamlined, budget of 120 parts",
+      "expect": { "archetype": "vehicle", "envelopeStuds": [12, 6, 6], "partBudget": 120, "palette": [1], "style": ["streamlined"] }
+    },
+    {
+      "id": "building-house",
+      "category": "building",
+      "prompt": "Build a small red house 12 x 10 studs, 10 studs tall, under 300 pieces, with doors that open",
+      "expect": { "archetype": "building", "envelopeStuds": [12, 10, 10], "partBudget": 300, "palette": [4], "functions": 1 }
+    },
+    {
+      "id": "building-lighthouse",
+      "category": "building",
+      "prompt": "A white lighthouse 8 x 8 studs, 16 studs tall, fewer than 220 pieces",
+      "expect": { "archetype": "building", "envelopeStuds": [8, 16, 8], "partBudget": 220, "palette": [15] }
+    },
+    {
+      "id": "building-gatehouse",
+      "category": "building",
+      "prompt": "Design a tan medieval castle gatehouse 18 x 12 studs, 12 studs tall, max 400 pieces, with windows that open",
+      "expect": { "archetype": "building", "envelopeStuds": [18, 12, 12], "partBudget": 400, "palette": [19], "style": ["medieval"] }
+    },
+    {
+      "id": "building-skyscraper",
+      "category": "building",
+      "prompt": "A modern black skyscraper 10 x 10 studs and 20 studs tall, under 350 pieces",
+      "expect": { "archetype": "building", "envelopeStuds": [10, 20, 10], "partBudget": 350, "palette": [0], "style": ["modern"] }
+    },
+    {
+      "id": "furniture-bookshelf",
+      "category": "furniture",
+      "prompt": "Build a brown bookshelf 8 x 4 studs, 10 studs tall, no more than 120 pieces",
+      "expect": { "archetype": "furniture", "envelopeStuds": [8, 10, 4], "partBudget": 120, "palette": [6] }
+    },
+    {
+      "id": "furniture-armchair",
+      "category": "furniture",
+      "prompt": "A green armchair 6 x 6 studs, 6 studs tall, at most 90 pieces",
+      "expect": { "archetype": "furniture", "envelopeStuds": [6, 6, 6], "partBudget": 90, "palette": [2] }
+    },
+    {
+      "id": "furniture-desk",
+      "category": "furniture",
+      "prompt": "Design a white desk 12 x 6 studs, 5 studs tall, under 130 pieces",
+      "expect": { "archetype": "furniture", "envelopeStuds": [12, 5, 6], "partBudget": 130, "palette": [15] }
+    },
+    {
+      "id": "furniture-wardrobe",
+      "category": "furniture",
+      "prompt": "A tan wardrobe 8 x 6 studs and 14 studs tall, at most 180 pieces, with doors that open",
+      "expect": { "archetype": "furniture", "envelopeStuds": [8, 14, 6], "partBudget": 180, "palette": [19], "functions": 1 }
+    },
+    {
+      "id": "creature-dragon",
+      "category": "creature",
+      "prompt": "Build a large green dragon 16 x 10 studs, 14 studs tall, symmetrical, under 380 pieces",
+      "expect": { "archetype": "creature", "envelopeStuds": [16, 14, 10], "partBudget": 380, "palette": [2], "scale": "large", "symmetry": "mirror-x" }
+    },
+    {
+      "id": "creature-robot",
+      "category": "creature",
+      "prompt": "A small blue robot 6 x 6 studs and 10 studs tall, mirrored, at most 110 pieces",
+      "expect": { "archetype": "creature", "envelopeStuds": [6, 10, 6], "partBudget": 110, "palette": [1], "symmetry": "mirror-x" }
+    },
+    {
+      "id": "creature-crab",
+      "category": "creature",
+      "prompt": "Design an orange crab 10 x 8 studs, 5 studs tall, fewer than 140 pieces",
+      "expect": { "archetype": "creature", "envelopeStuds": [10, 5, 8], "partBudget": 140, "palette": [25] }
+    },
+    {
+      "id": "mechanism-crane",
+      "category": "mechanism",
+      "prompt": "Build a yellow crane 12 x 10 studs, 16 studs tall, with a winch that turns, under 320 pieces",
+      "expect": { "archetype": "mechanism", "envelopeStuds": [12, 16, 10], "partBudget": 320, "palette": [14], "functions": 1 }
+    },
+    {
+      "id": "mechanism-drawbridge",
+      "category": "mechanism",
+      "prompt": "A dark bluish grey drawbridge 14 x 6 studs, 8 studs tall, with a gate that opens, max 200 pieces",
+      "expect": { "archetype": "mechanism", "envelopeStuds": [14, 8, 6], "partBudget": 200, "palette": [72], "functions": 1 }
+    },
+    {
+      "id": "mechanism-gearbox",
+      "category": "mechanism",
+      "prompt": "Design a black gearbox housing 8 x 8 studs and 6 studs tall, under 100 pieces",
+      "expect": { "archetype": "mechanism", "envelopeStuds": [8, 6, 8], "partBudget": 100, "palette": [0] }
+    },
+    {
+      "id": "sculpture-abstract",
+      "category": "sculpture",
+      "prompt": "Build a white abstract sculpture 6 x 6 studs, 18 studs tall, at most 160 pieces",
+      "expect": { "archetype": "sculpture", "envelopeStuds": [6, 18, 6], "partBudget": 160, "palette": [15], "style": ["abstract"] }
+    },
+    {
+      "id": "sculpture-monument",
+      "category": "sculpture",
+      "prompt": "A red and yellow monument 10 x 10 studs, 14 studs tall, radial, under 300 pieces",
+      "expect": { "archetype": "sculpture", "envelopeStuds": [10, 14, 10], "partBudget": 300, "palette": [4, 14], "symmetry": "radial" }
+    },
+    {
+      "id": "sculpture-obelisk",
+      "category": "sculpture",
+      "prompt": "Design a tan obelisk 4 x 4 studs and 20 studs tall, fewer than 90 pieces",
+      "expect": { "archetype": "sculpture", "envelopeStuds": [4, 20, 4], "partBudget": 90, "palette": [19] }
+    }
+  ]
+}

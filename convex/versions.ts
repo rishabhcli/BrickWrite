@@ -134,6 +134,7 @@ export const createBranch = mutation({
     name: v.string(),
     kind: v.optional(v.union(v.literal('named'), v.literal('conflict'))),
     fromBranchId: v.optional(v.string()),
+    atRevision: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<CloudResult<CloudBranchRecord>> => {
     const authorised = await authoriseProject(ctx, args.projectId, 'branch.create')
@@ -159,14 +160,25 @@ export const createBranch = mutation({
     if (!parentResult.ok) return parentResult
     const parent = parentResult.value
 
+    // A fork defaults to the parent's head. A conflict fork names an earlier
+    // revision — where the two histories diverged — so the tail that lost the
+    // race replays onto it exactly as it was authored. Forking past the head
+    // would invent history the parent never had.
+    const at = args.atRevision ?? parent.headRevision
+    if (at < 0 || at > parent.headRevision) {
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        `A branch cannot fork at revision ${at}; ${parent.name} runs to ${parent.headRevision}.`,
+        'Fork at the divergence revision or at the branch head.',
+      )
+    }
+
     const now = Date.now()
     const branchId = await ctx.db.insert('branches', {
       projectId: project._id,
       name,
-      // A fork starts at the parent's head: the branch's own log begins there,
-      // and everything before it is shared history, not copied history.
-      headRevision: parent.headRevision,
-      baseRevision: parent.headRevision,
+      headRevision: at,
+      baseRevision: at,
       forkedFromBranchId: parent._id,
       kind: args.kind ?? 'named',
       createdBySubject: identity.subject,
@@ -177,7 +189,7 @@ export const createBranch = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'branch.create',
-      detail: { branch: name, from: parent.name, atRevision: parent.headRevision },
+      detail: { branch: name, from: parent.name, atRevision: at },
     })
     const row = await ctx.db.get(branchId)
     if (!row) return cloudFailure('NOT_FOUND', 'The branch vanished during creation.', 'Retry.')

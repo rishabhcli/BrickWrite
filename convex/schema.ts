@@ -99,6 +99,11 @@ export default defineSchema({
      * The idempotency key: the `Transaction.id` minted by the client kernel.
      * A retry after a dropped response re-presents the same id and is answered
      * with the original outcome instead of creating a second revision.
+     *
+     * Scoped to the branch, not to the project. A conflict fork replays the
+     * local tail onto its own branch, and those transactions keep their ids so
+     * their provenance survives; a project-wide key would make the replay look
+     * like a retry and the fork would come out empty.
      */
     clientTransactionId: v.string(),
     baseRevision: v.number(),
@@ -113,7 +118,7 @@ export default defineSchema({
     catalogVersion: v.string(),
     createdAt: v.number(),
   })
-    .index('by_client_txn', ['projectId', 'clientTransactionId'])
+    .index('by_client_txn', ['projectId', 'branchId', 'clientTransactionId'])
     .index('by_branch_revision', ['branchId', 'resultRevision'])
     .index('by_project_revision', ['projectId', 'resultRevision']),
 

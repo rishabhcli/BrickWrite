@@ -2,7 +2,16 @@ import { analyseStatics, type StaticsReport } from '../cad/statics'
 import { findWeakAttachments } from '../cad/validation'
 import type { ModelDocument, Vec3 } from '../cad/types'
 import { captureSilhouette } from './silhouette'
-import { extractRows, findStackedSeams, type Row, type StackedSeam } from './topology'
+import {
+  extractRows,
+  findFreeStuds,
+  findStackedSeams,
+  findStepEdges,
+  type FreeStud,
+  type Row,
+  type StackedSeam,
+  type StepEdge,
+} from './topology'
 import type { SilhouetteV1 } from './types'
 
 /**
@@ -23,6 +32,8 @@ interface Entry {
   stacked?: StackedSeam[]
   statics?: StaticsReport
   weak?: Array<{ partId: string; connections: number }>
+  steps?: StepEdge[]
+  freeStuds?: FreeStud[]
   silhouettes?: Map<string, SilhouetteV1>
 }
 
@@ -58,6 +69,18 @@ export function weakAttachmentsOf(document: ModelDocument): Array<{ partId: stri
   const entry = entryFor(document)
   entry.weak ??= findWeakAttachments(document)
   return entry.weak
+}
+
+export function stepEdgesOf(document: ModelDocument): StepEdge[] {
+  const entry = entryFor(document)
+  entry.steps ??= findStepEdges(document)
+  return entry.steps
+}
+
+export function freeStudsOf(document: ModelDocument): FreeStud[] {
+  const entry = entryFor(document)
+  entry.freeStuds ??= findFreeStuds(document)
+  return entry.freeStuds
 }
 
 export function silhouetteOf(document: ModelDocument, frame: { min: Vec3; max: Vec3 }): SilhouetteV1 {

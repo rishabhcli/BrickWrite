@@ -1,0 +1,138 @@
+/**
+ * The platform layer's published surface.
+ *
+ * Other workstreams import from here and from `./contracts`, never from a file
+ * inside this directory. Two things in particular are the contract:
+ * `registerRoute`, which is how a surface gets mounted, and the boot hooks,
+ * which are how it reaches the CAD kernel its route declared.
+ *
+ * `./server/*` is deliberately absent. It is server-only and importing it from
+ * a client module is a test failure, not a review comment.
+ */
+
+export { AppShell, AppShell as default, PlatformShell, RouteHost, ShellRoutes, installPlatformSurfaces } from './AppShell'
+export { AppFrame, FramedLayout } from './AppFrame'
+
+export {
+  PLATFORM_ROUTES,
+  PRIMARY_NAV,
+  isRouteRegistered,
+  listRegisteredRoutes,
+  registerRoute,
+  resetRouteRegistry,
+  routeById,
+  routeHasAppFrame,
+  type RouteLoader,
+} from './routes'
+
+export {
+  BootCancelledError,
+  BootLevelError,
+  bootForRoute,
+  bootLevelRank,
+  bootTo,
+  isBooting,
+  peekBootStage,
+  requireCatalogStage,
+  requireEditorStage,
+  resetBoot,
+  type BootLevel,
+  type BootOptions,
+  type BootStage,
+  type BootStageCatalog,
+  type BootStageEditor,
+  type BootStageNone,
+} from './boot'
+export { BootStageProvider, useBootStage, useCatalogStage, useEditorStage } from './boot-context'
+
+export {
+  PLATFORM_PATHS,
+  PLATFORM_URL_DESTINATIONS,
+  PROJECT_ID_ENV_VARS,
+  ambientEnvironment,
+  hexclaveUrlOptions,
+  resolvePlatformConfig,
+  type PlatformConfig,
+  type PlatformUrlDestinations,
+} from './config'
+
+export {
+  CAD_CONTENT_ATTRIBUTE,
+  CAD_CONTENT_MASK_CLASS,
+  CAD_CONTENT_MASK_CLASS_PATTERN,
+  CAD_CONTENT_SELECTORS,
+  PLATFORM_EVENT_VOCABULARY,
+  PlatformAnalyticsVocabularyError,
+  analyticsMaskingCoverage,
+  assertEventVocabulary,
+  buildAnalyticsOptions,
+  cadContentBlockSelector,
+  drainPlatformAnalytics,
+  maskedContentProps,
+  peekPlatformAnalytics,
+  platformAnalyticsStatus,
+  resetPlatformAnalytics,
+  setPlatformAnalyticsSink,
+  trackPlatformEvent,
+  usePlatformAnalytics,
+  type CadContentKind,
+  type CadContentSelector,
+  type PlatformAnalytics,
+  type PlatformAnalyticsEvent,
+  type PlatformAnalyticsSink,
+  type RecordedPlatformEvent,
+} from './analytics'
+
+export {
+  AccountAvailabilityProvider,
+  accountLabel,
+  markDeliberateSignOut,
+  resetSessionMemory,
+  useAccountAvailability,
+  useAccountSession,
+  type AccountAvailability,
+  type AccountSession,
+  type RestrictionKind,
+} from './auth/account'
+export { AccountMenu } from './auth/AccountMenu'
+export { AccountPage } from './auth/AccountPage'
+export { AuthRoutes, SignInSurface, SignUpSurface, safeReturnTo } from './auth/AuthRoutes'
+export {
+  AuthRequiredState,
+  RestrictedState,
+  RouteAuthGuard,
+  SessionExpiredState,
+  signInHref,
+  signUpHref,
+  useReturnTo,
+  useSignOut,
+} from './auth/guards'
+
+export {
+  BootFailureState,
+  LoadingState,
+  MisconfiguredState,
+  NotInstalledSurface,
+  OfflineNotice,
+  ShellErrorState,
+  StatePanel,
+  createNotInstalledSurface,
+} from './states'
+
+export { focusableWithin, useFocusTrap } from './a11y'
+export { isOnline, useOnlineStatus } from './connectivity'
+
+export {
+  SERVER_EMAIL_MODULE,
+  escapeHtml,
+  renderPlatformEmail,
+  type EmailRecipients,
+  type NotificationCategory,
+  type PlatformEmail,
+  type PlatformEmailRequest,
+  type ProjectInvitationEmail,
+  type PublicationNotificationEmail,
+  type RenderedEmail,
+} from './emails'
+
+export type { PartIntentMatch, PartIntentResult, RouteId, RouteModule } from './contracts'
