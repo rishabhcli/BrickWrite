@@ -55,10 +55,13 @@ export interface PartIntent {
 export interface RegionIntent {
   readonly shape: 'field' | 'wall' | 'enclosure'
   readonly widthStuds: number
+  /** Footprint depth. A wall's own run is `widthStuds`; this is ignored for one. */
   readonly depthStuds: number
   /** Courses for a wall or enclosure; layers for a field. */
   readonly courses: number
   readonly family: BrickFamily
+  /** Wall thickness in studs, for walls and enclosures. Defaults to 1. */
+  readonly thicknessStuds?: number
   /** Which way a wall runs. Ignored by fields and enclosures. */
   readonly axis?: 'x' | 'z'
   /** Lay a plate deck under an enclosure's walls. */
@@ -361,6 +364,7 @@ export function structuralHash(graph: BuildGraph): string {
           depthStuds: node.region.depthStuds,
           courses: node.region.courses,
           family: node.region.family,
+          thicknessStuds: node.region.thicknessStuds ?? 1,
           axis: node.region.axis ?? null,
           floor: node.region.floor ?? false,
           openings: (node.region.openings ?? []).map((opening) => ({
