@@ -234,8 +234,17 @@ export function useWorkbench() {
     setToolRaw(next)
     // Leaving Connect abandons a half-finished mate rather than leaving a stale
     // source connector armed behind an unrelated tool.
-    if (next !== 'connect') setConnect(IDLE_CONNECT)
-    else setConnect((flow) => (flow.stage === 'source' ? flow : IDLE_CONNECT))
+    if (next !== 'connect') {
+      setConnect(IDLE_CONNECT)
+      return
+    }
+    // Picking up Connect with one part already selected means "connect this" —
+    // making the operator click the part they just selected is a stage that
+    // asks a question already answered.
+    const selected = cadEngine.getSnapshot().selection
+    setConnect(selected.length === 1
+      ? { ...IDLE_CONNECT, stage: 'target', sourcePartId: selected[0] }
+      : IDLE_CONNECT)
   }, [])
 
   const handleSelect = useCallback((partId: string, additive: boolean, subassembly: boolean) => {

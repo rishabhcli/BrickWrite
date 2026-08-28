@@ -255,8 +255,8 @@ RTT):
 
 | Metric | Measured | Budget |
 | --- | ---: | ---: |
-| LCP | **2284 ms** | 2500 ms |
-| CLS | **0.063** | 0.1 |
+| LCP | **2288 ms** | 2500 ms |
+| CLS | **0.0027** | 0.1 |
 | Requests | 16 | — |
 
 The 16 requests, in order:
@@ -314,21 +314,35 @@ face it fell back to, and Manrope 3.1% wider than a generic sans, so every
 headline and paragraph re-wrapped and the whole document moved.
 `src/features/landing/surface.css` now declares two metric-matched fallback
 faces (`size-adjust`, `ascent-override`, `descent-override`) built from fonts
-the browser already has. Measured again: **0.063**.
+the browser already has, and the hero headline wraps at 19ch rather than 15ch so
+a re-wrap moves one line rather than three. Measured again: **0.0027**.
 
 ### Responsive
 
-Full-page captures at 1440×900, 834×1112 and 390×844 for both surfaces, plus
-the reduced-motion landing and the production build, in `artifacts/landing/`:
+Captures at 1440×900, 834×1112 and 390×844 for both surfaces, integrated and
+unshelled, plus the reduced-motion landing and the production build, in
+`artifacts/landing/`:
 
 ```
 landing-desktop.png   landing-tablet.png   landing-mobile.png
 explore-desktop.png   explore-tablet.png   explore-mobile.png
+landing-{desktop,tablet,mobile}-standalone.png
+explore-{desktop,tablet,mobile}-standalone.png
 landing-reduced-motion.png   landing-production.png   report.json
 ```
 
-Horizontal overflow is **0 px at every viewport, on both surfaces** — asserted,
-not eyeballed.
+Overflow is measured per element rather than from `document.scrollWidth`, which
+these surfaces would always pass: they set `overflow-x: clip`, so an element
+wider than its container is hidden rather than scrollable and the document-level
+number stays at zero while content sits off the right edge. Result: **0 px past
+the container at every viewport, on both surfaces**, integrated and unshelled.
+
+**One thing the integrated capture shows that is not ours.** At 390×844 the
+shell's frame lays out at **594 px** — `.pf-topbar` in `src/platform/platform.css`
+does not fit a phone, and the grid track it sizes carries the whole page with it.
+The acceptance run records that as a note against `src/platform` rather than
+failing this suite, and takes the unshelled captures so the surfaces' own
+layout can still be seen and asserted. Unshelled, both fit 390 px exactly.
 
 ### Accessibility
 

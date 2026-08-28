@@ -31,7 +31,7 @@ import '../share.css'
 
 type Boot =
   | { kind: 'loading'; detail: string }
-  | { kind: 'ready'; document: ModelDocument; validation: ValidationReport }
+  | { kind: 'ready'; document: ModelDocument; validation: ValidationReport | null }
   | { kind: 'error'; message: string }
 
 const params = new URLSearchParams(window.location.search)
@@ -42,12 +42,21 @@ function Harness() {
   const [boot, setBoot] = useState<Boot>({ kind: 'loading', detail: 'Loading the compiled catalog' })
 
   useEffect(() => {
-    if (view !== 'studio') return
     let cancelled = false
     void (async () => {
       try {
+        // Both views need the catalog. The platform route table declares
+        // `boot: 'catalog'` for `/share/:slug` and the shell honours it; the
+        // harness has no shell, so it does the same thing here. Without it the
+        // viewer resolves no geometry and draws an empty frame.
         await loadCompiledCatalog()
         if (cancelled) return
+        if (view !== 'studio') {
+          // The viewer builds its own document from the publication; the
+          // harness only needed the catalog resident.
+          setBoot({ kind: 'ready', document: createShowcaseDocument(), validation: null })
+          return
+        }
         setBoot({ kind: 'loading', detail: 'Assembling the showcase model' })
         const document = createShowcaseDocument()
         setBoot({ kind: 'loading', detail: 'Loading compiled geometry' })
@@ -90,6 +99,23 @@ function Harness() {
   )
 
   if (view === 'share') {
+    if (boot.kind === 'loading') {
+      return (
+        <main className="bw-share-route bw-share-state" aria-busy="true" data-testid="harness-loading">
+          <span className="bw-share-eyebrow">BRICKWRIGHT</span>
+          <h1>Loading the compiled catalog</h1>
+          <p>{boot.detail}…</p>
+        </main>
+      )
+    }
+    if (boot.kind === 'error') {
+      return (
+        <main className="bw-share-route bw-share-state" role="alert" data-testid="harness-error">
+          <h1>The harness could not start</h1>
+          <p>{boot.message}</p>
+        </main>
+      )
+    }
     const slug = params.get('slug') ?? ''
     return <SharePage slug={slug} search={params.has('t') ? `?t=${encodeURIComponent(params.get('t')!)}` : ''} />
   }

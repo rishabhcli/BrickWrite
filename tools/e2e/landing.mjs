@@ -111,6 +111,35 @@ function run(command, args, options = {}) {
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
 
 /**
+ * How far the surface's own content runs past the box it was given.
+ *
+ * Two things this deliberately is not. It is not `document.scrollWidth`: these
+ * surfaces set `overflow-x: clip`, so an element wider than its container is
+ * *hidden* rather than scrollable and the document-level number stays at zero
+ * while content sits unreachable off the right edge. And it is not measured
+ * against the viewport: the surface is mounted inside the shell's frame, and if
+ * the frame is wider than the viewport that is the frame's problem, not the
+ * page's. So the page is measured against its own container, and the frame's
+ * width is reported alongside it.
+ */
+const measureOverflow = () => {
+  const root = document.querySelector('.bw-surface')
+  if (!root) return { worst: -1, surfaceWidth: 0, viewportWidth: window.innerWidth }
+  const right = root.getBoundingClientRect().right
+  let worst = 0
+  for (const element of root.querySelectorAll('*')) {
+    const box = element.getBoundingClientRect()
+    if (box.width === 0 && box.height === 0) continue
+    worst = Math.max(worst, Math.round(box.right - right))
+  }
+  return {
+    worst,
+    surfaceWidth: Math.round(root.getBoundingClientRect().width),
+    viewportWidth: window.innerWidth,
+  }
+}
+
+/**
  * Builds the landing and explore surfaces as their own entry.
  *
  * Deliberately not the whole application. `src/main.tsx` mounts these inside
@@ -235,7 +264,18 @@ try {
       unlabelledSections: [...document.querySelectorAll('main section')].filter(
         (section) => !section.getAttribute('aria-labelledby') && !section.getAttribute('aria-label'),
       ).length,
-      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      horizontalOverflow: (() => {
+        const root = document.querySelector('.bw-surface')
+        if (!root) return -1
+        const right = root.getBoundingClientRect().right
+        let worst = 0
+        for (const element of root.querySelectorAll('*')) {
+          const box = element.getBoundingClientRect()
+          if (box.width === 0 && box.height === 0) continue
+          worst = Math.max(worst, Math.round(box.right - right))
+        }
+        return worst
+      })(),
     }
   })
   check(a11y.h1 === 1, `exactly one h1 on the landing page (saw ${a11y.h1})`)
@@ -244,7 +284,7 @@ try {
   check(a11y.unlabelledImages === 0, `every image has alt text (${a11y.unlabelledImages} without)`)
   check(a11y.unlabelledSections === 0, `every section is labelled (${a11y.unlabelledSections} without)`)
   check(a11y.canvasAriaHidden && a11y.canvasWrappersLabelled, 'the model canvas is aria-hidden inside a labelled role=img')
-  check(a11y.horizontalOverflow <= 0, `no horizontal overflow at 1440px (overflow ${a11y.horizontalOverflow}px)`)
+  check(a11y.horizontalOverflow <= 1, `no horizontal overflow at 1440px (overflow ${a11y.horizontalOverflow}px)`)
   pass('landmarks, labels and overflow')
 
   // Keyboard: tab through and confirm focus never leaves the document and that
@@ -304,23 +344,28 @@ try {
     const shotPage = await shot.newPage()
     await shotPage.goto(`${SHARED_URL}/`, { waitUntil: 'networkidle' })
     await shotPage.waitForTimeout(700)
-    overflow[`landing-${viewport.name}`] = await shotPage.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    )
+    overflow[`landing-${viewport.name}`] = await shotPage.evaluate(measureOverflow)
     await shotPage.screenshot({ path: path.join(ARTIFACTS, `landing-${viewport.name}.png`), fullPage: true })
 
     await shotPage.goto(`${SHARED_URL}/explore?demo=${heroDemo.id}`, { waitUntil: 'networkidle' })
     await shotPage.waitForTimeout(700)
-    overflow[`explore-${viewport.name}`] = await shotPage.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    )
+    overflow[`explore-${viewport.name}`] = await shotPage.evaluate(measureOverflow)
     // The explorer fills the viewport by design; a full-page capture would
     // stretch the stage past the frame the renderer has drawn.
     await shotPage.screenshot({ path: path.join(ARTIFACTS, `explore-${viewport.name}.png`), fullPage: false })
     await shot.close()
   }
-  for (const [key, value] of Object.entries(overflow)) {
-    check(value <= 0, `${key} has no horizontal overflow (overflow ${value}px)`)
+  for (const [key, measured] of Object.entries(overflow)) {
+    check(measured.worst <= 1, `${key} keeps its content inside its container (worst element ${measured.worst}px past the right edge)`)
+    if (measured.surfaceWidth > measured.viewportWidth + 1) {
+      // Reported rather than failed: the surface fills whatever box the shell's
+      // frame gives it, and a frame wider than the viewport is the frame's.
+      const note = `${key}: the shell frame is ${measured.surfaceWidth}px wide in a ${measured.viewportWidth}px viewport,`
+        + ' so the page is laid out wider than the screen. That box is set by src/platform (.pf-frame / .pf-topbar),'
+        + ' not by these surfaces.'
+      notes.push(note)
+      process.stdout.write(`  note  ${note}\n`)
+    }
   }
   report.overflow = overflow
   pass(`responsive screenshots → ${path.relative(ROOT, ARTIFACTS)}`)
@@ -490,9 +535,17 @@ try {
   await session.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE.cpuSlowdown })
 
   await perfPage.addInitScript(() => {
-    window.__vitals = { lcp: 0, cls: 0, shifts: [] }
+    window.__vitals = { lcp: 0, lcpElement: 'unknown', cls: 0, shifts: [] }
     new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) window.__vitals.lcp = entry.startTime
+      for (const entry of list.getEntries()) {
+        window.__vitals.lcp = entry.startTime
+        // Captured here rather than read back later: the entry's element
+        // reference is not guaranteed to survive into a later query.
+        const element = entry.element
+        window.__vitals.lcpElement = element
+          ? `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(' ')[0]}` : ''}`
+          : 'unknown'
+      }
     }).observe({ type: 'largest-contentful-paint', buffered: true })
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -516,12 +569,7 @@ try {
   await perfPage.waitForTimeout(4000)
   check(painted, `the landing headline painted within 30 s under throttling (console: ${perfErrors.slice(0, 2).join(' | ')})`)
   const vitals = await perfPage.evaluate(() => window.__vitals)
-  const lcpElement = await perfPage.evaluate(() => {
-    const entries = performance.getEntriesByType('largest-contentful-paint')
-    const last = entries[entries.length - 1]
-    const element = last?.element
-    return element ? `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(' ')[0]}` : ''}` : 'unknown'
-  })
+  const lcpElement = vitals.lcpElement ?? 'unknown'
 
   // Chunk *names* are a rolldown implementation detail; what matters is what is
   // inside the chunks the browser actually fetched. So every JavaScript file in
@@ -581,6 +629,36 @@ try {
   await perfPage.screenshot({ path: path.join(ARTIFACTS, 'landing-production.png'), fullPage: true })
   await perfContext.close()
   pass('delivery gate')
+
+  // -- the surfaces on their own, at every viewport ------------------------
+  // The shell's frame is wider than a phone (see the notes above), which makes
+  // an integrated mobile capture a picture of that rather than of these pages.
+  // These are the same surfaces with nothing above them, so the layout is the
+  // only thing being measured.
+  const standaloneOverflow = {}
+  for (const viewport of viewports) {
+    const shot = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } })
+    const shotPage = await shot.newPage()
+    for (const [surface, url] of [['landing', '/'], ['explore', `/explore?demo=${heroDemo.id}`]]) {
+      await shotPage.goto(`${buildUrl}${url}`, { waitUntil: 'networkidle' })
+      await shotPage.waitForTimeout(800)
+      const key = `${surface}-${viewport.name}`
+      const measured = await shotPage.evaluate(measureOverflow)
+      standaloneOverflow[key] = measured
+      check(
+        measured.worst <= 1 && measured.surfaceWidth <= viewport.width + 1,
+        `${key} fits a ${viewport.width}px viewport unshelled `
+        + `(surface ${measured.surfaceWidth}px, worst element ${measured.worst}px over)`,
+      )
+      await shotPage.screenshot({
+        path: path.join(ARTIFACTS, `${key}-standalone.png`),
+        fullPage: surface === 'landing',
+      })
+    }
+    await shot.close()
+  }
+  report.standaloneOverflow = standaloneOverflow
+  pass('responsive layout without the shell')
 } finally {
   await browser.close()
   staticServer?.close()

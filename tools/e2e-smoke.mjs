@@ -481,11 +481,11 @@ try {
   await page.locator('canvas').click({ position: { x: 12, y: 12 } })
 
   // -- benchmark workflows --------------------------------------------------
-  // The moves a builder actually makes: find a part and place it, mate two
-  // parts through Connect, recolour, clone, array, isolate, type an exact pose,
-  // and undo all of it. Every one is asserted through the kernel — part counts,
-  // revisions and stored transforms — not by checking that a button looked
-  // pressed.
+  // The moves a builder actually makes: find a part and place it, position it
+  // numerically, mate it through Connect, recolour, clone, array, isolate, and
+  // undo all of it. Every one is asserted through the kernel — part counts,
+  // revisions, stored transforms and the connection graph — not by checking
+  // that a button looked pressed.
   const workflow = {}
   const lastPartId = () => page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).at(-1))
   const modelState = () => page.evaluate(() => ({
@@ -516,16 +516,17 @@ try {
   workflow.findAndPlace = { parts: afterFind.parts, placedId: subjectId }
 
   // numeric transform: an exact coordinate, committed through the same bus, and
-  // then shown back in the field exactly as it was stored.
-  const numericField = page.locator('.dock-right').getByLabel('X in LDraw units')
-  await numericField.waitFor({ timeout: 5_000 })
+  // shown back in the field exactly as it was stored.
+  const numericX = page.locator('.dock-right').getByLabel('X in LDraw units')
+  const numericY = page.locator('.dock-right').getByLabel('Y in LDraw units')
+  await numericX.waitFor({ timeout: 5_000 })
   const beforeNumeric = await modelState()
   const numericTarget = await page.evaluate(
     (id) => Math.round((window.brickwright.getDocument().parts[id].transform.position[0] + 60) / 20) * 20,
     subjectId,
   )
-  await numericField.fill(String(numericTarget))
-  await numericField.press('Enter')
+  await numericX.fill(String(numericTarget))
+  await numericX.press('Enter')
   await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeNumeric.revision, { timeout: 10_000 })
   const numericResult = await page.evaluate((id) => {
     const model = window.brickwright.getDocument()
@@ -544,9 +545,10 @@ try {
     numericResult.revision === beforeNumeric.revision + 1,
     `Numeric entry committed ${numericResult.revision - beforeNumeric.revision} transactions, not one`,
   )
+  const shownX = Number(await numericX.inputValue())
   assert(
-    Number(await numericField.inputValue()) === numericResult.x,
-    `The numeric field shows ${await numericField.inputValue()} but the document stores ${numericResult.x}`,
+    shownX === numericResult.x,
+    `The numeric field shows ${shownX} but the document stores ${numericResult.x}`,
   )
   // A numeric edit that sheared the basis would be refused by the kernel on the
   // next commit, so the canonical path has to keep it exactly orthonormal.
@@ -555,6 +557,90 @@ try {
     `Numeric entry left the basis sheared by ${numericResult.orthonormalityError}`,
   )
   workflow.numericTransform = numericResult
+
+  // Lift it clear of the build. LDraw is Y-down, so this is 200 LDU up, well
+  // outside the connector solver's search radius — the part is now genuinely
+  // detached, which is the state Connect exists for.
+  const beforeLift = await modelState()
+  const liftTarget = await page.evaluate(
+    (id) => window.brickwright.getDocument().parts[id].transform.position[1] - 200,
+    subjectId,
+  )
+  await numericY.fill(String(liftTarget))
+  await numericY.press('Enter')
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeLift.revision, { timeout: 10_000 })
+  const detachedEdges = await page.evaluate(
+    (id) => Object.values(window.brickwright.getDocument().connections)
+      .filter((edge) => edge.a.partId === id || edge.b.partId === id).length,
+    subjectId,
+  )
+  assert(detachedEdges === 0, `Lifting the part clear left ${detachedEdges} connections behind`)
+
+  // mate via Connect: an explicit two-stage interaction with a reviewed preview.
+  await page.locator('.primary-tools .tool-button', { hasText: 'Connect' }).click()
+  const connectPanel = page.locator('.connect-panel')
+  await connectPanel.waitFor({ timeout: 5_000 })
+  assert(
+    (await connectPanel.locator('.connect-stages li').count()) === 3,
+    'Connect should present three explicit stages',
+  )
+  // Stage one is answered by the existing selection, so the flow opens on the
+  // target stage already naming the part that will move.
+  assert(
+    (await connectPanel.getAttribute('data-stage')) === 'target',
+    'Picking up Connect with one part selected should seed it as the moving part',
+  )
+  const movingName = (await connectPanel.locator('.connect-side strong').first().innerText()).trim()
+  assert(movingName.length > 0, 'Connect did not name the part it is about to move')
+  assert(
+    (await connectPanel.locator('.connector-chips').first().locator('button').count()) > 1,
+    'Connect surfaced no connectors on the moving part',
+  )
+
+  // Stage two: click parts until one offers a legal mate. A target that offers
+  // none is a legitimate answer, and is asserted to say so rather than leaving
+  // a dead button.
+  let connectReady = false
+  let refusal = null
+  for (const offset of [[0, 0], [90, -50], [-90, -50], [140, 30], [-140, 30], [0, -110], [60, 90], [-60, 90], [180, -20], [-180, -20]]) {
+    await page.locator('canvas').click({ position: { x: canvasCentre.x + offset[0], y: canvasCentre.y + offset[1] } })
+    await page.waitForTimeout(220)
+    if ((await connectPanel.getAttribute('data-stage')) !== 'review') continue
+    if (!(await page.locator('.connect-commit').isDisabled())) { connectReady = true; break }
+    refusal = (await connectPanel.locator('.connect-empty').innerText()).trim()
+    assert(refusal.length > 0, 'Connect offered no mate and gave no reason')
+    await page.locator('.connect-actions button', { hasText: 'BACK' }).click()
+    await page.waitForTimeout(140)
+  }
+  assert(connectReady, `Connect never found a legal mate for ${movingName}${refusal ? ` (last refusal: ${refusal})` : ''}`)
+  const previewRows = await connectPanel.locator('.connect-preview div').count()
+  assert(previewRows >= 4, `The mate preview should state its mates, certainty, movement and seat, saw ${previewRows} rows`)
+  await page.screenshot({ path: 'artifacts/workbench/state-connect.png' })
+
+  const beforeConnect = await modelState()
+  const beforeConnectPose = await page.evaluate(
+    (id) => JSON.stringify(window.brickwright.getDocument().parts[id].transform),
+    subjectId,
+  )
+  await page.locator('.connect-commit').click()
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeConnect.revision, { timeout: 10_000 })
+  const afterConnect = await modelState()
+  assert(afterConnect.revision === beforeConnect.revision + 1, 'Connect committed more than one transaction')
+  assert(afterConnect.parts === beforeConnect.parts, 'Connect changed the part count; it may only move a part')
+  assert(
+    (await page.evaluate((id) => JSON.stringify(window.brickwright.getDocument().parts[id].transform), subjectId)) !== beforeConnectPose,
+    'Connect committed without moving anything',
+  )
+  // The mate has to be real: the kernel's own connection graph must now record
+  // an edge touching the part Connect moved.
+  const matedEdges = await page.evaluate(
+    (id) => Object.values(window.brickwright.getDocument().connections)
+      .filter((edge) => edge.a.partId === id || edge.b.partId === id).length,
+    subjectId,
+  )
+  assert(matedEdges > 0, 'Connect moved the part but the kernel recorded no connection')
+  workflow.connect = { moving: movingName, previewRows, matedEdges, committed: true }
+  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
 
   // recolour: choose an active colour in the palette, then paint the selection.
   const beforeColour = await page.evaluate((id) => ({
@@ -611,59 +697,9 @@ try {
   await page.locator('.status-visibility').waitFor({ state: 'hidden' })
   workflow.isolate = isolateNote
 
-  // mate via Connect: two explicit stages, a reviewed preview, then one commit.
-  await page.locator('.primary-tools .tool-button', { hasText: 'Connect' }).click()
-  const connectPanel = page.locator('.connect-panel')
-  await connectPanel.waitFor({ timeout: 5_000 })
-  assert(
-    (await connectPanel.locator('.connect-stages li').count()) === 3,
-    'Connect should present three explicit stages',
-  )
-  assert(
-    await page.locator('.connect-actions button', { hasText: 'BACK' }).isDisabled(),
-    'Connect stage one should have nothing to go back to',
-  )
-  // Stage one, then stage two, by clicking two different parts in the viewport.
-  await page.locator('canvas').click({ position: canvasCentre })
-  await page.waitForFunction(() => document.querySelector('.connect-panel')?.getAttribute('data-stage') !== 'source', null, { timeout: 5_000 })
-  let reachedReview = false
-  for (const offset of [[90, -50], [-90, -50], [130, 40], [-130, 40], [0, -110]]) {
-    await page.locator('canvas').click({ position: { x: canvasCentre.x + offset[0], y: canvasCentre.y + offset[1] } })
-    await page.waitForTimeout(180)
-    if ((await connectPanel.getAttribute('data-stage')) === 'review') { reachedReview = true; break }
-  }
-  assert(reachedReview, 'Clicking a second part never advanced Connect to its review stage')
-  const connectSolutions = await connectPanel.locator('.connect-preview div').count()
-  const connectCommit = page.locator('.connect-commit')
-  const connectEnabled = !(await connectCommit.isDisabled())
-  await page.screenshot({ path: 'artifacts/workbench/state-connect.png' })
-  if (connectEnabled) {
-    const movingId = await page.evaluate(() => window.brickwright.getDocument() && document.querySelector('.connect-side strong')?.textContent)
-    const beforeConnect = await modelState()
-    const beforePose = await page.evaluate(() => JSON.stringify(window.brickwright.getDocument().parts))
-    await connectCommit.click()
-    await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeConnect.revision, { timeout: 10_000 })
-    const afterConnect = await modelState()
-    assert(afterConnect.revision === beforeConnect.revision + 1, 'Connect committed more than one transaction')
-    assert(afterConnect.parts === beforeConnect.parts, 'Connect changed the part count; it may only move a part')
-    assert(
-      (await page.evaluate(() => JSON.stringify(window.brickwright.getDocument().parts))) !== beforePose,
-      'Connect committed without moving anything',
-    )
-    workflow.connect = { moving: movingId, solutions: connectSolutions, committed: true }
-  } else {
-    // A refusal is a legitimate outcome and has to be legible rather than a
-    // silently dead button.
-    const refusal = (await connectPanel.locator('.connect-empty').innerText()).trim()
-    assert(refusal.length > 0, 'Connect offered no mate and gave no reason')
-    workflow.connect = { solutions: 0, refusal, committed: false }
-  }
-  await page.keyboard.press('Escape')
-  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
-
   // undo unwinds the whole workflow, one transaction at a time.
   const beforeUndoChain = await modelState()
-  for (let step = 0; step < 12; step += 1) {
+  for (let step = 0; step < 14; step += 1) {
     if ((await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)) === beforeFind.parts) break
     await page.getByRole('button', { name: 'Undo' }).click()
     await page.waitForTimeout(120)
@@ -1728,6 +1764,7 @@ try {
     quality: {
       responsive: quality.responsive,
       keyboardReachableControls: quality.keyboardReachable,
+      keyboardResize: quality.keyboardResize,
       contrast: quality.contrast,
       reducedMotion: quality.reducedMotion,
       screenshots: quality.screenshots.length,
