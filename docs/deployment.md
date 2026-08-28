@@ -124,8 +124,13 @@ this deployment shape:
   back 2348 ms locally and 2608 ms on a runner, against 150 ms of headroom. The
   suite times a fixed workload unthrottled and picks the multiplier that reaches
   a constant reference device, then reports the median of three loads with every
-  sample printed. If you change the budget, change it because the page changed,
-  not because a run was unlucky — the samples will tell you which it was.
+  sample printed. That removed the CPU-bound part and moved LCP by about 20 ms:
+  the load is bandwidth-bound, and a host-dependent floor of roughly 200 ms
+  survives calibration. So the gate that actually catches a delivery regression
+  is the **render-critical byte budget** — document plus stylesheet plus script,
+  which bytes make identical on every machine — and LCP is a loose ceiling
+  beside it. If you change either budget, change it because the page changed;
+  the per-sample numbers will tell you whether it did.
 
 After a deploy, the four things worth checking by hand:
 

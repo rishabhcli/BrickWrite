@@ -74,7 +74,37 @@ const CPU_BENCHMARK = (iterations) => {
   return { ms: performance.now() - started, value }
 }
 
-const LCP_BUDGET_MS = 2500
+/**
+ * What the browser must download before the headline can paint.
+ *
+ * This is the gate that actually catches a delivery regression, and it is the
+ * only one here that is worth the same on every machine: bytes do not care how
+ * fast the disk is. At 1.6 Mbit/s the render-critical set is ~1.9 s of the
+ * ~2.4 s LCP, so this budget is what LCP is mostly measuring anyway — with none
+ * of the host sensitivity. Today: 507 B of document, 142 KB of stylesheet and
+ * 245 KB of entry script. The headroom is deliberate but not generous; shipping
+ * the renderer or the kernel to this route would clear it by a mile.
+ */
+const CRITICAL_PATH_BUDGET_BYTES = 450 * 1024
+
+/**
+ * The LCP ceiling.
+ *
+ * Held at a value every machine this runs on can meet, because it cannot be
+ * made host-independent. Calibrating the CPU throttle removed the part that was
+ * CPU-bound and moved the number by about 20 ms — the load is bandwidth-bound,
+ * and what is left is the host's own file and network-stack overhead across 13
+ * requests. Measured, with the throttle calibrated and the cold sample
+ * discarded: ~2390 ms on an M3 Max, ~2570 ms on a hosted runner. A 2500 ms
+ * ceiling passed one of those and failed the other while the page was
+ * identical, which is not a gate, it is a coin toss.
+ *
+ * So LCP asserts that nothing has gone badly wrong, {@link
+ * CRITICAL_PATH_BUDGET_BYTES} asserts that the page is still small, and the
+ * per-sample numbers are printed so a drift toward the ceiling is visible long
+ * before it trips.
+ */
+const LCP_BUDGET_MS = 3000
 const CLS_BUDGET = 0.1
 
 /**
@@ -130,6 +160,10 @@ function serveStatic(root) {
     }
     response.writeHead(200, {
       'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
+      // Without a length the response is chunked, which makes the browser
+      // report no transfer size — the delivery gate's byte budget silently
+      // measured zero for every request until this was set.
+      'content-length': statSync(file).size,
       'cache-control': 'no-store',
     })
     createReadStream(file).pipe(response)
@@ -640,6 +674,11 @@ try {
     }
   }
 
+  // The first load of a freshly built directory pays for the host's cold file
+  // cache, and it shows: on a hosted runner the opening sample came back
+  // 3568 ms against 2588 and 2560 for the two behind it. Warm the server, throw
+  // that reading away, and measure what a visitor to a running site would get.
+  await measureDelivery()
   const samples = []
   for (let index = 0; index < DELIVERY_SAMPLES; index += 1) samples.push(await measureDelivery())
   // The median sample is the one reported and asserted on, so the request log,
@@ -693,6 +732,20 @@ try {
   }
   process.stdout.write('\n')
 
+  // Everything the browser must have in hand before the headline can paint.
+  // Fonts are excluded deliberately: they are `font-display: swap`, so the text
+  // renders in a fallback and does not wait for them.
+  const criticalPath = requests.filter((entry) => ['document', 'stylesheet', 'script'].includes(entry.type))
+  const criticalBytes = criticalPath.reduce((sum, entry) => sum + entry.bytes, 0)
+  process.stdout.write(
+    `  critical   ${(criticalBytes / 1024).toFixed(0)} KiB across ${criticalPath.length} requests `
+      + `(budget ${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB)\n`,
+  )
+  check(
+    criticalBytes > 0 && criticalBytes <= CRITICAL_PATH_BUDGET_BYTES,
+    `the render-critical payload is ${(criticalBytes / 1024).toFixed(0)} KiB, within `
+      + `${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB`,
+  )
   check(vitals.lcp > 0 && vitals.lcp < LCP_BUDGET_MS, `LCP ${vitals.lcp.toFixed(0)} ms is under the ${LCP_BUDGET_MS} ms budget`)
   check(vitals.cls <= CLS_BUDGET, `CLS ${vitals.cls.toFixed(4)} is within ${CLS_BUDGET}`)
   check(forbidden.length === 0, `no catalog or compiled mesh is fetched (${forbidden.map((entry) => entry.url).join(', ')})`)
