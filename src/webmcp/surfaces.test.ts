@@ -256,7 +256,8 @@ describe('project tools', () => {
 
   it('refuses to delete the open project', async () => {
     cadEngine.setAutonomy('build')
-    const openId = session.currentProjectId
+    const created = await invoke('project_create', { name: `Keep ${sequence}` })
+    const openId = created.projectId as string
     const refused = await invoke('project_delete', { projectId: openId })
     expect(errorOf(refused)?.code).toBe('OPEN_PROJECT')
     expect((await session.listProjects()).map((project) => project.projectId)).toContain(openId)
