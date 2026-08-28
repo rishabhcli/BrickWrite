@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "note": "Fixtures for the deterministic brief compiler. Every entry must compile to the same brief in every process; `expectConflicts` records whether the request is genuinely under-determined or self-contradictory, which the compiler must surface rather than resolve on the operator's behalf.",
+  "prompts": [
+    {
+      "id": "plain-house",
+      "prompt": "Build a small suburban house with a pitched roof.",
+      "expectConflicts": false,
+      "expect": { "subjectContains": "house" }
+    },
+    {
+      "id": "sized-footprint",
+      "prompt": "Make a 32 x 32 stud modular building.",
+      "expectConflicts": false,
+      "expect": { "envelopeStuds": [32, 0, 32], "subjectContains": "modular" }
+    },
+    {
+      "id": "three-axis-envelope",
+      "prompt": "Design a 16 x 8 x 12 stud microscale lighthouse.",
+      "expectConflicts": false,
+      "expect": { "envelopeStuds": [16, 12, 8], "scale": "micro" }
+    },
+    {
+      "id": "axis-phrases",
+      "prompt": "A display stand 24 studs wide and 10 studs tall.",
+      "expectConflicts": false,
+      "expect": { "envelopeStuds": [24, 10, 0] }
+    },
+    {
+      "id": "minifig-scale-car",
+      "prompt": "Build a minifig scale rally car in red and white.",
+      "expectConflicts": false,
+      "expect": { "scale": "minifig", "paletteIncludes": [4, 15] }
+    },
+    {
+      "id": "midi-spaceship",
+      "prompt": "A midi scale spaceship with wings that fold.",
+      "expectConflicts": false,
+      "expect": { "scale": "midi", "hasFunctions": true }
+    },
+    {
+      "id": "large-display",
+      "prompt": "A large display model of a lighthouse, roughly UCS proportions.",
+      "expectConflicts": false,
+      "expect": { "scale": "large" }
+    },
+    {
+      "id": "turning-wheels",
+      "prompt": "Make a tractor whose wheels turn and whose bonnet opens.",
+      "expectConflicts": false,
+      "expect": { "hasFunctions": true, "subjectContains": "tractor" }
+    },
+    {
+      "id": "hinged-roof",
+      "prompt": "A cottage where the roof lifts off so you can see inside.",
+      "expectConflicts": false,
+      "expect": { "hasFunctions": true }
+    },
+    {
+      "id": "sliding-door",
+      "prompt": "A warehouse with a door that slides sideways.",
+      "expectConflicts": false,
+      "expect": { "hasFunctions": true }
+    },
+    {
+      "id": "piece-budget",
+      "prompt": "A simple bridge under 200 pieces.",
+      "expectConflicts": false,
+      "expect": { "partBudget": 200 }
+    },
+    {
+      "id": "piece-budget-phrase",
+      "prompt": "Give me a 150-piece vignette of a market stall.",
+      "expectConflicts": false,
+      "expect": { "partBudget": 150 }
+    },
+    {
+      "id": "budget-and-envelope",
+      "prompt": "A 16 x 16 stud diorama with at most 400 parts.",
+      "expectConflicts": false,
+      "expect": { "partBudget": 400, "envelopeStuds": [16, 0, 16] }
+    },
+    {
+      "id": "symmetric-tower",
+      "prompt": "A symmetrical clock tower in tan and dark bluish grey.",
+      "expectConflicts": false,
+      "expect": { "symmetry": "mirror-x", "paletteIncludes": [19, 72] }
+    },
+    {
+      "id": "radial-fountain",
+      "prompt": "A fountain with radial symmetry and four spouts.",
+      "expectConflicts": false,
+      "expect": { "symmetry": "radial" }
+    },
+    {
+      "id": "asymmetric-rock",
+      "prompt": "An asymmetrical rock outcrop for a diorama base.",
+      "expectConflicts": false,
+      "expect": { "symmetry": "none" }
+    },
+    {
+      "id": "styled-brutalist",
+      "prompt": "A brutalist office block, very blocky, in light bluish grey.",
+      "expectConflicts": false,
+      "expect": { "styleIncludes": ["brutalist", "blocky"], "paletteIncludes": [71] }
+    },
+    {
+      "id": "styled-retro",
+      "prompt": "A retro diner with a playful sign.",
+      "expectConflicts": false,
+      "expect": { "styleIncludes": ["retro", "playful"] }
+    },
+    {
+      "id": "colour-list",
+      "prompt": "A fire station in red, white and black.",
+      "expectConflicts": false,
+      "expect": { "paletteIncludes": [4, 15, 0] }
+    },
+    {
+      "id": "no-transparent",
+      "prompt": "A greenhouse frame with no transparent parts at all.",
+      "expectConflicts": false,
+      "expect": {}
+    },
+    {
+      "id": "reference-selection",
+      "prompt": "Extend @selection two studs further along the x axis.",
+      "expectConflicts": false,
+      "expect": {}
+    },
+    {
+      "id": "reference-protect",
+      "prompt": "Add a canopy over the cockpit but keep @part:part_0042 exactly where it is.",
+      "expectConflicts": false,
+      "expect": { "protectedIncludes": ["part_0042"] }
+    },
+    {
+      "id": "reference-subassembly",
+      "prompt": "Rebuild @subassembly:hull one plate taller.",
+      "expectConflicts": false,
+      "expect": {}
+    },
+    {
+      "id": "technic-crane",
+      "prompt": "A crane with an arm that rotates and a hook that extends.",
+      "expectConflicts": false,
+      "expect": { "hasFunctions": true }
+    },
+    {
+      "id": "detailed-castle",
+      "prompt": "A detailed medieval castle gatehouse in dark grey.",
+      "expectConflicts": false,
+      "expect": { "styleIncludes": ["detailed", "medieval"] }
+    },
+    {
+      "id": "microscale-city",
+      "prompt": "A microscale city block, 48 x 48 studs.",
+      "expectConflicts": false,
+      "expect": { "scale": "micro", "envelopeStuds": [48, 0, 48] }
+    },
+    {
+      "id": "nautical-pier",
+      "prompt": "A nautical pier in reddish brown with a rugged look.",
+      "expectConflicts": false,
+      "expect": { "styleIncludes": ["nautical", "rugged"], "paletteIncludes": [70] }
+    },
+    {
+      "id": "sleek-monorail",
+      "prompt": "A sleek futuristic monorail station.",
+      "expectConflicts": false,
+      "expect": { "styleIncludes": ["sleek", "futuristic"] }
+    },
+    {
+      "id": "ambiguous-choice",
+      "prompt": "Build me a car or a truck, whichever works better.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    },
+    {
+      "id": "ambiguous-vague",
+      "prompt": "Make something interesting with the parts I already have.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    },
+    {
+      "id": "ambiguous-surprise",
+      "prompt": "Surprise me with a spaceship.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    },
+    {
+      "id": "conflict-two-sizes",
+      "prompt": "A tower 16 x 16 studs, actually make it 32 x 32 studs.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["envelopeStuds"] }
+    },
+    {
+      "id": "conflict-two-budgets",
+      "prompt": "A shop under 100 pieces, no more than 400 pieces really.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["partBudget"] }
+    },
+    {
+      "id": "conflict-budget-vs-footprint",
+      "prompt": "A 64 x 64 stud baseplate scene under 50 pieces.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["partBudget"] }
+    },
+    {
+      "id": "conflict-two-scales",
+      "prompt": "A microscale harbour at minifig scale.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["scale"] }
+    },
+    {
+      "id": "conflict-symmetry",
+      "prompt": "The facade should be perfectly symmetrical but the whole thing asymmetrical.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["symmetry"] }
+    },
+    {
+      "id": "conflict-colour",
+      "prompt": "Paint it red with no red anywhere on the roof.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["palette"] }
+    },
+    {
+      "id": "ambiguous-few",
+      "prompt": "Add a few trees around the base.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    },
+    {
+      "id": "ambiguous-maybe",
+      "prompt": "Maybe widen the deck a bit.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    },
+    {
+      "id": "ambiguous-dont-mind",
+      "prompt": "A garden wall, I don't mind what colour.",
+      "expectConflicts": true,
+      "expect": { "conflictFields": ["subject"] }
+    }
+  ]
+}

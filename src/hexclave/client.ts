@@ -1,4 +1,6 @@
 import { HexclaveClientApp } from '@hexclave/react'
+import { buildAnalyticsOptions } from '../platform/analytics'
+import { hexclaveUrlOptions } from '../platform/config'
 
 /**
  * The Hexclave client app.
@@ -15,15 +17,22 @@ import { HexclaveClientApp } from '@hexclave/react'
  * paths still have to boot the CAD editor, so construction is reported as a
  * `Result` and the caller decides, rather than taking the whole editor down
  * with an exception at module-evaluation time.
+ *
+ * Two things are configured here rather than left to defaults, and both are
+ * decisions the platform layer owns:
+ *
+ *  - `urls` puts sign-in, sign-up and account settings on Brickwright's own
+ *    routes while leaving the security-sensitive pages hosted. See
+ *    `platform/config.ts`.
+ *  - `analytics` blocks every region that can hold CAD content from session
+ *    replay. See `platform/analytics.ts`, which is also where the registry of
+ *    those regions lives.
  */
 function createHexclaveClientApp() {
   return new HexclaveClientApp({
     tokenStore: 'cookie',
-    urls: {
-      default: {
-        type: 'hosted',
-      },
-    },
+    urls: hexclaveUrlOptions(),
+    analytics: buildAnalyticsOptions(),
   })
 }
 
@@ -59,4 +68,9 @@ export function getHexclaveClientApp(): HexclaveClientAppResult {
     resolved = { status: 'error', error }
   }
   return resolved
+}
+
+/** Drop the memoised app. Tests use this; runtime code does not. */
+export function resetHexclaveClientApp(): void {
+  resolved = null
 }

@@ -4,8 +4,10 @@
  * Everything that holds a secret runs here rather than in Vite's module graph:
  * the model API key must never be reachable from a browser bundle, and the only
  * durable way to guarantee that is for the code that reads it to live in a
- * different process. Vite proxies `/api` here in development; in production the
- * same routes are served by the deployed function runtime.
+ * different process. Vite proxies `/api` here in development. A production host
+ * must run this Node entry point (or provide audited function adapters), put
+ * authentication and rate limits in front of paid routes, and keep the model
+ * credential server-only; the Pages share functions are not model API adapters.
  *
  * Route modules are discovered rather than imported statically, so a build that
  * ships without the assistant — or without generation — still starts and

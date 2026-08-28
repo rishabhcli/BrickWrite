@@ -100,8 +100,8 @@ export function captureSilhouette(
     width: SILHOUETTE_WIDTH,
     height: SILHOUETTE_HEIGHT,
     mask,
-    frameMin: frame.min,
-    frameMax: frame.max,
+    frameMin: [frame.min[0], frame.min[1], frame.min[2]],
+    frameMax: [frame.max[0], frame.max[1], frame.max[2]],
   }
 }
 

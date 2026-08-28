@@ -1,0 +1,305 @@
+import { getPartBounds } from '../../cad/geometry'
+import { getWorldConnectors } from '../../cad/snapping'
+import {
+  basisFromEulerDegrees,
+  canonicalTransform,
+  cleanBasis,
+  composeTransform,
+  degreesToRadians,
+  eulerDegreesFromBasis,
+  orthonormalize,
+  rotateLocal,
+  rotateWorld,
+  type Mat3,
+  type Vec3,
+} from '../../cad/math'
+import type { CadOperation, ModelDocument, PartInstance, Transform } from '../../cad/types'
+
+/**
+ * One canonical pose representation for every control that can produce one.
+ *
+ * The gizmo reads a matrix back out of three.js, the numeric fields build one
+ * from typed LDU and degrees, and the align/distribute buttons compute one from
+ * measured bounds. If those three arrived at different bit patterns for the same
+ * physical pose, the document would carry three spellings of one placement:
+ * exports would differ, dedup would miss, and "type what the gizmo just did"
+ * would move the part. Everything below funnels through `canonicalisePose`, and
+ * a test asserts the equivalence rather than trusting it.
+ */
+
+export type ReferenceFrame = 'world' | 'local' | 'connector'
+
+export type PivotMode = 'origin' | 'centre' | 'world-origin'
+
+export interface AxisLocks {
+  readonly x: boolean
+  readonly y: boolean
+  readonly z: boolean
+}
+
+export const NO_LOCKS: AxisLocks = { x: false, y: false, z: false }
+
+/** Position quantum, in LDU. Kills gizmo float noise without touching real values. */
+const POSITION_QUANTUM = 1e-4
+
+const quantise = (value: number) => {
+  const scaled = Math.round(value / POSITION_QUANTUM) * POSITION_QUANTUM
+  // -0 and 0 must not produce different canonical strings.
+  return scaled === 0 ? 0 : Number(scaled.toFixed(6))
+}
+
+/**
+ * The single normalisation every produced pose passes through.
+ *
+ * Re-orthonormalising is not cosmetic: repeated composition shears a basis, and
+ * a sheared basis is refused by the kernel's operation validator.
+ */
+export function canonicalisePose(pose: Transform): Transform {
+  return {
+    position: [quantise(pose.position[0]), quantise(pose.position[1]), quantise(pose.position[2])],
+    basis: cleanBasis(orthonormalize(pose.basis as Mat3)),
+  }
+}
+
+/** Stable string identity for a pose, for comparison and for tests. */
+export const poseKey = (pose: Transform): string => canonicalTransform(canonicalisePose(pose))
+
+export const posesEqual = (a: Transform, b: Transform): boolean => poseKey(a) === poseKey(b)
+
+/** Applies per-axis locks by taking the locked components from the base pose. */
+export function applyLocks(base: Transform, next: Transform, locks: AxisLocks): Transform {
+  if (!locks.x && !locks.y && !locks.z) return next
+  return {
+    position: [
+      locks.x ? base.position[0] : next.position[0],
+      locks.y ? base.position[1] : next.position[1],
+      locks.z ? base.position[2] : next.position[2],
+    ],
+    basis: next.basis,
+  }
+}
+
+/** Snaps a position to a grid increment, leaving the basis untouched. */
+export function snapPosition(position: Vec3, gridLdu: number): Vec3 {
+  if (gridLdu <= 0) return position
+  return [
+    Math.round(position[0] / gridLdu) * gridLdu,
+    Math.round(position[1] / gridLdu) * gridLdu,
+    Math.round(position[2] / gridLdu) * gridLdu,
+  ]
+}
+
+export interface NumericPose {
+  /** Exact document position in LDU. */
+  readonly position: Vec3
+  /** Display Euler degrees, decomposed from the stored basis. */
+  readonly rotationDegrees: Vec3
+}
+
+/** What the numeric fields show for a pose. */
+export function readNumericPose(pose: Transform): NumericPose {
+  return { position: [...pose.position] as unknown as Vec3, rotationDegrees: eulerDegreesFromBasis(pose.basis as Mat3) }
+}
+
+/**
+ * The pose produced by typing into the numeric fields.
+ *
+ * Rotation is expressed as Euler degrees because that is what a person can type;
+ * the stored representation stays an exact basis, and the decomposition is only
+ * ever a display affordance.
+ */
+export function numericPose(base: Transform, entry: Partial<NumericPose>): Transform {
+  return canonicalisePose({
+    position: entry.position ?? base.position,
+    basis: entry.rotationDegrees ? basisFromEulerDegrees(entry.rotationDegrees) : base.basis,
+  })
+}
+
+/**
+ * The pose produced by dragging the gizmo.
+ *
+ * `raw` is whatever three.js handed back, already mapped into document space by
+ * the viewport. Grid snapping and axis locks are applied here so the same rules
+ * govern the pointer path and the keyboard path.
+ */
+export function gizmoPose(
+  base: Transform,
+  raw: Transform,
+  options: { gridLdu?: number; locks?: AxisLocks; rotating?: boolean } = {},
+): Transform {
+  const grid = options.rotating ? 0 : (options.gridLdu ?? 0)
+  const positioned: Transform = { position: snapPosition(raw.position as Vec3, grid), basis: raw.basis }
+  return canonicalisePose(applyLocks(base, positioned, options.locks ?? NO_LOCKS))
+}
+
+/** Moves a pose by an offset expressed in the chosen reference frame. */
+export function translatePose(base: Transform, delta: Vec3, frame: ReferenceFrame, referenceBasis?: Mat3): Transform {
+  const basis = frame === 'world' ? null : frame === 'local' ? (base.basis as Mat3) : (referenceBasis ?? (base.basis as Mat3))
+  const world: Vec3 = basis
+    ? [
+        basis[0] * delta[0] + basis[1] * delta[1] + basis[2] * delta[2],
+        basis[3] * delta[0] + basis[4] * delta[1] + basis[5] * delta[2],
+        basis[6] * delta[0] + basis[7] * delta[1] + basis[8] * delta[2],
+      ]
+    : delta
+  return canonicalisePose({
+    position: [base.position[0] + world[0], base.position[1] + world[1], base.position[2] + world[2]],
+    basis: base.basis,
+  })
+}
+
+/**
+ * Turns a pose about an axis, in the chosen frame, around the chosen pivot.
+ *
+ * A local-frame turn about the part's own origin is the quarter-turn every
+ * builder means by "rotate"; a world-frame turn about the selection's centre is
+ * what a multi-part selection needs. Both are the same expression with different
+ * arguments, so neither can drift from the other.
+ */
+export function rotatePose(
+  base: Transform,
+  axis: Vec3,
+  degrees: number,
+  frame: ReferenceFrame,
+  pivot?: Vec3,
+  referenceBasis?: Mat3,
+): Transform {
+  const radians = degreesToRadians(degrees)
+  if (frame === 'local' && !pivot) return canonicalisePose(rotateLocal(base, axis, radians))
+  const worldAxis: Vec3 =
+    frame === 'world'
+      ? axis
+      : (() => {
+          const basis = frame === 'local' ? (base.basis as Mat3) : (referenceBasis ?? (base.basis as Mat3))
+          return [
+            basis[0] * axis[0] + basis[1] * axis[1] + basis[2] * axis[2],
+            basis[3] * axis[0] + basis[4] * axis[1] + basis[5] * axis[2],
+            basis[6] * axis[0] + basis[7] * axis[1] + basis[8] * axis[2],
+          ]
+        })()
+  return canonicalisePose(rotateWorld(base, worldAxis, radians, pivot ?? base.position))
+}
+
+/** Document-space pivot for a selection, under the chosen pivot rule. */
+export function resolvePivot(parts: readonly PartInstance[], mode: PivotMode): Vec3 {
+  if (mode === 'world-origin' || !parts.length) return [0, 0, 0]
+  if (mode === 'origin') return [...parts[0].transform.position] as unknown as Vec3
+  const bounds = parts.map(getPartBounds)
+  return [
+    (Math.min(...bounds.map((b) => b.min[0])) + Math.max(...bounds.map((b) => b.max[0]))) / 2,
+    (Math.min(...bounds.map((b) => b.min[1])) + Math.max(...bounds.map((b) => b.max[1]))) / 2,
+    (Math.min(...bounds.map((b) => b.min[2])) + Math.max(...bounds.map((b) => b.max[2]))) / 2,
+  ]
+}
+
+/**
+ * The frame of the part's first connector, for the `connector` reference frame.
+ *
+ * Returns null when the part has no compiled connectors, which is the honest
+ * answer for an identity whose snap metadata was never published — the control
+ * says so rather than silently falling back to world and moving the part the
+ * wrong way.
+ */
+export function connectorFrame(part: PartInstance, featureId?: string): Mat3 | null {
+  const connectors = getWorldConnectors(part)
+  if (!connectors.length) return null
+  const chosen = featureId ? connectors.find((entry) => entry.id === featureId) : connectors[0]
+  return (chosen ?? connectors[0]).frame.basis as Mat3
+}
+
+export type AlignEdge = 'min' | 'centre' | 'max'
+export const AXIS_INDEX: Record<'x' | 'y' | 'z', 0 | 1 | 2> = { x: 0, y: 1, z: 2 }
+
+/**
+ * Aligns a selection along one axis.
+ *
+ * Alignment is computed from measured LDraw bounds, not from part origins: LDraw
+ * origins sit wherever the part author put them, so aligning origins leaves a
+ * plate and a brick visibly unaligned even though the numbers agree.
+ */
+export function planAlign(
+  parts: readonly PartInstance[],
+  axis: 'x' | 'y' | 'z',
+  edge: AlignEdge,
+): CadOperation[] {
+  if (parts.length < 2) return []
+  const index = AXIS_INDEX[axis]
+  const measured = parts.map((part) => ({ part, bounds: getPartBounds(part) }))
+  const target =
+    edge === 'min'
+      ? Math.min(...measured.map((entry) => entry.bounds.min[index]))
+      : edge === 'max'
+        ? Math.max(...measured.map((entry) => entry.bounds.max[index]))
+        : (Math.min(...measured.map((entry) => entry.bounds.min[index]))
+            + Math.max(...measured.map((entry) => entry.bounds.max[index]))) / 2
+
+  return measured.flatMap(({ part, bounds }) => {
+    const current =
+      edge === 'min' ? bounds.min[index] : edge === 'max' ? bounds.max[index] : (bounds.min[index] + bounds.max[index]) / 2
+    const delta = target - current
+    if (Math.abs(delta) < POSITION_QUANTUM) return []
+    const position = [...part.transform.position] as [number, number, number]
+    position[index] += delta
+    return [{ type: 'part.transform', partId: part.id, transform: canonicalisePose({ ...part.transform, position }) }]
+  })
+}
+
+/**
+ * Spaces a selection evenly along one axis, keeping the two extremes fixed.
+ *
+ * Gaps are equalised rather than centres, which is what "distribute" means for
+ * parts of different lengths.
+ */
+export function planDistribute(parts: readonly PartInstance[], axis: 'x' | 'y' | 'z'): CadOperation[] {
+  if (parts.length < 3) return []
+  const index = AXIS_INDEX[axis]
+  const measured = parts
+    .map((part) => ({ part, bounds: getPartBounds(part) }))
+    .sort((a, b) => a.bounds.min[index] - b.bounds.min[index])
+
+  const first = measured[0]
+  const last = measured[measured.length - 1]
+  const span = last.bounds.max[index] - first.bounds.min[index]
+  const occupied = measured.reduce((sum, entry) => sum + (entry.bounds.max[index] - entry.bounds.min[index]), 0)
+  const gap = (span - occupied) / (measured.length - 1)
+
+  const operations: CadOperation[] = []
+  let cursor = first.bounds.max[index] + gap
+  for (const entry of measured.slice(1, -1)) {
+    const length = entry.bounds.max[index] - entry.bounds.min[index]
+    const delta = cursor - entry.bounds.min[index]
+    if (Math.abs(delta) >= POSITION_QUANTUM) {
+      const position = [...entry.part.transform.position] as [number, number, number]
+      position[index] += delta
+      operations.push({
+        type: 'part.transform',
+        partId: entry.part.id,
+        transform: canonicalisePose({ ...entry.part.transform, position }),
+      })
+    }
+    cursor += length + gap
+  }
+  return operations
+}
+
+/** Measured extent of a selection, for the transform panel's readout. */
+export function selectionExtent(document: ModelDocument, partIds: readonly string[]) {
+  const parts = partIds.map((id) => document.parts[id]).filter(Boolean)
+  if (!parts.length) return null
+  const bounds = parts.map(getPartBounds)
+  const min: Vec3 = [
+    Math.min(...bounds.map((b) => b.min[0])),
+    Math.min(...bounds.map((b) => b.min[1])),
+    Math.min(...bounds.map((b) => b.min[2])),
+  ]
+  const max: Vec3 = [
+    Math.max(...bounds.map((b) => b.max[0])),
+    Math.max(...bounds.map((b) => b.max[1])),
+    Math.max(...bounds.map((b) => b.max[2])),
+  ]
+  return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as Vec3, parts }
+}
+
+/** Composes a child pose under a parent, canonicalised. Used by array previews. */
+export const composePose = (outer: Transform, inner: Transform): Transform =>
+  canonicalisePose(composeTransform(outer, inner))

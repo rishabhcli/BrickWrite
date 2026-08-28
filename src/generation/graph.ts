@@ -55,10 +55,13 @@ export interface PartIntent {
 export interface RegionIntent {
   readonly shape: 'field' | 'wall' | 'enclosure'
   readonly widthStuds: number
+  /** Footprint depth. A wall's own run is `widthStuds`; this is ignored for one. */
   readonly depthStuds: number
   /** Courses for a wall or enclosure; layers for a field. */
   readonly courses: number
   readonly family: BrickFamily
+  /** Wall thickness in studs, for walls and enclosures. Defaults to 1. */
+  readonly thicknessStuds?: number
   /** Which way a wall runs. Ignored by fields and enclosures. */
   readonly axis?: 'x' | 'z'
   /** Lay a plate deck under an enclosure's walls. */
@@ -100,8 +103,20 @@ export interface BuildNode {
  * somewhere to go.
  */
 export type ConnectorPick =
-  /** Stud coordinates from the part's minimum corner, on the mating plane. */
-  | { readonly kind: 'grid'; readonly uStuds: number; readonly vStuds: number }
+  /**
+   * Stud coordinates from the node's minimum corner, on the mating plane.
+   *
+   * `level` narrows the search to the highest or lowest plane of matching
+   * connectors first. Without it, a stud at the bottom of a wall and one at the
+   * top are the same distance away in plan and the choice between them falls to
+   * a tie-break — which is how a second storey ends up inside the first.
+   */
+  | {
+      readonly kind: 'grid'
+      readonly uStuds: number
+      readonly vStuds: number
+      readonly level?: 'top' | 'bottom'
+    }
   /** The connector furthest along a local axis. 0 = X, 1 = Y, 2 = Z. */
   | { readonly kind: 'extreme'; readonly axis: 0 | 1 | 2; readonly sense: 'min' | 'max' }
   /** Position in the family's id-sorted list, wrapped. */
@@ -361,6 +376,7 @@ export function structuralHash(graph: BuildGraph): string {
           depthStuds: node.region.depthStuds,
           courses: node.region.courses,
           family: node.region.family,
+          thicknessStuds: node.region.thicknessStuds ?? 1,
           axis: node.region.axis ?? null,
           floor: node.region.floor ?? false,
           openings: (node.region.openings ?? []).map((opening) => ({
@@ -392,7 +408,7 @@ export function structuralHash(graph: BuildGraph): string {
   // few tens of thousands of candidates by the birthday bound, which is well
   // inside what a diversity search explores.
   const low = hash32(payload).toString(16).padStart(8, '0')
-  const high = hash32(`brickwright/graph ${payload}`).toString(16).padStart(8, '0')
+  const high = hash32(`brickwright/graph\0${payload}`).toString(16).padStart(8, '0')
   return `${high}${low}`
 }
 

@@ -230,6 +230,19 @@ export function exposedStudPlane(part: PartInstance): number | null {
   return surfaceAbove(catalog.get(part.definitionId), part.transform.position[1])
 }
 
+/**
+ * The plane something resting on this part would sit on.
+ *
+ * Not `bounds.min[1]`: a brick's minimum Y is the top of its *studs*, four LDU
+ * above the face the next brick's underside actually meets. Using the bounding
+ * box here would make every stacked pair look four LDU apart and every course
+ * look like a separate island. The stud plane is read from the part's own
+ * connectors; a studless element has none, and then the box top is the face.
+ */
+export function topPlaneOf(part: PartInstance): number {
+  return exposedStudPlane(part) ?? getPartBounds(part).min[1]
+}
+
 export interface StepEdge {
   readonly lowerPartId: string
   readonly upperPartId: string | null
@@ -254,7 +267,7 @@ export function findStepEdges(document: ModelDocument, partIds?: Iterable<string
 
   for (const lower of all) {
     if (!subject.has(lower.part.id)) continue
-    const topY = lower.bounds.min[1]
+    const topY = topPlaneOf(lower.part)
     const above = all.filter(
       (other) =>
         other.part.id !== lower.part.id &&
@@ -323,9 +336,15 @@ export interface FreeStud {
  * Studs on top of the model that nothing is using.
  *
  * Occupancy comes from the kernel's own connector derivation, so a stud under a
- * plate is never offered as a place to put a tile. Only upward-facing studs are
- * returned: a sideways stud on a bracket is a mounting point, not a surface, and
- * greebling it would change the outline rather than the texture.
+ * plate is never offered as a place to put a tile. Two further filters make the
+ * result mean "a surface you could finish": the connector's axis has to be
+ * vertical, which excludes the sideways stud on a bracket or a headlight — a
+ * mounting point, not a surface — and it has to sit on the part's own top stud
+ * plane, which excludes a stud pointing down out of an inverted part.
+ *
+ * The axis is *not* tested for sign. LDCad frames a stud along its own local +Y
+ * whichever way the part is turned, so both faces of a stacked pair report the
+ * same direction; the plane comparison is what actually distinguishes them.
  */
 export function findFreeStuds(document: ModelDocument, partIds?: Iterable<string>): FreeStud[] {
   const derived = deriveConnections(document)
@@ -336,15 +355,16 @@ export function findFreeStuds(document: ModelDocument, partIds?: Iterable<string
     if (connector.family !== 'stud') continue
     if (!subject.has(connector.partId)) continue
     if (derived.occupied.has(`${connector.partId}/${connector.id}`)) continue
-    // LDraw is Y-down, so a stud pointing up has a connector axis of -Y.
-    if (connector.axis[1] > -0.99) continue
-    const plane = studPlaneLdu(catalog.get(connector.definitionId))
-    if (plane === null) continue
+    if (Math.abs(connector.axis[1]) < 0.99) continue
+    const local = studPlaneLdu(catalog.get(connector.definitionId))
+    if (local === null) continue
+    const surfaceY = document.parts[connector.partId].transform.position[1] + local
+    if (Math.abs(connector.frame.position[1] - surfaceY) > 0.5) continue
     free.push({
       partId: connector.partId,
       featureId: connector.id,
       atLdu: connector.frame.position,
-      surfaceY: document.parts[connector.partId].transform.position[1] + plane,
+      surfaceY,
     })
   }
   return free.sort((a, b) => a.partId.localeCompare(b.partId) || a.featureId.localeCompare(b.featureId))

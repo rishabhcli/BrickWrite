@@ -4,8 +4,11 @@ import {
   planSharedMutation,
   sharedCapability,
   SHARED_CAPABILITIES,
+  SHARED_MUTATION_CAPABILITIES,
   SharedCapabilityError,
+  type SharedMutationId,
 } from '../cad/capabilities'
+import { capabilityJsonSchema, parseCapabilityArgs } from '../agent/schemas'
 import { computeBuildOrder, verifyBuildOrder } from '../cad/instructions'
 import { catalog } from '../cad/catalog'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../cad/catalog-loader'
@@ -347,6 +350,10 @@ const readTools: ToolDefinition[] = [
         input: definition.kind === 'read'
           ? { action: definition.id, args: definition.input }
           : { action: definition.id, expectedRevision: 'integer', args: definition.input },
+        // The prose above is a summary; this is the declaration the gateway
+        // actually parses `args` with, derived from the same Zod schema. The
+        // two cannot drift, because only one of them exists.
+        argsSchema: capabilityJsonSchema(definition.id) ?? null,
       })
     },
   },
@@ -516,7 +523,22 @@ const buildTools: ToolDefinition[] = [
   {
     name: 'action_mutate',
     description: 'Run a discovered long-tail mutation through Brickwright’s revisioned command bus.',
-    inputSchema: schema({ action: { type: 'string' }, expectedRevision: revisionProperty, args: { type: 'object' } }, ['action', 'expectedRevision']),
+    inputSchema: schema(
+      {
+        action: {
+          type: 'string',
+          enum: SHARED_MUTATION_CAPABILITIES.map((capability) => capability.id),
+          description: 'Mutating capability id. Call capabilities_help for its exact args schema.',
+        },
+        expectedRevision: revisionProperty,
+        args: {
+          type: 'object',
+          description:
+            'Validated against the capability’s runtime schema, which capabilities_help returns as `argsSchema`. Unknown keys are rejected.',
+        },
+      },
+      ['action', 'expectedRevision'],
+    ),
     execute: (input) => {
       const request = input as { action: string; expectedRevision: number; args?: Record<string, unknown> }
       const state = cadEngine.getSnapshot()
@@ -524,8 +546,26 @@ const buildTools: ToolDefinition[] = [
       if (!definition || definition.kind !== 'mutate') {
         return json({ error: { code: 'INVALID_OPERATION', message: `Unknown mutation ${request.action}`, repair: 'Call capabilities_search and capabilities_help.' } })
       }
+      // Arguments are parsed against the same declaration the tool advertises
+      // before the planner sees them. Previously the planner coerced whatever
+      // arrived with its own helpers, which meant a misspelled field silently
+      // became a default rather than an error the agent could repair.
+      const parsedArgs = parseCapabilityArgs(definition.id, request.args ?? {})
+      if (!parsedArgs.ok) {
+        return json({
+          ok: false,
+          error: {
+            code: parsedArgs.error.code,
+            message: parsedArgs.error.message,
+            repair: parsedArgs.error.repair,
+            retryable: false,
+            currentRevision: state.document.revision,
+            details: { issues: parsedArgs.error.issues },
+          },
+        })
+      }
       try {
-        const plan = planSharedMutation(definition.id, request.args, {
+        const plan = planSharedMutation(definition.id as SharedMutationId, parsedArgs.args, {
           document: state.document,
           selection: state.selection,
           actor: 'agent',

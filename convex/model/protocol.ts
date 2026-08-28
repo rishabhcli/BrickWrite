@@ -79,7 +79,7 @@ export const cloudSuccess = <T>(value: T): CloudResult<T> => ({ ok: true, value 
  * half a model that claims to be a checkpoint is worse than no checkpoint.
  */
 export const SNAPSHOT_CHUNK_BYTES = 400_000
-export const MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
+export const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 export const MAX_TRANSACTION_BYTES = 512 * 1024
 export const MAX_COMMENT_BYTES = 8_000
 /** Presence rows older than this are stale and are not returned. */
@@ -254,7 +254,7 @@ export interface CloudAuditRecord {
 // Mutation arguments and results
 // ---------------------------------------------------------------------------
 
-export interface CreateProjectArgs {
+export type CreateProjectArgs = {
   localProjectId: string
   name: string
   visibility?: ProjectVisibility
@@ -264,7 +264,7 @@ export interface CreateProjectArgs {
   snapshot?: SnapshotUpload
 }
 
-export interface SnapshotUpload {
+export type SnapshotUpload = {
   revision: number
   /** Canonical JSON of the `ModelDocument`, already split into chunks. */
   chunks: string[]
@@ -274,7 +274,7 @@ export interface SnapshotUpload {
   catalogVersion: string
 }
 
-export interface AppendTransactionArgs {
+export type AppendTransactionArgs = {
   projectId: string
   branchId?: string
   /** `Transaction.id`. The idempotency key. */
@@ -301,15 +301,22 @@ export interface StaleDocumentDetails {
   branchId: string
 }
 
-export interface CreateBranchArgs {
+export type CreateBranchArgs = {
   projectId: string
   name: string
-  kind?: BranchKind
+  /** `main` is created with the project and is never created again. */
+  kind?: Exclude<BranchKind, 'main'>
   /** Defaults to the project's default branch. */
   fromBranchId?: string
+  /**
+   * Revision to fork at. Defaults to the parent's head. A conflict fork uses an
+   * earlier revision — the point where the two histories diverged — so the
+   * local tail replays onto it exactly as it was authored.
+   */
+  atRevision?: number
 }
 
-export interface CreateVersionArgs {
+export type CreateVersionArgs = {
   projectId: string
   branchId?: string
   label: string
@@ -317,7 +324,7 @@ export interface CreateVersionArgs {
   snapshot: SnapshotUpload
 }
 
-export interface AddCommentArgs {
+export type AddCommentArgs = {
   projectId: string
   branchId?: string
   body: string
@@ -325,7 +332,7 @@ export interface AddCommentArgs {
   replyToId?: string
 }
 
-export interface PresenceHeartbeatArgs {
+export type PresenceHeartbeatArgs = {
   projectId: string
   sessionId: string
   revision: number

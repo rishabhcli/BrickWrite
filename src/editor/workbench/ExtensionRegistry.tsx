@@ -308,14 +308,16 @@ export function Slot({
   if (!contributions.length) return <>{fallback ?? null}</>
   return (
     <>
-      {contributions.map((entry) => {
-        const content = entry.render(api)
-        return (
-          <ContributionBoundary key={`${entry.slot}:${entry.id}`} id={entry.id}>
-            {wrap ? wrap({ id: entry.id, title: entry.title, icon: entry.icon, content }) : content}
-          </ContributionBoundary>
-        )
-      })}
+      {contributions.map((entry) => (
+        <ContributionBoundary
+          key={`${entry.slot}:${entry.id}`}
+          id={entry.id}
+          render={() => {
+            const content = entry.render(api)
+            return wrap ? wrap({ id: entry.id, title: entry.title, icon: entry.icon, content }) : content
+          }}
+        />
+      ))}
     </>
   )
 }
@@ -336,9 +338,7 @@ export function ModalSlot() {
   const api = useWorkbenchApi()
   const active = contributions.find((entry) => entry.id === api.activeModal)
   if (!active) return null
-  return (
-    <ContributionBoundary id={active.id}>{active.render(api)}</ContributionBoundary>
-  )
+  return <ContributionBoundary id={active.id} render={() => active.render(api)} />
 }
 
 /**
@@ -367,8 +367,24 @@ class ContributionErrorBoundary extends Component<
   }
 }
 
-function ContributionBoundary({ id, children }: { id: string; children: ReactNode }) {
-  return <ContributionErrorBoundary id={id}>{children}</ContributionErrorBoundary>
+/**
+ * The render call happens *inside* the boundary, not outside it.
+ *
+ * A boundary only catches what throws while rendering its own subtree, so
+ * invoking `entry.render(api)` in the slot and passing the result down would
+ * leave every extension exception uncaught — which is exactly the failure this
+ * boundary exists to prevent.
+ */
+function ContributionBody({ render }: { render: () => ReactNode }) {
+  return <>{render()}</>
+}
+
+function ContributionBoundary({ id, render }: { id: string; render: () => ReactNode }) {
+  return (
+    <ContributionErrorBoundary id={id}>
+      <ContributionBody render={render} />
+    </ContributionErrorBoundary>
+  )
 }
 
 /**

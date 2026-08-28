@@ -33,7 +33,7 @@ const MIRROR_BASIS: Record<MirrorAxis, Mat3> = {
  */
 export function mirrorTransform(transform: RigidTransform, axis: MirrorAxis, planeLdu: number): RigidTransform {
   const m = MIRROR_BASIS[axis]
-  const position: Vec3 = [transform.position[0], transform.position[1], transform.position[2]]
+  const position: [number, number, number] = [transform.position[0], transform.position[1], transform.position[2]]
   position[axis] = 2 * planeLdu - position[axis]
   return { position, basis: multiplyMat3(multiplyMat3(m, transform.basis), m) }
 }

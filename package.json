@@ -7,7 +7,9 @@
   "scripts": {
     "bootstrap": "node tools/bootstrap.mjs",
     "dev": "hexclave dev --config-file ./hexclave.config.ts -- npm run dev:inner",
-    "dev:inner": "vite --host 0.0.0.0",
+    "dev:inner": "node tools/dev.mjs",
+    "dev:vite": "vite --host 0.0.0.0",
+    "dev:api": "node server/index.ts",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,7 +19,11 @@
     "catalog:build": "node --max-old-space-size=8192 tools/catalog-compiler.mjs --ldraw .sources/ldraw --shadow .sources/LDCadShadowLibrary-main --rebrickable .sources/rebrickable --out public --version 2026-07 --pack-size 900 --pack-extra 3035,3020,3001,3010,62360,3004,3937,3938,87079,2412b,3070b,60592,60593,60594,60596,60601,38320,60616b,3023b,3024,3005",
     "catalog:fixture": "rm -rf .catalog-fixture && node tools/catalog-compiler.mjs --ldraw tools/fixtures/ldraw --shadow tools/fixtures/shadow --rebrickable tools/fixtures/rebrickable --out .catalog-fixture --version fixture-1",
     "catalog:test-fixture": "node tools/make-test-fixture.mjs",
-    "check": "npm run test && npm run build",
+    "typecheck:convex": "tsc -p convex/tsconfig.json",
+    "typecheck:functions": "tsc -p functions/tsconfig.json",
+    "test:live:assistant": "BRICKWRIGHT_LIVE_TESTS=1 vitest run server/assistant/live.test.ts --reporter=verbose",
+    "test:live:generation": "BRICKWRIGHT_LIVE_TESTS=1 vitest run server/generation/live.test.ts --reporter=verbose",
+    "check": "npm run test && npm run typecheck:convex && npm run typecheck:functions && npm run build",
     "verify:all": "npm run check && npm run test:e2e:all",
     "preview": "vite preview --host 0.0.0.0",
     "serve:api": "node server/index.ts"
