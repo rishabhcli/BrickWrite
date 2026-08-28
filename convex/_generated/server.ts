@@ -1,0 +1,42 @@
+/* eslint-disable */
+/**
+ * STAND-IN FOR CONVEX CODEGEN — replace by running `npx convex dev`.
+ *
+ * The generator emits exactly these bindings: the generic function
+ * constructors from `convex/server`, narrowed to this deployment's data model.
+ * Written by hand because codegen needs a logged-in deployment and this build
+ * has none; the generated file supersedes it without any call site changing.
+ */
+import {
+  actionGeneric,
+  httpActionGeneric,
+  internalActionGeneric,
+  internalMutationGeneric,
+  internalQueryGeneric,
+  mutationGeneric,
+  queryGeneric,
+  type ActionBuilder,
+  type GenericActionCtx,
+  type GenericDatabaseReader,
+  type GenericDatabaseWriter,
+  type GenericMutationCtx,
+  type GenericQueryCtx,
+  type HttpActionBuilder,
+  type MutationBuilder,
+  type QueryBuilder,
+} from 'convex/server'
+import type { DataModel } from './dataModel'
+
+export const query = queryGeneric as QueryBuilder<DataModel, 'public'>
+export const internalQuery = internalQueryGeneric as QueryBuilder<DataModel, 'internal'>
+export const mutation = mutationGeneric as MutationBuilder<DataModel, 'public'>
+export const internalMutation = internalMutationGeneric as MutationBuilder<DataModel, 'internal'>
+export const action = actionGeneric as ActionBuilder<DataModel, 'public'>
+export const internalAction = internalActionGeneric as ActionBuilder<DataModel, 'internal'>
+export const httpAction = httpActionGeneric as HttpActionBuilder
+
+export type QueryCtx = GenericQueryCtx<DataModel>
+export type MutationCtx = GenericMutationCtx<DataModel>
+export type ActionCtx = GenericActionCtx<DataModel>
+export type DatabaseReader = GenericDatabaseReader<DataModel>
+export type DatabaseWriter = GenericDatabaseWriter<DataModel>
