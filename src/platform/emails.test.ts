@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SERVER_EMAIL_MODULE, escapeHtml, renderPlatformEmail } from './emails'
 
 const ROOT = resolve(__dirname, '../..')
@@ -57,6 +57,12 @@ describe('email content', () => {
 
   it('refuses to evaluate the server module in a browser', async () => {
     expect(typeof window).toBe('object')
+    // The module registry is shared across files in a worker, and
+    // `server/emails.server.test.ts` evaluates this module successfully under
+    // the node environment. Without resetting, a cached instance resolves here
+    // and the guard is never exercised — the assertion would pass on file order
+    // rather than on behaviour.
+    vi.resetModules()
     await expect(import('./server/emails.server')).rejects.toThrow(/evaluated in a browser/)
   })
 })

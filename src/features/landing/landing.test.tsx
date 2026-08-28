@@ -29,14 +29,29 @@ describe('the landing page', () => {
     setKnownDemoIds(DEMOS.map((demo) => demo.id))
   })
 
-  it('has one first-level heading and the landmarks a screen reader navigates by', () => {
-    render(<LandingPage />)
+  it('has one first-level heading, and every section is labelled', () => {
+    const { container } = render(<LandingPage />)
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-    expect(screen.getByRole('banner')).toBeInTheDocument()
-    expect(screen.getByRole('main')).toBeInTheDocument()
-    expect(screen.getByRole('contentinfo')).toBeInTheDocument()
-    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#bw-main')
+    for (const section of container.querySelectorAll('section')) {
+      expect(
+        section.getAttribute('aria-labelledby') ?? section.getAttribute('aria-label'),
+        `${section.className} needs an accessible name`,
+      ).toBeTruthy()
+    }
+    // The heading order steps down without skipping a level.
+    const levels = [...container.querySelectorAll('h1,h2,h3')].map((heading) => Number(heading.tagName[1]))
+    for (let index = 1; index < levels.length; index += 1) {
+      expect(levels[index] - levels[index - 1]).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('leaves the banner, the main landmark and the primary nav to the shell', () => {
+    // AppFrame already emits <header> and <main>; a second pair would give a
+    // screen reader two of each on the same page.
+    const { container } = render(<LandingPage />)
+    expect(container.querySelector('header')).toBeNull()
+    expect(container.querySelector('main')).toBeNull()
+    expect(container.querySelector('nav')).toBeNull()
   })
 
   it('offers all four calls to action', () => {
@@ -63,7 +78,7 @@ describe('the landing page', () => {
   it('quotes only numbers that came out of a validation run', () => {
     render(<LandingPage />)
     const hero = DEMOS.find((demo) => demo.hero)!
-    const facts = screen.getByText(/mated connectors/).textContent ?? ''
+    const facts = screen.getByTestId('hero-facts').textContent ?? ''
     expect(facts).toContain(String(hero.validation.partCount))
     expect(facts).toContain(String(hero.validation.connectionCount))
     expect(facts).toContain(hero.validation.statics.massLabel)
@@ -74,9 +89,10 @@ describe('the landing page', () => {
 
   it('publishes the gates the demos had to clear', () => {
     render(<LandingPage />)
-    const list = screen.getByRole('heading', { name: /A demo that fails the kernel/ })
-    expect(list).toBeInTheDocument()
-    expect(screen.getByText(/triangle-confirmed collision/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /A demo that fails the kernel/ })).toBeInTheDocument()
+    const gates = within(screen.getByRole('list', { name: 'Publication gates' })).getAllByRole('listitem')
+    expect(gates.length).toBeGreaterThanOrEqual(5)
+    expect(gates.map((item) => item.textContent).join(' ')).toMatch(/triangle-confirmed collision/)
   })
 
   it('shows the hero stage track as tabs, all four reachable by keyboard', () => {

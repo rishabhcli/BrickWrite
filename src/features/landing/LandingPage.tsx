@@ -87,7 +87,7 @@ function HeroSection({ hero }: { hero: DemoEntry }) {
               Explore {DEMOS.length} demos
             </a>
           </div>
-          <p className="bw-hero-facts">
+          <p className="bw-hero-facts" data-testid="hero-facts">
             <span>Catalog <b>{DEMO_MANIFEST.catalogVersion}</b></span>
             <span>This build: <b>{good.partCount}</b> parts</span>
             <span><b>{good.connectionCount}</b> mated connectors</span>
@@ -264,7 +264,7 @@ function GateSection() {
             to the manifest — the build exits non-zero instead.
           </p>
         </div>
-        <ul className="bw-gates">
+        <ul className="bw-gates" aria-label="Publication gates">
           {DEMO_MANIFEST.gates.map((gate) => <li key={gate}>{gate}</li>)}
         </ul>
       </div>
