@@ -97,18 +97,30 @@ export class FixtureBuilder {
  * exercise refusal.
  */
 export function fixtureDocument(parts: readonly PartInstance[], name: string): ModelDocument {
-  const document = createEmptyDocument()
-  document.id = `doc_${name.toLowerCase().replace(/\W+/g, '_')}`
-  document.name = name
-  document.revision = 1
-  document.parts = Object.fromEntries(parts.map((part) => [part.id, part]))
-  for (const subassembly of Object.values(document.subassemblies)) {
-    subassembly.partIds = parts.filter((part) => part.subassemblyId === subassembly.id).map((part) => part.id)
+  const scaffold = createEmptyDocument()
+  // A *new* object, not the scaffold with its parts swapped in. The kernel
+  // memoizes derived connections on document identity — correctly, because a
+  // document is immutable per revision — so filling an already-derived empty
+  // document in place would hand every consumer the empty derivation and the
+  // fixture would come out with no connections and a collision per part.
+  const document: ModelDocument = {
+    ...scaffold,
+    id: `doc_${name.toLowerCase().replace(/\W+/g, '_')}`,
+    name,
+    revision: 1,
+    parts: Object.fromEntries(parts.map((part) => [part.id, part])),
+    subassemblies: Object.fromEntries(
+      Object.values(scaffold.subassemblies).map((subassembly) => [
+        subassembly.id,
+        { ...subassembly, partIds: parts.filter((part) => part.subassemblyId === subassembly.id).map((part) => part.id) },
+      ]),
+    ),
+    steps: scaffold.steps.map((step) => ({
+      ...step,
+      partIds: parts.filter((part) => part.stepId === step.id).map((part) => part.id),
+    })),
+    connections: {},
   }
-  document.steps = document.steps.map((step) => ({
-    ...step,
-    partIds: parts.filter((part) => part.stepId === step.id).map((part) => part.id),
-  }))
   document.connections = deriveConnectionEdges(document, document.revision, 'import-inferred')
   return document
 }

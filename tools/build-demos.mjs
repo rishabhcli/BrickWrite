@@ -215,7 +215,7 @@ class Build {
     // Solved poses come from the connector kernel and are correct by
     // construction — a studs-not-on-top tile is deliberately off the vertical
     // grid, so checking it would reject the very technique it is there to show.
-    if (!options.solved) assertOnGrid(definition, position, basis, options.label ?? definition.canonicalId)
+    if (!options.solved && !options.offGrid) assertOnGrid(definition, position, basis, options.label ?? definition.canonicalId)
     this.sequence += 1
     this.parts.push({
       id: `part_${String(this.sequence).padStart(4, '0')}`,
@@ -268,12 +268,19 @@ class Build {
     }
     const solved = bestSnapTransform(moving, this.probeDocument(), moving.transform, {
       radiusLdu: options.radiusLdu ?? 26,
+      targetPartIds: options.targetPartIds,
+      targetFeatureId: options.targetFeatureId,
     })
     if (!solved) {
       throw new Error(`No connector on ${definitionId} mates anything within ${options.radiusLdu ?? 26} LDU of ${cursorPosition.join(', ')}.`)
     }
     this.#push(definition, color, solved.position, solved.basis, { ...options, solved: true })
     return solved
+  }
+
+  /** The id of the most recently placed part, for aiming a later solve at it. */
+  lastPartId() {
+    return this.parts[this.parts.length - 1].id
   }
 
   /** A throwaway document holding what has been placed so far, for the solver. */
@@ -383,6 +390,12 @@ function assertOnGrid(definition, position, basis, label) {
   }
 }
 
+/** A part's own underside plane, in its local frame. */
+const underPlaneOf = (definition) => {
+  const seats = definition.connectors.filter((connector) => connector.family === 'anti-stud' && connector.gender === 'female')
+  return seats.length ? Math.max(...seats.map((connector) => connector.pos[1])) : 0
+}
+
 const basisFor = (degrees) =>
   degrees % 90 === 0 ? QUARTER_TURN_BASES[(((degrees / 90) % 4) + 4) % 4] : cleanBasis(basisFromEulerDegrees([0, degrees, 0]))
 
@@ -434,6 +447,17 @@ function assembleDocument(build, meta) {
 // Gates
 // ---------------------------------------------------------------------------
 
+/** Part identity in a form a person can act on, for a rejection message. */
+function describeParts(document, ids) {
+  return ids.slice(0, 8).map((id) => {
+    const part = document.parts[id]
+    if (!part) return id
+    const box = getPartBounds(part)
+    return `${id}=${part.definitionId}@[${part.transform.position.map((value) => value.toFixed(0)).join(',')}] `
+      + `y ${box.min[1].toFixed(0)}..${box.max[1].toFixed(0)}`
+  }).join('; ')
+}
+
 class DemoRejected extends Error {
   constructor(id, failures) {
     super(`Demo "${id}" failed ${failures.length} gate(s):\n  - ${failures.join('\n  - ')}`)
@@ -449,7 +473,7 @@ class DemoRejected extends Error {
  * same entry points, rather than a relaxed copy: a demo is a document an
  * operator could have built and could keep building on.
  */
-function gate(id, document, order) {
+function gate(id, document, order, options = {}) {
   const failures = []
 
   // -- catalog ---------------------------------------------------------------
@@ -466,11 +490,16 @@ function gate(id, document, order) {
   // -- collision + connectivity ---------------------------------------------
   const validation = validateDocument(document, { provideGeometry: geometryProvider })
   if (validation.collisions.length) {
-    failures.push(`${validation.collisions.length} collision(s): ${validation.collisions.slice(0, 4).map((issue) => `${issue.partA}/${issue.partB}`).join(', ')}`)
+    failures.push(
+      `${validation.collisions.length} collision(s): `
+      + validation.collisions.slice(0, 4).map((issue) => `${describeParts(document, [issue.partA, issue.partB])}`).join(' | '),
+    )
   }
   if (validation.unverifiedCollisions) failures.push(`${validation.unverifiedCollisions} collision verdict(s) reached from bounding boxes alone`)
   if (validation.componentCount !== 1) {
-    failures.push(`model is in ${validation.componentCount} disconnected pieces (${validation.disconnectedPartIds.length} loose parts)`)
+    failures.push(
+      `model is in ${validation.componentCount} disconnected pieces: ${describeParts(document, validation.disconnectedPartIds)}`,
+    )
   }
   for (const constraint of validation.constraints) {
     if (constraint.status === 'fail') failures.push(`constraint "${constraint.label}" fails: ${constraint.message}`)
@@ -487,7 +516,7 @@ function gate(id, document, order) {
     failures.push(`build order violates its own guarantee at ${verified.violations.slice(0, 3).map((v) => `step ${v.stepIndex}/${v.partId}`).join(', ')}`)
   }
   if (order.unsupportedPartIds.length) {
-    failures.push(`${order.unsupportedPartIds.length} part(s) begin an unsupported island: ${order.unsupportedPartIds.slice(0, 4).join(', ')}`)
+    failures.push(`${order.unsupportedPartIds.length} part(s) begin an unsupported island: ${describeParts(document, order.unsupportedPartIds)}`)
   }
   const sequenced = new Set(document.steps.flatMap((step) => step.partIds))
   if (sequenced.size !== Object.keys(document.parts).length) {
@@ -498,8 +527,12 @@ function gate(id, document, order) {
   const statics = analyseStatics(document)
   if (!statics.support) failures.push('no support polygon could be measured, so stability is unknown')
   else if (!statics.support.stable) failures.push(`centre of mass falls outside the support polygon (margin ${statics.support.marginLdu.toFixed(1)} LDU)`)
-  if (statics.unsupportedPartIds.length) {
-    failures.push(`${statics.unsupportedPartIds.length} part(s) are never reached by the load path from the ground`)
+  const tensionAllowance = options.tensionAllowance ?? 0
+  if (statics.unsupportedPartIds.length > tensionAllowance) {
+    failures.push(
+      `${statics.unsupportedPartIds.length} part(s) are never reached by the load path from the ground, `
+      + `and this demo allows ${tensionAllowance}: ${describeParts(document, statics.unsupportedPartIds)}`,
+    )
   }
   if (statics.coverage < 1) failures.push(`mass could only be measured for ${(statics.coverage * 100).toFixed(1)}% of the parts`)
   const overCapacity = statics.overloaded.filter((issue) => issue.severity === 'over-capacity')
@@ -990,15 +1023,14 @@ function ridgelineHauler(rough) {
 
   // Wheels first: they are what the vehicle stands on, so they define ground.
   // A 2 x 2 wheel brick is one part per axle, which keeps the running gear a
-  // real sub-assembly rather than a pile of loose hubs with nothing to hold an
-  // axle straight.
+  // real sub-assembly rather than a pile of hubs with nothing holding an axle.
   const running = { sub: 'running' }
   const deck = build.place('3137c01', C.red, 0, -80, 0, running)
   build.place('3137c01', C.red, 0, 80, 0, running)
 
-  // Chassis, 4 studs wide and 12 long. Layer 1 runs fore and aft with its seam
-  // on the centreline; layer 2 crosses that seam. Without the crossing the
-  // hauler is two half-chassis that merely touch.
+  // Chassis, four studs wide and twelve long. Layer one runs fore and aft with
+  // its seam on the centreline; layer two crosses that seam. Without the
+  // crossing the hauler is two half-chassis that merely touch.
   const chassis = { sub: 'chassis' }
   const afterFloor = build.row('3795', C.darkBluishGrey, [-20, 20], [-60, 60], deck, { ...chassis, rotY: 90 })
   const afterLock = rough
@@ -1008,27 +1040,27 @@ function ridgelineHauler(rough) {
         return build.place('3035', C.darkBluishGrey, 0, 40, afterFloor, { ...chassis, rotY: 90 })
       })()
 
-  // Cab: a real windscreen at the front, walls down each side and a closed back,
-  // so the cabin is enclosed rather than a windscreen leaning on a plate.
+  // Cab: a real windscreen, walls down each side and a closed back, so the
+  // cabin encloses something instead of being a screen leaning on a plate.
   const cab = { sub: 'cab' }
-  build.place('3823', C.transLightBlue, 0, -100, afterLock, cab)
-  const cabCourse1 = build.row('3004', C.orange, [-30, 30], [-60], afterLock, { ...cab, rotY: 90 })
+  build.place('3823', C.transLightBlue, 0, -90, afterLock, cab)
+  const course1 = build.row('3004', C.orange, [-30, 30], [-60], afterLock, { ...cab, rotY: 90 })
   build.place('3010', C.orange, 0, -30, afterLock, cab)
-  build.row('3004', C.orange, [-30, 30], [-60], cabCourse1, { ...cab, rotY: 90 })
-  const cabRoof = build.place('3010', C.orange, 0, -30, cabCourse1, cab)
-  build.place('87079', C.white, 0, -60, cabRoof, cab)
-  build.place('3069b', C.white, 0, -30, cabRoof, cab)
+  const course2 = build.row('3004', C.orange, [-30, 30], [-60], course1, { ...cab, rotY: 90 })
+  build.place('3010', C.orange, 0, -30, course1, cab)
+  // One plate ties the windscreen, both side walls and the back wall together.
+  const roof = build.place('3031', C.orange, 0, -60, course2, cab)
+  build.place('87079', C.white, 0, -60, roof, cab)
 
-  // Bed: a tiled load floor between two low rails, and a tailboard.
+  // Bed: a tiled load floor between two rails, and a tailboard.
   const bed = { sub: 'bed' }
-  build.row('3004', C.darkBluishGrey, [-30, 30], [0, 40, 80], afterLock, { ...bed, rotY: 90 })
+  const railBase = build.row('3004', C.darkBluishGrey, [-30, 30], [0, 40, 80], afterLock, { ...bed, rotY: 90 })
+  build.row('3069b', C.orange, [-30, 30], [0, 40, 80], railBase, { ...bed, rotY: 90 })
   build.row('3068b', C.lightBluishGrey, [0], [0, 40, 80], afterLock, bed)
   build.place('3010', C.darkBluishGrey, 0, 110, afterLock, bed)
-  build.row('3070b', C.orange, [-30, 30], [110], afterLock, bed)
 
   return { build, notes: [], warnings: [] }
-}
-/**
+}/**
  * A standing heron.
  *
  * The creature demo exists to show the kernel handling something that is not a
@@ -1069,20 +1101,22 @@ function heronSculpture(rough) {
   }
 
   // The spine plate is what turns two columns into one bird: it spans both legs
-  // and every later part rests on it.
+  // and everything above rests on it.
   const body = { sub: 'body' }
   const spine = build.place('3034', C.white, 80, 80, left, { ...body, rotY: 90 })
   const belly = build.row('3003', C.white, [80], [60, 100], spine, body)
   const back = build.place('3020', C.white, 80, 80, belly, { ...body, rotY: 90 })
-  build.place('3040b', C.lightBluishGrey, 80, 130, spine, { ...body, rotY: 90 })
-  build.place('85984', C.lightBluishGrey, 80, 150, spine, { ...body, rotY: 180 })
+  // The tail starts where the belly ends: a 45° slope is two studs deep, so at
+  // z = 130 it would have run back through the rear body brick.
+  build.row('3040b', C.lightBluishGrey, [70, 90], [150], spine, body)
+  build.place('85984', C.lightBluishGrey, 80, 50, back, { ...body, rotY: 180 })
 
   const head = { sub: 'head' }
   if (rough) {
     // The first candidate puts the head where it looks right and attaches it to
-    // nothing — the classic result of placing parts by coordinate.
-    build.placeAt('3004', C.white, 80, back - 40, 10, head)
-    build.placeAt('3004', C.white, 80, back - 64, 10, head)
+    // nothing — the usual result of placing parts by coordinate.
+    build.placeAt('3004', C.white, 80, spine - 96, 30, head)
+    build.placeAt('3003', C.white, 80, spine - 120, 20, head)
     return { build, notes: [], warnings: ['Head placed by coordinate; nothing carries it.'] }
   }
 
@@ -1093,8 +1127,7 @@ function heronSculpture(rough) {
   build.row('3070b', C.black, [70, 90], [30], skull, head)
 
   return { build, notes: [], warnings: [] }
-}
-/**
+}/**
  * A shutter bay with a hinge the kernel can drive.
  *
  * `planHingedFlap` builds a joint the connection graph reads as a real revolute
@@ -1157,7 +1190,7 @@ function shutterBay(rough) {
     origin: [40, deckTop, 20],
     color: C.orange,
     widthStuds: 8,
-    reachStuds: 4,
+    reachStuds: 2,
   }))
   build.addPlan(flap)
 
@@ -1190,22 +1223,24 @@ function draughtingDesk(rough) {
   })
 
   const legs = { sub: 'legs' }
-  const legX = [10, 210]
-  const legZ = [20, 100]
+  const legX = [10, 230]
+  const legZ = [20, 60]
   // Two 1 x 2 x 5 bricks per corner: one seam per leg, and the seam is exactly
   // where the shelf lands.
   const lower = []
   for (const x of legX) for (const z of legZ) lower.push(build.place('2454b', C.reddishBrown, x, z, 0, { ...legs, rotY: 90 }))
   const shelfSurface = lower[0]
 
+  // One layer or two is the whole difference between a shelf and a sheet:
+  // plates side by side in a single plane do not clutch each other at all.
   const layers = rough ? 1 : 2
   build.addPlan(planBrickField(spec({
     sub: 'shelf',
     origin: [0, shelfSurface, 0],
     color: C.tan,
     family: 'plate',
-    widthStuds: 11,
-    footprintDepthStuds: 6,
+    widthStuds: 12,
+    footprintDepthStuds: 4,
     layers,
   })), { sub: 'shelf' })
   const shelfTop = shelfSurface - layers * PLATE_LDU
@@ -1217,27 +1252,25 @@ function draughtingDesk(rough) {
   // Rails tie each pair of legs together, so the desktop is carried along its
   // whole edge instead of at four points.
   const frame = { sub: 'frame' }
-  build.row('6111', C.reddishBrown, [100], [10, 110], deskSurface, frame)
-  const railTop = build.row('3005', C.reddishBrown, [210], [10, 110], deskSurface, frame)
+  const railTop = build.row('6112', C.reddishBrown, [120], [10, 70], deskSurface, frame)
 
   build.addPlan(planBrickField(spec({
     sub: 'top',
     origin: [0, railTop, 0],
     color: C.darkTan,
     family: 'plate',
-    widthStuds: 11,
-    footprintDepthStuds: 6,
+    widthStuds: 12,
+    footprintDepthStuds: 4,
     layers,
   })), { sub: 'top' })
 
   if (!rough) {
     const topSurface = railTop - 2 * PLATE_LDU
-    build.row('87079', C.white, [40, 120], [20, 60, 100], topSurface, { sub: 'top' })
+    build.row('87079', C.white, [40, 120, 200], [20, 60], topSurface, { sub: 'top' })
   }
 
   return { build, notes: [], warnings: [] }
-}
-/**
+}/**
  * A SNOT kiosk.
  *
  * Studs-not-on-top is the technique that separates a stack of bricks from a
@@ -1267,8 +1300,8 @@ function snotKiosk(rough) {
     layers: 2,
   })), { sub: 'plinth' })
 
-  // Three solid brick courses. `planBrickField` staggers each row against the
-  // one before it, so the tower is bonded in both directions rather than three
+  // Three brick courses. `planBrickField` staggers each row against the one
+  // before it, so the core is bonded in both directions rather than three
   // sheets of bricks that happen to be stacked.
   let level = -2 * PLATE_LDU
   for (let course = 0; course < 3; course += 1) {
@@ -1289,7 +1322,11 @@ function snotKiosk(rough) {
   // the same level so the cap above lands on a complete course.
   const facade = { sub: 'facade' }
   const snotXs = [20, 60, 100]
-  for (const x of snotXs) build.place('11211', C.white, x, 10, level, facade)
+  const snotIds = []
+  for (const x of snotXs) {
+    build.place('11211', C.white, x, 10, level, facade)
+    snotIds.push(build.lastPartId())
+  }
   build.addPlan(planBrickField(spec({
     sub: 'core',
     origin: [0, level, 20],
@@ -1301,8 +1338,10 @@ function snotKiosk(rough) {
   })), { sub: 'core' })
   const capSurface = level - BRICK_LDU
 
-  // Where the studs on the side of those bricks actually are, read from the
-  // compiled connectors rather than guessed from the envelope.
+  // Where the studs on the side of those bricks are, read from the compiled
+  // connectors rather than guessed from the envelope. LDCad puts a connector's
+  // axis on its frame's local +Y, so a stud whose axis is horizontal is the
+  // studs-not-on-top one.
   const snotDefinition = catalog.get('11211')
   const sideStud = snotDefinition.connectors.find(
     (connector) =>
@@ -1312,16 +1351,22 @@ function snotKiosk(rough) {
   )
   if (!sideStud) throw new Error('11211 no longer carries a horizontal stud connector; the SNOT demo has nothing to face.')
 
-  for (const x of snotXs) {
-    const target = [x + sideStud.pos[0], level + sideStud.pos[1] - 24, sideStud.pos[2] + 10]
+  snotXs.forEach((x, index) => {
+    const studY = level - underPlaneOf(snotDefinition) + sideStud.pos[1]
+    const studZ = 10 + sideStud.pos[2]
     if (rough) {
-      // The first candidate computes where the tile goes and not which way it
-      // faces: a flat tile at the right point, mating nothing.
-      build.placeAt('3069b', C.orange, x, target[1], target[2] - 6, { ...facade, offGrid: true })
-    } else {
-      build.snap('3069b', C.orange, [x, target[1], target[2] - 6], { ...facade, radiusLdu: 30 })
+      // The first candidate works out where the tile goes and not which way it
+      // faces: a flat tile at roughly the right point, mating nothing.
+      build.placeAt('3069b', C.orange, x, studY - 4, studZ - 6, { ...facade, offGrid: true })
+      return
     }
-  }
+    build.snap('3069b', C.orange, [x, studY, studZ - 6], {
+      ...facade,
+      radiusLdu: 30,
+      targetPartIds: [snotIds[index]],
+      targetFeatureId: sideStud.id,
+    })
+  })
 
   build.addPlan(planBrickField(spec({
     sub: 'cap',
@@ -1334,8 +1379,7 @@ function snotKiosk(rough) {
   })), { sub: 'cap' })
 
   return { build, notes: [], warnings: [] }
-}
-const DEMOS = [
+}const DEMOS = [
   {
     id: 'courtyard-terrace',
     title: 'Courtyard terrace',
@@ -1405,6 +1449,11 @@ const DEMOS = [
       + 'nothing, which the load-path walk never reaches.',
     camera: { yaw: -22, pitch: 30, zoom: 1 },
     maxPartsPerStep: 8,
+    tensionAllowance: 5,
+    tensionReason:
+      'The hinge top plates and the flap they carry hang from the hinge rather than resting on it, '
+      + 'which is what a hinge is. The statics pass reports them as carried in tension and checks that '
+      + 'the clutch assumption covers their mass.',
     author: shutterBay,
   },
   {
@@ -1437,6 +1486,11 @@ const DEMOS = [
       + 'facade was never faced.',
     camera: { yaw: 12, pitch: 20, zoom: 1 },
     maxPartsPerStep: 10,
+    tensionAllowance: 3,
+    tensionReason:
+      'The facing tiles hang off vertical studs. That is what studs-not-on-top means, and it is the one '
+      + 'case where clutch is genuinely in tension, so the statics pass measures the load against the '
+      + 'clutch assumption instead of waving it through.',
     author: snotKiosk,
   },
 ]
@@ -1523,7 +1577,7 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
 
   let checks
   try {
-    checks = gate(demo.id, refined.document, refined.order)
+    checks = gate(demo.id, refined.document, refined.order, { tensionAllowance: demo.tensionAllowance })
   } catch (cause) {
     failures.push(cause instanceof DemoRejected ? cause.message : `${demo.id}: ${cause.message}`)
     continue

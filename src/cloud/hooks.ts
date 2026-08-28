@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ModelDocument } from '../cad/types'
 import { resolveAnchors, type AnchorReport } from './comments'
-import type { SyncState } from './outbox'
+import { UNCONFIGURED_SYNC_STATE, type SyncState } from './outbox'
 import type { MirroredProjectStore, StoredProjectSummary } from './projectStore'
 import type { CloudCommentRecord, CloudErrorShape } from './protocol'
 
@@ -17,15 +17,6 @@ import type { CloudCommentRecord, CloudErrorShape } from './protocol'
  * editor down for the people who never asked for an account.
  */
 
-const UNCONFIGURED: SyncState = {
-  status: 'unconfigured',
-  reason: 'No cloud deployment is configured; projects are saved in this browser only.',
-  pending: 0,
-  lastSyncedAt: null,
-  lastError: null,
-  conflict: null,
-}
-
 /**
  * The live sync state.
  *
@@ -37,7 +28,10 @@ export function useSyncState(store: MirroredProjectStore | null): SyncState {
     (onChange: () => void) => (store ? store.subscribeSync(onChange) : () => {}),
     [store],
   )
-  const snapshot = useCallback(() => (store ? store.syncState : UNCONFIGURED), [store])
+  const snapshot = useCallback(
+    () => (store ? store.syncState : UNCONFIGURED_SYNC_STATE),
+    [store],
+  )
   return useSyncExternalStore(subscribe, snapshot, snapshot)
 }
 

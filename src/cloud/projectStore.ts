@@ -89,7 +89,17 @@ export interface ProjectStore {
   readonly kind: 'local' | 'cloud' | 'mirrored'
 
   listProjects(): Promise<CloudResult<StoredProjectSummary[]>>
-  loadProject(projectId: string): Promise<CloudResult<StoredLoadedProject | null>>
+  /**
+   * Rebuilds a project from its checkpoint plus every later transaction.
+   *
+   * `branchId` selects which history to rebuild. The local store has one, so it
+   * ignores the option; the cloud store must be told, because a conflict fork
+   * has its own checkpoint and its own log.
+   */
+  loadProject(
+    projectId: string,
+    options?: { branchId?: string },
+  ): Promise<CloudResult<StoredLoadedProject | null>>
   appendTransaction(
     projectId: string,
     transaction: Transaction,
@@ -408,15 +418,22 @@ export class CloudProjectStore implements ProjectStore {
     }
   }
 
-  async loadProject(projectId: string): Promise<CloudResult<StoredLoadedProject | null>> {
+  async loadProject(
+    projectId: string,
+    options?: { branchId?: string },
+  ): Promise<CloudResult<StoredLoadedProject | null>> {
     const id = this.resolveId(projectId)
-    const checkpoint = await this.backend.latestCheckpoint({ projectId: id })
+    const checkpoint = await this.backend.latestCheckpoint({
+      projectId: id,
+      branchId: options?.branchId,
+    })
     if (!checkpoint.ok) return checkpoint
     if (!checkpoint.value) return { ok: true, value: null }
 
     let document = checkpoint.value.document
     const log = await this.backend.listTransactions({
       projectId: id,
+      branchId: options?.branchId,
       sinceRevision: checkpoint.value.revision,
     })
     if (!log.ok) return log
@@ -730,6 +747,8 @@ export class MirroredProjectStore implements ProjectStore {
   }
 
   loadProject(projectId: string): Promise<CloudResult<StoredLoadedProject | null>> {
+    // Reads come from local storage: the editor must open a project at the same
+    // speed offline as online, and the local copy is never behind.
     return this.local.loadProject(projectId)
   }
 

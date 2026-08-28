@@ -265,7 +265,10 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
 
   useEffect(() => {
     if (cursor < 0) return
-    gridRef.current?.querySelectorAll('.part-card')[cursor]?.scrollIntoView({ block: 'nearest' })
+    const card = gridRef.current?.querySelectorAll('.part-card')[cursor]
+    // Guarded because keeping the cursor visible is a nicety, and an
+    // environment without `scrollIntoView` must not take the palette down.
+    if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ block: 'nearest' })
   }, [cursor])
 
   const tierHint = TIERS.find((entry) => entry.id === tier)!.hint

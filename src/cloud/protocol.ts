@@ -96,6 +96,7 @@ export interface CloudBackend {
   }): Promise<CloudResult<{ groupId: string; revision: number }>>
   latestCheckpoint(args: {
     projectId: string
+    branchId?: string
     atRevision?: number
   }): Promise<CloudResult<CloudSnapshotRecord | null>>
   auditTrail(args: {

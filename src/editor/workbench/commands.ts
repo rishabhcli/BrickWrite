@@ -16,6 +16,7 @@ export interface CommandHost {
   toggleDock(dock: DockId): void
   focusSearch(): void
   exportLdr(): void
+  resetWorkspace(): void
 }
 
 export interface CommandOutcome {
@@ -127,5 +128,6 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'help.shortcuts': () => run(() => w.setModal(w.modal === 'core:shortcuts' ? null : 'core:shortcuts')),
     'help.welcome': () => run(() => w.setModal('core:welcome')),
     'help.keymap': () => run(() => w.setModal('core:keymap')),
+    'help.reset-workspace': () => run(() => host.resetWorkspace()),
   }
 }

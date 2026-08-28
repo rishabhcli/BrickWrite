@@ -854,6 +854,7 @@ class FakeConvexBackend implements CloudBackend {
 
   async latestCheckpoint(args: {
     projectId: string
+    branchId?: string
     atRevision?: number
   }): Promise<CloudResult<CloudSnapshotRecord | null>> {
     const offline = this.guard<CloudSnapshotRecord | null>()
@@ -867,7 +868,8 @@ class FakeConvexBackend implements CloudBackend {
           row.projectId === authorised.value.project._id &&
           row.kind === 'checkpoint' &&
           row.chunkIndex === 0 &&
-          row.revision <= ceiling,
+          row.revision <= ceiling &&
+          (!args.branchId || row.branchId === args.branchId),
       )
       .sort((a, b) => b.revision - a.revision || b.createdAt - a.createdAt)
     const newest = candidates[0]

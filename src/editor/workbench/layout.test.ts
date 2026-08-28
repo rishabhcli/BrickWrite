@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { resetPreferences } from './persistence'
 import {
   bottomHeight,
   clampLayout,
@@ -19,7 +20,7 @@ import {
  * unusably narrow, and a saved layout has to survive a reload intact.
  */
 
-beforeEach(() => window.localStorage.clear())
+beforeEach(resetPreferences)
 
 describe('presets', () => {
   it('offers a preset for laptop, desktop and ultrawide', () => {
@@ -97,9 +98,12 @@ describe('persistence', () => {
     expect(loadLayout(2560).preset).toBe('ultrawide')
   })
 
-  it('survives a corrupt stored value rather than failing to boot', () => {
-    window.localStorage.setItem('brickwright.workbench.layout.v1', '{not json')
+  it('survives a stored value written by an older build rather than failing to boot', () => {
+    // Version drift is the realistic corruption: the key parses, but it no
+    // longer describes a layout this build understands.
+    saveLayout({ preset: 'desktop' } as unknown as ReturnType<typeof defaultLayout>)
     expect(loadLayout(1600).preset).toBe('desktop')
+    expect(loadLayout(1600).left.size).toBe(LAYOUT_PRESETS.desktop.layout.left.size)
   })
 
   it('drops a stored size that is out of range', () => {

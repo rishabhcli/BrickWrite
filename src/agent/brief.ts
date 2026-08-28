@@ -129,7 +129,7 @@ function findAll<T>(text: string, pattern: RegExp, map: (match: RegExpExecArray)
 const DIMENSION_PATTERN = /(\d{1,4})\s*(?:x|×|by)\s*(\d{1,4})(?:\s*(?:x|×|by)\s*(\d{1,4}))?\s*(?:stud|studs|plate|plates)?/gi
 const AXIS_PATTERN = /(\d{1,4})\s*studs?\s*(wide|long|deep|tall|high)/gi
 const BUDGET_PATTERN =
-  /(?:under|below|less than|at most|no more than|max(?:imum)?(?:\s+of)?|budget of|fewer than)\s*(\d{1,6})\s*(?:pieces|parts|bricks|elements)?|(\d{1,6})[-\s](?:piece|part|brick)\s*(?:budget|limit|build|model)/gi
+  /(?:under|below|less than|at most|no more than|max(?:imum)?(?:\s+of)?|budget of|fewer than)\s*(\d{1,6})\s*(?:pieces|parts|bricks|elements)?|(\d{1,6})[-\s](?:piece|part|brick)s?\b/gi
 
 function extractEnvelope(text: string): { findings: Array<Finding<[number, number, number]>>; axes: Array<Finding<[string, number]>> } {
   const findings = findAll<[number, number, number]>(text, DIMENSION_PATTERN, (match) => {
@@ -185,17 +185,28 @@ function extractFunctions(text: string): Array<Finding<string>> {
   return results.slice(0, 12)
 }
 
+/**
+ * Colour words, classified occurrence by occurrence.
+ *
+ * Every mention is examined rather than only the first: "paint it red with no
+ * red on the roof" states the colour twice with opposite intent, and a compiler
+ * that stops at the first hit would record a requirement the request retracts
+ * two clauses later.
+ */
 function extractPalette(text: string): { include: Array<Finding<number>>; exclude: Array<Finding<number>> } {
-  const include: Array<Finding<number>> = []
-  const exclude: Array<Finding<number>> = []
+  const include = new Map<number, Finding<number>>()
+  const exclude = new Map<number, Finding<number>>()
   for (const [pattern, code, name] of COLOR_WORDS) {
-    const match = new RegExp(pattern.source, 'i').exec(text)
-    if (!match) continue
-    const before = text.slice(Math.max(0, match.index - 24), match.index).toLowerCase()
-    const negated = /\b(?:no|not|avoid|without|never|except)\b[\s\w]*$/.test(before)
-    ;(negated ? exclude : include).push({ value: code, phrase: `${negated ? 'no ' : ''}${name.toLowerCase()}` })
+    const scan = new RegExp(pattern.source, 'gi')
+    for (let match = scan.exec(text); match; match = scan.exec(text)) {
+      const before = text.slice(Math.max(0, match.index - 24), match.index).toLowerCase()
+      const negated = /\b(?:no|not|avoid|without|never|except)\b[\s\w]*$/.test(before)
+      const bucket = negated ? exclude : include
+      if (!bucket.has(code)) bucket.set(code, { value: code, phrase: `${negated ? 'no ' : ''}${name.toLowerCase()}` })
+      if (match.index === scan.lastIndex) scan.lastIndex += 1
+    }
   }
-  return { include, exclude }
+  return { include: [...include.values()], exclude: [...exclude.values()] }
 }
 
 function extractSymmetry(text: string): { value: DesignBrief['symmetry']; phrase: string } | null {

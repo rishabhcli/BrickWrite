@@ -229,7 +229,7 @@ function shareBody(options: PageOptions, heroCard: PublicationCard | null): stri
       : `<span class="share-author">${escapeHtml(publication.author.displayName)}</span>`
     : '<span class="share-author share-author-absent">Author not stated</span>'
 
-  const badge = validation.constraints.length || validation.partCount
+  const badge = validation.componentCount > 0
     ? validationBadge(publication)
     : '<span class="share-badge share-badge-unknown">Not validated</span>'
 
@@ -332,7 +332,7 @@ function validationBadge(publication: Publication): string {
   const problems: string[] = []
   if (validation.collisionCount) problems.push(`${validation.collisionCount} collision${validation.collisionCount === 1 ? '' : 's'}`)
   if (validation.componentCount > 1) problems.push(`${validation.componentCount} disconnected groups`)
-  const failing = validation.constraints.filter((entry) => entry.status === 'fail').length
+  const failing = validation.constraintCounts.fail
   if (failing) problems.push(`${failing} failing constraint${failing === 1 ? '' : 's'}`)
   if (!problems.length) return '<span class="share-badge share-badge-unknown">Not validated</span>'
   return `<span class="share-badge share-badge-warn">Reported at publication: ${escapeHtml(problems.join(', '))}</span>`

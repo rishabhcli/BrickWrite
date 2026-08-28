@@ -7,7 +7,8 @@
  * no credential, which is what `boundary.test.ts` proves.
  */
 
-export { AgentWorkbench, agentWorkbenchExtension, registerAgentWorkbench, type WorkbenchExtension, type AgentWorkbenchProps } from './AgentWorkbench'
+export { AgentWorkbench, type AgentWorkbenchProps } from './AgentWorkbench'
+export { AgentWorkbenchContribution } from './contribution'
 export { AgentSession, type SessionState, type SessionOptions, type TranscriptMessage, type SessionStatus, type SendOptions } from './session'
 export {
   WaveLedger,

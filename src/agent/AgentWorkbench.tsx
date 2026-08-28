@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ComponentType,
 } from 'react'
 import { cadEngine } from '../cad/engine'
 import { parseReferenceTokens, resolveReference, type SpatialReference } from './references'
@@ -448,31 +447,6 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
       </div>
     </section>
   )
-}
-
-/**
- * Registration descriptor for the editor's extension registry.
- *
- * Structurally typed on purpose: the registry lives in another workstream, and
- * importing it would make this module fail to build whenever that workstream is
- * mid-edit. The exact mount snippet is in `docs/integration/agent-workbench.md`.
- */
-export interface WorkbenchExtension {
-  id: string
-  slot: 'toolbar' | 'panel-right' | 'inspector' | 'status' | 'modal' | 'overlay'
-  title: string
-  component: ComponentType<Record<string, never>>
-}
-
-export const agentWorkbenchExtension: WorkbenchExtension = {
-  id: 'agent-workbench',
-  slot: 'panel-right',
-  title: 'Design partner',
-  component: AgentWorkbench as ComponentType<Record<string, never>>,
-}
-
-export function registerAgentWorkbench(registry: { register: (extension: WorkbenchExtension) => void }): void {
-  registry.register(agentWorkbenchExtension)
 }
 
 export default AgentWorkbench

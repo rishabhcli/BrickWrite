@@ -305,7 +305,11 @@ export const saveCheckpoint = mutation({
 
 /** The newest checkpoint at or below `atRevision`, for opening a project. */
 export const latestCheckpoint = query({
-  args: { projectId: v.string(), atRevision: v.optional(v.number()) },
+  args: {
+    projectId: v.string(),
+    branchId: v.optional(v.string()),
+    atRevision: v.optional(v.number()),
+  },
   handler: async (ctx, args): Promise<CloudResult<CloudSnapshotRecord | null>> => {
     const authorised = await authoriseProject(ctx, args.projectId, 'project.read')
     if (!authorised.ok) return authorised
@@ -317,8 +321,13 @@ export const latestCheckpoint = query({
         q.eq('projectId', project._id).eq('kind', 'checkpoint').lte('revision', ceiling),
       )
       .order('desc')
-      .take(64)
-    const newest = rows.find((row) => row.chunkIndex === 0)
+      .take(256)
+    // Branch-scoped when asked: a conflict fork seeds its own checkpoint at the
+    // divergence revision, and replaying one branch's log onto another
+    // branch's checkpoint would produce a document neither branch has.
+    const newest = rows.find(
+      (row) => row.chunkIndex === 0 && (!args.branchId || row.branchId === args.branchId),
+    )
     if (!newest) return { ok: true, value: null }
     return readSnapshot(ctx, newest.groupId, project._id)
   },

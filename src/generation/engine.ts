@@ -238,8 +238,20 @@ export function candidateOperations(candidate: Candidate): CadOperation[] {
   return [...candidate.realize.operations, { type: 'steps.replace', steps: order.steps }]
 }
 
+/** The shape `src/cad/engine.ts` publishes as `commandBus`. */
 export interface CommandBusLike {
   dispatch(
+    label: string,
+    operations: CadOperation[],
+    actor: 'human' | 'agent',
+    expectedRevision?: number,
+    sourceTool?: string,
+  ): CommandResult<Transaction>
+}
+
+/** The shape a `CadEngine` instance publishes. */
+export interface CadEngineLike {
+  execute(
     label: string,
     operations: CadOperation[],
     actor: 'human' | 'agent',
@@ -258,11 +270,17 @@ export interface CommandBusLike {
  */
 export function applyCandidate(
   candidate: Candidate,
-  bus: CommandBusLike,
+  target: CommandBusLike | CadEngineLike,
   expectedRevision: number,
   label = `Generated: ${candidate.strategy}`,
 ): CommandResult<Transaction> {
-  return bus.dispatch(label, candidateOperations(candidate), 'agent', expectedRevision, 'generation_apply')
+  const operations = candidateOperations(candidate)
+  // The shared bus and a directly-held engine are the same operation with two
+  // names; accepting both keeps a caller that owns its own `CadEngine` — a
+  // worker, a preview surface, a test — from having to wrap it.
+  return 'dispatch' in target
+    ? target.dispatch(label, operations, 'agent', expectedRevision, 'generation_apply')
+    : target.execute(label, operations, 'agent', expectedRevision, 'generation_apply')
 }
 
 /** Axes on which two candidates differ, for presenting a choice. */

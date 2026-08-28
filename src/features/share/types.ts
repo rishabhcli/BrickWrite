@@ -143,8 +143,14 @@ export interface PublicationValidation {
   collisionCount: number
   unverifiedCollisionCount: number
   componentCount: number
-  /** Constraint outcomes, labels already sanitised. */
-  constraints: Array<{ label: string; status: 'pass' | 'warning' | 'fail' }>
+  /**
+   * How many constraints held, warned and failed.
+   *
+   * Counts rather than labels. A constraint label is operator-authored text
+   * ("client budget ceiling"), and its `value` is an arbitrary payload from the
+   * design brief, so neither is publishable. The counts are what a badge needs.
+   */
+  constraintCounts: { pass: number; warning: number; fail: number }
 }
 
 export interface PublicationSummary {

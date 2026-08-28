@@ -2,7 +2,7 @@ import type { ConnectionFamily } from '../../cad/types'
 import type { PartIntentMatch } from '../../platform/contracts'
 import type { CorpusDocument } from './corpus'
 import type { IdentityKind } from './lexical'
-import type { PartQuery, RelationIntent } from './query'
+import type { AxisIntent, PartQuery, RelationIntent } from './query'
 
 /**
  * Signal fusion, and the confidence number the caller is allowed to act on.
@@ -16,12 +16,20 @@ import type { PartQuery, RelationIntent } from './query'
  * returns 1.0 for its best guess is not confident, it is unaccountable.
  */
 
+/** Whether a stated constraint was met, or `null` when the request did not state it. */
+export interface DimensionSatisfaction {
+  envelope: boolean | null
+  footprintExtent: boolean | null
+  heightPlates: boolean | null
+}
+
 export interface DimensionalSignal {
   score: number
   /** Measured envelope, a size read off the part name, or nothing to compare. */
   basis: 'measured' | 'name' | null
   /** False when the request stated a size this part demonstrably does not have. */
   satisfied: boolean
+  met: DimensionSatisfaction
 }
 
 export interface ConnectorSignal {
@@ -30,6 +38,8 @@ export interface ConnectorSignal {
   missing: ConnectionFamily[]
   /** False when the part is outside the compiled pack, so its connectors are unknown. */
   testable: boolean
+  /** Whether a requested connector axis direction was confirmed, refuted, or untestable. */
+  axis: { requested: AxisIntent | null; matched: boolean; testable: boolean }
 }
 
 export interface ColorSignal {
@@ -55,6 +65,8 @@ export interface SignalDetail {
   color: ColorSignal
   frequency: number
   relation: RelationSignal | null
+  /** True when this identity is a printed or stickered decoration of another. */
+  decorated: boolean
 }
 
 export interface RankedCandidate {
@@ -84,8 +96,11 @@ export interface RankedCandidate {
  * dimensional  A size constraint is checkable, so when it is satisfied it is
  *              worth more than a fuzzy word match; the unsatisfied case is
  *              handled by a penalty rather than by a small positive score.
- * connector    Functional fit. Lower than dimension only because connectors
- *              are known for 900 of 22,941 identities, so it usually cannot fire.
+ * connector    Functional fit, from the connector families the compiler
+ *              recorded for every modelled identity.
+ * axis         Connector orientation. Small in reach - it needs compiled
+ *              connectors - but decisive when it fires, because it is the only
+ *              thing that separates a hinge that swings from one that spins.
  * color        Colour evidence is per-part observation from official sets, and
  *              a part is rarely chosen *because* of its palette, so it breaks
  *              ties rather than deciding them.
@@ -102,6 +117,7 @@ const WEIGHT = {
   semantic: 1.5,
   dimensional: 1.5,
   connector: 0.9,
+  axis: 1.2,
   color: 0.5,
   frequency: 0.55,
   placeable: 0.25,
@@ -114,23 +130,30 @@ const WEIGHT = {
  * simply unknown, and the ranking has to say so or "six studs wide" becomes
  * decoration. Unknown is never penalised: 96% of the catalog has no compiled
  * envelope, and punishing that would collapse the answer set onto the pack.
+ *
+ * `decoration` is the one penalty that is about the question rather than the
+ * part. LDraw carries roughly ten printed and stickered variants for every
+ * popular design, all sharing its name; without this, "45 degree slope 2 x 2"
+ * answers with six patterned versions of the slope and never the slope.
  */
 const PENALTY = {
   wrongSize: 1.6,
   missingConnector: 0.7,
+  wrongAxis: 1.2,
   wrongColor: 0.5,
+  decoration: 1.4,
   /** LDraw "~" parts are subassembly fragments, not things a person can ask for. */
   helper: 2.5,
 } as const
 
 /**
- * Logistic calibration, fitted by gradient descent on the 112-query evaluation
- * set in `__fixtures__/evaluation.json`: every ranked candidate for every query
- * is a sample, labelled by whether it is one of that query's acceptable ids.
+ * Logistic calibration, fitted by gradient descent on the answerable half of
+ * `__fixtures__/evaluation.json`: every ranked candidate for every query is a
+ * sample, labelled by whether it is one of that query's acceptable ids.
  *
- * The fit is reproduced by `rank.test.ts`, which recomputes the empirical hit
- * rate per confidence band and fails if the reported number drifts from the
- * observed one by more than the band width. Numbers recorded in
+ * `rank.test.ts` refits against the same objective and fails if these constants
+ * have drifted from the fit, and separately checks that the reported confidence
+ * tracks the observed hit rate per band. Numbers are recorded in
  * docs/integration/part-intelligence.md.
  */
 const CALIBRATION = { slope: 0.5091, intercept: -3.1907 } as const
@@ -145,80 +168,148 @@ export function calibrateConfidence(score: number): number {
 
 const closeEnough = (a: number, b: number, tolerance: number) => Math.abs(a - b) <= tolerance
 
+/** One candidate size reading: a measurement in plates, or a name in bricks. */
+interface SizeBasis {
+  kind: 'measured' | 'name'
+  quality: number
+  footprint: number[]
+  /** Height in plates for a measurement, in bricks for a name. */
+  height: number | null
+  heightUnit: 'plates' | 'bricks'
+}
+
+function sizeBases(document: CorpusDocument): SizeBasis[] {
+  const bases: SizeBasis[] = []
+  if (document.studs) {
+    bases.push({
+      kind: 'measured',
+      quality: 1,
+      footprint: [document.studs[0], document.studs[2]],
+      height: document.studs[1],
+      heightUnit: 'plates',
+    })
+  }
+  if (document.nameStuds) {
+    // A size stated in a part name is real evidence, just weaker than a
+    // measurement taken off compiled geometry - and LDraw writes the third
+    // number in brick heights, not plates.
+    bases.push({
+      kind: 'name',
+      quality: 0.75,
+      footprint: document.nameStuds.slice(0, 2),
+      height: document.nameStuds[2] ?? null,
+      heightUnit: 'bricks',
+    })
+  }
+  return bases
+}
+
+/**
+ * Height comparison across the two unit systems LDraw mixes.
+ *
+ * A measured envelope is published in plates and includes the stud overhang; a
+ * name says "1 x 2 x 5" meaning five bricks. Both readings are accepted so that
+ * "a 1 x 2 x 5 brick" matches whether or not the part was compiled.
+ */
+function heightMatches(basis: SizeBasis, wanted: number, wantedUnit: 'plates' | 'bricks'): boolean {
+  if (basis.height === null) return false
+  const wantedPlates = wantedUnit === 'bricks' ? wanted * 3 : wanted
+  const actualPlates = basis.heightUnit === 'bricks' ? basis.height * 3 : basis.height
+  // 1.6 plates of slack absorbs the 0.5-plate stud overhang a measured box
+  // carries plus the rounding in fractional brick heights such as "1 1/3".
+  if (closeEnough(actualPlates, wantedPlates, 1.6)) return true
+  // Some names quote a plate count directly, so the literal reading is kept too.
+  return closeEnough(basis.height, wanted, 0.4)
+}
+
 /**
  * How well a candidate's size answers the request.
  *
  * Footprints are compared order-insensitively because a 2 x 4 and a 4 x 2 are
- * the same brick held differently. A size read out of the part's name is
- * accepted at a discount rather than refused, because only 900 of 22,941
- * identities carry a measured envelope and refusing would make every
- * dimensional question unanswerable for the rest.
+ * the same brick held differently. Each constraint is judged on its own, so a
+ * request that names two sizes and meets one of them can say precisely which
+ * one it failed instead of reporting a single blended number.
  */
 export function dimensionalSignal(query: PartQuery, document: CorpusDocument): DimensionalSignal {
   const { envelope, footprintExtent, heightPlates, approximate } = query.dimensions
+  const met: DimensionSatisfaction = {
+    envelope: envelope === null ? null : false,
+    footprintExtent: footprintExtent === null ? null : false,
+    heightPlates: heightPlates === null ? null : false,
+  }
   if (envelope === null && footprintExtent === null && heightPlates === null) {
-    return { score: 0, basis: null, satisfied: true }
+    return { score: 0, basis: null, satisfied: true, met }
   }
 
   const tolerance = approximate ? 1.05 : 0.06
-  const measured = document.studs
-  const named = document.nameStuds
-  const scores: number[] = []
+  const bases = sizeBases(document)
+  let score = 0
   let basis: DimensionalSignal['basis'] = null
-  let contradicted = false
+  let contradictedByMeasurement = false
 
-  const scoreAgainst = (values: readonly number[] | null, quality: number, kind: 'measured' | 'name') => {
-    if (!values) return
-    const footprint = kind === 'measured' ? [values[0], values[2]] : values.slice(0, 2)
-    const height = kind === 'measured' ? values[1] : (values[2] ?? null)
+  for (const candidate of bases) {
     const local: number[] = []
 
-    if (envelope) {
-      const wanted = [...envelope].sort((a, b) => a - b)
-      const actual = [...footprint].sort((a, b) => a - b)
-      const footprintHit = closeEnough(actual[0], wanted[0], tolerance) && closeEnough(actual[1], wanted[1], tolerance)
-      if (envelope.length >= 3 && height !== null) {
-        const heightHit = closeEnough(height, envelope[2], Math.max(tolerance, 0.4))
-        local.push(footprintHit && heightHit ? 1 : footprintHit ? 0.55 : 0)
+    if (envelope !== null) {
+      const wanted = [...envelope].slice(0, 2).sort((a, b) => a - b)
+      const actual = [...candidate.footprint].sort((a, b) => a - b)
+      const footprintHit =
+        actual.length >= 2 && closeEnough(actual[0], wanted[0], tolerance) && closeEnough(actual[1], wanted[1], tolerance)
+      if (envelope.length >= 3) {
+        const heightHit = footprintHit && heightMatches(candidate, envelope[2], 'bricks')
+        if (heightHit) met.envelope = true
+        // A footprint match with the wrong height is a partial answer, not a
+        // wrong one: the person described the right part in the wrong units
+        // often enough that discarding it costs more than it saves.
+        local.push(heightHit ? 1 : footprintHit ? 0.55 : 0)
       } else {
+        if (footprintHit) met.envelope = true
         local.push(footprintHit ? 1 : 0)
       }
     }
+
     if (footprintExtent !== null) {
-      const best = Math.max(
-        ...footprint.map((value) => (closeEnough(value, footprintExtent, tolerance) ? 1 : 0)),
-      )
+      const exact = candidate.footprint.some((value) => closeEnough(value, footprintExtent, tolerance))
+      if (exact) met.footprintExtent = true
+      const nearest = candidate.footprint.length
+        ? Math.min(...candidate.footprint.map((value) => Math.abs(value - footprintExtent)))
+        : Infinity
       // An approximate request should decay with distance instead of snapping
       // to zero: "about six studs wide" still likes a five-stud part.
-      const nearest = Math.min(...footprint.map((value) => Math.abs(value - footprintExtent)))
-      local.push(best === 1 ? 1 : approximate ? Math.max(0, 1 - nearest / 3) : 0)
+      local.push(exact ? 1 : approximate && Number.isFinite(nearest) ? Math.max(0, 1 - nearest / 3) : 0)
     }
-    if (heightPlates !== null && height !== null) {
-      local.push(closeEnough(height, heightPlates, Math.max(tolerance, 0.4)) ? 1 : 0)
-    }
-    if (!local.length) return
 
-    const average = local.reduce((a, b) => a + b, 0) / local.length
-    if (average <= 0 && kind === 'measured') contradicted = true
-    if (!scores.length || average * quality > scores[0]) {
-      scores[0] = average * quality
-      basis = kind
+    if (heightPlates !== null) {
+      const hit = heightMatches(candidate, heightPlates, 'plates')
+      if (hit) met.heightPlates = true
+      local.push(hit ? 1 : 0)
+    }
+
+    if (!local.length) continue
+    const average = (local.reduce((a, b) => a + b, 0) / local.length) * candidate.quality
+    if (average === 0 && candidate.kind === 'measured') contradictedByMeasurement = true
+    if (average > score) {
+      score = average
+      basis = candidate.kind
     }
   }
 
-  scoreAgainst(measured, 1, 'measured')
-  // A name that states its own size is real evidence, just weaker than a
-  // measurement taken off compiled geometry.
-  if (!measured || scores[0] === 0) scoreAgainst(named, 0.75, 'name')
-
-  const score = scores.length ? scores[0] : 0
-  const testable = measured !== null || named !== null
-  return { score, basis, satisfied: score > 0 || (!testable && !contradicted) }
+  if (score > 0) basis ??= bases[0]?.kind ?? null
+  const testable = bases.length > 0
+  return {
+    score,
+    basis: score > 0 ? basis : testable ? bases[0].kind : null,
+    satisfied: score > 0 || (!testable && !contradictedByMeasurement),
+    met,
+  }
 }
 
+const AXIS_TOLERANCE = 0.5
+
 export function connectorSignal(query: PartQuery, document: CorpusDocument): ConnectorSignal {
+  const axis = axisSignal(query, document)
   if (!query.connectors.length) {
-    return { score: 0, matched: [], missing: [], testable: true }
+    return { score: 0, matched: [], missing: [], testable: true, axis }
   }
   const present = new Set(document.families)
   const matched = query.connectors.filter((family) => present.has(family))
@@ -227,7 +318,32 @@ export function connectorSignal(query: PartQuery, document: CorpusDocument): Con
   // identity, so this is testable well beyond the compiled pack. It is not
   // testable for catalogued-only identities, which publish no connectors.
   const testable = document.tier !== 'catalogued'
-  return { score: matched.length / query.connectors.length, matched, missing, testable }
+  return { score: matched.length / query.connectors.length, matched, missing, testable, axis }
+}
+
+/**
+ * Whether the part's connectors actually point the way the request asked.
+ *
+ * Only the compiled pack carries connector orientations, so this is silent for
+ * most of the catalog - and silence is reported as untestable rather than as a
+ * failure, because "we did not compile that part's connectors" and "that part's
+ * hinge spins the wrong way" are different answers.
+ */
+function axisSignal(query: PartQuery, document: CorpusDocument): ConnectorSignal['axis'] {
+  const requested = query.axisOrientation
+  if (!requested) return { requested: null, matched: false, testable: true }
+  const axes = document.connectorAxes
+  if (!axes?.length) return { requested, matched: false, testable: false }
+
+  const families = query.connectors.length ? new Set<string>(query.connectors) : null
+  const relevant = families ? axes.filter((entry) => families.has(entry.family)) : axes
+  if (!relevant.length) return { requested, matched: false, testable: false }
+
+  const matched = relevant.some((entry) => {
+    const vertical = Math.abs(entry.axis[1])
+    return requested === 'horizontal' ? vertical < AXIS_TOLERANCE : vertical >= AXIS_TOLERANCE
+  })
+  return { requested, matched, testable: true }
 }
 
 export function colorSignal(query: PartQuery, document: CorpusDocument): ColorSignal {
@@ -261,10 +377,12 @@ export interface RankParameters {
   /** Cosine similarity from the latent index; 0 when it is not resident. */
   semantic: number
   relation: RelationSignal | null
+  /** True when the relation index found a base design this identity decorates. */
+  decorated: boolean
 }
 
 export function rankCandidate(parameters: RankParameters): RankedCandidate {
-  const { query, document, exactIdKind, lexical, semantic, relation } = parameters
+  const { query, document, exactIdKind, lexical, semantic, relation, decorated } = parameters
   const dimensional = dimensionalSignal(query, document)
   const connector = connectorSignal(query, document)
   const color = colorSignal(query, document)
@@ -279,6 +397,9 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
   score += WEIGHT.connector * connector.score
   score += WEIGHT.color * color.score
   score += WEIGHT.frequency * frequency
+  if (connector.axis.testable && connector.axis.requested) {
+    score += connector.axis.matched ? WEIGHT.axis : -PENALTY.wrongAxis
+  }
   if (document.geometryAvailable) score += WEIGHT.placeable
 
   if (!dimensional.satisfied && dimensional.basis === 'measured') score -= PENALTY.wrongSize
@@ -286,6 +407,9 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
     score -= PENALTY.missingConnector * (connector.missing.length / Math.max(1, query.connectors.length))
   }
   if (query.color.codes.length && color.testable && !color.satisfied) score -= PENALTY.wrongColor
+  if (decorated && query.variantPreference !== 'printed' && !exactIdKind && relation?.kind !== 'printed-variant') {
+    score -= PENALTY.decoration
+  }
   if (document.helper) score -= PENALTY.helper
 
   return {
@@ -300,7 +424,7 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
       connector: connector.score,
       frequency,
     },
-    detail: { exactIdKind, lexical, semantic, dimensional, connector, color, frequency, relation },
+    detail: { exactIdKind, lexical, semantic, dimensional, connector, color, frequency, relation, decorated },
   }
 }
 

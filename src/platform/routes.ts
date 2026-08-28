@@ -51,8 +51,12 @@ export function resetRouteRegistry(): void {
 /**
  * Resolve a route to its surface, or to the honest placeholder.
  *
- * The placeholder is imported dynamically so an application in which every
- * surface is installed never downloads it.
+ * The placeholder is reached through a dynamic import so that this module stays
+ * free of React: the route table is imported by the shell, by tests and by the
+ * import-graph assertion, and none of those should have to pull the component
+ * tree and its stylesheet to read a list of paths. It buys no separate chunk —
+ * `states.tsx` is statically imported by the shell regardless — and the build
+ * says so with an INEFFECTIVE_DYNAMIC_IMPORT notice, which is accurate.
  */
 async function loadSurface(id: RouteId): Promise<{ default: ComponentType }> {
   const loader = registry.get(id)

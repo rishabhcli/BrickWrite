@@ -283,7 +283,7 @@ export class RelationIndex {
    * was compiled; where it was not, the footprint alone decides and the
    * separation is reported as unknown rather than invented.
    */
-  gapBridging(gapStuds: number, limit = 24): BridgeCandidate[] {
+  gapBridging(gapStuds: number, limit = 40): BridgeCandidate[] {
     if (!Number.isFinite(gapStuds) || gapStuds < 1) return []
     const minimumSpan = gapStuds + 2
     const candidates: BridgeCandidate[] = []
@@ -298,10 +298,13 @@ export class RelationIndex {
       if (separation === null && !document.families.includes('anti-stud')) continue
       candidates.push({ id: document.id, spanStuds: span, antiStudSeparation: separation })
     }
+    // Ordered by real-world usage rather than by tightest fit. Every candidate
+    // here already reaches, and a builder asking what bridges a gap wants the
+    // plate they have in the drawer, not the most exactly-sized one in LDraw.
     candidates.sort(
       (a, b) =>
-        a.spanStuds - b.spanStuds ||
         (this.corpus.byId.get(b.id)?.frequency ?? 0) - (this.corpus.byId.get(a.id)?.frequency ?? 0) ||
+        a.spanStuds - b.spanStuds ||
         (a.id < b.id ? -1 : 1),
     )
     return candidates.slice(0, limit)

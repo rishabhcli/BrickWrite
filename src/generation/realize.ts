@@ -14,7 +14,7 @@ import { findCollisions, residentGeometryProvider, type GeometryProvider } from 
 import { featureFrame } from '../cad/connections'
 import { getDocumentBounds, getPartBounds } from '../cad/geometry'
 import { composeTransform, invertTransform, rotationAboutAxis, IDENTITY_BASIS } from '../cad/math'
-import { deriveConnections, findSnapCandidates, type WorldConnector } from '../cad/snapping'
+import { deriveConnectionEdges, deriveConnections, findSnapCandidates, type WorldConnector } from '../cad/snapping'
 import type {
   CadOperation,
   ModelDocument,
@@ -445,6 +445,16 @@ export class GraphRealizer {
       const edge = incomingEdge(this.graph, node.id)
       if (node.kind === 'region') this.placeRegion(node, edge)
       else this.placePart(node, edge)
+    }
+
+    // The connection graph is part of the document, not something a consumer is
+    // expected to re-infer. Build order, articulation and export all read
+    // `document.connections`, so a preview that carries the base document's
+    // (empty) edge set reports every part as an island — a model that is in fact
+    // perfectly bonded would fail its own build-order check.
+    this.document = {
+      ...this.document,
+      connections: deriveConnectionEdges(this.document, this.document.revision, 'snap'),
     }
 
     return {

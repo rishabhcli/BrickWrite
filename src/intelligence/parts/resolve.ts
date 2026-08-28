@@ -184,6 +184,11 @@ function resolveAgainst(
   }
 
   // 4. Latent similarity, over the same query and every candidate found so far.
+  //
+  // Terms the lexical vocabulary rejected are deliberately included: character
+  // trigrams are exactly the mechanism that reaches "Steering" from "steers",
+  // and a word this build has never indexed is the case the latent space is
+  // there to cover. It is still reported as unmatched.
   const semanticText = [query.contentTerms.join(' '), query.color.evidence.join(' ')].join(' ').trim()
   let semanticQuery: SemanticQuery | null = null
   if (semanticIndex && semanticText) {
@@ -214,6 +219,7 @@ function resolveAgainst(
         lexical: candidate.lexical,
         semantic: candidate.semantic,
         relation: candidate.relation,
+        decorated: relations.baseOf(document.id) !== null,
       }),
     )
   }
@@ -265,6 +271,9 @@ function resolveFromRegistry(raw: string, options: ResolveOptions, started: numb
       lexical: (records.length - index) / records.length,
       semantic: 0,
       relation: null,
+      // The relation tables are not built on the cold path, so no identity can
+      // be shown as a decoration without the evidence to say so.
+      decorated: false,
     })
   })
   ranked.sort(
@@ -443,12 +452,18 @@ function unmatchedTerms(query: PartQuery, ranked: RankedCandidate[]): string[] {
     if (term && !unmatched.includes(term)) unmatched.push(term)
   }
 
-  const hasDimensionIntent =
-    query.dimensions.envelope !== null ||
-    query.dimensions.footprintExtent !== null ||
-    query.dimensions.heightPlates !== null
-  if (hasDimensionIntent && !ranked.some((candidate) => candidate.detail.dimensional.score > 0)) {
-    for (const evidence of query.dimensions.evidence) add(evidence)
+  // Each size constraint is checked on its own. "A 64 stud long 1 x 1 round
+  // brick" satisfies its footprint and fails its length, and blending the two
+  // into one verdict would let the impossible half disappear.
+  const { phrases } = query.dimensions
+  for (const key of ['envelope', 'footprintExtent', 'heightPlates'] as const) {
+    const phrase = phrases[key]
+    if (!phrase) continue
+    if (!ranked.some((candidate) => candidate.detail.dimensional.met[key] === true)) add(phrase)
+  }
+
+  if (query.axisOrientation && !ranked.some((candidate) => candidate.detail.connector.axis.matched)) {
+    add(`connector axis pointing ${query.axisOrientation === 'horizontal' ? 'sideways' : 'upright'}`)
   }
 
   if (query.color.codes.length && !ranked.some((candidate) => candidate.detail.color.satisfied)) {

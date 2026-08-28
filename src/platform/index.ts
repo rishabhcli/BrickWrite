@@ -95,7 +95,15 @@ export {
   type RestrictionKind,
 } from './auth/account'
 export { AccountMenu } from './auth/AccountMenu'
-export { AccountPage } from './auth/AccountPage'
+/*
+ * `AccountPage` is deliberately NOT re-exported.
+ *
+ * It is a route surface, reached through `registerRoute('account', …)` in
+ * `installPlatformSurfaces()`. Naming it here would make it a static import of
+ * this entry point, which drags Hexclave's whole `AccountSettings` tree into
+ * the shell chunk and undoes the reason the route declares `boot: 'none'`.
+ * Verified: the build reports INEFFECTIVE_DYNAMIC_IMPORT when it is exported.
+ */
 export { AuthRoutes, SignInSurface, SignUpSurface, safeReturnTo } from './auth/AuthRoutes'
 export {
   AuthRequiredState,

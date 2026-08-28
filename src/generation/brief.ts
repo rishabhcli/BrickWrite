@@ -138,6 +138,7 @@ const STYLE_WORDS = [
   'minimalist', 'ornate', 'industrial', 'cartoon', 'cartoonish', 'realistic', 'brutalist',
   'art deco', 'victorian', 'steampunk', 'cyberpunk', 'nautical', 'military', 'weathered', 'clean',
   'streamlined', 'boxy', 'angular', 'rounded', 'greebled', 'detailed', 'smooth', 'utilitarian',
+  'abstract', 'geometric', 'organic', 'ornamental', 'sculptural', 'classical', 'stylised', 'stylized',
 ] as const
 
 const FUNCTION_PATTERNS: Array<{ readonly pattern: RegExp; readonly describe: (match: RegExpMatchArray) => string }> = [

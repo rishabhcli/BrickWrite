@@ -262,7 +262,24 @@ export function searchRefinements(
       return null
     }
 
-    const metrics = measureAll(after, scope)
+    const created = addedPartIds(document, after)
+    // The candidate is measured against the scope *plus what it created*, so a
+    // strategy that adds a bridging plate is charged for the part it added and
+    // credited with the connection it made. Measuring against the original id
+    // list would price additions at zero.
+    const metrics = measureAll(
+      after,
+      created.length
+        ? createScope({
+            partIds: [...scope.partIds, ...created],
+            protectedPartIds: scope.protectedPartIds,
+            boundaryPartIds: scope.boundaryPartIds,
+            symmetryExceptionPartIds: scope.symmetryExceptionPartIds,
+            reference,
+            instruction: scope.instruction,
+          })
+        : scope,
+    )
     const candidate: SearchCandidate = {
       id,
       strategy: entry.id,
@@ -273,7 +290,7 @@ export function searchRefinements(
       score: scoreOf(baseMetrics, metrics, weights),
       regressions: regressionsOf(baseMetrics, metrics),
       warnings: [...verdict.warnings],
-      addedPartIds: addedPartIds(document, after),
+      addedPartIds: created,
       removedPartIds: removedPartIds(document, after),
       modifiedPartIds: modifiedPartIds(document, after),
     }

@@ -33,6 +33,7 @@ import {
   LAYOUT_PRESETS,
   defaultLayout,
   loadLayout,
+  recommendedPreset,
   saveLayout,
   workspaceColumns,
   type DockId,
@@ -48,6 +49,7 @@ import {
   saveShortcutMap,
   type ShortcutMap,
 } from './shortcuts'
+import { resetPreferences } from './persistence'
 import { IDLE_CONNECT, useWorkbench } from './useWorkbench'
 import { visibilityActive } from './selection'
 
@@ -116,9 +118,22 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     downloadText(`${name}.ldr`, exportLDraw(workbench.state.document))
   }, [workbench.state.document])
 
+  const resetWorkspace = useCallback(() => {
+    resetPreferences()
+    const restored = defaultLayout(recommendedPreset(viewport.width))
+    setRawLayout(restored)
+    saveLayout(restored)
+    setShortcuts(loadShortcutMap())
+    workbench.notify({
+      kind: 'success',
+      title: 'Workspace reset',
+      detail: 'Docks, palette sets and shortcuts are back to their defaults. The model is untouched.',
+    })
+  }, [viewport.width, workbench])
+
   const handlers = useMemo(
-    () => createCommandHandlers({ workbench, toggleDock, focusSearch, exportLdr }),
-    [exportLdr, focusSearch, toggleDock, workbench],
+    () => createCommandHandlers({ workbench, toggleDock, focusSearch, exportLdr, resetWorkspace }),
+    [exportLdr, focusSearch, resetWorkspace, toggleDock, workbench],
   )
 
   const runCommand = useCallback((commandId: string) => {

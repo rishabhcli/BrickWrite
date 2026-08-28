@@ -70,7 +70,7 @@ export const refs = {
       CloudResult<{ groupId: string; revision: number }>
     >('projects:saveCheckpoint'),
     latestCheckpoint: q<
-      { projectId: string; atRevision?: number },
+      { projectId: string; branchId?: string; atRevision?: number },
       CloudResult<CloudSnapshotRecord | null>
     >('projects:latestCheckpoint'),
     auditTrail: q<{ projectId: string; limit?: number }, CloudResult<CloudAuditRecord[]>>(

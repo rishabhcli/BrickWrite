@@ -6,11 +6,13 @@ import type { ColorDefinition, ConnectionFamily } from '../../cad/types'
  *
  * The design rule here is that nothing is allowed to disappear. A resolver that
  * quietly drops the words it does not understand produces a confident answer to
- * a question nobody asked — "a 40-stud transparent gear" comes back as a gear,
+ * a question nobody asked - "a 40-stud transparent gear" comes back as a gear,
  * and the person is left to notice for themselves that it is neither 40 studs
  * nor transparent. So every word is either consumed into a slot, recognised as
  * a stop word, known to the catalog's own vocabulary, or reported in
- * `unmatchedTerms`.
+ * `unmatchedTerms`; and every constraint carries the phrase that produced it,
+ * so the resolver can name the one condition it could not meet rather than
+ * reporting a vague failure.
  */
 
 export type FinishIntent =
@@ -24,16 +26,30 @@ export type FinishIntent =
   | 'fabric'
   | 'glow'
 
+/** Which constraint a phrase produced, so an unmet one can be named exactly. */
+export interface DimensionPhrases {
+  envelope: string | null
+  footprintExtent: string | null
+  heightPlates: string | null
+}
+
 export interface DimensionIntent {
-  /** Full footprint from "2x4" or envelope from "1x2x5". Compared order-insensitively. */
+  /**
+   * Full footprint from "2x4", or envelope from "1x2x5".
+   *
+   * Compared order-insensitively across the footprint. LDraw writes the third
+   * number in brick heights, not plates, which is why it is kept separate from
+   * `heightPlates` rather than converted here.
+   */
   envelope: number[] | null
   /** One footprint extent, from "six studs wide" or a bare "40-stud". */
   footprintExtent: number | null
   /** Height in plates, from "three plates tall" or "two bricks high". */
   heightPlates: number | null
-  /** "about", "roughly", "~" — widens the tolerance band rather than failing. */
+  /** "about", "roughly", "~" - widens the tolerance band rather than failing. */
   approximate: boolean
-  /** The phrases that produced the fields above. */
+  phrases: DimensionPhrases
+  /** Every phrase above, flattened, for display. */
   evidence: string[]
 }
 
@@ -48,10 +64,19 @@ export interface ColorIntent {
 
 export type RelationIntent =
   | { kind: 'mirrored'; target: string }
-  | { kind: 'printed-variant'; target: string | null }
-  | { kind: 'base-variant'; target: string | null }
+  | { kind: 'printed-variant'; target: string }
+  | { kind: 'base-variant'; target: string }
   | { kind: 'interface'; target: string }
   | { kind: 'bridge'; gapStuds: number }
+
+/**
+ * Which way a connector's axis has to point.
+ *
+ * A hinge whose axis is horizontal swings like a door; one whose axis is
+ * vertical spins like a turntable. Both are called hinges, and the difference
+ * is only recoverable from the compiled connector orientation.
+ */
+export type AxisIntent = 'horizontal' | 'vertical'
 
 export interface PartQuery {
   raw: string
@@ -66,8 +91,11 @@ export interface PartQuery {
   dimensions: DimensionIntent
   color: ColorIntent
   connectors: ConnectionFamily[]
+  axisOrientation: AxisIntent | null
   categories: string[]
   relation: RelationIntent | null
+  /** Whether the request wants a decorated part, a plain one, or does not care. */
+  variantPreference: 'printed' | 'plain' | 'any'
   /** "cheaper and more common" vs "rare"; biases the frequency signal. */
   availability: 'common' | 'rare' | 'any'
   /** Terms the parser could not interpret and the catalog has never seen. */
@@ -96,17 +124,28 @@ const STOP_WORDS = new Set([
   'some', 'something', 'anything', 'thing', 'any', 'me', 'my', 'i', 'you',
   'want', 'need', 'find', 'show', 'get', 'give', 'looking', 'look', 'please',
   'part', 'parts', 'piece', 'pieces', 'element', 'elements', 'lego', 'brickwright',
-  'can', 'could', 'would', 'do', 'does', 'have', 'has', 'there', 'what', 'one',
-  'like', 'as', 'so', 'its', 'their', 'from', 'by', 'about', 'between', 'two',
+  'can', 'could', 'would', 'do', 'does', 'how', 'have', 'has', 'there', 'what',
+  'like', 'as', 'so', 'its', 'their', 'from', 'by', 'about', 'between', 'version',
 ])
 
-const NUMBER_WORDS = new Map<string, number>([
-  ['zero', 0], ['one', 1], ['two', 2], ['three', 3], ['four', 4], ['five', 5],
-  ['six', 6], ['seven', 7], ['eight', 8], ['nine', 9], ['ten', 10],
-  ['eleven', 11], ['twelve', 12], ['thirteen', 13], ['fourteen', 14],
-  ['fifteen', 15], ['sixteen', 16], ['twenty', 20], ['twentyfour', 24],
-  ['thirty', 30], ['forty', 40], ['fifty', 50], ['sixty', 60],
-])
+/**
+ * Number words, folded to digits before tokenizing.
+ *
+ * Doing it up front rather than at scoring time is what makes "one by two" and
+ * "1 x 2" the same request: the dimension folding in `tokenize` only recognises
+ * digits, so the words have to become digits before it runs.
+ */
+const NUMBER_WORDS: Array<[string, string]> = [
+  ['twenty four', '24'], ['twenty', '20'], ['sixteen', '16'], ['fifteen', '15'],
+  ['fourteen', '14'], ['thirteen', '13'], ['twelve', '12'], ['eleven', '11'],
+  ['thirty', '30'], ['forty', '40'], ['fifty', '50'], ['sixty', '60'],
+  ['zero', '0'], ['one', '1'], ['two', '2'], ['three', '3'], ['four', '4'],
+  ['five', '5'], ['six', '6'], ['seven', '7'], ['eight', '8'], ['nine', '9'], ['ten', '10'],
+]
+
+const APPROXIMATE_WORDS = new Set(['about', 'around', 'roughly', 'approximately', 'circa', 'nearly', 'almost', 'ish'])
+const FOOTPRINT_AXIS_WORDS = new Set(['wide', 'width', 'long', 'length', 'across', 'deep', 'depth', 'square'])
+const HEIGHT_AXIS_WORDS = new Set(['tall', 'high', 'height', 'thick'])
 
 /**
  * Words that turn the number in front of them into a measurement.
@@ -117,10 +156,6 @@ const NUMBER_WORDS = new Map<string, number>([
  */
 const UNIT_WORDS = /^(?:studs?|plates?|bricks?|wide|width|long|length|tall|high|height|deep|depth|across|square|thick)$/
 
-const APPROXIMATE_WORDS = new Set(['about', 'around', 'roughly', 'approximately', 'circa', 'nearly', 'almost', 'ish'])
-const FOOTPRINT_AXIS_WORDS = new Set(['wide', 'width', 'long', 'length', 'across', 'deep', 'depth', 'square'])
-const HEIGHT_AXIS_WORDS = new Set(['tall', 'high', 'height', 'thick'])
-
 /**
  * Connector vocabulary. Multi-word entries are matched first, because "pin
  * hole" and "pin" are different interfaces and the longer reading is always the
@@ -130,8 +165,10 @@ const CONNECTOR_PHRASES: Array<{ words: string[]; families: ConnectionFamily[] }
   { words: ['anti', 'stud'], families: ['anti-stud'] },
   { words: ['antistud'], families: ['anti-stud'] },
   { words: ['pin', 'hole'], families: ['pin-hole'] },
+  { words: ['pin', 'holes'], families: ['pin-hole'] },
   { words: ['pinhole'], families: ['pin-hole'] },
   { words: ['axle', 'hole'], families: ['axle-hole'] },
+  { words: ['axle', 'holes'], families: ['axle-hole'] },
   { words: ['axlehole'], families: ['axle-hole'] },
   { words: ['cross', 'hole'], families: ['axle-hole'] },
   { words: ['ball', 'joint'], families: ['ball', 'socket'] },
@@ -195,27 +232,34 @@ function finishMatches(color: ColorDefinition, finish: FinishIntent): boolean {
 
 const COMMON_WORDS = new Set(['common', 'cheap', 'cheaper', 'ordinary', 'everyday', 'popular', 'plentiful', 'available', 'widespread'])
 const RARE_WORDS = new Set(['rare', 'obscure', 'uncommon', 'unusual', 'scarce', 'exotic'])
-const MIRROR_WORDS = new Set(['mirror', 'mirrored', 'handed', 'counterpart', 'opposite', 'reversed', 'reverse', 'flipped'])
-const PRINTED_WORDS = new Set(['printed', 'print', 'patterned', 'pattern', 'decorated', 'decorated', 'sticker'])
-const PLAIN_WORDS = new Set(['plain', 'unprinted', 'blank', 'undecorated', 'unpatterned'])
+const MIRROR_WORDS = new Set(['mirror', 'mirrored', 'handed', 'hand', 'hands', 'counterpart', 'opposite', 'reversed', 'reverse', 'flipped'])
+const PRINTED_WORDS = new Set(['printed', 'print', 'patterned', 'decorated', 'sticker', 'stickered'])
+const PLAIN_WORDS = new Set(['plain', 'unprinted', 'blank', 'undecorated', 'unpatterned', 'base', 'original'])
 const BRIDGE_WORDS = new Set(['bridge', 'bridges', 'bridging', 'span', 'spans', 'spanning', 'gap'])
-const INTERFACE_WORDS = new Set(['connections', 'connectors', 'interface', 'connects', 'interchangeable', 'mates'])
+const INTERFACE_WORDS = new Set(['connections', 'connectors', 'interface', 'interchangeable', 'mates'])
+const HORIZONTAL_WORDS = new Set(['sideways', 'horizontal', 'horizontally', 'lateral', 'laterally', 'sidewards'])
+const VERTICAL_WORDS = new Set(['vertical', 'vertically', 'upright', 'upwards'])
 
 /**
  * Normalises the raw request before tokenizing.
  *
- * "2 by 4" and "2 × 4" are the same request as "2x4"; "3-stud" is the same as
- * "3 stud". Hyphens inside a part number ("2651c01-f1") are left alone by
- * splitting them later, only for tokens the catalog does not recognise.
+ * "2 by 4", "two by four" and "2 x 4" are one request; "3-stud" is the same as
+ * "3 stud". Hyphens inside a part number ("2651c01-f1") survive because they are
+ * only split later, and only for tokens the catalog does not recognise.
  */
 function preNormalize(text: string): string {
-  return text
+  let normalized = text
     .toLowerCase()
     .replace(/×/g, 'x')
-    .replace(/(\d)\s*by\s*(?=\d)/g, '$1x')
-    .replace(/(\d)-(?=[a-z])/g, '$1 ')
     .replace(/[?!.,;:"'`()[\]]/g, ' ')
     .replace(/~/g, ' about ')
+    .replace(/\s+/g, ' ')
+  for (const [word, digits] of NUMBER_WORDS) {
+    normalized = normalized.replace(new RegExp(`(^|[^a-z0-9])${word}([^a-z0-9]|$)`, 'g'), `$1${digits}$2`)
+  }
+  return normalized
+    .replace(/(\d)\s*by\s*(?=\d)/g, '$1x')
+    .replace(/(\d)-(?=[a-z])/g, '$1 ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -232,8 +276,7 @@ function phraseAt(words: string[], index: number, phrase: string[]): number {
 function numberAt(words: string[], index: number): number | null {
   const word = words[index]
   if (word === undefined) return null
-  if (/^\d+(?:\.\d+)?$/.test(word)) return Number(word)
-  return NUMBER_WORDS.get(word) ?? null
+  return /^\d+(?:\.\d+)?$/.test(word) ? Number(word) : null
 }
 
 /** Lowercased colour names, longest first, so "trans clear" beats "clear". */
@@ -273,6 +316,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
   const ids: string[] = []
   const idTokens: string[] = []
   const dimensionEnvelopes: number[][] = []
+  const envelopePhrases: string[] = []
 
   for (let position = 0; position < rawTokens.length; position += 1) {
     const token = rawTokens[position]
@@ -291,6 +335,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     const envelope = parseDimensionToken(token)
     if (envelope) {
       dimensionEnvelopes.push(envelope)
+      envelopePhrases.push(envelope.join(' x '))
       continue
     }
     // Only now is it safe to break a hyphenated token apart: it is not a part
@@ -305,17 +350,24 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     for (let i = start; i < start + length && i < consumed.length; i += 1) consumed[i] = true
   }
 
+  const phrases: DimensionPhrases = {
+    envelope: envelopePhrases[0] ?? null,
+    footprintExtent: null,
+    heightPlates: null,
+  }
   const dimensions: DimensionIntent = {
-    envelope: dimensionEnvelopes.length ? dimensionEnvelopes[0] : null,
+    envelope: dimensionEnvelopes[0] ?? null,
     footprintExtent: null,
     heightPlates: null,
     approximate: false,
-    evidence: dimensionEnvelopes.map((envelope) => envelope.join(' x ')),
+    phrases,
+    evidence: [],
   }
   const color: ColorIntent = { codes: [], names: [], finishes: [], evidence: [] }
   const connectorFamilies = new Set<ConnectionFamily>()
   const categories = new Set<string>()
   let availability: PartQuery['availability'] = 'any'
+  let axisOrientation: AxisIntent | null = null
   let relation: RelationIntent | null = null
 
   const palette = colorPhrases(context.colors)
@@ -333,6 +385,16 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
       consume(index, 1)
       continue
     }
+    if (HORIZONTAL_WORDS.has(word)) {
+      axisOrientation = 'horizontal'
+      consume(index, 1)
+      continue
+    }
+    if (VERTICAL_WORDS.has(word)) {
+      axisOrientation = 'vertical'
+      consume(index, 1)
+      continue
+    }
 
     // "six studs wide" / "3 stud gap" / "40 stud"
     const count = numberAt(words, index)
@@ -345,27 +407,27 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
           consume(index, BRIDGE_WORDS.has(after) ? 3 : 2)
         } else {
           dimensions.footprintExtent = count
-          dimensions.evidence.push(`${count} studs`)
+          phrases.footprintExtent = FOOTPRINT_AXIS_WORDS.has(after) ? `${count} studs ${after}` : `${count} studs`
           consume(index, FOOTPRINT_AXIS_WORDS.has(after) ? 3 : 2)
         }
         continue
       }
       if (/^plates?$/.test(next) && HEIGHT_AXIS_WORDS.has(after)) {
         dimensions.heightPlates = count
-        dimensions.evidence.push(`${count} plates tall`)
+        phrases.heightPlates = `${count} plates ${after}`
         consume(index, 3)
         continue
       }
       if (/^bricks?$/.test(next) && HEIGHT_AXIS_WORDS.has(after)) {
         // One brick is exactly three plates; the envelope is published in plates.
         dimensions.heightPlates = count * 3
-        dimensions.evidence.push(`${count} bricks tall`)
+        phrases.heightPlates = `${count} bricks ${after}`
         consume(index, 3)
         continue
       }
       if (FOOTPRINT_AXIS_WORDS.has(next)) {
         dimensions.footprintExtent = count
-        dimensions.evidence.push(`${count} ${next}`)
+        phrases.footprintExtent = `${count} ${next}`
         consume(index, 2)
         continue
       }
@@ -428,31 +490,42 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     if (facets) for (const facet of facets) categories.add(facet)
   }
 
+  dimensions.evidence = [phrases.envelope, phrases.footprintExtent, phrases.heightPlates].filter(
+    (phrase): phrase is string => phrase !== null,
+  )
+
   // Relations are read over the whole word list rather than one word at a time,
   // because they are statements about the sentence: "the mirrored counterpart of
   // wedge 41747" only means something once both the modifier and the id are in
-  // hand.
-  const wordSet = new Set(words)
+  // hand. Every relation therefore needs a target, and a bare "printed" or
+  // "plain" becomes a preference instead.
   const hasAny = (candidates: Set<string>) => words.some((word) => candidates.has(word))
-  if (!relation) {
-    if (hasAny(MIRROR_WORDS) && ids.length) {
+  const wantsPlain = hasAny(PLAIN_WORDS)
+  const wantsPrinted = hasAny(PRINTED_WORDS)
+  if (!relation && ids.length) {
+    if (hasAny(MIRROR_WORDS) || ((words.includes('left') || words.includes('right')) && words.includes('hand'))) {
       relation = { kind: 'mirrored', target: ids[0] }
-    } else if ((wordSet.has('left') || wordSet.has('right')) && wordSet.has('version') && ids.length) {
-      relation = { kind: 'mirrored', target: ids[0] }
-    } else if (hasAny(INTERFACE_WORDS) && ids.length) {
+    } else if (hasAny(INTERFACE_WORDS) || words.includes('connects')) {
       relation = { kind: 'interface', target: ids[0] }
-    } else if (hasAny(PLAIN_WORDS)) {
-      relation = { kind: 'base-variant', target: ids[0] ?? null }
-    } else if (hasAny(PRINTED_WORDS)) {
-      relation = { kind: 'printed-variant', target: ids[0] ?? null }
+    } else if (wantsPlain) {
+      relation = { kind: 'base-variant', target: ids[0] }
+    } else if (wantsPrinted) {
+      relation = { kind: 'printed-variant', target: ids[0] }
     }
   }
+  const variantPreference: PartQuery['variantPreference'] = wantsPrinted ? 'printed' : wantsPlain ? 'plain' : 'any'
+
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index]
-    if (MIRROR_WORDS.has(word) || INTERFACE_WORDS.has(word) || PLAIN_WORDS.has(word) || BRIDGE_WORDS.has(word)) {
+    if (
+      MIRROR_WORDS.has(word) ||
+      INTERFACE_WORDS.has(word) ||
+      PLAIN_WORDS.has(word) ||
+      PRINTED_WORDS.has(word) ||
+      BRIDGE_WORDS.has(word)
+    ) {
       consume(index, 1)
     }
-    if (relation?.kind === 'printed-variant' && PRINTED_WORDS.has(word)) consume(index, 1)
   }
 
   color.codes = Array.from(colorCodes).sort((a, b) => a - b)
@@ -464,13 +537,13 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     const word = words[index]
     if (STOP_WORDS.has(word)) continue
     if (consumed[index]) continue
-    if (knowsTerm(word)) {
-      contentTerms.push(word)
-      continue
-    }
-    // Neither a slot nor a word the catalog has ever used. Saying so is the
-    // whole point: an unrecognised term must not quietly widen the result set.
-    if (!unmatchedTerms.includes(word)) unmatchedTerms.push(word)
+    if (contentTerms.includes(word)) continue
+    contentTerms.push(word)
+    // A word the catalog has never used is still worth trying against the
+    // latent index - character trigrams reach "Steering" from "steers" - but it
+    // is reported all the same, because an unrecognised term must never widen
+    // the result set silently.
+    if (!knowsTerm(word) && !unmatchedTerms.includes(word)) unmatchedTerms.push(word)
   }
 
   return {
@@ -482,8 +555,10 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     dimensions,
     color,
     connectors: Array.from(connectorFamilies),
+    axisOrientation,
     categories: Array.from(categories),
     relation,
+    variantPreference,
     availability,
     unmatchedTerms,
   }

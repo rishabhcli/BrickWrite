@@ -48,31 +48,18 @@ const scopeParts = (document: ModelDocument, scope: RefinementScope) =>
   scope.partIds.map((id) => document.parts[id]).filter((part) => Boolean(part))
 
 /**
- * Parts the region holds *now*.
+ * Parts the region holds, in this document.
  *
- * A refinement adds and removes bricks, so the scope's original id list is not
- * the region after an edit. Everything a strategy creates is stamped into the
- * same subassembly as the parts it came from, so subassembly membership is what
- * follows the region across a candidate — falling back to the id list when a
- * scope spans several assemblies.
+ * Just the scope's ids that are still present — no inference. A refinement that
+ * *adds* parts is measured by handing the caller's own extended scope in, which
+ * `searchRefinements` does with exactly the ids the candidate created. Guessing
+ * the region from subassembly membership instead was tried and is wrong: it
+ * silently widens a one-plate selection to the whole assembly, so a metric would
+ * report on parts the request never offered.
  */
 function regionPartIds(document: ModelDocument, scope: RefinementScope): string[] {
-  const present = scope.partIds.filter((id) => document.parts[id])
-  const subassemblies = new Set(present.map((id) => document.parts[id].subassemblyId))
-  if (subassemblies.size !== 1) return present
-  const [only] = [...subassemblies]
-  const originalOutside = scope.partIds.length !== Object.keys(document.parts).length
-  if (!originalOutside) return Object.keys(document.parts).sort()
-  return Object.keys(document.parts)
-    .filter((id) => document.parts[id].subassemblyId === only)
-    .sort()
+  return scope.partIds.filter((id) => document.parts[id])
 }
-
-const regionScope = (document: ModelDocument, scope: RefinementScope): RefinementScope => ({
-  ...scope,
-  partIds: regionPartIds(document, scope),
-  partIdSet: new Set(regionPartIds(document, scope)),
-})
 
 export const OBJECTIVES: Record<ObjectiveId, ObjectiveDefinition> = {
   silhouetteFidelity: {
@@ -289,9 +276,8 @@ export const objectiveList: readonly ObjectiveDefinition[] = OBJECTIVE_IDS.map((
 
 /** Every objective, measured. Complete by construction: a gap would hide a regression. */
 export function measureAll(document: ModelDocument, scope: RefinementScope): MetricVector {
-  const region = regionScope(document, scope)
   const vector = {} as MetricVector
-  for (const id of OBJECTIVE_IDS) vector[id] = OBJECTIVES[id].measure(document, region)
+  for (const id of OBJECTIVE_IDS) vector[id] = OBJECTIVES[id].measure(document, scope)
   return vector
 }
 

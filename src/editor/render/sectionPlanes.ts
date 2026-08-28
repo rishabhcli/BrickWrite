@@ -99,9 +99,13 @@ export function projectRayOntoAxis(axisOrigin: Vec3, axis: Vec3, ray: Ray): numb
   // Below this the two lines are within ~0.6° of parallel and the solution is
   // numerically meaningless, not merely imprecise.
   if (denominator < 1e-4) return null
-  const d = dot(u, w0)
-  const e = dot(v, w0)
-  return (d - b * e) / denominator
+  // Ericson's closest-approach solution for two lines, specialised to unit
+  // directions: s = (b·f − c) / (1 − b²), where c projects the offset onto the
+  // axis and f projects it onto the ray. The sign matters — inverted, the
+  // handle would run away from the cursor at exactly twice the right speed.
+  const c = dot(u, w0)
+  const f = dot(v, w0)
+  return (b * f - c) / denominator
 }
 
 /**

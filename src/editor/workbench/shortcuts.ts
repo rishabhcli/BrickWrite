@@ -98,6 +98,7 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   { id: 'help.shortcuts', title: 'Keyboard shortcuts', group: 'help', detail: 'The full command map.', defaultChord: '?' },
   { id: 'help.welcome', title: 'Replay the welcome guide', group: 'help', detail: 'Show the first-run orientation again.', defaultChord: null },
   { id: 'help.keymap', title: 'Customise shortcuts…', group: 'help', detail: 'Rebind any command and see conflicts.', defaultChord: null },
+  { id: 'help.reset-workspace', title: 'Reset workspace preferences', group: 'help', detail: 'Put the dock layout, palette sets and shortcut map back to their defaults. The model is untouched.', defaultChord: null, keywords: 'layout default restore shortcuts' },
 ]
 
 export const COMMAND_GROUP_LABEL: Record<CommandGroup, string> = {

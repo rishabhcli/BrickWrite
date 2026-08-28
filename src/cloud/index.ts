@@ -84,6 +84,7 @@ export {
   Outbox,
   RETRY_BASE_MS,
   RETRY_CEILING_MS,
+  UNCONFIGURED_SYNC_STATE,
   startAutoDrain,
   type OutboxEntry,
   type OutboxPayload,

@@ -230,7 +230,7 @@ function summariseValidation(
       collisionCount: 0,
       unverifiedCollisionCount: 0,
       componentCount: 0,
-      constraints: [],
+      constraintCounts: { pass: 0, warning: 0, fail: 0 },
     }
   }
   return {
@@ -241,12 +241,14 @@ function summariseValidation(
     collisionCount: report.collisions.length,
     unverifiedCollisionCount: report.unverifiedCollisions,
     componentCount: report.componentCount,
-    // Only the label and the verdict. Constraint *values* come from the design
-    // brief and can carry the original prompt text.
-    constraints: report.constraints.map((entry) => ({
-      label: sanitizeLabel(entry.label),
-      status: entry.status,
-    })),
+    // Counts only. A constraint carries an operator-authored label and a
+    // `value` that comes straight from the design brief — which is to say, from
+    // the prompt. Neither is publishable, and the badge does not need them.
+    constraintCounts: {
+      pass: report.constraints.filter((entry) => entry.status === 'pass').length,
+      warning: report.constraints.filter((entry) => entry.status === 'warning').length,
+      fail: report.constraints.filter((entry) => entry.status === 'fail').length,
+    },
   }
 }
 

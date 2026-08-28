@@ -191,9 +191,7 @@ describe('publication privacy', () => {
     // which holds the design brief and a signed URL — never appears.
     expect(JSON.stringify(publication.summary.validation)).not.toContain(SECRETS.prompt)
     expect(JSON.stringify(publication.summary.validation)).not.toContain(SECRETS.signedUrl)
-    expect(publication.summary.validation.constraints).toEqual([
-      { label: SECRETS.constraintLabel, status: 'pass' },
-    ])
+    expect(publication.summary.validation.constraintCounts).toEqual({ pass: 1, warning: 0, fail: 0 })
   })
 
   it('drops a connection whose endpoint was not published', () => {
@@ -216,11 +214,15 @@ describe('publication privacy', () => {
 
   it('reports unresolved definitions instead of hiding them', () => {
     const document = privateDocument(2)
+    // An identity this build has never compiled. The summary must say so rather
+    // than quietly listing the part with no name, because "we cannot draw this"
+    // is exactly the thing a viewer needs told.
+    document.parts.part_001.definitionId = 'not-a-real-part-id'
     const published = serializePublishedDocument(document)
     const summary = summarisePublication(published, document, null)
-    // No catalog is installed in this suite, so every identity is unresolved
-    // and the summary must say so rather than silently list nothing.
-    expect(summary.unresolvedDefinitionIds).toEqual(['3001', '3020'])
+    expect(summary.unresolvedDefinitionIds).toEqual(['not-a-real-part-id'])
+    expect(summary.bom.find((line) => line.definitionId === 'not-a-real-part-id')?.name).toBe('Unresolved part')
+    // No validation report was supplied, so the badge must not claim health.
     expect(summary.validation.healthy).toBe(false)
   })
 })
@@ -236,16 +238,16 @@ describe('publication sanitisation', () => {
       author: { displayName: '<b>Bob</b>', handle: '<i>bob</i>', url: 'javascript:alert(1)' },
     })
 
+    // Ingest strips the markup delimiters outright, so no stored string can
+    // open a tag or an entity. The residue ("img src=x onerror=alert(1)") is
+    // inert text, and `page.test.ts` proves it is escaped again on output.
     const serialised = JSON.stringify(publication)
-    expect(serialised).not.toContain('<script')
-    expect(serialised).not.toContain('onerror')
-    expect(serialised).not.toContain('<img')
-    expect(serialised).not.toContain('javascript:')
+    for (const marker of ['<', '>', '&', 'javascript:']) {
+      expect(serialised, `"${marker}" survived ingest`).not.toContain(marker)
+    }
     expect(publication.author?.url).toBeNull()
     // Duplicate tags collapse and empty ones vanish; nothing is invented.
-    expect(publication.tags).toEqual(['btagb', 'fine-tag', 'javascriptalert1'])
-    expect(publication.document.name).not.toContain('<')
-    expect(publication.document.steps[0].name).not.toContain('<')
+    expect(publication.tags).toEqual(['b-tag-b', 'fine-tag', 'javascriptalert1'])
   })
 
   it('refuses a card that is not addressed by its own hash', async () => {

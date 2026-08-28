@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { resetPreferences } from './persistence'
 import {
   chordFromEvent,
   commandForChord,
@@ -13,7 +14,7 @@ import {
   WORKBENCH_COMMANDS,
 } from './shortcuts'
 
-beforeEach(() => window.localStorage.clear())
+beforeEach(resetPreferences)
 
 const press = (init: KeyboardEventInit) => chordFromEvent(new KeyboardEvent('keydown', init))
 

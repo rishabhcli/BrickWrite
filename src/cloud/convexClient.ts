@@ -241,6 +241,7 @@ export class ConvexCloudBackend implements CloudBackend {
   }
   latestCheckpoint(args: {
     projectId: string
+    branchId?: string
     atRevision?: number
   }): Promise<CloudResult<CloudSnapshotRecord | null>> {
     return this.ask(refs.projects.latestCheckpoint, args)

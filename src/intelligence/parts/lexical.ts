@@ -22,6 +22,15 @@ const K1 = 1.2
 const B = 0.75
 
 /**
+ * What a prefix expansion is worth relative to a real hit.
+ *
+ * "connects" landing on "connector" is a plausible reading of the request, not
+ * a confirmed one, so it contributes but cannot outrank a document that used
+ * the word the person actually typed.
+ */
+const PREFIX_DISCOUNT = 0.65
+
+/**
  * Field weights.
  *
  * `ids` sits close to `name` because a number typed into a part search is
@@ -100,11 +109,16 @@ interface IdentityEntry {
 }
 
 export class LexicalIndex {
+  /** Vocabulary in lexicographic order, so a prefix range is a binary search. */
+  private readonly sortedTerms: string[]
+
   private constructor(
     readonly corpus: PartCorpus,
     private readonly postings: Map<string, Posting>,
     private readonly identities: Map<string, IdentityEntry>,
-  ) {}
+  ) {
+    this.sortedTerms = [...postings.keys()].sort()
+  }
 
   static build(corpus: PartCorpus): LexicalIndex {
     const documents = corpus.documents
@@ -180,10 +194,37 @@ export class LexicalIndex {
     return this.postings.size
   }
 
-  /** True when the catalog uses this word anywhere, so the parser can tell a typo from a term. */
+  /**
+   * True when the catalog uses this word, or a longer word beginning with it.
+   *
+   * The prefix arm is what separates a genuine gap in the vocabulary from an
+   * inflection the catalog spells differently: "steers" is not a catalog word
+   * but "steering" is, and reporting the first as unknown while the second sits
+   * in the index would be a lie about what this build understands.
+   */
   hasTerm(term: string): boolean {
-    const folded = foldTerm(term.toLowerCase())
-    return this.postings.has(folded) || this.postings.has(term.toLowerCase())
+    const lower = term.toLowerCase()
+    if (this.postings.has(lower) || this.postings.has(foldTerm(lower))) return true
+    return this.prefixTerms(foldTerm(lower), 1).length > 0
+  }
+
+  /** Vocabulary entries beginning with `prefix`, shortest first. */
+  private prefixTerms(prefix: string, limit: number): string[] {
+    if (prefix.length < 4) return []
+    let low = 0
+    let high = this.sortedTerms.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if (this.sortedTerms[middle] < prefix) low = middle + 1
+      else high = middle
+    }
+    const found: string[] = []
+    for (let i = low; i < this.sortedTerms.length && found.length < 32; i += 1) {
+      const term = this.sortedTerms[i]
+      if (!term.startsWith(prefix)) break
+      if (term !== prefix) found.push(term)
+    }
+    return found.sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).slice(0, limit)
   }
 
   /**
@@ -226,14 +267,25 @@ export class LexicalIndex {
 
     for (const rawTerm of terms) {
       const term = rawTerm.toLowerCase()
-      const posting = this.postings.get(foldTerm(term)) ?? this.postings.get(term)
+      const folded = foldTerm(term)
+      let posting = this.postings.get(folded) ?? this.postings.get(term)
+      // A morphological near-miss is worth less than a hit, not nothing:
+      // "connects" reaching "connector" is the difference between finding the
+      // Technic pin connectors and finding nothing at all.
+      let discount = 1
+      if (!posting) {
+        const expanded = this.prefixTerms(folded, 1)[0]
+        if (!expanded) continue
+        posting = this.postings.get(expanded)
+        discount = PREFIX_DISCOUNT
+      }
       if (!posting) continue
       matched += 1
       const { docs, weights, idf } = posting
       for (let i = 0; i < docs.length; i += 1) {
         const doc = docs[i]
         if (scores[doc] === 0) touched.push(doc)
-        scores[doc] += (idf * weights[i]) / (K1 + weights[i])
+        scores[doc] += (discount * idf * weights[i]) / (K1 + weights[i])
       }
     }
     if (!matched) return []

@@ -44,6 +44,23 @@ export function writePreference(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Puts every workspace preference back to its default.
+ *
+ * A layout dragged into an unusable shape, or a shortcut map with a chord the
+ * operator cannot remember rebinding, both need one way out that does not
+ * involve clearing site data by hand. Reachable from the command palette.
+ */
+export function resetPreferences(): void {
+  for (const key of [...memory.keys()]) memory.delete(key)
+  try {
+    const owned = Object.keys(window.localStorage).filter((key) => key.startsWith(PREFIX))
+    for (const key of owned) window.localStorage.removeItem(key)
+  } catch {
+    // No durable storage in this context; the mirror is already cleared.
+  }
+}
+
 export function clearPreference(key: string): void {
   const full = PREFIX + key
   memory.delete(full)

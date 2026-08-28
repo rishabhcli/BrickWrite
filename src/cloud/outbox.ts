@@ -41,6 +41,23 @@ export interface SyncState {
   conflict: StaleDocumentDetails | null
 }
 
+/**
+ * The state when there is no deployment at all.
+ *
+ * Not an error and not a failure: a signed-out or cloud-less browser is a
+ * supported way to run the editor, and it reports itself as such. Exported as a
+ * value rather than built inside the React hook so it can be asserted without
+ * rendering anything.
+ */
+export const UNCONFIGURED_SYNC_STATE: SyncState = {
+  status: 'unconfigured',
+  reason: 'No cloud deployment is configured; projects are saved in this browser only.',
+  pending: 0,
+  lastSyncedAt: null,
+  lastError: null,
+  conflict: null,
+}
+
 export type OutboxPayload =
   | { kind: 'transaction'; transaction: Transaction }
   | { kind: 'checkpoint'; snapshot: SnapshotUpload }
@@ -357,6 +374,27 @@ export class Outbox {
       catalogVersion: entry.catalogVersion,
     })
     return result.ok ? { ok: true, value: null } : result
+  }
+
+  /**
+   * Clears the retry timers and drains immediately.
+   *
+   * Exponential backoff is the right answer to repeated failures with no new
+   * information. A reconnect *is* new information — the browser has just told
+   * us the network is back — so continuing to sit out a sixty-second window
+   * after that would be waiting for nothing. Attempt counts are kept, so a
+   * connection that flaps still backs off between genuine failures.
+   */
+  async reconnected(): Promise<SyncState> {
+    await this.hydrate()
+    const at = this.now()
+    for (const entry of this.entries) {
+      if (entry.nextAttemptAt > at) {
+        entry.nextAttemptAt = at
+        await this.persist(entry)
+      }
+    }
+    return this.drain()
   }
 
   /**
