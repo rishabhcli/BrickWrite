@@ -456,7 +456,11 @@ export class GenerationSession {
       this.set({
         runPhase: 'ready',
         run,
-        selectedCandidateId: run.candidates[0]?.id ?? null,
+        // A completed run has candidates to review, not a candidate already
+        // under review. Selecting one is what creates the kernel proposal;
+        // marking the first one selected here leaves the preview button
+        // disabled while no ghost exists.
+        selectedCandidateId: null,
         elapsedMs: run.elapsedMs,
       })
     } catch (cause) {

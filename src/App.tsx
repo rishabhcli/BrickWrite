@@ -1,5 +1,7 @@
 import { Workbench } from './editor/workbench'
 import { AgentWorkbenchContribution } from './agent'
+import { GeneratePanelContribution } from './generation'
+import { RefinePanelContribution } from './refinement'
 
 /**
  * Composition root.
@@ -14,7 +16,7 @@ import { AgentWorkbenchContribution } from './agent'
  * calls `useRegisterContribution`, and listing it below. Nothing else in this
  * file changes when the editor grows a panel.
  */
-const CONTRIBUTIONS = [AgentWorkbenchContribution]
+const CONTRIBUTIONS = [AgentWorkbenchContribution, GeneratePanelContribution, RefinePanelContribution]
 
 export default function App() {
   return <Workbench contributions={CONTRIBUTIONS} />

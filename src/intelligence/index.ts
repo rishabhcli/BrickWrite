@@ -63,3 +63,22 @@ export {
   type GeometryDescriptorSource,
   type GeometryUnavailableCause,
 } from './assets/geometryProvider'
+
+// ---------------------------------------------------------------------------
+// In-editor surface
+// ---------------------------------------------------------------------------
+//
+// The resolver above answers a sentence; this is how a person asks one. The
+// contribution is a zero-prop component that registers itself into the
+// workbench's `panel-left` slot, so `src/App.tsx` lists it and nothing else in
+// the editor changes. Importing it fetches nothing — the corpus and the latent
+// index are still paid for by the first query. See "In-editor surface" in
+// docs/integration/part-intelligence.md.
+
+export { PartSearchContribution } from './ui/contribution'
+export {
+  FindPartsPanel,
+  type FindPartsPanelProps,
+  type PartResolver,
+  type PartSearchApi,
+} from './ui/FindPartsPanel'
