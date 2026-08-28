@@ -160,8 +160,8 @@ export function ViewportControls(props: ViewportControlsProps) {
   // Props read from callbacks that outlive a render. Refs rather than
   // dependencies, because rebuilding the pointer listeners on every document
   // revision would drop an in-flight drag.
-  const latest = useRef({ model, selection, visibility, sectionPlanes, enabled, extent })
-  latest.current = { model, selection, visibility, sectionPlanes, enabled, extent }
+  const latest = useRef({ model, selection, visibility, sectionPlanes, enabled, extent, camera, size, joints: [] as readonly ArticulatedJoint[] })
+  latest.current = { ...latest.current, model, selection, visibility, sectionPlanes, enabled, extent, camera, size }
 
   const stats = useRef({ contextLosses: 0, contextRestores: 0, fps: 0, tier: 'high', tierIndex: 1 })
 
@@ -258,6 +258,11 @@ export function ViewportControls(props: ViewportControlsProps) {
     () => (selection.length ? findArticulatedJoints(model, [...selection]) : []),
     [model, selection],
   )
+  // The published surface is a *stable* object: an agent, a panel or a test
+  // that holds a reference to it must not find itself calling a snapshot from
+  // three selections ago. Everything volatile is therefore read through this
+  // ref rather than closed over.
+  latest.current.joints = joints
   useEffect(() => onJointsChange?.(joints), [joints, onJointsChange])
 
   const jointDrag = useRef<{
@@ -279,12 +284,29 @@ export function ViewportControls(props: ViewportControlsProps) {
     start: SectionPlane
   } | null>(null)
 
+  /**
+   * Set when a manipulator handle takes the pointer, cleared when it lets go.
+   *
+   * A grab and a selection click are the same gesture as far as the canvas
+   * listener is concerned, so the grab has to claim it. Clearing on *release*
+   * rather than on the next click is the part that matters: leaving it set made
+   * the click after an `Escape`-cancelled drag, or after a programmatic
+   * `endSectionDrag`, disappear — the operator clicked a brick and nothing
+   * happened, once, with no way to tell why.
+   */
   const suppressClick = useRef(false)
 
   const rayAt = useCallback(
     (canvasX: number, canvasY: number) =>
-      documentRayFromCanvas(camera, canvasX, canvasY, size.width, size.height, raycaster),
-    [camera, raycaster, size.height, size.width],
+      documentRayFromCanvas(
+        latest.current.camera,
+        canvasX,
+        canvasY,
+        latest.current.size.width,
+        latest.current.size.height,
+        raycaster,
+      ),
+    [raycaster],
   )
 
   const publishJointDrag = useCallback((): JointDragReport => {
@@ -307,7 +329,7 @@ export function ViewportControls(props: ViewportControlsProps) {
 
   const beginJoint = useCallback(
     (edgeId: string, handle: JointHandle, canvasX: number, canvasY: number): boolean => {
-      const joint = joints.find((candidate) => candidate.edgeId === edgeId)
+      const joint = latest.current.joints.find((candidate) => candidate.edgeId === edgeId)
       if (!joint || !handlesFor(joint).includes(handle)) return false
       const grab = beginJointDragMath(joint, handle, rayAt(canvasX, canvasY))
       if (!grab) return false
@@ -332,7 +354,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
       return true
     },
-    [controls, joints, rayAt],
+    [controls, rayAt],
   )
 
   const updateJoint = useCallback(
@@ -370,6 +392,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       const orbit = controls as { enabled?: boolean } | null
       if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = true
 
+      suppressClick.current = false
       let commits = 0
       if (commit) {
         // Commit the *permissible* motion when a sweep found a block, not the
@@ -406,6 +429,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       if (sectionDrag.current) {
         const start = sectionDrag.current.start
         sectionDrag.current = null
+        suppressClick.current = false
         onSectionPlanesChange(latest.current.sectionPlanes.map((plane) => (plane.id === start.id ? start : plane)))
       }
     }
@@ -482,6 +506,7 @@ export function ViewportControls(props: ViewportControlsProps) {
   const endSection = useCallback((): SectionPlane | null => {
     const drag = sectionDrag.current
     sectionDrag.current = null
+    suppressClick.current = false
     const orbit = controls as { enabled?: boolean } | null
     if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = true
     if (!drag) return null
@@ -493,20 +518,21 @@ export function ViewportControls(props: ViewportControlsProps) {
     (canvasX: number, canvasY: number, options: { radius?: number; cycle?: boolean } = {}): PickReport => {
       const hidden = options.cycle ? cycle.hiddenFor(canvasX, canvasY, performance.now()) : []
       if (!options.cycle) cycle.reset()
-      const result = idPass.pick(camera, canvasX, canvasY, { radius: options.radius, hidden })
+      const result = idPass.pick(latest.current.camera, canvasX, canvasY, { radius: options.radius, hidden })
       if (options.cycle) cycle.record(result.id)
       return { partId: result.partId, id: result.id, latencyMs: result.latencyMs, cycleDepth: hidden.length }
     },
-    [camera, cycle, idPass],
+    [cycle, idPass],
   )
 
   const pickRegion = useCallback(
     (shape: RegionShape, options: RegionOptions = {}): RegionReport => {
-      const result = idPass.pickRegion(camera, shape, options)
+      const { camera: activeCamera, size: activeSize } = latest.current
+      const result = idPass.pickRegion(activeCamera, shape, options)
       // The projected-centre answer is computed alongside so the difference
       // between the two rules is observable rather than argued.
       const centres = Object.values(latest.current.model.parts).map((part) => {
-        const projected = projectLdu(camera, part.transform.position, size.width, size.height)
+        const projected = projectLdu(activeCamera, part.transform.position, activeSize.width, activeSize.height)
         return { id: part.id, x: projected.x, y: projected.y, behindCamera: projected.behindCamera }
       })
       return {
@@ -516,7 +542,7 @@ export function ViewportControls(props: ViewportControlsProps) {
         centreRuleWouldSelect: centresInRegion(centres, shape),
       }
     },
-    [camera, idPass, size.height, size.width],
+    [idPass],
   )
 
   // -- pointer wiring ------------------------------------------------------
@@ -785,9 +811,10 @@ export function ViewportControls(props: ViewportControlsProps) {
               (bounds.min[2] + bounds.max[2]) / 2,
             ]
           : target.transform.position
-        return projectLdu(camera, centre, size.width, size.height)
+        return projectLdu(latest.current.camera, centre, latest.current.size.width, latest.current.size.height)
       },
-      projectPoint: (pointLdu) => projectLdu(camera, pointLdu as Vec3, size.width, size.height),
+      projectPoint: (pointLdu) =>
+        projectLdu(latest.current.camera, pointLdu as Vec3, latest.current.size.width, latest.current.size.height),
       frameParts: (partIds) => {
         const measured = partIds
           .map((partId) => latest.current.model.parts[partId])
@@ -813,15 +840,16 @@ export function ViewportControls(props: ViewportControlsProps) {
         // Framing is a jump rather than a flight: this is the entry point an
         // agent and a test call, and both want the camera where they asked for
         // it by the time the call returns.
-        camera.position.copy(centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)))
-        camera.lookAt(centre)
+        const active = latest.current.camera
+        active.position.copy(centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)))
+        active.lookAt(centre)
         const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
         if (orbit?.target) {
           orbit.target.copy(centre)
           orbit.update?.()
         }
-        camera.updateProjectionMatrix()
-        camera.updateMatrixWorld(true)
+        active.updateProjectionMatrix()
+        active.updateMatrixWorld(true)
         return true
       },
 
@@ -852,13 +880,14 @@ export function ViewportControls(props: ViewportControlsProps) {
       getVisibility: () => visibilityReport(latest.current.visibility),
 
       saveView: (name) => {
+        const active = latest.current.camera
         const target = (controls as { target?: THREE.Vector3 } | null)?.target ?? new THREE.Vector3()
         const view: NamedView = {
           name,
-          position: [camera.position.x, camera.position.y, camera.position.z],
+          position: [active.position.x, active.position.y, active.position.z],
           target: [target.x, target.y, target.z],
-          zoom: (camera as THREE.OrthographicCamera).zoom ?? 1,
-          orthographic: Boolean((camera as THREE.OrthographicCamera).isOrthographicCamera),
+          zoom: (active as THREE.OrthographicCamera).zoom ?? 1,
+          orthographic: Boolean((active as THREE.OrthographicCamera).isOrthographicCamera),
           savedAt: new Date().toISOString(),
         }
         return views.save(view)
@@ -866,17 +895,18 @@ export function ViewportControls(props: ViewportControlsProps) {
       restoreView: (name) => {
         const view = views.get(name)
         if (!view) return false
-        camera.position.set(view.position[0], view.position[1], view.position[2])
+        const active = latest.current.camera
+        active.position.set(view.position[0], view.position[1], view.position[2])
         const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
         if (orbit?.target) {
           orbit.target.set(view.target[0], view.target[1], view.target[2])
           orbit.update?.()
         }
-        camera.lookAt(view.target[0], view.target[1], view.target[2])
-        if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
-          ;(camera as THREE.OrthographicCamera).zoom = view.zoom
+        active.lookAt(view.target[0], view.target[1], view.target[2])
+        if ((active as THREE.OrthographicCamera).isOrthographicCamera) {
+          ;(active as THREE.OrthographicCamera).zoom = view.zoom
         }
-        camera.updateProjectionMatrix()
+        active.updateProjectionMatrix()
         return true
       },
       listViews: () => views.list(),
@@ -911,8 +941,12 @@ export function ViewportControls(props: ViewportControlsProps) {
       endSectionDrag: () => endSection(),
 
       listJoints: () =>
-        joints.map((joint) =>
-          summariseJoint(joint, handlesFor(joint), projectLdu(camera, joint.pivotLdu, size.width, size.height)),
+        latest.current.joints.map((joint) =>
+          summariseJoint(
+            joint,
+            handlesFor(joint),
+            projectLdu(latest.current.camera, joint.pivotLdu, latest.current.size.width, latest.current.size.height),
+          ),
         ),
       beginJointDrag: (edgeId, handle, x, y) => beginJoint(edgeId, handle, x, y),
       updateJointDrag: (x, y) => updateJoint(x, y),
@@ -939,16 +973,27 @@ export function ViewportControls(props: ViewportControlsProps) {
         return true
       },
       restoreContext: () => {
+        // Through the renderer's own cached extension object. Asking a *lost*
+        // context for `WEBGL_lose_context` again does not reliably return the
+        // instance that lost it, and the restore is silently ignored — the
+        // context stays gone and the viewport stays blank.
+        const renderer = gl as THREE.WebGLRenderer & { forceContextRestore?: () => void }
+        if (typeof renderer.forceContextRestore === 'function') {
+          renderer.forceContextRestore()
+          return true
+        }
         const extension = gl.getContext().getExtension('WEBGL_lose_context')
         if (!extension) return false
         extension.restoreContext()
         return true
       },
     }
+    // Deliberately free of `camera`, `size`, `joints` and the request
+    // callbacks: all of them are read through the ref, which is what keeps the
+    // published object identical for the viewport's lifetime.
   }, [
     beginJoint,
     beginSection,
-    camera,
     capture,
     controls,
     cycle,
@@ -957,7 +1002,6 @@ export function ViewportControls(props: ViewportControlsProps) {
     endSection,
     gl,
     idPass,
-    joints,
     motion,
     onEnvironmentRequest,
     onQualityRequest,
@@ -967,8 +1011,6 @@ export function ViewportControls(props: ViewportControlsProps) {
     pick,
     pickRegion,
     publishJointDrag,
-    size.height,
-    size.width,
     updateJoint,
     updateSection,
     views,

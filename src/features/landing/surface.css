@@ -20,6 +20,36 @@ body:has(.bw-surface),
   overflow-x: clip;
 }
 
+/* Metric-matched fallbacks --------------------------------------------------
+   Both web fonts arrive after first paint, so whatever renders in the meantime
+   is what lays the page out. Measured at 100px: Chakra Petch sets a sample 22%
+   wider than the condensed system face it used to fall back to, and Manrope
+   sets it 3.1% wider than a generic sans. Every paragraph and every headline
+   therefore re-wrapped when the fonts swapped in, and the whole document moved
+   — CLS 0.354 on a throttled profile.
+
+   These two faces are shapes the browser already has, scaled to the metrics of
+   the fonts they stand in for, so the swap changes the letterforms and not the
+   line breaks. Measured again afterwards: see docs/integration/landing.md. */
+@font-face {
+  font-family: 'Chakra Petch Metrics';
+  src: local('Arial'), local('Helvetica Neue'), local('Liberation Sans'), local('DejaVu Sans');
+  font-weight: 100 900;
+  size-adjust: 100.2%;
+  ascent-override: 100%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Manrope Metrics';
+  src: local('Arial'), local('Helvetica Neue'), local('Liberation Sans'), local('DejaVu Sans');
+  font-weight: 100 900;
+  size-adjust: 103.1%;
+  ascent-override: 104%;
+  descent-override: 29%;
+  line-gap-override: 0%;
+}
+
 .bw-surface {
   --bw-void: #080c0d;
   --bw-panel: #0f1517;
@@ -33,14 +63,14 @@ body:has(.bw-surface),
   --bw-orange: #f5a33f;
   --bw-green: #98d56d;
   --bw-red: #ff6753;
-  --bw-display: 'Chakra Petch', 'DIN Condensed', sans-serif;
+  --bw-display: 'Chakra Petch', 'Chakra Petch Metrics', sans-serif;
   --bw-gutter: clamp(20px, 5vw, 84px);
   --bw-rule: 1px solid var(--bw-line);
 
   min-height: 100%;
   color: var(--bw-ink);
   background: var(--bw-void);
-  font-family: 'Manrope Variable', 'Avenir Next', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-size: 16px;
   line-height: 1.55;
   position: relative;
@@ -92,7 +122,7 @@ body:has(.bw-surface),
   margin: 0;
   text-wrap: balance;
 }
-.bw-display.x1 { font-size: clamp(38px, 7.2vw, 92px); }
+.bw-display.x1 { font-size: clamp(36px, 5.6vw, 78px); }
 .bw-display.x2 { font-size: clamp(28px, 4vw, 48px); }
 .bw-display.x3 { font-size: clamp(20px, 2.4vw, 28px); letter-spacing: 0; }
 

@@ -41,7 +41,7 @@
 }
 
 .bw-hero-copy { display: flex; flex-direction: column; gap: 20px; }
-.bw-hero-copy h1 { max-width: 15ch; }
+.bw-hero-copy h1 { max-width: 19ch; }
 .bw-hero-copy h1 em { font-style: normal; color: var(--bw-orange); }
 .bw-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 

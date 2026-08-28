@@ -22,12 +22,14 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import react from '@vitejs/plugin-react'
+import { build } from 'vite'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const ARTIFACTS = path.join(ROOT, 'artifacts', 'landing')
@@ -108,6 +110,60 @@ function run(command, args, options = {}) {
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
 
+/**
+ * Builds the landing and explore surfaces as their own entry.
+ *
+ * Deliberately not the whole application. `src/main.tsx` mounts these inside
+ * the platform shell, whose entry statically imports the Hexclave account SDK
+ * — twenty-odd chunks that neither surface uses — so an LCP measured against
+ * that answers a question about the account layer, not about this page. What is
+ * measured here is the page itself: its own modules, the editor's stylesheet,
+ * the display fonts and the shipped demo manifest, bundled exactly the way Vite
+ * bundles the application.
+ *
+ * `publicDir` is off because the 50 MB compiled catalog has no business in this
+ * output; the demo assets are copied in on their own, which is also what makes
+ * a stray catalog request impossible to miss in the network log.
+ */
+async function buildLandingEntry(outDir) {
+  await build({
+    root: ROOT,
+    configFile: false,
+    logLevel: 'error',
+    publicDir: false,
+    plugins: [react()],
+    build: {
+      outDir,
+      emptyOutDir: true,
+      manifest: true,
+      rollupOptions: { input: path.join(ROOT, 'src/features/landing/standalone.tsx') },
+    },
+  })
+  const built = JSON.parse(await readFile(path.join(outDir, '.vite', 'manifest.json'), 'utf8'))
+  const entry = Object.values(built).find((chunk) => chunk.isEntry)
+  if (!entry) throw new Error('the landing entry produced no entry chunk')
+  const styles = (entry.css ?? []).map((href) => `    <link rel="stylesheet" href="/${href}">`).join('\n')
+  await writeFile(
+    path.join(outDir, 'index.html'),
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brickwright</title>
+${styles}
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/${entry.file}"></script>
+  </body>
+</html>
+`,
+  )
+  await cp(path.join(ROOT, 'public', 'demos'), path.join(outDir, 'demos'), { recursive: true })
+  return { entry: entry.file, css: entry.css ?? [] }
+}
+
 // ---------------------------------------------------------------------------
 
 await mkdir(ARTIFACTS, { recursive: true })
@@ -130,11 +186,34 @@ try {
   const consoleErrors = []
   page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
   page.on('pageerror', (cause) => consoleErrors.push(cause.message))
+  const bootRequests = []
+  page.on('request', (request) => bootRequests.push(new URL(request.url()).pathname))
 
   await page.goto(`${SHARED_URL}/`, { waitUntil: 'networkidle' })
   const heading = await page.locator('h1').first().innerText()
   check(/stands up/i.test(heading), `landing renders its own headline (saw "${heading}")`)
     && pass('landing route renders')
+
+  // -- the boot budget, on the integrated shell -----------------------------
+  // The strongest form of this is `src/features/landing/imports.test.ts`, which
+  // walks the static import graph. This is the same property observed from
+  // outside, on whatever the shell actually served.
+  const forbiddenBoot = bootRequests.filter((url) =>
+    /\/catalog\//.test(url)
+    || /\.bwmesh$/.test(url)
+    || /\/assets\/(?:geometry|thumb)\//.test(url)
+    || /\/src\/App\.tsx/.test(url)
+    || /\/src\/(?:editor|webmcp)\//.test(url)
+    || /\/src\/cad\/(?:catalog|catalog-loader|engine|session|collision|snapping|mesh)\.ts/.test(url)
+    || /node_modules\/\.vite\/deps\/three/.test(url)
+    || /\/(?:three|@react-three)\//.test(url),
+  )
+  check(
+    forbiddenBoot.length === 0,
+    `the landing route fetches no catalog, kernel, editor or renderer module (${[...new Set(forbiddenBoot)].slice(0, 6).join(', ')})`,
+  )
+  report.bootRequests = { total: bootRequests.length, forbidden: [...new Set(forbiddenBoot)] }
+  pass(`boot budget honoured across ${bootRequests.length} requests`)
 
   const cardCount = await page.locator('.bw-demo-card').count()
   check(cardCount === manifest.demos.length, `landing lists all ${manifest.demos.length} demos (saw ${cardCount})`)
@@ -235,7 +314,9 @@ try {
     overflow[`explore-${viewport.name}`] = await shotPage.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     )
-    await shotPage.screenshot({ path: path.join(ARTIFACTS, `explore-${viewport.name}.png`), fullPage: true })
+    // The explorer fills the viewport by design; a full-page capture would
+    // stretch the stage past the frame the renderer has drawn.
+    await shotPage.screenshot({ path: path.join(ARTIFACTS, `explore-${viewport.name}.png`), fullPage: false })
     await shot.close()
   }
   for (const [key, value] of Object.entries(overflow)) {
@@ -365,8 +446,12 @@ try {
   // 2. Delivery
   // =========================================================================
   process.stdout.write('\n-- delivery, against a production build\n')
-  buildDir = path.join(os.tmpdir(), `brickwright-landing-build-${process.pid}`)
-  await run(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', buildDir, '--emptyOutDir', '--logLevel', 'error'])
+  // Reusable across runs while iterating; unset, every run builds its own.
+  const reuse = process.env.BRICKWRIGHT_LANDING_BUILD_DIR
+  buildDir = reuse ?? path.join(os.tmpdir(), `brickwright-landing-build-${process.pid}`)
+  if (!reuse || !existsSync(path.join(buildDir, 'index.html'))) {
+    await buildLandingEntry(buildDir)
+  }
   const served = await serveStatic(buildDir)
   staticServer = served.server
   const buildUrl = `http://127.0.0.1:${served.port}`
@@ -374,6 +459,9 @@ try {
 
   const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const perfPage = await perfContext.newPage()
+  const perfErrors = []
+  perfPage.on('console', (message) => { if (message.type() === 'error') perfErrors.push(message.text()) })
+  perfPage.on('pageerror', (cause) => perfErrors.push(cause.message))
   const requests = []
   perfPage.on('response', async (response) => {
     const request = response.request()
@@ -415,10 +503,18 @@ try {
     }).observe({ type: 'layout-shift', buffered: true })
   })
 
-  await perfPage.goto(`${buildUrl}/`, { waitUntil: 'load' })
-  // The hero's preview fetch is deliberately deferred until the stage is on
-  // screen; waiting here means the vitals include everything that follows.
-  await perfPage.waitForTimeout(5000)
+  await perfPage.goto(`${buildUrl}/`, { waitUntil: 'commit' })
+  // Wait for the headline, which is what a visitor is waiting for, then keep
+  // watching: the hero's preview fetch is deliberately deferred until the stage
+  // is on screen, and any shift it causes has to land inside the CLS window.
+  let painted = true
+  try {
+    await perfPage.locator('h1').first().waitFor({ timeout: 30_000 })
+  } catch {
+    painted = false
+  }
+  await perfPage.waitForTimeout(4000)
+  check(painted, `the landing headline painted within 30 s under throttling (console: ${perfErrors.slice(0, 2).join(' | ')})`)
   const vitals = await perfPage.evaluate(() => window.__vitals)
   const lcpElement = await perfPage.evaluate(() => {
     const entries = performance.getEntriesByType('largest-contentful-paint')
@@ -427,13 +523,30 @@ try {
     return element ? `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(' ')[0]}` : ''}` : 'unknown'
   })
 
-  const forbidden = requests.filter((entry) =>
-    /\/catalog\//.test(entry.url)
-    || /\.bwmesh$/.test(entry.url)
-    || /assets\/thumb\//.test(entry.url)
-    || /(?:^|\/)(?:rendering|three)[.-]/.test(entry.url),
-  )
-  const editorChunks = requests.filter((entry) => /App-|editor-|CadViewport/.test(entry.url))
+  // Chunk *names* are a rolldown implementation detail; what matters is what is
+  // inside the chunks the browser actually fetched. So every JavaScript file in
+  // the log is read back off disk and searched for fingerprints of the three
+  // things this route may not carry.
+  const FINGERPRINTS = [
+    { name: 'Three.js', pattern: /WebGLRenderer|BufferGeometry\b/ },
+    { name: 'the compiled catalog loader', pattern: /catalog\/latest\.json|CatalogUnavailableError/ },
+    // Chosen so prose cannot trip them: these are kernel error codes and
+    // internal symbols, not phrases a marketing paragraph would contain.
+    { name: 'the CAD kernel', pattern: /STALE_DOCUMENT|PART_DEFINITION_NOT_FOUND|NO_COMPATIBLE_CONNECTOR/ },
+    { name: 'the WebMCP adapter', pattern: /capabilities_search|builder_feedback_respond/ },
+  ]
+  const carried = []
+  for (const entry of requests) {
+    if (!entry.url.endsWith('.js')) continue
+    const file = path.join(buildDir, entry.url.replace(/^\//, ''))
+    if (!existsSync(file)) continue
+    const source = await readFile(file, 'utf8')
+    for (const fingerprint of FINGERPRINTS) {
+      if (fingerprint.pattern.test(source)) carried.push(`${entry.url} carries ${fingerprint.name}`)
+    }
+  }
+  const forbidden = requests.filter((entry) => /\/catalog\//.test(entry.url) || /\.bwmesh$/.test(entry.url))
+  const editorChunks = carried
 
   process.stdout.write(`\n  throttling: ${THROTTLE.cpuSlowdown}x CPU, ${(THROTTLE.downloadThroughput * 8 / 1024 / 1024).toFixed(2)} Mbit/s down, ${THROTTLE.latency} ms RTT\n`)
   process.stdout.write(`  LCP        ${vitals.lcp.toFixed(0)} ms  (budget ${LCP_BUDGET_MS} ms) — element ${lcpElement}\n`)
@@ -446,15 +559,21 @@ try {
 
   check(vitals.lcp > 0 && vitals.lcp < LCP_BUDGET_MS, `LCP ${vitals.lcp.toFixed(0)} ms is under the ${LCP_BUDGET_MS} ms budget`)
   check(vitals.cls <= CLS_BUDGET, `CLS ${vitals.cls.toFixed(4)} is within ${CLS_BUDGET}`)
-  check(forbidden.length === 0, `no catalog, mesh or renderer asset is fetched (${forbidden.map((entry) => entry.url).join(', ')})`)
-  check(editorChunks.length === 0, `no editor chunk is fetched (${editorChunks.map((entry) => entry.url).join(', ')})`)
+  check(forbidden.length === 0, `no catalog or compiled mesh is fetched (${forbidden.map((entry) => entry.url).join(', ')})`)
+  check(carried.length === 0, `no fetched chunk carries the renderer, the catalog or the kernel (${carried.join('; ')})`)
 
+  check(perfErrors.length === 0, `no console errors on the production build (${perfErrors.slice(0, 3).join(' | ')})`)
   report.performance = {
     profile: THROTTLE,
     lcpMs: Number(vitals.lcp.toFixed(1)),
     lcpElement,
     cls: Number(vitals.cls.toFixed(5)),
     layoutShifts: vitals.shifts,
+    consoleErrors: perfErrors,
+    scope:
+      'the landing and explore surfaces built as their own entry (src/features/landing/standalone.tsx), '
+      + 'served statically with SPA fallback. It excludes the platform shell entry, which statically '
+      + 'imports the Hexclave account SDK.',
     requestCount: requests.length,
     transferredBytes: requests.reduce((sum, entry) => sum + entry.bytes, 0),
     requests,
@@ -465,7 +584,8 @@ try {
 } finally {
   await browser.close()
   staticServer?.close()
-  if (buildDir) await rm(buildDir, { recursive: true, force: true })
+  // A reused build directory belongs to whoever set the variable.
+  if (buildDir && !process.env.BRICKWRIGHT_LANDING_BUILD_DIR) await rm(buildDir, { recursive: true, force: true })
 }
 
 report.failures = failures

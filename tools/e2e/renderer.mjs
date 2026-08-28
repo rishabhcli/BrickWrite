@@ -580,7 +580,15 @@ try {
     canvas.dispatchEvent(new PointerEvent('pointerdown', options))
     window.dispatchEvent(new PointerEvent('pointerup', options))
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    return { picked: surface.pick(at.x, at.y).partId, joints: surface.listJoints(), at, isolated, flap: ids.flap }
+    return {
+      picked: surface.pick(at.x, at.y).partId,
+      joints: surface.listJoints(),
+      at,
+      isolated,
+      flap: ids.flap,
+      mechanism: ids.added,
+      selection: document.querySelector('.viewport-title-block p')?.textContent,
+    }
   }, hinge)
   measured.joints = jointList.joints
   console.log(
@@ -591,11 +599,17 @@ try {
     jointList.isolated.solid <= 8,
     `Isolating the mechanism left ${jointList.isolated.solid} parts solid; the hinge and its mast are six`,
   )
+  // Any part of the mechanism is a correct answer: the mast stands on the flap,
+  // so the flap's own centre is behind a plate. What matters is that the click
+  // landed on the isolated mechanism and not on the model behind it.
   assert(
-    jointList.picked === jointList.flap,
-    `Clicking the flap picked ${jointList.picked} rather than ${jointList.flap}`,
+    jointList.mechanism.includes(jointList.picked),
+    `Clicking the mechanism picked ${jointList.picked}, which is not one of ${jointList.mechanism}`,
   )
-  assert(jointList.joints.length > 0, `Selecting the flap (picked ${jointList.picked}) surfaced no articulated joint`)
+  assert(
+    jointList.joints.length > 0,
+    `Selecting the mechanism (picked ${jointList.picked}, viewport reports "${jointList.selection}") surfaced no articulated joint`,
+  )
   const joint = jointList.joints.find((entry) => entry.handles.includes('rotate'))
   assert(joint, 'The hinge offered no rotation handle')
   await page.screenshot({ path: `${ARTIFACTS}/joint-handles.png` })
@@ -687,80 +701,125 @@ try {
   assert(committed.sweep, 'The drag produced no swept-collision report')
 
   // -- swept collision reports the first blocking pair -----------------------
-  // A plate is placed in the mast's arc, then the joint is dragged through it.
+  // The mechanism is returned to rest, a plate is placed in a part of its arc
+  // that is demonstrably free, and the joint is then dragged through it. Both
+  // halves are derived from the joint the kernel published rather than from
+  // hard-coded coordinates, so this stays true whatever `3937`/`3938`/`3024`
+  // measure.
   const blocked = await page.evaluate(async (context) => {
     const surface = window.__brickwrightRenderer
+    await window.brickwright.invoke('undo_edit', {})
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+    const summary =
+      surface.listJoints().find((entry) => entry.edgeId === context.edgeId) ??
+      surface.listJoints().find((entry) => entry.handles.includes('rotate'))
+    if (!summary) return { error: 'the joint disappeared after the undo' }
+
     const model = window.brickwright.getDocument()
-    const summary = surface.listJoints().find((entry) => entry.edgeId === context.edgeId)
-    if (!summary) return { error: 'the joint disappeared before the sweep test' }
-
-    // Derive the obstacle from the motion: whatever the parts measure, this
-    // lands in the arc.
-    surface.beginJointDrag(context.edgeId, 'rotate', 0, 0)
-    surface.cancelJointDrag()
-
-    const mast = Object.values(model.parts).filter((part) => part.definitionId === '3024')
-    const tip = mast[mast.length - 1]
+    const tip = context.mast.map((id) => model.parts[id]).filter(Boolean).pop()
     if (!tip) return { error: 'no mast to obstruct' }
 
-    // Place the obstacle a little way around the arc from the tip, at the same
-    // radius from the pivot.
-    const pivot = summary.pivotLdu
-    const radius = [tip.transform.position[0] - pivot[0], tip.transform.position[1] - pivot[1], tip.transform.position[2] - pivot[2]]
-    const angle = -0.7
-    const axis = summary.axis
-    const dot = axis[0] * radius[0] + axis[1] * radius[1] + axis[2] * radius[2]
-    const cross = [
-      axis[1] * radius[2] - axis[2] * radius[1],
-      axis[2] * radius[0] - axis[0] * radius[2],
-      axis[0] * radius[1] - axis[1] * radius[0],
-    ]
-    const rotated = radius.map((value, index) =>
-      value * Math.cos(angle) + cross[index] * Math.sin(angle) + axis[index] * dot * (1 - Math.cos(angle)),
-    )
-    const position = [pivot[0] + rotated[0], pivot[1] + rotated[1], pivot[2] + rotated[2]]
+    // Rodrigues about the joint's own axis, through its own pivot.
+    const rotateAboutJoint = (point, radians) => {
+      const pivot = summary.pivotLdu
+      const axis = summary.axis
+      const radius = [point[0] - pivot[0], point[1] - pivot[1], point[2] - pivot[2]]
+      const dot = axis[0] * radius[0] + axis[1] * radius[1] + axis[2] * radius[2]
+      const cross = [
+        axis[1] * radius[2] - axis[2] * radius[1],
+        axis[2] * radius[0] - axis[0] * radius[2],
+        axis[0] * radius[1] - axis[1] * radius[0],
+      ]
+      return radius.map(
+        (value, index) =>
+          pivot[index] + value * Math.cos(radians) + cross[index] * Math.sin(radians) + axis[index] * dot * (1 - Math.cos(radians)),
+      )
+    }
 
-    const preflight = await window.brickwright.invoke('build_preflight', {
-      expectedRevision: model.revision,
-      label: 'Renderer acceptance obstacle',
-      operations: [{ op: 'add', definitionId: '3024', color: 4, position }],
-    })
-    const proposalId = preflight?.structuredContent?.id
-    if (!proposalId) return { error: JSON.stringify(preflight?.structuredContent).slice(0, 300) }
-    const applied = await window.brickwright.invoke('build_apply', { proposalId })
-    if (!applied?.structuredContent?.resultRevision) return { error: JSON.stringify(applied?.structuredContent).slice(0, 300) }
+    // Try a few angles: the free arc is a property of the parts, so the test
+    // finds one the kernel accepts rather than asserting where it is.
+    let obstacle = null
+    let obstacleDegrees = 0
+    for (const degrees of [-40, -30, -55, 40, 30]) {
+      const current = window.brickwright.getDocument()
+      const position = rotateAboutJoint(tip.transform.position, (degrees * Math.PI) / 180)
+      const preflight = await window.brickwright.invoke('build_preflight', {
+        expectedRevision: current.revision,
+        label: 'Renderer acceptance obstacle',
+        operations: [{ op: 'add', definitionId: '3024', color: 4, position }],
+      })
+      const proposalId = preflight?.structuredContent?.id
+      if (!proposalId) continue
+      const applied = await window.brickwright.invoke('build_apply', { proposalId })
+      if (!applied?.structuredContent?.resultRevision) continue
+      const after = window.brickwright.getDocument()
+      const known = new Set(Object.keys(current.parts))
+      obstacle = Object.keys(after.parts).find((id) => !known.has(id)) ?? null
+      obstacleDegrees = degrees
+      break
+    }
+    if (!obstacle) return { error: 'every candidate obstacle position was refused by the kernel' }
 
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    const refreshed = surface.listJoints().find((entry) => entry.edgeId === context.edgeId)
-      ?? surface.listJoints().find((entry) => entry.handles.includes('rotate'))
-    if (!refreshed) return { error: 'the joint was lost after adding the obstacle' }
+    const joint =
+      surface.listJoints().find((entry) => entry.edgeId === context.edgeId) ??
+      surface.listJoints().find((entry) => entry.handles.includes('rotate'))
+    if (!joint) return { error: 'the joint was lost after adding the obstacle', obstacle }
 
-    const start = surface.projectPoint(refreshed.pivotLdu)
-    surface.beginJointDrag(refreshed.edgeId, 'rotate', start.x + 60, start.y)
+    // Drag toward the obstacle. Which screen direction that is depends on the
+    // camera, so it is measured: a short probe drag reports the sign, and the
+    // real drag runs whichever way matches.
+    const start = surface.projectPoint(joint.pivotLdu)
+    const probe = (dy) => {
+      surface.beginJointDrag(joint.edgeId, 'rotate', start.x + 60, start.y)
+      const report = surface.updateJointDrag(start.x + 40, start.y + dy)
+      surface.cancelJointDrag()
+      return report.rotateDegrees
+    }
+    const sign = Math.sign(probe(60)) === Math.sign(obstacleDegrees) ? 1 : -1
+
+    surface.beginJointDrag(joint.edgeId, 'rotate', start.x + 60, start.y)
     let report = null
     for (let step = 1; step <= 8; step += 1) {
-      report = surface.updateJointDrag(start.x + 60 - step * 12, start.y - step * 10)
-      await new Promise((resolve) => setTimeout(resolve, 40))
+      report = surface.updateJointDrag(start.x + 60 - step * 8, start.y + sign * step * 12)
+      await new Promise((resolve) => setTimeout(resolve, 45))
     }
     const readout = document.querySelector('.sweep-readout')?.textContent ?? null
     const blockedFlag = document.querySelector('.sweep-readout')?.getAttribute('data-blocked') ?? null
-    surface.cancelJointDrag()
-    return { sweep: report?.sweep ?? null, readout, blockedFlag, rotateDegrees: report?.rotateDegrees ?? 0 }
-  }, { edgeId: joint.edgeId })
+    // The drag is deliberately left running so the screenshot below shows the
+    // live blocking feedback rather than the scene after it was dismissed.
+    return {
+      obstacle,
+      obstacleDegrees,
+      sweep: report?.sweep ?? null,
+      readout,
+      blockedFlag,
+      rotateDegrees: report?.rotateDegrees ?? 0,
+    }
+  }, { edgeId: joint.edgeId, mast: hinge.mast })
   measured.sweep = blocked
   assert(!blocked.error, `The swept-collision case could not be set up: ${blocked.error}`)
   console.log(
-    `Swept collision: readout "${blocked.readout}" (blocked=${blocked.blockedFlag}); ` +
-      `dragged to ${blocked.rotateDegrees.toFixed(1)}°, ` +
-      `sweep ${blocked.sweep ? JSON.stringify({ permissible: blocked.sweep.permissibleFraction, blocking: blocked.sweep.blocking }) : 'none'}`,
+    `Swept collision: obstacle ${blocked.obstacle} placed at ${blocked.obstacleDegrees}°; ` +
+      `dragged to ${blocked.rotateDegrees.toFixed(1)}°; readout "${blocked.readout}" (blocked=${blocked.blockedFlag}); ` +
+      `sweep ${blocked.sweep ? JSON.stringify({ permissible: blocked.sweep.permissibleFraction, samples: blocked.sweep.samples, blocking: blocked.sweep.blocking }) : 'none'}`,
   )
   assert(blocked.sweep, 'Dragging through an obstacle produced no swept report')
   assert(blocked.readout, 'The swept result was never surfaced on the canvas')
+  assert(blocked.sweep.blocking, `The sweep reported the full motion clear: ${JSON.stringify(blocked.sweep)}`)
   assert(
-    blocked.sweep.blocking !== null || blocked.sweep.permissibleFraction < 1,
-    `The sweep reported the full motion clear even though a part was placed in the arc: ${JSON.stringify(blocked.sweep)}`,
+    blocked.sweep.permissibleFraction < 1,
+    `The sweep named a blocking pair but permitted the whole motion: ${JSON.stringify(blocked.sweep)}`,
   )
+  assert(blocked.blockedFlag === 'true', 'The on-canvas readout did not mark the motion as blocked')
   await page.screenshot({ path: `${ARTIFACTS}/sweep-blocked.png` })
+  const stillBlocked = await page.evaluate(() => {
+    const text = document.querySelector('.sweep-readout')?.textContent ?? null
+    window.__brickwrightRenderer.cancelJointDrag()
+    return text
+  })
+  assert(stillBlocked, 'The blocking readout disappeared before the screenshot was taken')
 
   await page.evaluate(() => window.__brickwrightRenderer.setVisibility({ isolateSeedIds: null, outside: 'ghost' }))
 
@@ -798,7 +857,21 @@ try {
       color: index % 2 ? 15 : 4,
       position: [(index % 10) * 20 - 400, -200 - Math.floor(index / 10) * 24, -400],
     }))
-    const before = surface.stats().triangles
+    /**
+     * One frame's worth of counters.
+     *
+     * `gl.info.autoReset` is off so that a sample can span every pass between
+     * two reads, which means the raw counters *accumulate*. Comparing them
+     * directly would show monotonic growth for any scene at all, animating or
+     * not — the probe resets on each call, so this brackets exactly one frame.
+     */
+    const frameTriangles = async () => {
+      window.__brickwrightRenderStats()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      return window.__brickwrightRenderStats().triangles
+    }
+
+    const before = await frameTriangles()
     const preflight = await window.brickwright.invoke('build_preflight', {
       expectedRevision: model.revision,
       label: 'Renderer acceptance proposal',
@@ -810,21 +883,33 @@ try {
     const samples = []
     const started = performance.now()
     while (performance.now() - started < 1600) {
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      samples.push(surface.stats().triangles)
+      samples.push(await frameTriangles())
     }
     const revision = window.brickwright.getDocument().revision
     return { before, samples, proposalId, revision, model: model.revision }
   })
   assert(!proposal.error, `The proposal reveal could not be set up: ${proposal.error}`)
-  const revealGrew = proposal.samples.some((value, index) => index > 0 && value > proposal.samples[index - 1])
-  measured.proposal = { samples: proposal.samples.length, grew: revealGrew }
+  const first = proposal.samples[0]
+  const last = proposal.samples[proposal.samples.length - 1]
+  const distinctCounts = new Set(proposal.samples).size
+  measured.proposal = {
+    samples: proposal.samples.length,
+    beforeProposal: proposal.before,
+    firstFrame: first,
+    lastFrame: last,
+    distinctCounts,
+  }
   console.log(
-    `Proposal reveal: ${proposal.samples.length} frames sampled, triangle count ` +
-      `${Math.min(...proposal.samples).toLocaleString()} → ${Math.max(...proposal.samples).toLocaleString()}, ` +
-      `monotonic growth observed: ${revealGrew}`,
+    `Proposal reveal: ${proposal.samples.length} frames sampled; per-frame triangles ` +
+      `${proposal.before.toLocaleString()} before the proposal, ${first.toLocaleString()} on the first frame after it, ` +
+      `${last.toLocaleString()} once settled, across ${distinctCounts} distinct per-frame counts`,
   )
-  assert(revealGrew, 'The proposal appeared fully formed; no reveal wave was observed')
+  // A wave means the frame gets progressively heavier as parts appear, and ends
+  // heavier than it started. A proposal that appeared fully formed would show
+  // one count for the whole window.
+  assert(last > first, `The proposal did not grow across the reveal: ${first} → ${last} triangles per frame`)
+  assert(distinctCounts > 5, `Only ${distinctCounts} distinct per-frame counts; no reveal wave was observed`)
+  assert(last > proposal.before, 'The settled frame is no heavier than it was before the proposal existed')
   assert(
     proposal.revision === proposal.model,
     `A pending proposal changed the document from revision ${proposal.model} to ${proposal.revision}`,
@@ -834,36 +919,54 @@ try {
   // -- reduced motion settles immediately ----------------------------------
   const reduced = await page.evaluate(async () => {
     const surface = window.__brickwrightRenderer
+    const frameTriangles = async () => {
+      window.__brickwrightRenderStats()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      return window.__brickwrightRenderStats().triangles
+    }
     surface.setReducedMotion(true)
     const policy = surface.motionPolicy()
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    const first = surface.stats().triangles
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    const later = surface.stats().triangles
+    // One frame for the suppression to take effect, then the scene must be
+    // *stationary*: the same proposal that was mid-reveal a moment ago is now
+    // fully drawn and stays that way.
+    await frameTriangles()
+    const first = await frameTriangles()
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    const later = await frameTriangles()
     surface.setReducedMotion(null)
     return { policy, first, later }
   })
   measured.reducedMotion = reduced
   console.log(
-    `Reduced motion: policy ${JSON.stringify(reduced.policy)}, triangles ${reduced.first.toLocaleString()} → ${reduced.later.toLocaleString()}`,
+    `Reduced motion: policy ${JSON.stringify(reduced.policy)}, per-frame triangles ` +
+      `${reduced.first.toLocaleString()} → ${reduced.later.toLocaleString()} across 600 ms`,
   )
   assert(reduced.policy.animated === false, 'Reduced motion did not suppress animation')
   assert(
-    Math.abs(reduced.later - reduced.first) < Math.max(2000, reduced.first * 0.02),
-    `Under reduced motion the scene kept changing: ${reduced.first} → ${reduced.later} triangles`,
+    reduced.first === reduced.later,
+    `Under reduced motion the scene kept changing: ${reduced.first} → ${reduced.later} triangles per frame`,
   )
   await page.screenshot({ path: `${ARTIFACTS}/reduced-motion.png` })
 
   // -- capture integrity ----------------------------------------------------
   const capture = await page.evaluate(async () => {
     const surface = window.__brickwrightRenderer
+    // The same event `render_capture` dispatches, request id included: that is
+    // what puts the renderer into capture mode and reframes the named view, so
+    // this drives the production path rather than a shortcut past it.
+    let requestId = 0
     const setMode = async (mode) => {
-      window.dispatchEvent(new CustomEvent('brickwright:set-camera-view', { detail: { view: 'isometric', mode } }))
-      await new Promise((resolve) => setTimeout(resolve, 320))
+      requestId += 1
+      window.dispatchEvent(
+        new CustomEvent('brickwright:set-camera-view', {
+          detail: { view: 'isometric', mode, requestId: `acceptance_${requestId}` },
+        }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 360))
       return surface.capture()
     }
     const results = []
-    for (const mode of ['beauty', 'silhouette', 'violations', 'connections', 'beauty']) {
+    for (const mode of ['beauty', 'orthographic', 'silhouette', 'connections', 'exploded', 'violations', 'beauty']) {
       const shot = await setMode(mode)
       results.push({
         mode: shot.renderMode,
@@ -876,31 +979,60 @@ try {
         bytes: shot.dataUrl.length,
       })
     }
-    window.dispatchEvent(new CustomEvent('brickwright:set-camera-view', { detail: { view: 'isometric', mode: 'beauty' } }))
-    return results
+    window.dispatchEvent(
+      new CustomEvent('brickwright:set-camera-view', { detail: { view: 'isometric', mode: 'beauty', requestId: 'acceptance_reset' } }),
+    )
+    const validation = (await window.brickwright.invoke('validate_model', {}))?.structuredContent
+    return { results, collisions: validation?.collisions?.length ?? 0 }
   })
   measured.capture = capture
-  console.log('\nCapture hashes:')
-  for (const shot of capture) {
+  console.log(`\nCapture hashes (model has ${capture.collisions} collisions):`)
+  for (const shot of capture.results) {
     console.log(
       `  ${shot.requested.padEnd(12)} → mode ${String(shot.mode).padEnd(12)} rev ${shot.revision} ` +
         `hash ${shot.hash} settled ${shot.settled} ${shot.width}×${shot.height}`,
     )
   }
-  assert(capture.every((shot) => shot.settled), 'A capture was taken while animation was still running')
-  assert(capture.every((shot) => shot.width > 0 && shot.height > 0), 'A capture read an empty drawing buffer')
-  const sameRevision = new Set(capture.map((shot) => shot.revision))
+  assert(capture.results.every((shot) => shot.settled), 'A capture was taken while animation was still running')
+  assert(capture.results.every((shot) => shot.width > 0 && shot.height > 0), 'A capture read an empty drawing buffer')
+  const sameRevision = new Set(capture.results.map((shot) => shot.revision))
   assert(sameRevision.size === 1, `Captures spanned revisions ${[...sameRevision]}; metadata must be revision-exact`)
-  const beautyHashes = capture.filter((shot) => shot.requested === 'beauty').map((shot) => shot.hash)
+  assert(
+    capture.results.every((shot) => shot.mode === shot.requested),
+    `A capture's metadata named a different mode than was requested: ${JSON.stringify(capture.results.map((s) => [s.requested, s.mode]))}`,
+  )
+
+  const beautyHashes = capture.results.filter((shot) => shot.requested === 'beauty').map((shot) => shot.hash)
   assert(
     beautyHashes.length === 2 && beautyHashes[0] === beautyHashes[1],
     `The same mode at the same revision produced different hashes: ${beautyHashes}`,
   )
-  const distinctHashes = new Set(capture.map((shot) => shot.hash))
-  assert(
-    distinctHashes.size >= 4,
-    `Only ${distinctHashes.size} distinct hashes across 5 captures of 4 modes; diagnostic views are not distinguishable`,
+
+  // These five always show genuinely different things, so they must never
+  // collide. `violations` is deliberately excluded: on a model with no
+  // collisions it has nothing to draw and is *correctly* identical to beauty,
+  // and asserting otherwise would be asserting that the diagnostic invents
+  // something. Its relationship to beauty is checked against the kernel's own
+  // collision count instead.
+  const alwaysDistinct = ['beauty', 'orthographic', 'silhouette', 'connections', 'exploded']
+  const distinctHashes = new Set(
+    capture.results.filter((shot) => alwaysDistinct.includes(shot.requested)).map((shot) => shot.hash),
   )
+  assert(
+    distinctHashes.size === alwaysDistinct.length,
+    `Only ${distinctHashes.size} distinct hashes across ${alwaysDistinct.length} modes that show different things: ` +
+      JSON.stringify(capture.results.map((shot) => [shot.requested, shot.hash])),
+  )
+
+  const violationsHash = capture.results.find((shot) => shot.requested === 'violations')?.hash
+  if (capture.collisions > 0) {
+    assert(
+      violationsHash !== beautyHashes[0],
+      `The model has ${capture.collisions} collisions but the violations view is pixel-identical to beauty`,
+    )
+  } else {
+    console.log('  violations matches beauty, which is correct: the model has no collisions to flag')
+  }
 
   // -- the agent capture path still returns pixels and the right revision ---
   const agentCapture = await page.evaluate(async () => {
@@ -923,14 +1055,20 @@ try {
     const surface = window.__brickwrightRenderer
     const before = surface.stats()
     surface.loseContext()
-    await new Promise((resolve) => setTimeout(resolve, 120))
-    surface.restoreContext()
-    // Give the browser several frames to hand the context back and the scene to
-    // rebuild its environment map and identity target.
-    for (let frame = 0; frame < 60; frame += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const asked = surface.restoreContext()
+    // The browser hands the context back on a later task, not synchronously, so
+    // this polls rather than counting frames: `requestAnimationFrame` is not a
+    // reliable clock while a context is gone.
+    const deadline = performance.now() + 8000
+    while (performance.now() < deadline && surface.stats().contextRestores < 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    for (let frame = 0; frame < 30; frame += 1) {
       await new Promise((resolve) => requestAnimationFrame(resolve))
     }
     const after = surface.stats()
+    void asked
     const canvas = document.querySelector('canvas')
     const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl')
     return {

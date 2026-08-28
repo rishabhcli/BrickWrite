@@ -767,6 +767,28 @@ export function CadViewport({
     [onSectionPlanesChange],
   )
 
+  /**
+   * Bumped whenever an agent capture is requested, and added to `cameraResetKey`.
+   *
+   * `render_capture` names a view, and the contract is that the same revision in
+   * the same mode and view produces the same pixels. Reframing only when the
+   * *named view changes* broke that: a capture sequence that visited the
+   * exploded view and came back to beauty left the camera wherever the explode
+   * had put it, so two "isometric beauty" captures of one revision differed.
+   * A capture therefore always reframes, which makes the framing a function of
+   * (view, bounds) and nothing else.
+   */
+  const [captureFrameKey, setCaptureFrameKey] = useState(0)
+  useEffect(() => {
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: string } | string>).detail
+      if (typeof detail === 'string' || !detail?.requestId) return
+      setCaptureFrameKey((key) => key + 1)
+    }
+    window.addEventListener('brickwright:set-camera-view', onRequest)
+    return () => window.removeEventListener('brickwright:set-camera-view', onRequest)
+  }, [])
+
   const motion = useMemo(() => new MotionController(), [])
   useEffect(() => motion.forceReducedMotion(reducedMotion), [motion, reducedMotion])
   useEffect(() => {
@@ -1198,7 +1220,7 @@ export function CadViewport({
         hasParts={members.length > 0}
         exploded={renderMode === 'exploded'}
         view={cameraView}
-        resetKey={cameraResetKey}
+        resetKey={cameraResetKey + captureFrameKey}
         motion={motion}
       />
       <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
