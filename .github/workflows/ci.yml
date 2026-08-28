@@ -44,10 +44,11 @@ jobs:
   acceptance:
     needs: verify
     runs-on: ubuntu-latest
-    # Sized from observation, not optimism: the editor smoke suite has taken
-    # twenty minutes on one runner and over thirty-five on another for the same
-    # commit. A job that finishes early costs nothing, and the failure mode this
-    # replaces — killed mid-suite, reporting nothing — costs a whole run.
+    # The editor smoke suite runs about twenty minutes on a hosted runner. The
+    # budget is triple that because the failure mode being replaced — killed
+    # mid-suite, reporting nothing, after the run had already paid for the
+    # install and the build — costs far more than a job that finishes early,
+    # which costs nothing at all.
     timeout-minutes: 60
     strategy:
       # One failing suite must not cancel the others: the whole point of the
