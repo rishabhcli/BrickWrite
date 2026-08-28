@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-07",
+  "dims": 128,
+  "vocabSize": 6088,
+  "docCount": 22941,
+  "file": "semantic-index.2026-07.bin",
+  "bytes": 3987924,
+  "sha256": "sha256:8796f3512e096f81d92df42787922c20a2029d80f6253a9271fbd6392b56fd20",
+  "builtAt": "2026-08-27T23:25:07.690Z",
+  "analyzer": {
+    "ngram": 3,
+    "charGramWeight": 0.5,
+    "minDocFrequency": 3,
+    "probeHash": 120120011
+  },
+  "spectrum": {
+    "explainedVarianceRatio": 0.946239,
+    "largestSingularValue": 27.672522,
+    "smallestKeptSingularValue": 5.259794
+  }
+}

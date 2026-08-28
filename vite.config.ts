@@ -3,8 +3,20 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 4173, strictPort: true },
-  preview: { port: 4173, strictPort: true },
+  // The assistant and generation routes hold the model API key, so they run in
+  // a separate Node process rather than in Vite's module graph. Proxying keeps
+  // the browser talking to one origin in development, which is also what the
+  // production Pages deployment does.
+  server: {
+    port: 4173,
+    strictPort: true,
+    proxy: { '/api': { target: process.env.BRICKWRIGHT_API_URL ?? 'http://127.0.0.1:8787', changeOrigin: true } },
+  },
+  preview: {
+    port: 4173,
+    strictPort: true,
+    proxy: { '/api': { target: process.env.BRICKWRIGHT_API_URL ?? 'http://127.0.0.1:8787', changeOrigin: true } },
+  },
   build: {
     // Keep the interactive CAD shell cacheable without allowing Three/R3F and
     // the kernel to collapse back into megabyte-scale monoliths.
