@@ -1,0 +1,260 @@
+/*
+ * Scoped to `.bw-cloud*`. These surfaces mount inside an editor shell this
+ * workstream does not own, so every rule is a descendant of one of this file's
+ * own class names and nothing reaches an element the panel did not render.
+ * Colours come from the shell's custom properties with measured fallbacks, so
+ * the panels stay legible in a theme they have never seen.
+ */
+
+.bw-cloud {
+  --bw-cloud-line: var(--line, #253034);
+  --bw-cloud-line-hi: var(--line-hi, #344247);
+  --bw-cloud-panel: var(--panel, #111719);
+  --bw-cloud-panel-2: var(--panel-2, #151c1f);
+  --bw-cloud-ink: var(--ink, #dce4e5);
+  --bw-cloud-muted: var(--muted, #7c8a8f);
+  --bw-cloud-faint: var(--faint, #75838a);
+  --bw-cloud-cyan: var(--cyan, #83e7ee);
+  --bw-cloud-orange: var(--orange, #f5a33f);
+  --bw-cloud-green: var(--green, #98d56d);
+  --bw-cloud-red: var(--red, #ff6753);
+  --bw-cloud-display: var(--display, 'Chakra Petch', sans-serif);
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  color: var(--bw-cloud-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.bw-cloud .bw-cloud-eyebrow {
+  display: block;
+  color: var(--bw-cloud-faint);
+  font-family: var(--bw-cloud-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+/* --- Notices ------------------------------------------------------------ */
+
+.bw-cloud-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--bw-cloud-line);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: var(--bw-cloud-panel-2);
+}
+
+.bw-cloud-notice strong { font-size: 11px; font-weight: 600; }
+.bw-cloud-notice p { margin: 0; color: var(--bw-cloud-muted); font-size: 10.5px; }
+.bw-cloud-notice[data-tone='neutral'] { border-left-color: var(--bw-cloud-line-hi); }
+.bw-cloud-notice[data-tone='active'] { border-left-color: var(--bw-cloud-cyan); }
+.bw-cloud-notice[data-tone='warn'] { border-left-color: var(--bw-cloud-orange); }
+.bw-cloud-notice[data-tone='error'] { border-left-color: var(--bw-cloud-red); }
+
+/* --- Status readout ----------------------------------------------------- */
+
+.bw-cloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 100%;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--bw-cloud-line);
+  color: var(--muted, #7c8a8f);
+  font-size: 10px;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+.bw-cloud-status:hover { color: var(--ink, #dce4e5); }
+.bw-cloud-status:focus-visible { outline: 1px solid var(--cyan, #83e7ee); outline-offset: -2px; }
+.bw-cloud-status b { font-family: var(--display, sans-serif); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.bw-cloud-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.bw-cloud-status[data-tone='neutral'] .bw-cloud-status-dot { background: var(--faint, #75838a); }
+.bw-cloud-status[data-tone='active'] .bw-cloud-status-dot { background: var(--cyan, #83e7ee); }
+.bw-cloud-status[data-tone='warn'] .bw-cloud-status-dot { background: var(--orange, #f5a33f); }
+.bw-cloud-status[data-tone='error'] .bw-cloud-status-dot { background: var(--red, #ff6753); }
+.bw-cloud-status-pending { color: var(--orange, #f5a33f); }
+
+/* --- Project list ------------------------------------------------------- */
+
+.bw-cloud-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+
+.bw-cloud-project {
+  border: 1px solid var(--bw-cloud-line);
+  border-radius: 3px;
+  background: var(--bw-cloud-panel-2);
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bw-cloud-project[data-open='true'] { border-color: var(--bw-cloud-cyan); }
+.bw-cloud-project-head { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
+.bw-cloud-project-name { font-weight: 600; font-size: 11.5px; overflow-wrap: anywhere; }
+.bw-cloud-project-meta { color: var(--bw-cloud-faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.bw-cloud-badge {
+  font-family: var(--bw-cloud-display);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--bw-cloud-line-hi);
+  color: var(--bw-cloud-faint);
+  white-space: nowrap;
+}
+
+.bw-cloud-badge[data-origin='cloud'] { color: var(--bw-cloud-cyan); border-color: color-mix(in srgb, var(--bw-cloud-cyan) 45%, transparent); }
+.bw-cloud-badge[data-origin='local'] { color: var(--bw-cloud-faint); }
+.bw-cloud-badge[data-origin='remote'] { color: var(--bw-cloud-orange); border-color: color-mix(in srgb, var(--bw-cloud-orange) 45%, transparent); }
+
+.bw-cloud-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.bw-cloud-btn {
+  border: 1px solid var(--bw-cloud-line-hi);
+  background: var(--bw-cloud-panel);
+  color: var(--bw-cloud-ink);
+  border-radius: 2px;
+  padding: 3px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bw-cloud-btn:hover:not(:disabled) { border-color: var(--bw-cloud-cyan); color: var(--bw-cloud-cyan); }
+.bw-cloud-btn:focus-visible { outline: 1px solid var(--bw-cloud-cyan); outline-offset: 1px; }
+.bw-cloud-btn:disabled { opacity: .45; cursor: not-allowed; }
+.bw-cloud-btn[data-variant='primary'] { border-color: var(--bw-cloud-cyan); color: var(--bw-cloud-cyan); }
+.bw-cloud-btn[data-variant='danger'] { border-color: color-mix(in srgb, var(--bw-cloud-red) 55%, transparent); color: var(--bw-cloud-red); }
+.bw-cloud-btn[data-variant='danger']:hover:not(:disabled) { border-color: var(--bw-cloud-red); color: var(--bw-cloud-red); }
+
+.bw-cloud-field {
+  width: 100%;
+  background: var(--bw-cloud-panel);
+  border: 1px solid var(--bw-cloud-line-hi);
+  border-radius: 2px;
+  color: var(--bw-cloud-ink);
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.bw-cloud-field:focus-visible { outline: 1px solid var(--bw-cloud-cyan); outline-offset: -1px; }
+
+.bw-cloud-confirm {
+  border: 1px solid color-mix(in srgb, var(--bw-cloud-red) 55%, var(--bw-cloud-line));
+  border-radius: 3px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--bw-cloud-red) 8%, var(--bw-cloud-panel));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bw-cloud-confirm p { margin: 0; color: var(--bw-cloud-ink); font-size: 10.5px; }
+.bw-cloud-empty { color: var(--bw-cloud-muted); font-size: 10.5px; margin: 0; }
+.bw-cloud-error { color: var(--bw-cloud-red); }
+.bw-cloud-inline-form { display: flex; gap: 4px; align-items: center; }
+
+/* --- Version history modal ---------------------------------------------- */
+
+.bw-cloud-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 10, 11, .72);
+  backdrop-filter: blur(2px);
+}
+
+.bw-cloud-dialog {
+  width: min(920px, 92vw);
+  max-height: 84vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--panel, #111719);
+  border: 1px solid var(--line-hi, #344247);
+  border-radius: 4px;
+  color: var(--ink, #dce4e5);
+  font-size: 11px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .55);
+}
+
+.bw-cloud-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line, #253034);
+}
+
+.bw-cloud-dialog-head h2 {
+  margin: 2px 0 0;
+  font-family: var(--display, sans-serif);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.bw-cloud-dialog-body { overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.bw-cloud-dialog-foot { padding: 10px 14px; border-top: 1px solid var(--line, #253034); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+
+.bw-cloud-branches { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+.bw-cloud-branch {
+  border: 1px solid var(--line, #253034);
+  border-radius: 3px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.bw-cloud-branch[data-kind='conflict'] { border-color: color-mix(in srgb, var(--orange, #f5a33f) 55%, transparent); }
+.bw-cloud-branch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bw-cloud-branch-head h3 { margin: 0; font-size: 11.5px; font-weight: 600; }
+
+.bw-cloud-version {
+  border: 1px solid var(--line, #253034);
+  border-radius: 3px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--panel-2, #151c1f);
+}
+
+.bw-cloud-version[data-selected='true'] { border-color: var(--cyan, #83e7ee); }
+.bw-cloud-version-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bw-cloud-version-label { font-weight: 600; overflow-wrap: anywhere; }
+.bw-cloud-version-rev { color: var(--faint, #75838a); font-variant-numeric: tabular-nums; font-size: 10px; }
+.bw-cloud-version-notes { margin: 0; color: var(--muted, #7c8a8f); font-size: 10.5px; }
+
+.bw-cloud-diff { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.bw-cloud-diff li { color: var(--muted, #7c8a8f); font-size: 10.5px; }
+.bw-cloud-unrestorable { color: var(--orange, #f5a33f); }
+
+.bw-cloud-scroll { display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-cloud-backdrop { backdrop-filter: none; }
+  .bw-cloud *, .bw-cloud-dialog * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

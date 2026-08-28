@@ -25,7 +25,9 @@ import { chromium } from 'playwright'
 const appUrl = (process.env.BRICKWRIGHT_E2E_URL ?? 'http://127.0.0.1:4174').replace(/\/+$/, '')
 const edgePort = Number(process.env.SHARE_E2E_PORT ?? 5178)
 const edgeUrl = `http://127.0.0.1:${edgePort}`
-const dataDirectory = process.env.SHARE_E2E_DATA ?? '.share-e2e'
+// Under `.share-dev`, which `.gitignore` already covers: the run writes a real
+// KV namespace to disk and none of it belongs in the repository.
+const dataDirectory = process.env.SHARE_E2E_DATA ?? '.share-dev/e2e'
 const publishToken = 'acceptance-publish-token'
 const ARTIFACTS = 'artifacts/share'
 
@@ -382,6 +384,12 @@ try {
   })
   assert((await fetch(`${edgeUrl}/share/${slug}`)).ok, 'the publication did not come back when made public again')
 
+  // Everything up to here was a page the application is expected to render
+  // cleanly, so the console has to be clean now — after the revocation the
+  // suite deliberately loads a 410, which the browser reports as a failed
+  // resource and which is the correct behaviour rather than a defect.
+  assert(consoleErrors.length === 0, `browser console errors:\n${consoleErrors.join('\n')}`)
+
   step('revoking')
   await fetch(`${edgeUrl}/publications/${slug}/revoke`, { method: 'POST', headers: authorised, body: '{}' })
   const revoked = await fetch(`${edgeUrl}/share/${slug}`)
@@ -396,7 +404,6 @@ try {
   const feed = await (await fetch(`${edgeUrl}/publications`, { headers: { Accept: 'application/json' } })).json()
   assert(feed.entries.length === 0, `the gallery still lists ${feed.entries.length} revoked publication(s)`)
 
-  assert(consoleErrors.length === 0, `browser console errors:\n${consoleErrors.join('\n')}`)
   await browser.close()
 
   process.stdout.write('\n=== share acceptance ===\n')

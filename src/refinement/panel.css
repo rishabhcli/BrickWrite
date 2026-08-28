@@ -416,7 +416,7 @@
 .bw-refine__pick {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 2px 8px;
   padding: 7px 8px;
   background: none;
@@ -430,6 +430,24 @@
 .bw-refine__pick strong {
   font-size: 11px;
   color: var(--bw-r-ink);
+}
+
+.bw-refine__rank {
+  font-family: var(--bw-r-display);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--bw-r-faint);
+  border: 1px solid var(--bw-r-line-hi);
+  border-radius: 2px;
+  min-width: 15px;
+  text-align: center;
+  align-self: start;
+  padding: 0 2px;
+}
+
+.bw-refine__card[data-selected='true'] .bw-refine__rank {
+  color: var(--bw-r-cyan);
+  border-color: var(--bw-r-cyan);
 }
 
 .bw-refine__score {

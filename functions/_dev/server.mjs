@@ -169,12 +169,15 @@ const server = createHttpServer((nodeRequest, nodeResponse) => {
   void (async () => {
     try {
       const module = await vite.ssrLoadModule(match.route.module)
-      const handler =
-        module[`onRequest${(nodeRequest.method ?? 'GET')[0]}${(nodeRequest.method ?? 'GET').slice(1).toLowerCase()}`] ??
-        module.onRequest
+      const method = nodeRequest.method ?? 'GET'
+      // HEAD is answered by the GET handler with the body dropped, which is what
+      // the platform does and what `curl -I` expects. A route that exports only
+      // `onRequestGet` must not 405 a HEAD.
+      const named = method === 'HEAD' ? 'onRequestGet' : `onRequest${method[0]}${method.slice(1).toLowerCase()}`
+      const handler = module[named] ?? module.onRequest
       if (typeof handler !== 'function') {
         nodeResponse.writeHead(405, { 'Content-Type': 'text/plain' })
-        nodeResponse.end(`${nodeRequest.method} is not handled by ${match.route.module}`)
+        nodeResponse.end(`${method} is not handled by ${match.route.module}`)
         return
       }
       const request = await toFetchRequest(nodeRequest)

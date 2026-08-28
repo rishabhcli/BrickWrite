@@ -3,6 +3,8 @@ import '@fontsource/chakra-petch/600.css'
 import '@fontsource-variable/manrope'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerGalleryRoute } from './features/gallery'
+import { registerShareRoute } from './features/share'
 import { AppShell, registerRoute } from './platform'
 import './styles.css'
 
@@ -22,6 +24,10 @@ import './styles.css'
 registerRoute('landing', () => import('./features/landing/LandingPage'))
 registerRoute('explore', () => import('./features/explore/ExplorePage'))
 registerRoute('editor', () => import('./App'))
+// Share and gallery own their own paths, including the token-bearing ones, so
+// they register themselves rather than exposing a loader for a fixed id.
+registerShareRoute(registerRoute)
+registerGalleryRoute(registerRoute)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

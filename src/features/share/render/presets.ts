@@ -124,7 +124,10 @@ export const STUDIO_PRESETS: Readonly<Record<StudioPresetId, ShareStudioSettings
     supersample: 2,
   },
   blueprint: {
-    camera: { yaw: -18, pitch: 6, roll: 0 },
+    // Stated already-normalised: yaw wraps to [0, 360), and a preset whose
+    // literal differs from its normalised form would be two cache keys for one
+    // render. `presets.test.ts` asserts the invariant for every preset.
+    camera: { yaw: 342, pitch: 6, roll: 0 },
     framing: { ...DEFAULT_FRAMING, padding: 0.13 },
     background: { kind: 'grid', color: '#0b1a22', line: '#12313c', spacing: 48 },
     tone: { exposure: 0.98, contrast: 1.12, shadowLift: 0.06 },

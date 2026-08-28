@@ -187,3 +187,34 @@ export {
   type RejectionCode,
   type SilhouetteV1,
 } from './types'
+
+/**
+ * The in-editor surface.
+ *
+ * `RefinePanelContribution` is the only thing `src/App.tsx` needs: it registers
+ * the dock panel, the changed-part overlay and the objective reference dialog
+ * into the workbench extension registry and withdraws all three on unmount.
+ */
+export { RefinePanelContribution } from './contribution'
+export { RefinePanel, useRefineState, OBJECTIVES_MODAL_ID } from './RefinePanel'
+export { RefineOverlay } from './RefineOverlay'
+export { ObjectivesDialog } from './ObjectivesDialog'
+export {
+  canApply,
+  effortById,
+  foundNothing,
+  metricRows,
+  overlayInstructions,
+  rankedProposals,
+  REFINE_EFFORTS,
+  RefinementSession,
+  refusedProposals,
+  selectedProposal,
+  type MetricRow,
+  type RefineEffortId,
+  type RefineOutcome,
+  type RefinementRunner,
+  type RefinementSessionOptions,
+  type RefineState,
+  type RefineStatus,
+} from './session'

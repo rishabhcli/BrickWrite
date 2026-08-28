@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { objectiveList } from './objectives'
 import './panel.css'
@@ -40,7 +40,7 @@ export function ObjectivesDialog({ onClose }: { onClose: () => void }) {
   }, [])
 
   const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
+    (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
         onClose()

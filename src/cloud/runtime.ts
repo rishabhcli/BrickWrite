@@ -1,12 +1,8 @@
 import type { StorageDriver } from '../cad/persistence'
 import type { CadOperation, ModelDocument, Transaction } from '../cad/types'
 import { attachCloudSync, type CloudSyncHandle } from './attach'
-import {
-  createConvexCloud,
-  hexclaveTokenSource,
-  type AccessTokenSource,
-  type ConvexCloudResult,
-} from './convexClient'
+import type { AccessTokenSource, ConvexCloudResult } from './convexClient'
+import type { CloudBackend } from './protocol'
 import { UNCONFIGURED_SYNC_STATE, type SyncState } from './outbox'
 import {
   LocalProjectStore,
@@ -111,11 +107,21 @@ export interface CloudRuntimeSnapshot {
   /** Null when unconfigured — there is no replica to mirror. */
   store: MirroredProjectStore | null
   handle: CloudSyncHandle | null
+  /** The deployment adapter, or null when unconfigured. */
+  backend: CloudBackend | null
   /** Always present. Local storage does not depend on a deployment. */
   local: LocalProjectStore
   links: ProjectLinks
   kernel: CloudKernelBridge
   online: boolean
+  /**
+   * Bumped whenever a claim or a delete rewrites the project links.
+   *
+   * The links live in IndexedDB, which no React hook can subscribe to, so this
+   * counter is how a surface knows its answer to "does this project have a
+   * replica?" has gone stale.
+   */
+  linksVersion: number
 }
 
 export interface CloudRuntimeOptions {
@@ -143,6 +149,7 @@ export class CloudRuntime {
   private readonly configuration: CloudConfiguration
   private readonly cloud: ConvexCloudResult
   private identity: CloudIdentity = SIGNED_OUT_IDENTITY
+  private linksVersion = 0
   private sync: SyncState
   private online: boolean
   private snapshot: CloudRuntimeSnapshot
@@ -252,11 +259,26 @@ export class CloudRuntime {
       sync: this.sync,
       store: this.handle?.store ?? null,
       handle: this.handle,
+      backend: this.cloud.status === 'ready' ? this.cloud.backend : null,
       local: this.local,
       links: this.links,
       kernel: this.options.kernel,
       online: this.online,
+      linksVersion: this.linksVersion,
     }
+  }
+
+  /**
+   * Announces that the project links changed.
+   *
+   * Called by the surface that claimed or deleted a project. Explicit rather
+   * than inferred from the sync queue: a claim uploads through the backend
+   * directly and never touches the outbox, so nothing else moves when one
+   * succeeds.
+   */
+  notifyLinksChanged(): void {
+    this.linksVersion += 1
+    this.publish({})
   }
 
   private publish(next: { sync?: SyncState; online?: boolean }): void {
