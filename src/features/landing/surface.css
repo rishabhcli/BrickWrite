@@ -1,0 +1,331 @@
+/**
+ * Shared chrome for the landing and explore surfaces.
+ *
+ * The editor's own stylesheet is a fixed-height, no-scroll, 1024-minimum
+ * cockpit — right for a CAD console, wrong for a page somebody reads on a
+ * phone. Rather than edit that file, these surfaces take over the document only
+ * while one of them is mounted, using :has(). Unmount the surface and the
+ * editor's rules apply again untouched.
+ */
+body:has(.bw-surface) {
+  min-width: 0;
+  overflow: visible;
+  user-select: text;
+}
+html:has(.bw-surface),
+body:has(.bw-surface),
+#root:has(.bw-surface) {
+  height: auto;
+  min-height: 100%;
+  overflow-x: clip;
+}
+
+.bw-surface {
+  --bw-void: #080c0d;
+  --bw-panel: #0f1517;
+  --bw-panel-2: #131b1e;
+  --bw-line: #1e282b;
+  --bw-line-hi: #2c393e;
+  --bw-ink: #e4ebec;
+  --bw-muted: #7d8b90;
+  --bw-faint: #4d585c;
+  --bw-cyan: #83e7ee;
+  --bw-orange: #f5a33f;
+  --bw-green: #98d56d;
+  --bw-red: #ff6753;
+  --bw-display: 'Chakra Petch', 'DIN Condensed', sans-serif;
+  --bw-gutter: clamp(20px, 5vw, 84px);
+  --bw-rule: 1px solid var(--bw-line);
+
+  min-height: 100%;
+  color: var(--bw-ink);
+  background: var(--bw-void);
+  font-family: 'Manrope Variable', 'Avenir Next', sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+}
+
+/* The same fine grain the console carries, so the two read as one product. */
+.bw-surface::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  opacity: 0.2;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
+  mix-blend-mode: soft-light;
+}
+
+.bw-surface *,
+.bw-surface *::before,
+.bw-surface *::after { box-sizing: border-box; }
+
+.bw-surface :focus-visible {
+  outline: 2px solid var(--bw-cyan);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Typography ---------------------------------------------------------------
+   Two families doing two jobs: Chakra Petch, condensed and technical, for
+   anything that labels or measures; Manrope for anything that is read. */
+.bw-eyebrow {
+  display: block;
+  font-family: var(--bw-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bw-faint);
+}
+.bw-eyebrow.accent { color: var(--bw-cyan); }
+
+.bw-display {
+  font-family: var(--bw-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 0.98;
+  margin: 0;
+  text-wrap: balance;
+}
+.bw-display.x1 { font-size: clamp(38px, 7.2vw, 92px); }
+.bw-display.x2 { font-size: clamp(28px, 4vw, 48px); }
+.bw-display.x3 { font-size: clamp(20px, 2.4vw, 28px); letter-spacing: 0; }
+
+.bw-lede {
+  margin: 0;
+  color: #aab6b9;
+  font-size: clamp(15px, 1.35vw, 19px);
+  line-height: 1.6;
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.bw-note { margin: 0; color: var(--bw-muted); font-size: 13px; line-height: 1.6; }
+.bw-mono {
+  font-family: var(--bw-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Layout -------------------------------------------------------------------- */
+.bw-section {
+  position: relative;
+  padding: clamp(52px, 7vw, 104px) var(--bw-gutter);
+  border-top: var(--bw-rule);
+}
+.bw-shell { width: min(1320px, 100%); margin-inline: auto; }
+
+.bw-section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: clamp(28px, 3.4vw, 44px);
+}
+.bw-section-index {
+  font-family: var(--bw-display);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--bw-faint);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bw-section-index::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--bw-line-hi), transparent);
+}
+
+/* Panels — the console's material, at page scale ---------------------------- */
+.bw-panel {
+  background: linear-gradient(160deg, var(--bw-panel-2), var(--bw-panel));
+  border: var(--bw-rule);
+  position: relative;
+}
+.bw-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.03), transparent 42%);
+}
+
+.bw-corners > i {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 2;
+}
+.bw-corners > i:nth-child(1) { left: 10px; top: 10px; border-left: 1px solid #4d666c; border-top: 1px solid #4d666c; }
+.bw-corners > i:nth-child(2) { right: 10px; top: 10px; border-right: 1px solid #4d666c; border-top: 1px solid #4d666c; }
+.bw-corners > i:nth-child(3) { left: 10px; bottom: 10px; border-left: 1px solid #4d666c; border-bottom: 1px solid #4d666c; }
+.bw-corners > i:nth-child(4) { right: 10px; bottom: 10px; border-right: 1px solid #4d666c; border-bottom: 1px solid #4d666c; }
+
+/* Controls ------------------------------------------------------------------ */
+.bw-button {
+  --bw-button-accent: var(--bw-cyan);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 20px;
+  border: 1px solid var(--bw-line-hi);
+  background: #131b1e;
+  color: var(--bw-ink);
+  font: inherit;
+  font-family: var(--bw-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, color 0.18s ease;
+}
+.bw-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--bw-button-accent), transparent 45%);
+  background: color-mix(in srgb, var(--bw-button-accent), #131b1e 92%);
+  transform: translateY(-1px);
+}
+.bw-button:disabled { opacity: 0.45; cursor: default; }
+.bw-button .bw-key {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--bw-button-accent);
+  transition: transform 0.18s ease;
+}
+.bw-button:hover .bw-key { transform: translateX(3px); }
+.bw-button.primary {
+  --bw-button-accent: var(--bw-orange);
+  border-color: rgba(245, 163, 63, 0.42);
+  background: linear-gradient(180deg, rgba(245, 163, 63, 0.16), rgba(245, 163, 63, 0.06));
+  color: #ffd9a4;
+}
+.bw-button.primary:hover:not(:disabled) { background: rgba(245, 163, 63, 0.24); color: #ffe6c2; }
+.bw-button.ghost { background: transparent; color: var(--bw-muted); }
+.bw-button.ghost:hover:not(:disabled) { color: var(--bw-ink); }
+.bw-button.small { padding: 8px 12px; font-size: 11px; }
+
+.bw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bw-chip {
+  border: 1px solid var(--bw-line-hi);
+  background: #101719;
+  color: var(--bw-muted);
+  font-family: var(--bw-display);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+button.bw-chip:hover { color: var(--bw-ink); border-color: #3e4f55; }
+.bw-chip[aria-pressed='true'],
+.bw-chip.active { color: #0c1214; background: var(--bw-cyan); border-color: var(--bw-cyan); }
+
+/* Measurement grid — every number on these pages came from a real run -------- */
+.bw-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px;
+  background: var(--bw-line);
+  border: var(--bw-rule);
+}
+.bw-metric { background: var(--bw-panel); padding: 14px 16px; }
+.bw-metric dt {
+  font-family: var(--bw-display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bw-faint);
+  margin: 0 0 7px;
+}
+.bw-metric dd {
+  margin: 0;
+  font-family: var(--bw-display);
+  font-size: clamp(20px, 2vw, 27px);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.bw-metric dd small { display: block; margin-top: 6px; font-family: 'Manrope Variable', sans-serif; font-size: 11px; font-weight: 400; color: var(--bw-muted); letter-spacing: 0; }
+.bw-metric.good dd { color: var(--bw-green); }
+.bw-metric.warn dd { color: var(--bw-orange); }
+
+/* The model view ------------------------------------------------------------ */
+.bw-envelope {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+.bw-envelope[data-interactive='false'] { cursor: default; }
+.bw-envelope:active { cursor: grabbing; }
+
+.bw-stage {
+  position: relative;
+  border: var(--bw-rule);
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(96, 158, 168, 0.09), transparent 62%),
+    linear-gradient(180deg, #0d1315, #0a0f11);
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+}
+.bw-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 44%, transparent 30%, rgba(3, 6, 7, 0.5) 100%);
+}
+
+.bw-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bw-skip {
+  position: absolute;
+  left: var(--bw-gutter);
+  top: 10px;
+  z-index: 120;
+  transform: translateY(-160%);
+  transition: transform 0.16s ease;
+}
+.bw-skip:focus { transform: translateY(0); }
+
+/* Motion -------------------------------------------------------------------- */
+.bw-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.62s cubic-bezier(0.22, 0.68, 0.24, 1), transform 0.62s cubic-bezier(0.22, 0.68, 0.24, 1);
+  transition-delay: var(--bw-delay, 0ms);
+}
+.bw-reveal[data-shown='true'] { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-surface *,
+  .bw-surface *::before,
+  .bw-surface *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bw-reveal { opacity: 1; transform: none; }
+  .bw-button:hover:not(:disabled) { transform: none; }
+}

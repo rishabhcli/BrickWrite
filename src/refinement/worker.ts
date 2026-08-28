@@ -21,9 +21,11 @@ import type { RefinementProposalV1, RefinementRequestInput } from './types'
  * application uses; nothing is shipped across `postMessage` except the document,
  * the request and the answer, all of which are structured-cloneable.
  *
- * **Cancellation is real.** Each job holds an `AbortController` the search polls,
- * so a cancel message stops the current run at its next budget check instead of
- * waiting for it to finish and discarding the result.
+ * **Cancellation is real.** The client terminates the worker immediately when
+ * its signal aborts, because a message cannot interrupt synchronous JavaScript
+ * already running on that same worker. The protocol also carries cancellation
+ * for jobs still awaiting catalog I/O and for direct hosts that can interleave
+ * handler calls.
  *
  * Where `Worker` does not exist — jsdom under Vitest, and any Node consumer — the
  * client runs the identical search inline and says so in its result. That is a
@@ -101,6 +103,14 @@ export async function handleRefinementWorkerMessage(
   const controller = new AbortController()
   inFlight.set(message.jobId, controller)
   try {
+    // Let a direct host cancel between dispatch and work. A browser client does
+    // not rely on this yield for CPU-bound cancellation; it terminates the
+    // worker, which is the only way to interrupt synchronous JavaScript.
+    await Promise.resolve()
+    if (controller.signal.aborted) {
+      post({ kind: 'cancelled', jobId: message.jobId })
+      return
+    }
     if (!catalog.loaded) {
       if (!message.catalogBaseUrl) {
         throw new Error(
@@ -201,16 +211,29 @@ export async function runRefinementJob(
   }
 
   const worker = new Worker(new URL('./worker.entry.ts', import.meta.url), { type: 'module' })
-  try {
-    return await new Promise<RefinementJobResult>((resolve, reject) => {
-      const finish = (result: RefinementJobResult) => {
-        cleanup()
-        resolve(result)
-      }
-      const abortListener = () => worker.postMessage({ kind: 'cancel', jobId } satisfies RefinementCancelMessage)
+  return await new Promise<RefinementJobResult>((resolve, reject) => {
+      let settled = false
       const cleanup = () => {
         options.signal?.removeEventListener('abort', abortListener)
         worker.terminate()
+      }
+      const finish = (result: RefinementJobResult) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+      const fail = (cause: unknown) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(cause)
+      }
+      // Posting a cancel message cannot interrupt `runRefinement`, which is
+      // synchronous. Terminating the dedicated one-job worker can and also
+      // guarantees no late result is delivered after the caller has left.
+      function abortListener() {
+        fail(new DOMException('Refinement cancelled.', 'AbortError'))
       }
 
       worker.addEventListener('message', (event: MessageEvent) => {
@@ -225,16 +248,18 @@ export async function runRefinementJob(
           })
           return
         }
-        cleanup()
-        if (response.kind === 'cancelled') reject(new DOMException('Refinement cancelled.', 'AbortError'))
-        else reject(new Error(response.message))
+        if (response.kind === 'cancelled') fail(new DOMException('Refinement cancelled.', 'AbortError'))
+        else fail(new Error(response.message))
       })
       worker.addEventListener('error', (event: ErrorEvent) => {
-        cleanup()
-        reject(new Error(event.message || 'The refinement worker failed to start.'))
+        fail(new Error(event.message || 'The refinement worker failed to start.'))
       })
 
-      options.signal?.addEventListener('abort', abortListener)
+      if (options.signal?.aborted) {
+        abortListener()
+        return
+      }
+      options.signal?.addEventListener('abort', abortListener, { once: true })
       worker.postMessage({
         kind: 'search',
         jobId,
@@ -242,9 +267,5 @@ export async function runRefinementJob(
         document,
         catalogBaseUrl: options.catalogBaseUrl ?? '',
       } satisfies RefinementSearchMessage)
-    })
-  } catch (cause) {
-    worker.terminate()
-    throw cause
-  }
+  })
 }

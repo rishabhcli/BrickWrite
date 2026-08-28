@@ -3,6 +3,7 @@ import type { CatalogTier } from '../../cad/types'
 import type { PartIntentMatch, PartIntentResult } from '../../platform/contracts'
 import {
   documentFromSearchRecord,
+  footprintKey,
   loadPartCorpus,
   type CorpusDocument,
   type PartCorpus,
@@ -29,6 +30,15 @@ import { loadSemanticIndex, residentSemanticIndex, type SemanticIndex, type Sema
 /** Retrieval depth per stage. Wide enough that fusion can reorder, narrow enough to stay cheap. */
 const LEXICAL_CANDIDATES = 150
 const SEMANTIC_CANDIDATES = 150
+/**
+ * How many identities a stated size may contribute.
+ *
+ * A footprint bucket is small - a few hundred parts share "1x2" at most - and
+ * taking the most-used slice of it is what puts the part that genuinely
+ * measures 1 x 2 x 5 in front of the scorer even when the only word in the
+ * request was "brick".
+ */
+const DIMENSIONAL_CANDIDATES = 60
 const DEFAULT_LIMIT = 8
 
 export interface PartIntelligence {
@@ -176,14 +186,24 @@ function resolveAgainst(
   const relationTargets = applyRelations(query, corpus, relations, admit)
 
   // 3. BM25F over the catalog's own words.
-  const lexicalHits = lexical.search(query.contentTerms, LEXICAL_CANDIDATES)
+  const { hits: lexicalHits, touched } = lexical.search(query.contentTerms, LEXICAL_CANDIDATES)
   const bestLexical = lexicalHits[0]?.score ?? 0
   for (const hit of lexicalHits) {
     const document = corpus.documents[hit.doc]
     admit(document).lexical = bestLexical > 0 ? hit.score / bestLexical : 0
   }
 
-  // 4. Latent similarity, over the same query and every candidate found so far.
+  // 4. Identities whose measured or stated footprint is the one asked for, held
+  //    to the words the request also used. Without that floor, "a 25 stud tall
+  //    cheese slope" would answer with whatever 25-stud part exists and the
+  //    impossible half of the request would vanish.
+  const requireWordMatch = query.contentTerms.length > 0 && touched.size > 0
+  for (const index of footprintCandidates(query, corpus)) {
+    if (requireWordMatch && !touched.has(index)) continue
+    admit(corpus.documents[index])
+  }
+
+  // 5. Latent similarity, over the same query and every candidate found so far.
   //
   // Terms the lexical vocabulary rejected are deliberately included: character
   // trigrams are exactly the mechanism that reaches "Steering" from "steers",
@@ -241,6 +261,54 @@ function resolveAgainst(
  * is a rank proxy, not a term-frequency score - but it keeps the shape of the
  * answer, the tier honesty and the explanation identical.
  */
+/**
+ * Document indices whose footprint matches the size the request stated.
+ *
+ * A two-number envelope is one bucket. A single extent - "six studs wide" - is
+ * every bucket with that number on either axis, which is why the buckets are
+ * walked rather than looked up.
+ */
+function footprintCandidates(query: PartQuery, corpus: PartCorpus): number[] {
+  const { envelope, footprintExtent } = query.dimensions
+  const picked: number[] = []
+  if (envelope && envelope.length >= 2) {
+    const bucket = corpus.byFootprint.get(footprintKey(envelope[0], envelope[1]))
+    if (bucket) {
+      if (envelope.length >= 3) {
+        // A stated height is part of the request, not decoration. Taking the
+        // bucket by popularity alone buries "Brick 1 x 2 x 5" under the two
+        // hundred more common things that are also 1 x 2.
+        const wantedPlates = envelope[2] * 3
+        for (const index of bucket) {
+          if (picked.length >= DIMENSIONAL_CANDIDATES) break
+          const plates = heightInPlates(corpus.documents[index])
+          if (plates !== null && Math.abs(plates - wantedPlates) <= 1.6) picked.push(index)
+        }
+      }
+      picked.push(...bucket.slice(0, DIMENSIONAL_CANDIDATES))
+    }
+  }
+  if (footprintExtent !== null) {
+    for (const [key, bucket] of corpus.byFootprint) {
+      const [low, high] = key.split('x')
+      if (Number(low) !== footprintExtent && Number(high) !== footprintExtent) continue
+      picked.push(...bucket.slice(0, Math.ceil(DIMENSIONAL_CANDIDATES / 4)))
+    }
+  }
+  return picked
+}
+
+/**
+ * Height in plates, from the measurement if there is one and from the name
+ * otherwise. LDraw writes the third number of a name in brick heights, so the
+ * name reading is multiplied out before the two can be compared.
+ */
+function heightInPlates(document: CorpusDocument): number | null {
+  if (document.studs) return document.studs[1]
+  const named = document.nameStuds?.[2]
+  return named === undefined ? null : named * 3
+}
+
 function resolveFromRegistry(raw: string, options: ResolveOptions, started: number): PartIntentResult {
   const query = parseQuery(raw, {
     colors: catalog.colors(),

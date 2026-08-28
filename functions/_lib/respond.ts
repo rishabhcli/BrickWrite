@@ -90,10 +90,19 @@ function titleFor(status: number): string {
   return 'Request refused'
 }
 
-/** True when the caller is a browser or a crawler rather than a script. */
+/**
+ * True when the caller is a browser or a crawler rather than a script.
+ *
+ * A JSON request body or an explicit `Accept: application/json` both mean the
+ * caller wants a machine-readable refusal. Everything else — including the bare
+ * `*` a crawler sends — gets HTML, because a person following a dead link
+ * should land on a page rather than on a JSON blob.
+ */
 export function wantsHtml(request: Request): boolean {
   const accept = request.headers.get('accept') ?? ''
-  return accept.includes('text/html') || accept === '' || accept === '*/*'
+  if (accept.includes('application/json')) return false
+  if ((request.headers.get('content-type') ?? '').includes('application/json')) return false
+  return accept.includes('text/html') || accept.includes('*/*') || accept === ''
 }
 
 /**

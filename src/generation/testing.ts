@@ -1,5 +1,5 @@
 import { hash32, type ModelProvider, type ModelRequest, type ModelResult } from '../platform/contracts'
-import type { MassingBox } from './phases'
+import type { RawMassingBox } from './phases'
 
 /**
  * A deterministic stand-in for the model, for tests only.
@@ -54,15 +54,16 @@ export function parseMassingPrompt(prompt: string): {
  * upper box is offset asymmetrically along X by an amount the seed decides,
  * which none of the rule sets do.
  */
-export function doubleMassing(prompt: string): { boxes: MassingBox[] } {
+export function doubleMassing(prompt: string): { boxes: RawMassingBox[] } {
   const { width, depth, courses, seed } = parseMassingPrompt(prompt)
   const lower = Math.max(2, Math.ceil(courses / 2))
   const upper = Math.max(0, courses - lower)
-  const boxes: MassingBox[] = [
+  const boxes: RawMassingBox[] = [
     {
       id: 'hull',
       role: 'base',
-      atStuds: [0, 0],
+      atXStuds: 0,
+      atZStuds: 0,
       widthStuds: width,
       depthStuds: depth,
       courses: lower,
@@ -77,7 +78,8 @@ export function doubleMassing(prompt: string): { boxes: MassingBox[] } {
     boxes.push({
       id: 'cabin',
       role: 'cabin',
-      atStuds: [Math.min(shift, Math.max(0, width - upperWidth)), 1],
+      atXStuds: Math.min(shift, Math.max(0, width - upperWidth)),
+      atZStuds: 1,
       widthStuds: upperWidth,
       depthStuds: upperDepth,
       courses: upper,
@@ -108,14 +110,16 @@ export function createTestModelProvider(options: TestProviderOptions = {}): Mode
       } else if ('subject' in properties) {
         raw = {
           subject: request.prompt.replace(/^Request:\s*/i, '').split(/[.,]/)[0].trim().slice(0, 120) || 'unnamed build',
-          envelopeStuds: null,
+          envelopeWidthStuds: null,
+          envelopeHeightStuds: null,
+          envelopeDepthStuds: null,
           scale: 'unspecified',
           functions: [],
           paletteColourNames: [],
           symmetry: 'none',
           partBudget: null,
           style: [],
-          evidence: { subject: request.prompt.slice(0, 120) },
+          evidence: [{ field: 'subject', phrase: request.prompt.slice(0, 120) }],
           conflicts: [],
         }
       } else {

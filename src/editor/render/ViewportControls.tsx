@@ -3,6 +3,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, type RefO
 import * as THREE from 'three'
 import { findArticulatedJoints, type ArticulatedJoint } from '../../cad/articulation'
 import { commandBus } from '../../cad/engine'
+import { getPartBounds } from '../../cad/geometry'
 import { canonicalTransform } from '../../cad/math'
 import type { ModelDocument, Transform, Vec3 } from '../../cad/types'
 import { createEnvironment, ENVIRONMENT_INTENSITY, type EnvironmentName } from '../environment'
@@ -19,7 +20,7 @@ import {
   type VisibilityReport,
 } from './controlSurface'
 import { DerivedRunner, graphOf } from './derived'
-import { documentRayFromCanvas, lduDirectionToScene, lduToScene, projectLdu } from './frame'
+import { documentRayFromCanvas, lduDirectionToScene, lduToScene, MODEL_ROOT_SCALE, projectLdu } from './frame'
 import { IdPass, OcclusionCycle } from './idPass'
 import { PickRegistry } from './ids'
 import {
@@ -94,6 +95,10 @@ export interface ViewportControlsProps {
   environment: EnvironmentName
   quality: number | 'auto'
   onQuality: (tier: QualityTier, index: number) => void
+  /** Lets the imperative surface change what are otherwise props. */
+  onEnvironmentRequest?: (name: EnvironmentName) => void
+  onQualityRequest?: (index: number | 'auto') => void
+  onTransmissionRequest?: (enabled: boolean) => void
   /** Live joint-drag preview, drawn instead of the stored pose. */
   onJointPreview: (preview: Map<string, Transform> | null, edgeId: string | null) => void
   onOverlay: (overlay: OverlayState) => void
@@ -122,6 +127,9 @@ export function ViewportControls(props: ViewportControlsProps) {
     environment,
     quality,
     onQuality,
+    onEnvironmentRequest,
+    onQualityRequest,
+    onTransmissionRequest,
     onJointPreview,
     onOverlay,
     onSelect,
@@ -762,6 +770,57 @@ export function ViewportControls(props: ViewportControlsProps) {
       pickRegion: (shape, options) => pickRegion(shape, options),
       resetCycle: () => cycle.reset(),
 
+      screenPositionOf: (partId) => {
+        const target = latest.current.model.parts[partId]
+        if (!target) return null
+        const bounds = getPartBounds(target)
+        const centre: Vec3 = bounds.measured
+          ? [
+              (bounds.min[0] + bounds.max[0]) / 2,
+              (bounds.min[1] + bounds.max[1]) / 2,
+              (bounds.min[2] + bounds.max[2]) / 2,
+            ]
+          : target.transform.position
+        return projectLdu(camera, centre, size.width, size.height)
+      },
+      projectPoint: (pointLdu) => projectLdu(camera, pointLdu as Vec3, size.width, size.height),
+      frameParts: (partIds) => {
+        const measured = partIds
+          .map((partId) => latest.current.model.parts[partId])
+          .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+          .map((entry) => getPartBounds(entry))
+          .filter((entry) => entry.measured)
+        if (!measured.length) return false
+        const min: Vec3 = [
+          Math.min(...measured.map((entry) => entry.min[0])),
+          Math.min(...measured.map((entry) => entry.min[1])),
+          Math.min(...measured.map((entry) => entry.min[2])),
+        ]
+        const max: Vec3 = [
+          Math.max(...measured.map((entry) => entry.max[0])),
+          Math.max(...measured.map((entry) => entry.max[1])),
+          Math.max(...measured.map((entry) => entry.max[2])),
+        ]
+        const centre = lduToScene([(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2])
+        const extent = Math.max(
+          8,
+          Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * MODEL_ROOT_SCALE,
+        )
+        // Framing is a jump rather than a flight: this is the entry point an
+        // agent and a test call, and both want the camera where they asked for
+        // it by the time the call returns.
+        camera.position.copy(centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)))
+        camera.lookAt(centre)
+        const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
+        if (orbit?.target) {
+          orbit.target.copy(centre)
+          orbit.update?.()
+        }
+        camera.updateProjectionMatrix()
+        camera.updateMatrixWorld(true)
+        return true
+      },
+
       setVisibility: async (patch: VisibilityPatch) => {
         const current = latest.current.visibility
         const seeds =
@@ -860,12 +919,12 @@ export function ViewportControls(props: ViewportControlsProps) {
       setReducedMotion: (value) => motion.forceReducedMotion(value),
       motionPolicy: () => motion.policy,
       settle: () => window.dispatchEvent(new CustomEvent('brickwright:renderer-settle')),
-      setEnvironment: () => {
-        // Environment is a prop so that the workbench and the surface cannot
-        // disagree about it. The setter exists on the interface for symmetry and
-        // is wired by the viewport, which owns the state.
-      },
-      setQuality: () => {},
+      // Environment, quality and transmission are viewport state so that the
+      // workbench and the surface cannot disagree about them; the surface asks
+      // and the viewport decides, which is the same path a panel control takes.
+      setEnvironment: (name) => onEnvironmentRequest?.(name),
+      setQuality: (index) => onQualityRequest?.(index),
+      setTransmission: (enabled) => onTransmissionRequest?.(enabled),
 
       capture,
 
@@ -896,7 +955,10 @@ export function ViewportControls(props: ViewportControlsProps) {
     idPass,
     joints,
     motion,
+    onEnvironmentRequest,
+    onQualityRequest,
     onSectionPlanesChange,
+    onTransmissionRequest,
     onVisibilityChange,
     pick,
     pickRegion,

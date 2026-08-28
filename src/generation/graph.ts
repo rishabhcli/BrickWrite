@@ -408,7 +408,7 @@ export function structuralHash(graph: BuildGraph): string {
   // few tens of thousands of candidates by the birthday bound, which is well
   // inside what a diversity search explores.
   const low = hash32(payload).toString(16).padStart(8, '0')
-  const high = hash32(`brickwright/graph ${payload}`).toString(16).padStart(8, '0')
+  const high = hash32(`brickwright/graph\0${payload}`).toString(16).padStart(8, '0')
   return `${high}${low}`
 }
 

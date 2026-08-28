@@ -30,6 +30,19 @@ import { dedupeBatches, makePart, sample, snapOnto, sourceOf, type Rng } from '.
 /** How far apart two parts can be and still share one bridging element, in studs. */
 const BRIDGE_REACH_STUDS = 7
 
+/**
+ * Search bounds.
+ *
+ * The solver call is the expensive part — a connector query plus a mating
+ * enumeration per candidate pose — so the loop is bounded on all three axes
+ * rather than left to explore a model. Four loose parts, their three nearest
+ * neighbours and the five smallest bridging elements is 60 solver calls in the
+ * worst case, which is milliseconds; the unbounded version was seconds.
+ */
+const MAX_TARGETS = 4
+const MAX_PARTNERS = 3
+const MAX_DEFINITIONS = 5
+
 const centreOf = (document: ModelDocument, partId: string): Vec3 | null => {
   const part = document.parts[partId]
   if (!part) return null
@@ -42,13 +55,21 @@ const centreOf = (document: ModelDocument, partId: string): Vec3 | null => {
   ]
 }
 
-/** Plates this build can lay flat, longest first, plus the bracket for a side tie. */
+/**
+ * Plates this build can lay flat, **shortest first**, plus a bracket.
+ *
+ * The order is the whole point. A 1 × 8 plate laid over a loose 1 × 1 brick does
+ * tie it in, and it also puts a new eight-stud roof on the model — a silhouette
+ * change nobody asked for, which the outline guard then correctly refuses. The
+ * smallest element that reaches both parts is the repair a builder would make,
+ * so it is the one offered first.
+ */
 function bridgeDefinitions(): string[] {
   const ids: string[] = []
   for (const depth of [1, 2]) {
     const library = familyLibrary('plate', depth)
     if (!library) continue
-    for (const length of library.lengths) {
+    for (const length of [...library.lengths].sort((a, b) => a - b)) {
       const definition = library.definitionFor(length)
       if (definition) ids.push(definition.canonicalId)
     }
@@ -93,59 +114,73 @@ export const reinforce = (document: ModelDocument, scope: RefinementScope, rng: 
   if (!targets.length) return []
 
   const definitions = bridgeDefinitions()
-  const neighbours = Object.keys(document.parts).sort()
   const batches: CadOperation[][] = []
   const combined: CadOperation[] = []
-  const usedIds = new Set<string>()
+  const placed = new Set<string>()
 
-  for (const target of sample(targets, 6, rng)) {
+  for (const target of sample(targets, MAX_TARGETS, rng)) {
     const source = sourceOf(document, target.partId)
     const targetCentre = centreOf(document, target.partId)
     if (!source || !targetCentre) continue
-
-    // The plane a bridging plate would rest on: the loose part's own stud plane
-    // where it has one, otherwise a partner's, so a tile-topped part can still
-    // be tied by spanning from the neighbour it should be holding onto.
     const targetPlane = exposedStudPlane(document.parts[target.partId])
 
-    for (const partnerId of neighbours) {
-      if (partnerId === target.partId) continue
-      const partnerCentre = centreOf(document, partnerId)
-      if (!partnerCentre) continue
-      const dx = Math.abs(partnerCentre[0] - targetCentre[0]) / STUD_LDU
-      const dz = Math.abs(partnerCentre[2] - targetCentre[2]) / STUD_LDU
-      if (dx > BRIDGE_REACH_STUDS || dz > BRIDGE_REACH_STUDS) continue
-      const partnerPlane = exposedStudPlane(document.parts[partnerId])
+    // Nearest first: the closest neighbour on the same plane is the one a plate
+    // can actually reach, and searching the whole model for each loose part is
+    // what made this generator cost seconds rather than milliseconds.
+    const partners = Object.keys(document.parts)
+      .filter((partnerId) => partnerId !== target.partId)
+      .map((partnerId) => ({ partnerId, centre: centreOf(document, partnerId) }))
+      .filter((entry): entry is { partnerId: string; centre: Vec3 } => Boolean(entry.centre))
+      .map((entry) => ({
+        ...entry,
+        dx: Math.abs(entry.centre[0] - targetCentre[0]) / STUD_LDU,
+        dz: Math.abs(entry.centre[2] - targetCentre[2]) / STUD_LDU,
+      }))
+      .filter((entry) => entry.dx <= BRIDGE_REACH_STUDS && entry.dz <= BRIDGE_REACH_STUDS)
+      .sort((a, b) => a.dx + a.dz - (b.dx + b.dz) || a.partnerId.localeCompare(b.partnerId))
+      .slice(0, MAX_PARTNERS)
+
+    let bridged = false
+    for (const partner of partners) {
+      if (bridged) break
+      const partnerPlane = exposedStudPlane(document.parts[partner.partnerId])
       const plane = targetPlane ?? partnerPlane
-      if (plane === null || plane === undefined) continue
+      if (plane === null) continue
       if (partnerPlane !== null && Math.abs(partnerPlane - plane) > 1) continue
 
-      const along: 'x' | 'z' = dx >= dz ? 'x' : 'z'
+      const along: 'x' | 'z' = partner.dx >= partner.dz ? 'x' : 'z'
       const basis = along === 'x' ? IDENTITY_BASIS : QUARTER_TURN_BASES[1]
-      const midX = (targetCentre[0] + partnerCentre[0]) / 2
-      const midZ = (targetCentre[2] + partnerCentre[2]) / 2
+      const midX = (targetCentre[0] + partner.centre[0]) / 2
+      const midZ = (targetCentre[2] + partner.centre[2]) / 2
 
-      for (const definitionId of definitions) {
+      for (const definitionId of definitions.slice(0, MAX_DEFINITIONS)) {
         const definition = catalog.get(definitionId)
         if (!definition) continue
         const cursor = {
           position: [midX, originForSurface(definition, plane), midZ] as Vec3,
           basis,
         }
-        const snapped = snapOnto(document, definitionId, cursor, [target.partId, partnerId], 2, source.color)
+        const snapped = snapOnto(document, definitionId, cursor, [target.partId, partner.partnerId], 2, source.color)
         if (!snapped) continue
-        const descriptor = `reinforce|${target.partId}|${partnerId}|${definitionId}`
-        const part = makePart(descriptor, definitionId, snapped.transform, source)
-        if (usedIds.has(part.id)) continue
+        const part = makePart(
+          `reinforce|${target.partId}|${partner.partnerId}|${definitionId}`,
+          definitionId,
+          snapped.transform,
+          source,
+        )
+        if (placed.has(part.id)) continue
+        placed.add(part.id)
         batches.push([{ type: 'part.add', part }])
-        usedIds.add(part.id)
         combined.push({ type: 'part.add', part })
+        bridged = true
         break
       }
-      if (usedIds.size >= 8) break
     }
   }
 
+  // One transaction that ties everything loose at once. It frequently collides
+  // with itself when several repairs want the same studs, and is rejected then —
+  // which is why the single-bridge batches above are offered as well.
   if (combined.length > 1) batches.push(combined)
   return dedupeBatches(batches)
 }

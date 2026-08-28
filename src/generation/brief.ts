@@ -227,13 +227,26 @@ export interface CompileBriefOptions {
 
 export const BRIEF_COMPILER_VERSION = 'brief/1'
 
-/** JSON Schema the model must satisfy. Also documents the field set for a reader. */
+/**
+ * The wire schema for a brief.
+ *
+ * Constrained to the subset the structured-output endpoint accepts: no array
+ * length bounds, no numeric ranges, and no open-ended `additionalProperties`
+ * map. Two shapes here follow from that and are worth reading as intent rather
+ * than as workaround — the envelope travels as three nullable scalars because a
+ * three-element array cannot be pinned to three elements on the wire, and
+ * evidence travels as a list of `{field, phrase}` pairs because a free-keyed
+ * object cannot be typed at all. Both are folded back into the `DesignBrief`
+ * contract on arrival.
+ */
 export const DESIGN_BRIEF_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
     'subject',
-    'envelopeStuds',
+    'envelopeWidthStuds',
+    'envelopeHeightStuds',
+    'envelopeDepthStuds',
     'scale',
     'functions',
     'paletteColourNames',
@@ -245,22 +258,26 @@ export const DESIGN_BRIEF_SCHEMA = {
   ],
   properties: {
     subject: { type: 'string', minLength: 1, maxLength: 120 },
-    envelopeStuds: {
-      anyOf: [
-        { type: 'null' },
-        { type: 'array', items: { type: 'number', minimum: 1, maximum: 512 }, minItems: 3, maxItems: 3 },
-      ],
-    },
+    envelopeWidthStuds: { type: ['integer', 'null'] },
+    envelopeHeightStuds: { type: ['integer', 'null'] },
+    envelopeDepthStuds: { type: ['integer', 'null'] },
     scale: { type: 'string', enum: ['micro', 'minifig', 'midi', 'large', 'unspecified'] },
-    functions: { type: 'array', items: { type: 'string', maxLength: 120 }, maxItems: 12 },
-    paletteColourNames: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 12 },
+    functions: { type: 'array', items: { type: 'string', maxLength: 120 } },
+    paletteColourNames: { type: 'array', items: { type: 'string', maxLength: 40 } },
     symmetry: { type: 'string', enum: ['none', 'mirror-x', 'mirror-z', 'radial'] },
-    partBudget: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 20000 }] },
-    style: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 12 },
-    evidence: { type: 'object', additionalProperties: { type: 'string', maxLength: 200 } },
+    partBudget: { type: ['integer', 'null'] },
+    style: { type: 'array', items: { type: 'string', maxLength: 40 } },
+    evidence: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['field', 'phrase'],
+        properties: { field: { type: 'string', maxLength: 60 }, phrase: { type: 'string', maxLength: 200 } },
+      },
+    },
     conflicts: {
       type: 'array',
-      maxItems: 12,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -275,10 +292,12 @@ const BRIEF_SYSTEM = [
   'You compile a natural-language LEGO build request into a structured design brief.',
   'Report only what the request supports. Leave a field null or empty when the request does not state it;',
   'do not fill a gap with a plausible default.',
-  'Every field you populate must have an entry in `evidence` quoting the exact phrase from the request that produced it.',
+  'For every field you populate, add an `evidence` entry naming the field and quoting the exact phrase',
+  'from the request that produced it.',
   'If the request contradicts itself, record both readings in `conflicts` and do not choose between them.',
   'Colours are named in plain English; they are resolved against the LDraw colour table afterwards.',
-  'Envelope is [width, height, depth] measured in studs, where one stud is the horizontal brick pitch.',
+  'The envelope is measured in studs, one stud being the horizontal brick pitch; leave all three axes null',
+  'when the request states no size.',
 ].join(' ')
 
 interface RawBrief {
@@ -308,16 +327,22 @@ function parseRawBrief(raw: unknown): RawBrief {
   const subject = value.subject
   if (typeof subject !== 'string' || !subject.trim()) throw new Error('Field "subject" was missing or empty.')
 
-  const envelope = value.envelopeStuds
-  let envelopeStuds: [number, number, number] | null = null
-  if (Array.isArray(envelope)) {
-    if (envelope.length !== 3 || envelope.some((entry) => typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0)) {
-      throw new Error('Field "envelopeStuds" was not three positive numbers.')
+  // Three nullable scalars on the wire; a triple or nothing on this side. A
+  // partially-stated envelope is not an envelope — two axes out of three cannot
+  // bound anything — so it is reported as absent rather than half-applied.
+  const axis = (key: string): number | null => {
+    const raw = value[key]
+    if (raw === null || raw === undefined) return null
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+      throw new Error(`Field "${key}" was neither null nor a positive number.`)
     }
-    envelopeStuds = [envelope[0] as number, envelope[1] as number, envelope[2] as number]
-  } else if (envelope !== null && envelope !== undefined) {
-    throw new Error('Field "envelopeStuds" was neither null nor an array.')
+    return raw
   }
+  const width = axis('envelopeWidthStuds')
+  const height = axis('envelopeHeightStuds')
+  const depth = axis('envelopeDepthStuds')
+  const envelopeStuds: [number, number, number] | null =
+    width !== null && height !== null && depth !== null ? [width, height, depth] : null
 
   const scale = value.scale
   if (!['micro', 'minifig', 'midi', 'large', 'unspecified'].includes(String(scale))) {
@@ -333,11 +358,14 @@ function parseRawBrief(raw: unknown): RawBrief {
   }
 
   const evidence = value.evidence
-  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) throw new Error('Field "evidence" was not an object.')
+  if (!Array.isArray(evidence)) throw new Error('Field "evidence" was not an array of {field, phrase} entries.')
   const evidenceRecord: Record<string, string> = {}
-  for (const [key, entry] of Object.entries(evidence as Record<string, unknown>)) {
-    if (typeof entry !== 'string') throw new Error(`Evidence for "${key}" was not a string.`)
-    evidenceRecord[key] = entry
+  for (const entry of evidence) {
+    const item = entry as Record<string, unknown>
+    if (!item || typeof item.field !== 'string' || typeof item.phrase !== 'string') {
+      throw new Error('An evidence entry was missing "field" or "phrase".')
+    }
+    evidenceRecord[item.field] = item.phrase
   }
 
   const conflictsRaw = value.conflicts

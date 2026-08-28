@@ -253,14 +253,18 @@ export function staggerSettled(
  * Returns an index into the step list rather than a part set, so the caller
  * decides what "revealed" means for its own render mode.
  */
-export function playbackStepAt(elapsedMs: number, stepCount: number, stepMs = MOTION_DURATIONS.instructionStep): number {
+export function playbackStepAt(
+  elapsedMs: number,
+  stepCount: number,
+  stepMs: number = MOTION_DURATIONS.instructionStep,
+): number {
   if (stepCount <= 0) return 0
   if (stepMs <= 0) return stepCount - 1
   return Math.min(stepCount - 1, Math.floor(elapsedMs / stepMs))
 }
 
 /** Turntable azimuth in radians, wrapped, for a deterministic settled pose at t=0. */
-export function turntableAngle(elapsedMs: number, periodMs = MOTION_DURATIONS.turntable): number {
+export function turntableAngle(elapsedMs: number, periodMs: number = MOTION_DURATIONS.turntable): number {
   if (periodMs <= 0) return 0
   return ((elapsedMs % periodMs) / periodMs) * Math.PI * 2
 }

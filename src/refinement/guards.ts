@@ -371,7 +371,21 @@ export function guardCandidate(
     // Anything a refinement creates has to end up attached to the region it was
     // invited into. Without this a "reinforcement" could be a plate floating a
     // stud away from the part it was supposed to be holding.
+    //
+    // A plan that replaces its whole scope — consolidating eight 1 × 1 bricks
+    // into one 1 × 8 — leaves no original scope part to anchor to, so the
+    // fallback is what the scope was attached to *before*: the region's own
+    // neighbours, which is the same seam by a different name.
     const anchors = scope.partIds.filter((id) => after.parts[id])
+    if (!anchors.length) {
+      for (const pair of deriveConnections(before).pairs) {
+        const [inside, outside] = scope.partIdSet.has(pair.a.partId)
+          ? [pair.a.partId, pair.b.partId]
+          : [pair.b.partId, pair.a.partId]
+        if (!scope.partIdSet.has(inside) || scope.partIdSet.has(outside)) continue
+        if (after.parts[outside] && !anchors.includes(outside)) anchors.push(outside)
+      }
+    }
     const reachable = anchors.length ? new Set(connectedComponent(after, anchors)) : new Set<string>()
     const stray = added.filter((id) => !reachable.has(id))
     if (stray.length) {

@@ -24,6 +24,12 @@
     "vite.config.ts",
     "hexclave.config.ts",
     "tools",
-    "src"
+    "server",
+    "src",
+    "convex/model/capabilities.ts",
+    "convex/model/checksum.ts",
+    "convex/model/limits.ts",
+    "convex/model/protocol.ts",
+    "convex/model/redaction.ts"
   ]
 }

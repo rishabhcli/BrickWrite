@@ -494,9 +494,13 @@ export async function buildSemanticIndex(options = {}) {
       documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1)
     }
   }
-  const maximumDf = Math.max(ANALYZER.minDocFrequency, documents.length * ANALYZER.maxDocFrequencyRatio)
+  // The document-frequency floor exists to strip noise, and a corpus of a
+  // handful of parts has no noise to strip - CI builds this against a one-part
+  // fixture catalog, where a floor of three would reject every term there is.
+  const minimumDf = Math.min(ANALYZER.minDocFrequency, Math.max(1, Math.floor(documents.length / 8)))
+  const maximumDf = Math.max(minimumDf, documents.length * ANALYZER.maxDocFrequencyRatio)
   const vocabulary = [...documentFrequency.entries()]
-    .filter(([, df]) => df >= ANALYZER.minDocFrequency && df <= maximumDf)
+    .filter(([, df]) => df >= minimumDf && df <= maximumDf)
     .map(([term]) => term)
     .sort()
   if (!vocabulary.length) throw new Error('No catalog term survived the document-frequency filter.')
@@ -507,7 +511,7 @@ export async function buildSemanticIndex(options = {}) {
     // BM25's IDF, floored above zero so a common-but-kept term still counts.
     idf[i] = Math.log(1 + (documents.length - df + 0.5) / (df + 0.5))
   }
-  log(`semantic-index: vocabulary ${vocabulary.length} terms (df >= ${ANALYZER.minDocFrequency})`)
+  log(`semantic-index: vocabulary ${vocabulary.length} terms (df >= ${minimumDf})`)
 
   const matrix = buildSparseMatrix(documents, vocabularyIndex, idf)
   const rows = documents.length
@@ -624,7 +628,7 @@ export async function buildSemanticIndex(options = {}) {
     analyzer: {
       ngram: ANALYZER.ngram,
       charGramWeight: ANALYZER.charGramWeight,
-      minDocFrequency: ANALYZER.minDocFrequency,
+      minDocFrequency: minimumDf,
       probeHash,
     },
     /** Diagnostics: how much of the catalog's variance the truncation kept. */

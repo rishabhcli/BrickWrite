@@ -148,6 +148,13 @@ const PENALTY = {
   wrongAxis: 1.2,
   forbiddenConnector: 1.1,
   wrongColor: 0.5,
+  /**
+   * Charged per share of the request made of words this build has never
+   * indexed. A match for "a zorbulon plate" is at best an answer to "a plate",
+   * and it must not be offered with the confidence of an answer to the whole
+   * request.
+   */
+  unknownTerm: 1.6,
   decoration: 1.4,
   /** LDraw "~" parts are subassembly fragments, not things a person can ask for. */
   helper: 2.5,
@@ -163,7 +170,7 @@ const PENALTY = {
  * tracks the observed hit rate per band. Numbers are recorded in
  * docs/integration/part-intelligence.md.
  */
-const CALIBRATION = { slope: 0.5091, intercept: -3.1907 } as const
+const CALIBRATION = { slope: 0.6125, intercept: -3.1016 } as const
 
 /** Maps fused evidence onto the probability that the match is acceptable. */
 export function calibrateConfidence(score: number): number {
@@ -174,6 +181,13 @@ export function calibrateConfidence(score: number): number {
 }
 
 const closeEnough = (a: number, b: number, tolerance: number) => Math.abs(a - b) <= tolerance
+
+/** Fraction of the size constraints the request stated that this part fails. */
+export function unmetConstraintShare(signal: DimensionalSignal): number {
+  const stated = Object.values(signal.met).filter((value) => value !== null)
+  if (!stated.length) return 0
+  return stated.filter((value) => value === false).length / stated.length
+}
 
 /** One candidate size reading: a measurement in plates, or a name in bricks. */
 interface SizeBasis {
@@ -411,7 +425,12 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
   }
   if (document.geometryAvailable) score += WEIGHT.placeable
 
-  if (!dimensional.satisfied && dimensional.basis === 'measured') score -= PENALTY.wrongSize
+  // Charged per unmet constraint rather than once for the whole request: a
+  // 1 x 1 round brick answers the footprint of "a 64 stud long 1 x 1 round
+  // brick" and fails its length, and a single blended verdict would let the
+  // half it fails go unpriced.
+  const unmetShare = unmetConstraintShare(dimensional)
+  if (unmetShare > 0 && dimensional.basis !== null) score -= PENALTY.wrongSize * unmetShare
   if (connector.missing.length && connector.testable) {
     score -= PENALTY.missingConnector * (connector.missing.length / Math.max(1, query.connectors.length))
   }
@@ -419,6 +438,9 @@ export function rankCandidate(parameters: RankParameters): RankedCandidate {
   if (query.color.codes.length && color.testable && !color.satisfied) score -= PENALTY.wrongColor
   if (decorated && query.variantPreference !== 'printed' && !exactIdKind && relation?.kind !== 'printed-variant') {
     score -= PENALTY.decoration
+  }
+  if (query.contentTerms.length && query.unmatchedTerms.length) {
+    score -= PENALTY.unknownTerm * (query.unmatchedTerms.length / query.contentTerms.length)
   }
   if (document.helper) score -= PENALTY.helper
 

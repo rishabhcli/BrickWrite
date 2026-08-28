@@ -268,6 +268,13 @@ export class GeometryAssetProvider {
         if (entry.waiters === 0) entry.controller.abort()
         resolve(aborted(canonicalId))
       }
+      // Attaching the listener is not enough: the signal can fire while the
+      // descriptor lookup above is still awaiting, which would leave this
+      // caller waiting on a transfer nobody is going to cancel.
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
       signal.addEventListener('abort', onAbort, { once: true })
       entry.promise.then(
         (result) => {

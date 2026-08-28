@@ -5,8 +5,9 @@ export default defineConfig({
   plugins: [react()],
   // The assistant and generation routes hold the model API key, so they run in
   // a separate Node process rather than in Vite's module graph. Proxying keeps
-  // the browser talking to one origin in development, which is also what the
-  // production Pages deployment does.
+  // the browser talking to one origin in development. Production must provide
+  // the same `/api` routing to the separately deployed Node service; the Pages
+  // share functions do not implicitly host these model routes.
   server: {
     port: 4173,
     strictPort: true,

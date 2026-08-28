@@ -333,5 +333,16 @@ export class ProjectAutosave {
   }
 }
 
-export const createRepository = () =>
-  new ProjectRepository(indexedDbAvailable() ? new IndexedDbDriver() : new MemoryDriver())
+/**
+ * The storage driver this environment can back.
+ *
+ * Published separately because the cloud relay keeps its outbox and project
+ * links in the existing `meta` store. Sharing one driver prevents two layers
+ * from racing separate IndexedDB connections while local autosave remains the
+ * sole writer of checkpoints and transactions.
+ */
+export const createDriver = (): StorageDriver =>
+  indexedDbAvailable() ? new IndexedDbDriver() : new MemoryDriver()
+
+export const createRepository = (driver: StorageDriver = createDriver()) =>
+  new ProjectRepository(driver)

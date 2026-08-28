@@ -19,6 +19,8 @@ import './styles.css'
  * here: an unregistered id renders the shell's "not installed in this build"
  * state, which is a truthful answer, and each workstream adds its own line.
  */
+registerRoute('landing', () => import('./features/landing/LandingPage'))
+registerRoute('explore', () => import('./features/explore/ExplorePage'))
 registerRoute('editor', () => import('./App'))
 
 createRoot(document.getElementById('root')!).render(

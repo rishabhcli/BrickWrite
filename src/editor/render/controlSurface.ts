@@ -125,6 +125,20 @@ export interface RendererControlSurface {
   /** Discards occlusion-cycle state, so the next pick returns the frontmost part. */
   resetCycle(): void
 
+  /**
+   * Where a part is on the canvas.
+   *
+   * A viewport that can pick by pixel must also be able to say where a pixel
+   * *is*: callouts, note anchors, "scroll to this part" and every driven
+   * interaction need it, and computing it outside the renderer would mean a
+   * second copy of the projection.
+   */
+  screenPositionOf(partId: string): { x: number; y: number; behindCamera: boolean } | null
+  /** The same, for an arbitrary document-space point. */
+  projectPoint(pointLdu: readonly [number, number, number]): { x: number; y: number; behindCamera: boolean }
+  /** Frames the camera on a set of parts and settles synchronously. */
+  frameParts(partIds: readonly string[]): boolean
+
   setVisibility(patch: VisibilityPatch): Promise<VisibilityReport>
   getVisibility(): VisibilityReport
 
@@ -156,6 +170,8 @@ export interface RendererControlSurface {
   settle(): void
   setEnvironment(name: EnvironmentName): void
   setQuality(index: number | 'auto'): void
+  /** True transmission for transparent elements, budget permitting. */
+  setTransmission(enabled: boolean): void
 
   /** Settles motion, draws a frame, and reads it back with its metadata. */
   capture(): Promise<CaptureMetadata & { dataUrl: string }>

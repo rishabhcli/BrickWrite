@@ -154,8 +154,24 @@ export interface PartCorpus {
   catalogVersion: string
   documents: readonly CorpusDocument[]
   byId: ReadonlyMap<string, CorpusDocument>
+  /**
+   * Footprint key to document indices, so a stated size is a retrieval stage
+   * rather than only a re-ranking one.
+   *
+   * Without it, "a 1 x 2 x 5 brick" can only be answered from whatever the
+   * word "brick" happened to retrieve, and the part that actually measures
+   * 1 x 2 x 5 never enters the candidate set to be scored.
+   */
+  byFootprint: ReadonlyMap<string, readonly number[]>
   /** True when the wider catalogued tier was folded in. */
   includesCatalogued: boolean
+}
+
+/** Order-insensitive footprint key: a 2 x 4 and a 4 x 2 are one shape. */
+export function footprintKey(a: number, b: number): string {
+  const low = Math.min(a, b)
+  const high = Math.max(a, b)
+  return `${Math.round(low * 2) / 2}x${Math.round(high * 2) / 2}`
 }
 
 export interface CorpusLoadOptions {
@@ -213,7 +229,17 @@ const NAME_DIMENSION = new RegExp(
  * across, so values outside [0.25, 64] are rejected rather than indexed as if
  * they described a footprint.
  */
+/**
+ * Names whose numbers are millimetres, not studs.
+ *
+ * LDraw quotes wheel and tyre sizes as real-world diameters - "Tyre 30.4 x 14",
+ * "Wheel 18 x 14" - so reading them as a footprint makes a road tyre look like
+ * an eighteen-stud part and lets an impossible size request find a match.
+ */
+const MILLIMETRE_NAMES = /^(?:tyre|tire|wheel)\b/i
+
 export function parseNameDimensions(name: string): number[] | null {
+  if (MILLIMETRE_NAMES.test(name.trim())) return null
   const match = NAME_DIMENSION.exec(name)
   if (!match) return null
   const values: number[] = []
@@ -223,7 +249,14 @@ export function parseNameDimensions(name: string): number[] | null {
     if (value === null || value < 0.25 || value > 64) return null
     values.push(value)
   }
-  return values.length >= 2 ? values : null
+  if (values.length < 2) return null
+  // A footprint is counted in studs, so it lands on whole or half studs. A
+  // decimal footprint is a measurement in some other unit that happens to be
+  // written the same way, and is refused rather than indexed as a stud count.
+  for (const value of values.slice(0, 2)) {
+    if (Math.abs(value * 2 - Math.round(value * 2)) > 1e-6) return null
+  }
+  return values
 }
 
 function documentText(name: string, category: string, families: readonly string[], kind: string | null): string {
@@ -369,7 +402,24 @@ export function buildPartCorpus(
     })
   }
 
-  return { catalogVersion, documents, byId, includesCatalogued: external.length > 0 }
+  const byFootprint = new Map<string, number[]>()
+  documents.forEach((document, index) => {
+    const footprint = document.studs
+      ? [document.studs[0], document.studs[2]]
+      : document.nameStuds
+        ? document.nameStuds.slice(0, 2)
+        : null
+    if (!footprint || footprint.length < 2) return
+    const key = footprintKey(footprint[0], footprint[1])
+    const bucket = byFootprint.get(key)
+    if (bucket) bucket.push(index)
+    else byFootprint.set(key, [index])
+  })
+  for (const bucket of byFootprint.values()) {
+    bucket.sort((a, b) => documents[b].frequency - documents[a].frequency)
+  }
+
+  return { catalogVersion, documents, byId, byFootprint, includesCatalogued: external.length > 0 }
 }
 
 /**

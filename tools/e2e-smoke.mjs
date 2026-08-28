@@ -16,6 +16,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
 const url = process.env.BRICKWRIGHT_E2E_URL ?? 'http://127.0.0.1:4174'
+/**
+ * The editor is one surface among several the platform shell routes to, so the
+ * acceptance run navigates to it explicitly rather than assuming it owns `/`.
+ */
+const editorUrl = `${url.replace(/\/+$/, '')}/editor`
 let server
 
 async function available() {
@@ -40,16 +45,43 @@ try {
     await waitForServer()
   }
   await mkdir('artifacts', { recursive: true })
+  // Visual-regression states land here, one file per major workspace state.
+  await mkdir('artifacts/workbench', { recursive: true })
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true })
   const errors = []
+  const requests = []
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('pageerror', (cause) => errors.push(cause.message))
+  page.on('request', (request) => requests.push(request.url()))
 
+  // -- the installed platform surfaces route as one application -------------
+  // Root used to be an honest "not installed" state even though a complete
+  // landing surface existed in the tree, and its hash links changed the URL
+  // without changing React Router's route. Drive the shipped entry point before
+  // the editor so that wiring failures cannot hide behind isolated unit tests.
   await page.goto(url, { waitUntil: 'networkidle' })
+  await page.locator('.bw-landing').waitFor({ timeout: 15_000 })
+  assert(await page.locator('main').count() === 1, 'The framed landing page nests or duplicates the document main landmark')
+  const landingCatalogRequests = requests.filter((entry) => /\/catalog\/(?:latest|manifest|parts|colors)/.test(entry))
+  assert(
+    landingCatalogRequests.length === 0,
+    `The boot:none landing route fetched catalog data: ${landingCatalogRequests.slice(0, 3).join(', ')}`,
+  )
+  await page.locator('a.bw-demo-card').first().click()
+  await page.locator('.bw-explore').waitFor({ timeout: 30_000 })
+  assert(new URL(page.url()).pathname === '/explore', `A demo link did not route through the platform shell: ${page.url()}`)
+  assert(new URL(page.url()).searchParams.has('demo'), `A demo link lost its selected demo: ${page.url()}`)
+  await page.locator('.bw-explore canvas').waitFor({ timeout: 30_000 })
+  assert(await page.locator('.bw-explore [role="alert"]').count() === 0, 'The demo explorer failed to load its verified preview')
+  await page.locator('#bw-step').fill('1')
+  await page.waitForFunction(() => new URL(window.location.href).searchParams.get('step') === '1')
+
+  await page.goto(editorUrl, { waitUntil: 'networkidle' })
   // The catalog must load before the editor mounts at all.
   await page.locator('canvas').waitFor({ timeout: 30_000 })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  assert(await page.locator('.bw-agent[aria-label="Design partner"]').count() === 1, 'The design partner contribution is not mounted in the editor')
 
   // -- first run explains itself, once ---------------------------------------
   // A dense CAD console that opens with no orientation is a usability defect,
@@ -447,6 +479,197 @@ try {
     `Box selection did not select a region, viewport reports "${marqueeSelected}"`,
   )
   await page.locator('canvas').click({ position: { x: 12, y: 12 } })
+
+  // -- benchmark workflows --------------------------------------------------
+  // The moves a builder actually makes: find a part and place it, mate two
+  // parts through Connect, recolour, clone, array, isolate, type an exact pose,
+  // and undo all of it. Every one is asserted through the kernel — part counts,
+  // revisions and stored transforms — not by checking that a button looked
+  // pressed.
+  const workflow = {}
+  const lastPartId = () => page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).at(-1))
+  const modelState = () => page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+
+  // find -> place, from the keyboard alone.
+  await page.locator('[data-catalog-search]').fill('3005')
+  await page.waitForFunction(() => document.querySelectorAll('.part-card').length > 0, null, { timeout: 10_000 })
+  const beforeFind = await modelState()
+  await page.locator('[data-catalog-search]').press('ArrowDown')
+  await page.locator('[data-catalog-search]').press('Enter')
+  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  assert(
+    (await page.locator('.placement-hud strong').innerText()).trim().length > 0,
+    'Arming a part from the keyboard did not name it in the placement HUD',
+  )
+  await page.locator('canvas').click({ position: canvasCentre })
+  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeFind.parts, { timeout: 10_000 })
+  const afterFind = await modelState()
+  assert(afterFind.parts === beforeFind.parts + 1, 'Keyboard find-then-place did not add exactly one part')
+  assert(afterFind.revision === beforeFind.revision + 1, 'Keyboard placement was not a single transaction')
+  await page.keyboard.press('Escape')
+  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
+  await page.locator('[data-catalog-search]').fill('')
+  const subjectId = await lastPartId()
+  workflow.findAndPlace = { parts: afterFind.parts, placedId: subjectId }
+
+  // numeric transform: an exact coordinate, committed through the same bus, and
+  // then shown back in the field exactly as it was stored.
+  const numericField = page.locator('.dock-right').getByLabel('X in LDraw units')
+  await numericField.waitFor({ timeout: 5_000 })
+  const beforeNumeric = await modelState()
+  const numericTarget = await page.evaluate(
+    (id) => Math.round((window.brickwright.getDocument().parts[id].transform.position[0] + 60) / 20) * 20,
+    subjectId,
+  )
+  await numericField.fill(String(numericTarget))
+  await numericField.press('Enter')
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeNumeric.revision, { timeout: 10_000 })
+  const numericResult = await page.evaluate((id) => {
+    const model = window.brickwright.getDocument()
+    const basis = model.parts[id].transform.basis
+    let worst = 0
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        let dot = 0
+        for (let k = 0; k < 3; k += 1) dot += basis[row * 3 + k] * basis[col * 3 + k]
+        worst = Math.max(worst, Math.abs(dot - (row === col ? 1 : 0)))
+      }
+    }
+    return { x: model.parts[id].transform.position[0], revision: model.revision, orthonormalityError: worst }
+  }, subjectId)
+  assert(
+    numericResult.revision === beforeNumeric.revision + 1,
+    `Numeric entry committed ${numericResult.revision - beforeNumeric.revision} transactions, not one`,
+  )
+  assert(
+    Number(await numericField.inputValue()) === numericResult.x,
+    `The numeric field shows ${await numericField.inputValue()} but the document stores ${numericResult.x}`,
+  )
+  // A numeric edit that sheared the basis would be refused by the kernel on the
+  // next commit, so the canonical path has to keep it exactly orthonormal.
+  assert(
+    numericResult.orthonormalityError < 1e-9,
+    `Numeric entry left the basis sheared by ${numericResult.orthonormalityError}`,
+  )
+  workflow.numericTransform = numericResult
+
+  // recolour: choose an active colour in the palette, then paint the selection.
+  const beforeColour = await page.evaluate((id) => ({
+    revision: window.brickwright.getDocument().revision,
+    color: window.brickwright.getDocument().parts[id].color,
+  }), subjectId)
+  const swatchIndex = await page.evaluate((current) => {
+    const swatches = [...document.querySelectorAll('.palette-dock .swatches button')]
+    return swatches.findIndex((node) => !(node.getAttribute('title') ?? '').includes(`LDraw ${current}`))
+  }, beforeColour.color)
+  assert(swatchIndex >= 0, 'The project palette offered no colour other than the one already applied')
+  await page.locator('.palette-dock .swatches button').nth(swatchIndex).click()
+  await page.locator('.dock-right').getByRole('button', { name: 'Paint' }).click()
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeColour.revision, { timeout: 10_000 })
+  const afterColour = await page.evaluate((id) => window.brickwright.getDocument().parts[id].color, subjectId)
+  assert(afterColour !== beforeColour.color, 'Painting the selection did not change its colour')
+  workflow.recolour = { from: beforeColour.color, to: afterColour }
+
+  // clone
+  const beforeClone = await modelState()
+  await page.locator('.dock-right').getByRole('button', { name: 'Clone' }).click()
+  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeClone.parts, { timeout: 10_000 })
+  const afterClone = await modelState()
+  assert(afterClone.parts === beforeClone.parts + 1, `Clone added ${afterClone.parts - beforeClone.parts} parts, not one`)
+  assert(afterClone.revision === beforeClone.revision + 1, 'Clone was not a single transaction')
+  workflow.clone = afterClone
+
+  // array
+  const beforeArray = await modelState()
+  await page.locator('.dock-right').getByRole('button', { name: 'Array' }).click()
+  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeArray.parts, { timeout: 10_000 })
+  const afterArray = await modelState()
+  assert(afterArray.parts === beforeArray.parts + 3, `A three-copy array added ${afterArray.parts - beforeArray.parts} parts`)
+  assert(afterArray.revision === beforeArray.revision + 1, 'The array was not a single transaction')
+  workflow.array = afterArray
+
+  // isolate: view state, never a document edit.
+  const beforeIsolate = await page.evaluate(() => window.brickwright.getDocument().revision)
+  await page.locator('.dock-right').getByRole('button', { name: /Isolate/ }).click()
+  await page.locator('.status-visibility').waitFor({ timeout: 5_000 })
+  const isolateNote = (await page.locator('.status-visibility').innerText()).trim()
+  assert(/Isolated \d+ of \d+ parts/.test(isolateNote), `Isolate did not report its scope, saw "${isolateNote}"`)
+  assert(
+    (await page.evaluate(() => window.brickwright.getDocument().revision)) === beforeIsolate,
+    'Isolating parts mutated the document; visibility has to be view state only',
+  )
+  await page.screenshot({ path: 'artifacts/workbench/state-isolate.png' })
+  await page.locator('.status-visibility').click()
+  await page.locator('.status-visibility').waitFor({ state: 'hidden' })
+  workflow.isolate = isolateNote
+
+  // mate via Connect: two explicit stages, a reviewed preview, then one commit.
+  await page.locator('.primary-tools .tool-button', { hasText: 'Connect' }).click()
+  const connectPanel = page.locator('.connect-panel')
+  await connectPanel.waitFor({ timeout: 5_000 })
+  assert(
+    (await connectPanel.locator('.connect-stages li').count()) === 3,
+    'Connect should present three explicit stages',
+  )
+  assert(
+    await page.locator('.connect-actions button', { hasText: 'BACK' }).isDisabled(),
+    'Connect stage one should have nothing to go back to',
+  )
+  // Stage one, then stage two, by clicking two different parts in the viewport.
+  await page.locator('canvas').click({ position: canvasCentre })
+  await page.waitForFunction(() => document.querySelector('.connect-panel')?.getAttribute('data-stage') !== 'source', null, { timeout: 5_000 })
+  let reachedReview = false
+  for (const offset of [[90, -50], [-90, -50], [130, 40], [-130, 40], [0, -110]]) {
+    await page.locator('canvas').click({ position: { x: canvasCentre.x + offset[0], y: canvasCentre.y + offset[1] } })
+    await page.waitForTimeout(180)
+    if ((await connectPanel.getAttribute('data-stage')) === 'review') { reachedReview = true; break }
+  }
+  assert(reachedReview, 'Clicking a second part never advanced Connect to its review stage')
+  const connectSolutions = await connectPanel.locator('.connect-preview div').count()
+  const connectCommit = page.locator('.connect-commit')
+  const connectEnabled = !(await connectCommit.isDisabled())
+  await page.screenshot({ path: 'artifacts/workbench/state-connect.png' })
+  if (connectEnabled) {
+    const movingId = await page.evaluate(() => window.brickwright.getDocument() && document.querySelector('.connect-side strong')?.textContent)
+    const beforeConnect = await modelState()
+    const beforePose = await page.evaluate(() => JSON.stringify(window.brickwright.getDocument().parts))
+    await connectCommit.click()
+    await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeConnect.revision, { timeout: 10_000 })
+    const afterConnect = await modelState()
+    assert(afterConnect.revision === beforeConnect.revision + 1, 'Connect committed more than one transaction')
+    assert(afterConnect.parts === beforeConnect.parts, 'Connect changed the part count; it may only move a part')
+    assert(
+      (await page.evaluate(() => JSON.stringify(window.brickwright.getDocument().parts))) !== beforePose,
+      'Connect committed without moving anything',
+    )
+    workflow.connect = { moving: movingId, solutions: connectSolutions, committed: true }
+  } else {
+    // A refusal is a legitimate outcome and has to be legible rather than a
+    // silently dead button.
+    const refusal = (await connectPanel.locator('.connect-empty').innerText()).trim()
+    assert(refusal.length > 0, 'Connect offered no mate and gave no reason')
+    workflow.connect = { solutions: 0, refusal, committed: false }
+  }
+  await page.keyboard.press('Escape')
+  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
+
+  // undo unwinds the whole workflow, one transaction at a time.
+  const beforeUndoChain = await modelState()
+  for (let step = 0; step < 12; step += 1) {
+    if ((await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)) === beforeFind.parts) break
+    await page.getByRole('button', { name: 'Undo' }).click()
+    await page.waitForTimeout(120)
+  }
+  const afterUndoChain = await modelState()
+  assert(
+    afterUndoChain.parts === beforeFind.parts,
+    `Undoing the workflow left ${afterUndoChain.parts} parts, expected ${beforeFind.parts}`,
+  )
+  assert(afterUndoChain.revision > beforeUndoChain.revision, 'Undo did not advance the revision monotonically')
+  workflow.undo = afterUndoChain
 
   // -- the build sequence survives an edit ----------------------------------
   // The bottom band used to swap the sequence out for history the moment
@@ -1025,6 +1248,330 @@ try {
   // -- an exported model imports back as the same build ---------------------
   // Interoperability is only real if the round trip closes. This is the last
   // check in the run because it replaces the open document.
+
+  // -- responsive, accessible and visually pinned ---------------------------
+  // A dense CAD console is exactly the kind of interface that quietly breaks at
+  // a width nobody tested, or that can only be driven with a mouse. Both are
+  // asserted here rather than assumed, and every state is written to
+  // artifacts/workbench/ so a regression is visible as an image.
+  const quality = { responsive: [], contrast: [], screenshots: [] }
+  const shot = async (name) => {
+    await page.screenshot({ path: `artifacts/workbench/${name}.png` })
+    quality.screenshots.push(name)
+  }
+
+  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
+  await page.locator('canvas').click({ position: canvasCentre })
+  await shot('state-default')
+
+  await page.locator('.category-row .facet-toggle').click()
+  await page.locator('.palette-facets').waitFor()
+  await shot('state-palette-facets')
+  await page.locator('.category-row .facet-toggle').click()
+
+  await shot('state-transform')
+
+  await page.locator('.timeline-switch button', { hasText: 'HISTORY' }).click()
+  await shot('state-timeline-history')
+  await page.locator('.timeline-switch button', { hasText: 'STEPS' }).click()
+
+  await page.selectOption('.render-picker select', 'connections')
+  await page.waitForTimeout(300)
+  await shot('state-render-connections')
+  await page.selectOption('.render-picker select', 'exploded')
+  await page.waitForTimeout(400)
+  await shot('state-render-exploded')
+  await page.selectOption('.render-picker select', 'beauty')
+  await page.waitForTimeout(200)
+
+  // The inspector's validation report, which is also the last existing
+  // assertion's target — proven reachable rather than assumed.
+  await page.getByRole('button', { name: /VALIDATE/ }).click()
+  await page.locator('.validation-hero').waitFor({ timeout: 10_000 })
+  await shot('state-validate')
+  await page.getByRole('button', { name: /OBJECT/ }).click()
+
+  // Collapsed docks are a first-class layout, not a degraded one.
+  await page.locator('.dock-left .dock-collapse').click()
+  await page.locator('.dock-rail.left').waitFor()
+  await shot('state-dock-collapsed')
+  await page.locator('.dock-rail.left button').click()
+  await page.locator('.dock-left').waitFor()
+
+  // -- command palette: keyboard-only, trapped, and restoring focus ---------
+  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).focus()
+  await page.keyboard.press('ControlOrMeta+p')
+  const commandPalette = page.getByRole('dialog', { name: 'Command palette' })
+  await commandPalette.waitFor({ timeout: 10_000 })
+  assert(
+    await commandPalette.getByLabel('Search commands').evaluate((node) => document.activeElement === node),
+    'Opening the command palette did not move focus into its search field',
+  )
+  await page.keyboard.type('isolate')
+  const paletteRows = await commandPalette.getByRole('option').count()
+  assert(paletteRows > 0, 'The command palette matched nothing for a command it publishes')
+  await shot('state-command-palette')
+
+  // Focus trap: tabbing off the last control has to come back to the first.
+  const trapped = await page.evaluate(() => {
+    const dialog = document.querySelector('.command-palette')
+    if (!dialog) return false
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled)')]
+    focusable[focusable.length - 1].focus()
+    return focusable.length > 1
+  })
+  assert(trapped, 'The command palette had too few controls to test its focus trap')
+  await page.keyboard.press('Tab')
+  assert(
+    await page.evaluate(() => document.querySelector('.command-palette')?.contains(document.activeElement) ?? false),
+    'Tab escaped the command palette; a modal that leaks focus is not modal',
+  )
+
+  // The keys tab is where a binding is changed, and where a conflict is named.
+  await commandPalette.getByRole('tab', { name: /KEYS/ }).click()
+  await commandPalette.locator('.keymap-row').first().waitFor()
+  const keymapRows = await commandPalette.locator('.keymap-row').count()
+  assert(keymapRows > 30, `Expected the whole command map to be rebindable, saw ${keymapRows} rows`)
+  await shot('state-keymap')
+  // Rebind Move onto Select's chord and confirm the conflict is reported rather
+  // than one of them silently winning.
+  await commandPalette.getByLabel(/Change the shortcut for Move tool/).click()
+  await page.keyboard.press('v')
+  await commandPalette.locator('.keymap-conflicts').waitFor({ timeout: 5_000 })
+  const conflictText = await commandPalette.locator('.keymap-conflicts').innerText()
+  assert(/tool\.move/.test(conflictText) && /tool\.select/.test(conflictText), `The conflict did not name both commands: ${conflictText}`)
+  await shot('state-keymap-conflict')
+  await commandPalette.getByRole('button', { name: /RESET ALL/ }).click()
+  assert(
+    (await commandPalette.locator('.keymap-conflicts').count()) === 0,
+    'Resetting the keyboard map did not clear the conflict',
+  )
+  await page.keyboard.press('Escape')
+  await commandPalette.waitFor({ state: 'hidden' })
+  assert(
+    await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).evaluate((node) => document.activeElement === node),
+    'Closing the command palette did not restore focus to whatever opened it',
+  )
+
+  // -- screen-reader labelling ---------------------------------------------
+  const labelling = await page.evaluate(() => {
+    const unnamed = []
+    for (const button of document.querySelectorAll('button')) {
+      const text = (button.textContent ?? '').trim()
+      const named = button.getAttribute('aria-label') || button.getAttribute('title') || text
+      if (!named) unnamed.push(button.className || button.outerHTML.slice(0, 80))
+    }
+    const unlabelledFields = []
+    for (const field of document.querySelectorAll('input, select, textarea')) {
+      const id = field.getAttribute('id')
+      const named = field.getAttribute('aria-label')
+        || (id && document.querySelector(`label[for="${id}"]`))
+        || field.closest('label')
+        || field.getAttribute('title')
+      if (!named) unlabelledFields.push(field.className || field.outerHTML.slice(0, 80))
+    }
+    return { unnamed, unlabelledFields }
+  })
+  assert(
+    labelling.unnamed.length === 0,
+    `${labelling.unnamed.length} buttons have no accessible name: ${labelling.unnamed.slice(0, 4).join(' | ')}`,
+  )
+  assert(
+    labelling.unlabelledFields.length === 0,
+    `${labelling.unlabelledFields.length} form fields have no label: ${labelling.unlabelledFields.slice(0, 4).join(' | ')}`,
+  )
+
+  // -- keyboard reachability ------------------------------------------------
+  // Tab from the very top of the document and record what it can reach.
+  await page.locator('.brand-lockup').click({ position: { x: 4, y: 4 } })
+  const reached = []
+  for (let step = 0; step < 60; step += 1) {
+    await page.keyboard.press('Tab')
+    const id = await page.evaluate(() => {
+      const node = document.activeElement
+      if (!node || node === document.body) return null
+      return `${node.tagName.toLowerCase()}.${(node.className || '').toString().split(' ')[0]}:${(node.getAttribute('aria-label') || node.textContent || '').trim().slice(0, 24)}`
+    })
+    if (id) reached.push(id)
+  }
+  assert(reached.length > 20, `Only ${reached.length} controls were reachable by Tab in 60 presses`)
+  assert(
+    reached.some((entry) => entry.includes('tool-button')),
+    'The tool rail is not reachable by keyboard',
+  )
+  assert(
+    reached.some((entry) => entry.startsWith('input')),
+    'No text field is reachable by keyboard',
+  )
+  quality.keyboardReachable = reached.length
+
+  // Resizing a dock has to be possible without a pointer. The splitter is a
+  // focusable separator, and the arrow keys move it.
+  const splitter = page.locator('.dock-splitter').first()
+  await splitter.focus()
+  assert(
+    await splitter.evaluate((node) => document.activeElement === node),
+    'The dock splitter cannot take focus, so resizing is pointer-only',
+  )
+  const widthBeforeKeys = await page.evaluate(() => Math.round(document.querySelector('.dock-left').getBoundingClientRect().width))
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(150)
+  const widthAfterKeys = await page.evaluate(() => Math.round(document.querySelector('.dock-left').getBoundingClientRect().width))
+  assert(
+    widthAfterKeys > widthBeforeKeys,
+    `Arrow keys did not resize the dock (${widthBeforeKeys} -> ${widthAfterKeys})`,
+  )
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await page.waitForTimeout(150)
+  quality.keyboardResize = { before: widthBeforeKeys, after: widthAfterKeys }
+
+  // -- contrast -------------------------------------------------------------
+  // Sampled on the text that carries meaning rather than blanket-scanned: the
+  // status bar, the dock headers, the tool labels and the palette copy.
+  const contrast = await page.evaluate(() => {
+    const luminance = (rgb) => {
+      const channel = (value) => {
+        const v = value / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+    }
+    const parse = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+    const backdropOf = (node) => {
+      let current = node
+      while (current) {
+        const background = getComputedStyle(current).backgroundColor
+        const parts = (background.match(/[\d.]+/g) ?? []).map(Number)
+        if (parts.length >= 3 && (parts[3] === undefined || parts[3] > 0.6)) return parts.slice(0, 3)
+        current = current.parentElement
+      }
+      return [9, 13, 14]
+    }
+    const ratio = (a, b) => {
+      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+      return (high + 0.05) / (low + 0.05)
+    }
+    const samples = [
+      ['.statusbar .status-scope', 4.5],
+      ['.statusbar .status-hint', 4.5],
+      ['.dock-section-toggle span', 4.5],
+      ['.tool-button.active span', 4.5],
+      ['.part-copy strong', 4.5],
+      ['.selection-summary strong', 4.5],
+      ['.transform-action span', 4.5],
+      ['.selection-modes button', 4.5],
+      ['.dock-head .eyebrow', 3],
+      ['.part-copy span', 3],
+    ]
+    return samples.map(([selector, minimum]) => {
+      const node = document.querySelector(selector)
+      if (!node) return { selector, minimum, ratio: null }
+      const style = getComputedStyle(node)
+      return {
+        selector,
+        minimum,
+        ratio: Number(ratio(parse(style.color), backdropOf(node)).toFixed(2)),
+      }
+    })
+  })
+  for (const sample of contrast) {
+    assert(sample.ratio !== null, `Contrast sample "${sample.selector}" was not on screen`)
+    assert(
+      sample.ratio >= sample.minimum,
+      `${sample.selector} reads at ${sample.ratio}:1, below its ${sample.minimum}:1 floor`,
+    )
+  }
+  quality.contrast = contrast
+
+  // -- prefers-reduced-motion ----------------------------------------------
+  const motionBefore = await page.evaluate(() => {
+    const card = document.querySelector('.part-card')
+    return card ? getComputedStyle(card).transitionDuration : null
+  })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const motionAfter = await page.evaluate(() => {
+    const card = document.querySelector('.part-card')
+    const chevron = document.querySelector('.dock-chevron')
+    return {
+      card: card ? getComputedStyle(card).transitionDuration : null,
+      chevron: chevron ? getComputedStyle(chevron).transitionDuration : null,
+    }
+  })
+  const seconds = (value) => Math.max(...(value ?? '0s').split(',').map((entry) => Number.parseFloat(entry) || 0))
+  assert(seconds(motionBefore) > 0.05, `Expected a real transition by default, saw ${motionBefore}`)
+  assert(seconds(motionAfter.card) < 0.01, `prefers-reduced-motion left a ${motionAfter.card} transition on part cards`)
+  assert(seconds(motionAfter.chevron) < 0.01, `prefers-reduced-motion left a ${motionAfter.chevron} transition on dock chevrons`)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  quality.reducedMotion = { normal: motionBefore, reduced: motionAfter.card }
+
+  // -- four widths, no overflow, no unusably small controls ----------------
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+    { width: 1600, height: 1000 },
+    { width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(size)
+    await page.waitForTimeout(350)
+    const measured = await page.evaluate((viewport) => {
+      const shell = document.querySelector('.app-shell')
+      const canvas = document.querySelector('canvas')
+      const rect = canvas?.getBoundingClientRect()
+      const tooSmall = []
+      const interactive = document.querySelectorAll(
+        '.toolrail button, .statusbar button, .dock-section-toggle, .selection-modes button, .transform-action, .tier-row button, .part-add, .dock-splitter',
+      )
+      for (const node of interactive) {
+        // A splitter is drawn as a hairline on purpose; what has to clear the
+        // minimum is the area a pointer can actually hit.
+        const target = node.classList.contains('dock-splitter') ? (node.firstElementChild ?? node) : node
+        const box = target.getBoundingClientRect()
+        if (box.width === 0 && box.height === 0) continue
+        if (Math.min(box.width, box.height) < 16) {
+          tooSmall.push(`${node.className}:${Math.round(box.width)}x${Math.round(box.height)}`)
+        }
+      }
+      const overflowing = []
+      for (const node of document.querySelectorAll('.app-shell > *')) {
+        const box = node.getBoundingClientRect()
+        if (box.right > viewport.width + 1 || box.left < -1) {
+          overflowing.push(`${node.className}:${Math.round(box.left)}..${Math.round(box.right)}`)
+        }
+      }
+      return {
+        documentScrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        shellWidth: shell ? Math.round(shell.getBoundingClientRect().width) : 0,
+        canvasWidth: rect ? Math.round(rect.width) : 0,
+        canvasHeight: rect ? Math.round(rect.height) : 0,
+        tooSmall,
+        overflowing,
+      }
+    }, size)
+    assert(
+      measured.documentScrollWidth <= measured.clientWidth + 1,
+      `At ${size.width}x${size.height} the page scrolls horizontally (${measured.documentScrollWidth} > ${measured.clientWidth})`,
+    )
+    assert(
+      measured.overflowing.length === 0,
+      `At ${size.width}x${size.height} these regions overflow the shell: ${measured.overflowing.join(', ')}`,
+    )
+    assert(
+      measured.canvasWidth >= 420 && measured.canvasHeight >= 280,
+      `At ${size.width}x${size.height} the viewport is only ${measured.canvasWidth}x${measured.canvasHeight}`,
+    )
+    assert(
+      measured.tooSmall.length === 0,
+      `At ${size.width}x${size.height} these controls are under 16px: ${measured.tooSmall.slice(0, 5).join(', ')}`,
+    )
+    await shot(`layout-${size.width}x${size.height}`)
+    quality.responsive.push({ ...size, canvas: [measured.canvasWidth, measured.canvasHeight] })
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.waitForTimeout(300)
+
   const roundTripPath = 'artifacts/e2e-roundtrip.ldr'
   await writeFile(roundTripPath, exported, 'utf8')
   await page.getByRole('button', { name: 'More export options' }).click()
@@ -1171,6 +1718,15 @@ try {
       switchedBackTo: restored.id,
       attributionDatasets: attribution.datasets,
       licenceReviewFlags: attribution.reviewFlags,
+    },
+    workflows: workflow,
+    quality: {
+      responsive: quality.responsive,
+      keyboardReachableControls: quality.keyboardReachable,
+      contrast: quality.contrast,
+      reducedMotion: quality.reducedMotion,
+      screenshots: quality.screenshots.length,
+      screenshotDirectory: 'artifacts/workbench/',
     },
     screenshot: 'artifacts/e2e-final.png',
   }, null, 2))

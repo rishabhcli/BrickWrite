@@ -715,11 +715,6 @@ export class MirroredProjectStore implements ProjectStore {
     return this.outbox.subscribe(listener)
   }
 
-  private async cloudIdFor(localProjectId: string): Promise<string | null> {
-    const link = await this.links.get(localProjectId)
-    return link?.cloudProjectId ?? null
-  }
-
   private async requireLink(localProjectId: string): Promise<CloudResult<ProjectLink>> {
     const link = await this.links.get(localProjectId)
     if (!link) {

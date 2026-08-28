@@ -3,7 +3,7 @@ import path from 'node:path'
 import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { findArticulatedJoints, type ArticulatedJoint } from '../../cad/articulation'
-import { clearCollisionGeometryCache, geometryFromArrays, type GeometryProvider } from '../../cad/collision'
+import { clearCollisionGeometryCache, findCollisions, geometryFromArrays, type GeometryProvider } from '../../cad/collision'
 import { CadEngine } from '../../cad/engine'
 import { IDENTITY_BASIS, type Mat3 } from '../../cad/math'
 import { decodeMesh } from '../../cad/mesh'
@@ -128,20 +128,20 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
   it('reports the whole range clear when nothing is in the way', () => {
     const document = hinge()
     const joint = jointOf(document)
-    const result = sweepJoint(document, joint, { rotateDegrees: 120, slideLdu: 0 }, { provide })
+    const result = sweepJoint(document, joint, { rotateDegrees: -70, slideLdu: 0 }, { provide })
     expect(result.blocking).toBeNull()
     expect(result.permissibleFraction).toBe(1)
-    expect(result.permissible.rotateDegrees).toBeCloseTo(120, 6)
-    expect(describeSweep(result, { rotateDegrees: 120, slideLdu: 0 })).toMatch(/Clear/)
+    expect(result.permissible.rotateDegrees).toBeCloseTo(-70, 6)
+    expect(describeSweep(result, { rotateDegrees: -70, slideLdu: 0 })).toMatch(/Clear/)
   })
 
   it('finds the pair that stops the motion, and how far it gets first', () => {
     const document = hinge()
     const joint = jointOf(document)
-    // A brick sitting where the flap reaches at 80° of a 160° swing.
-    const blocked = withObstacleAt(document, joint, 80)
+    // A plate sitting where the mast reaches at −40° of a −70° swing.
+    const blocked = withObstacleAt(document, joint, -40)
     const blockedJoint = jointOf(blocked)
-    const result = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide })
+    const result = sweepJoint(blocked, blockedJoint, { rotateDegrees: -70, slideLdu: 0 }, { provide })
 
     expect(result.blocking).not.toBeNull()
     expect([result.blocking!.partA, result.blocking!.partB]).toContain('wall')
@@ -149,8 +149,8 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     // the contact and no further.
     expect(result.permissibleFraction).toBeGreaterThan(0)
     expect(result.permissibleFraction).toBeLessThan(1)
-    expect(result.permissible.rotateDegrees).toBeLessThan(160)
-    expect(describeSweep(result, { rotateDegrees: 160, slideLdu: 0 })).toMatch(/Blocked by/)
+    expect(Math.abs(result.permissible.rotateDegrees)).toBeLessThan(70)
+    expect(describeSweep(result, { rotateDegrees: -70, slideLdu: 0 })).toMatch(/Blocked by/)
   })
 
   it('catches an obstacle in the middle that the endpoint alone would miss', () => {
@@ -158,21 +158,35 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     // 170° is not clear, because it passed through the frame at 90°.
     const document = hinge()
     const joint = jointOf(document)
-    const blocked = withObstacleAt(document, joint, 90)
+    const blocked = withObstacleAt(document, joint, -40)
     const blockedJoint = jointOf(blocked)
 
-    const swept = sweepJoint(blocked, blockedJoint, { rotateDegrees: 180, slideLdu: 0 }, { provide, samples: 18 })
+    // The destination at −80° is past the obstacle and clean on its own. This
+    // is asserted directly against the kernel, so the claim is about the model
+    // rather than about how the sweep happens to sample.
+    const island = new Set(blockedJoint.movingPartIds)
+    const parts = { ...blocked.parts }
+    for (const [partId, transform] of previewTransforms(blocked, blockedJoint, { rotateDegrees: -80, slideLdu: 0 })) {
+      parts[partId] = { ...parts[partId], transform }
+    }
+    const atDestination = findCollisions({ ...blocked, parts }, { onlyPartIds: [...island], provide })
+      .filter((contact) => !(island.has(contact.partA) && island.has(contact.partB)))
+    expect(atDestination).toEqual([])
+
+    // The path is not.
+    const swept = sweepJoint(blocked, blockedJoint, { rotateDegrees: -80, slideLdu: 0 }, { provide, samples: 20 })
     expect(swept.blocking).not.toBeNull()
-    expect(swept.permissibleFraction).toBeLessThan(0.55)
+    expect([swept.blocking!.partA, swept.blocking!.partB]).toContain('wall')
+    expect(swept.permissibleFraction).toBeLessThan(0.7)
   })
 
   it('refines the boundary rather than reporting the coarse bucket', () => {
     const document = hinge()
     const joint = jointOf(document)
-    const blocked = withObstacleAt(document, joint, 80)
+    const blocked = withObstacleAt(document, joint, -40)
     const blockedJoint = jointOf(blocked)
-    const coarse = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide, samples: 8, refinements: 0 })
-    const refined = sweepJoint(blocked, blockedJoint, { rotateDegrees: 160, slideLdu: 0 }, { provide, samples: 8, refinements: 8 })
+    const coarse = sweepJoint(blocked, blockedJoint, { rotateDegrees: -70, slideLdu: 0 }, { provide, samples: 8, refinements: 0 })
+    const refined = sweepJoint(blocked, blockedJoint, { rotateDegrees: -70, slideLdu: 0 }, { provide, samples: 8, refinements: 8 })
     // Bisection can only move the answer forward: it finds clean poses the
     // coarse scan stepped over.
     expect(refined.permissibleFraction).toBeGreaterThanOrEqual(coarse.permissibleFraction)
@@ -184,7 +198,7 @@ describe.skipIf(!HAVE_PACK)('swept collision along a joint', () => {
     // contact. Reporting that would make every joint appear seized.
     const document = hinge()
     const joint = jointOf(document)
-    const result = sweepJoint(document, joint, { rotateDegrees: 15, slideLdu: 0 }, { provide })
+    const result = sweepJoint(document, joint, { rotateDegrees: -15, slideLdu: 0 }, { provide })
     expect(result.blocking).toBeNull()
   })
 
@@ -210,7 +224,7 @@ describe.skipIf(!HAVE_PACK)('sweep scope', () => {
       ]),
     )
     const large: ModelDocument = { ...base, parts: { ...base.parts, ...far } }
-    const scope = sweepNeighbourhood(large, joint, { rotateDegrees: 90, slideLdu: 0 })
+    const scope = sweepNeighbourhood(large, joint, { rotateDegrees: -70, slideLdu: 0 })
     expect(scope).not.toBeNull()
     expect(Object.keys(scope!.document.parts).length).toBeLessThan(20)
     expect(Object.keys(scope!.document.parts)).toContain('flap')
@@ -219,7 +233,7 @@ describe.skipIf(!HAVE_PACK)('sweep scope', () => {
   it('carries the connection edges across, or every hinge would read as a collision', () => {
     const base = hinge()
     const joint = jointOf(base)
-    const scope = sweepNeighbourhood(base, joint, { rotateDegrees: 45, slideLdu: 0 })!
+    const scope = sweepNeighbourhood(base, joint, { rotateDegrees: -45, slideLdu: 0 })!
     expect(Object.keys(scope.document.connections).length).toBeGreaterThan(0)
   })
 })

@@ -167,8 +167,15 @@ export function cloneSettings(settings: ShareStudioSettings): ShareStudioSetting
   }
 }
 
-const clamp = (value: number, low: number, high: number) =>
-  Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : low
+/**
+ * Clamps, with an explicit fallback for a value that is not a number at all.
+ *
+ * The fallback is stated by every caller rather than defaulting to the low
+ * bound, because "not a number" and "too small" are different faults: a NaN pan
+ * offset should re-centre, not slam the model to the left edge.
+ */
+const clamp = (value: number, low: number, high: number, fallback: number) =>
+  Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback
 
 /**
  * Brings arbitrary settings into range.
@@ -185,27 +192,27 @@ export function normaliseSettings(settings: ShareStudioSettings): ShareStudioSet
   return {
     camera: {
       yaw: wrapDegrees(settings.camera.yaw),
-      pitch: clamp(settings.camera.pitch, -85, 85),
+      pitch: clamp(settings.camera.pitch, -85, 85, 0),
       roll: wrapDegrees(settings.camera.roll),
     },
     framing: {
-      padding: clamp(settings.framing.padding, 0, 0.4),
-      zoom: clamp(settings.framing.zoom, 0.25, 4),
-      offsetX: clamp(settings.framing.offsetX, -0.5, 0.5),
-      offsetY: clamp(settings.framing.offsetY, -0.5, 0.5),
+      padding: clamp(settings.framing.padding, 0, 0.4, 0.1),
+      zoom: clamp(settings.framing.zoom, 0.25, 4, 1),
+      offsetX: clamp(settings.framing.offsetX, -0.5, 0.5, 0),
+      offsetY: clamp(settings.framing.offsetY, -0.5, 0.5, 0),
     },
     background: normaliseBackground(settings.background),
     tone: {
-      exposure: clamp(settings.tone.exposure, 0.2, 3),
-      contrast: clamp(settings.tone.contrast, 0.2, 3),
-      shadowLift: clamp(settings.tone.shadowLift, 0, 0.6),
+      exposure: clamp(settings.tone.exposure, 0.2, 3, 1),
+      contrast: clamp(settings.tone.contrast, 0.2, 3, 1),
+      shadowLift: clamp(settings.tone.shadowLift, 0, 0.6, 0),
     },
     watermark: settings.watermark
       ? {
           text: settings.watermark.text.slice(0, 48),
           position: settings.watermark.position,
-          opacity: clamp(settings.watermark.opacity, 0, 1),
-          scale: Math.round(clamp(settings.watermark.scale, 1, 12)),
+          opacity: clamp(settings.watermark.opacity, 0, 1, WATERMARK.opacity),
+          scale: Math.round(clamp(settings.watermark.scale, 1, 12, WATERMARK.scale)),
           color: normaliseHex(settings.watermark.color, '#738085'),
         }
       : null,
@@ -230,7 +237,7 @@ function normaliseBackground(background: BackgroundSettings): BackgroundSettings
         kind: 'grid',
         color: normaliseHex(background.color, '#0b1a22'),
         line: normaliseHex(background.line, '#12313c'),
-        spacing: Math.round(clamp(background.spacing, 8, 256)),
+        spacing: Math.round(clamp(background.spacing, 8, 256, 48)),
       }
     default:
       return { kind: 'transparent' }
@@ -242,8 +249,10 @@ export function wrapDegrees(value: number): number {
   if (!Number.isFinite(value)) return 0
   const wrapped = value % 360
   // Rounded to a tenth of a degree: below that the render is identical anyway,
-  // and an unrounded float would fragment the card cache.
-  return Math.round((wrapped < 0 ? wrapped + 360 : wrapped) * 10) / 10
+  // and an unrounded float would fragment the card cache. `+ 0` collapses the
+  // negative zero that `-720 % 360` produces — the render is the same either
+  // way, but two spellings of the same angle would be two cache entries.
+  return Math.round((wrapped < 0 ? wrapped + 360 : wrapped) * 10) / 10 + 0
 }
 
 export function normaliseHex(value: unknown, fallback: string): string {

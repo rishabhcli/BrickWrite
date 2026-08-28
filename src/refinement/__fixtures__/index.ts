@@ -395,6 +395,9 @@ function weakAntenna(): RefinementFixture {
     boundaryPartIds: [],
     symmetryExceptionPartIds: [],
     targetObjective: 'weakConnections',
+    // "Tie them in" accepts a visible plate; a tight outline tolerance here
+    // would refuse every repair the request actually asked for.
+    silhouetteToleranceFraction: 0.45,
     defect: 'Every 1 × 1 brick is held by exactly one stud and pivots off it.',
   }
 }
@@ -417,6 +420,7 @@ function overhangShelf(): RefinementFixture {
     boundaryPartIds: [],
     symmetryExceptionPartIds: [],
     targetObjective: 'weakConnections',
+    silhouetteToleranceFraction: 0.45,
     defect: 'The outer 1 × 2 plate hangs half off the brick below it, held by a single stud.',
   }
 }
@@ -440,6 +444,7 @@ function floatingLedge(): RefinementFixture {
     boundaryPartIds: [],
     symmetryExceptionPartIds: [],
     targetObjective: 'weakConnections',
+    silhouetteToleranceFraction: 0.45,
     defect: 'Two 1 × 1 plates sit on a single stud each at opposite ends of the deck.',
   }
 }

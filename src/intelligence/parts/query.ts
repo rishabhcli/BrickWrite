@@ -555,14 +555,18 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
   }
   const variantPreference: PartQuery['variantPreference'] = wantsPrinted ? 'printed' : wantsPlain ? 'plain' : 'any'
 
+  // A modifier is only spent once it has done some work. "Sticker" and "plain"
+  // are ordinary LDraw vocabulary as well as variant modifiers, so consuming
+  // them unconditionally would make "sticker sheet" a search for sheets.
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index]
+    if (BRIDGE_WORDS.has(word) && relation?.kind === 'bridge') consume(index, 1)
+    if (!relation || relation.kind === 'bridge') continue
     if (
       MIRROR_WORDS.has(word) ||
       INTERFACE_WORDS.has(word) ||
       PLAIN_WORDS.has(word) ||
-      PRINTED_WORDS.has(word) ||
-      BRIDGE_WORDS.has(word)
+      PRINTED_WORDS.has(word)
     ) {
       consume(index, 1)
     }

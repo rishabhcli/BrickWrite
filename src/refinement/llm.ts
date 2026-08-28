@@ -9,12 +9,7 @@ import {
 import type { RegionAnalysis } from './analyse'
 import { MAX_WEIGHT } from './objectives'
 import { STRATEGIES, STRATEGY_IDS } from './strategies'
-import {
-  OBJECTIVE_IDS,
-  objectiveIdSchema,
-  type ObjectiveId,
-  type RefinementProposalV1,
-} from './types'
+import { OBJECTIVE_IDS, type ObjectiveId, type RefinementProposalV1 } from './types'
 
 /**
  * Optional model assistance, structurally unable to weaken anything.
@@ -51,8 +46,17 @@ export interface RefinementGoal {
   readonly provenance: Provenance
 }
 
+/**
+ * Deliberately tolerant about *keys* and strict about *effect*.
+ *
+ * A model that returns one objective this build has never heard of should not
+ * cost the caller the nine it got right, so unknown weight keys are accepted by
+ * the parser and then dropped by `mergeWeights`, which only ever reads the names
+ * in `OBJECTIVE_IDS`. The same reasoning applies to generator ids. What is *not*
+ * tolerated is a response that is not a goal at all — that falls back whole.
+ */
 const goalSchema = z.object({
-  weights: z.partialRecord(objectiveIdSchema, z.number()),
+  weights: z.record(z.string(), z.number()),
   strategies: z.array(z.string()),
   rationale: z.string().max(400),
 })
@@ -144,9 +148,14 @@ const CUES: readonly Cue[] = [
     note: 'symmetry across the region’s best mirror plane',
   },
   {
-    pattern: /\b(simplif\w*|fewer (parts|pieces|elements)|part count|piece count|consolidat\w*)\b/i,
+    pattern: /\b(simplif\w*|consolidat\w*|part count|piece count|fewer\b[^.]{0,24}\b(parts|pieces|elements|bricks|designs))/i,
     weights: { partCount: 3, distinctElements: 2, buildOrderComplexity: 1 },
     note: 'fewer, larger elements',
+  },
+  {
+    pattern: /\b(different elements|element types|distinct|variety|standardi[sz]\w*)\b/i,
+    weights: { distinctElements: 3, rarityScore: 1 },
+    note: 'fewer distinct element designs',
   },
   {
     pattern: /\b(silhouette|profile|shape|outline|preserv\w*|without changing|keep the)\b/i,
@@ -250,7 +259,7 @@ export function sanitizeGoal(
 ): { weights: Partial<Record<ObjectiveId, number>>; strategyIds: string[]; rationale: string } {
   const parsed = goalSchema.safeParse(raw)
   if (!parsed.success) return { weights: fallback.weights, strategyIds: [...fallback.strategyIds], rationale: fallback.rationale }
-  const weights = mergeWeights(parsed.data.weights)
+  const weights = mergeWeights(parsed.data.weights as Partial<Record<ObjectiveId, number>>)
   const strategyIds = parsed.data.strategies.filter((id): id is (typeof STRATEGY_IDS)[number] =>
     (STRATEGY_IDS as readonly string[]).includes(id),
   )

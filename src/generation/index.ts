@@ -89,6 +89,7 @@ export {
   STRATEGIES,
   clampBoxes,
   constraintsFor,
+  fromRawBoxes,
   fitBoxHeights,
   layoutStoreys,
   runPipeline,
@@ -102,6 +103,7 @@ export {
   type PhaseMetrics,
   type PhaseName,
   type PipelineOptions,
+  type RawMassingBox,
   type StoreyLayout,
 } from './phases'
 

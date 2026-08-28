@@ -143,8 +143,14 @@ export class KvPublicationStore implements PublicationStore {
     // publications than asked for. The loop keeps pulling until the page is
     // full or the namespace is exhausted, rather than returning a short page
     // that looks like the end of the gallery.
+    //
+    // Each batch asks for exactly as many keys as are still needed, which is
+    // what keeps the returned cursor aligned: at most one entry is produced per
+    // key examined, so the cursor never runs past a publication that has not
+    // been emitted. Asking for a larger batch and stopping early would silently
+    // drop everything between the last emitted entry and the end of the batch.
     while (entries.length < limit && !complete) {
-      const page = await this.kv.list({ prefix: FEED_PREFIX, limit: limit * 2, cursor })
+      const page = await this.kv.list({ prefix: FEED_PREFIX, limit: limit - entries.length, cursor })
       cursor = page.cursor
       complete = page.list_complete
       for (const key of page.keys) {
@@ -155,7 +161,6 @@ export class KvPublicationStore implements PublicationStore {
         if (publication.revokedAt || publication.moderation?.status === 'hidden') continue
         if (!publication.capabilities.view) continue
         entries.push(publication)
-        if (entries.length >= limit) break
       }
     }
 

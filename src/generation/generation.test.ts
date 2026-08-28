@@ -41,7 +41,7 @@ interface Fixture {
   }
 }
 
-const BRIEFS = (fixtures as { briefs: Fixture[] }).briefs
+const BRIEFS = (fixtures as unknown as { briefs: Fixture[] }).briefs
 
 const base = () => createBlankDocument('Generation acceptance')
 

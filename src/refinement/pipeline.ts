@@ -57,6 +57,30 @@ export interface RefinementRun {
   readonly rankingRationale: string
 }
 
+/**
+ * The command seam.
+ *
+ * Defaulted to the real `commandBus`, and overridable only so a test can drive an
+ * isolated `CadEngine` instead of the module singleton. It is deliberately the
+ * *bus* rather than the engine: refinement has no business calling anything on
+ * the engine that a dispatched transaction does not go through.
+ */
+export interface RefinementBus {
+  dispatch: (
+    label: string,
+    operations: CadOperation[],
+    actor: Actor,
+    expectedRevision?: number,
+    sourceTool?: string,
+  ) => CommandResult<Transaction>
+}
+
+/** Wraps an engine instance in the same seam the module singleton exposes. */
+export const busFor = (engine: Pick<typeof cadEngine, 'execute'>): RefinementBus => ({
+  dispatch: (label, operations, actor, expectedRevision, sourceTool) =>
+    engine.execute(label, operations, actor, expectedRevision, sourceTool),
+})
+
 export class RefinementRequestError extends Error {
   constructor(
     message: string,
@@ -301,6 +325,34 @@ function protectionRefusal(
 /** How many rejected alternatives are surfaced alongside the ranked ones. */
 const REJECTION_SAMPLE = 4
 
+/**
+ * Fills the shortlist with different *moves*, not different tunings of one move.
+ *
+ * A wall with a stacked joint produces a dozen re-lay variants, all of which
+ * outscore the element swap the operator actually asked about, so a straight
+ * top-six by score returns six versions of the same idea and silently drops the
+ * only proposal that addressed the request. One slot per generator first, then
+ * score order for whatever is left, keeps the list ranked while making sure each
+ * distinct answer gets seen.
+ */
+function diversify(candidates: readonly SearchCandidate[], limit: number): SearchCandidate[] {
+  const picked: SearchCandidate[] = []
+  const taken = new Set<string>()
+  for (const candidate of candidates) {
+    if (picked.length >= limit) break
+    if (taken.has(candidate.strategy)) continue
+    taken.add(candidate.strategy)
+    picked.push(candidate)
+  }
+  const chosen = new Set(picked.map((candidate) => candidate.id))
+  for (const candidate of candidates) {
+    if (picked.length >= limit) break
+    if (chosen.has(candidate.id)) continue
+    picked.push(candidate)
+  }
+  return picked.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+}
+
 function assemble(
   request: RefinementRequestV1,
   document: ModelDocument,
@@ -310,7 +362,7 @@ function assemble(
   const proposals: RefinementProposalV1[] = []
   const refusal = protectionRefusal(request, document, search.report.baseMetrics, provenance)
 
-  for (const candidate of search.candidates.slice(0, request.maxProposals)) {
+  for (const candidate of diversify(search.candidates, request.maxProposals)) {
     const proposal = toProposal(request, document, candidate, search.report.baseMetrics, provenance)
     if (proposal) proposals.push(proposal)
   }
@@ -473,8 +525,7 @@ export async function proposeRefinementsWithModel(
 export function applyRefinement(
   proposal: RefinementProposalV1,
   actor: Actor = 'human',
-  engine = cadEngine,
-  bus = commandBus,
+  bus: RefinementBus = commandBus,
 ): CommandResult<Transaction> {
   if (proposal.status === 'rejected') {
     return {
@@ -498,7 +549,6 @@ export function applyRefinement(
       },
     }
   }
-  void engine
   return bus.dispatch(proposal.label, proposal.operations, actor, proposal.baseRevision, 'refinement_apply')
 }
 

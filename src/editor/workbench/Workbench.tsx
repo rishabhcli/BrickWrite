@@ -381,7 +381,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 icon={<SlidersHorizontal size={11} />}
                 open={sections.inspector !== false}
                 onToggle={() => toggleSection('inspector')}
-                grow
               >
                 <InspectorPanel
                   state={state}

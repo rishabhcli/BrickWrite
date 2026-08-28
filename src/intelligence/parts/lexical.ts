@@ -70,6 +70,19 @@ export interface LexicalHit {
   score: number
 }
 
+export interface LexicalResult {
+  hits: LexicalHit[]
+  /**
+   * Every document any query term touched, ranked or not.
+   *
+   * Other retrieval stages use it as a relevance floor: a size on its own is a
+   * filter on the answer, not a source of answers, so a part that matches the
+   * requested footprint but none of the requested words has no business being
+   * scored as a candidate.
+   */
+  touched: Set<number>
+}
+
 /**
  * Light plural folding.
  *
@@ -268,8 +281,8 @@ export class LexicalIndex {
    * documents the array is 92 KB and every write is a single indexed store,
    * where a Map would allocate an entry per touched document on every query.
    */
-  search(terms: readonly string[], limit: number): LexicalHit[] {
-    if (!terms.length) return []
+  search(terms: readonly string[], limit: number): LexicalResult {
+    if (!terms.length) return { hits: [], touched: new Set() }
     const scores = new Float64Array(this.corpus.documents.length)
     const touched: number[] = []
     let matched = 0
@@ -300,20 +313,25 @@ export class LexicalIndex {
         }
       }
     }
-    if (!matched) return []
+    if (!matched) return { hits: [], touched: new Set() }
 
     const hits: LexicalHit[] = []
     for (const doc of touched) hits.push({ doc, score: scores[doc] })
     hits.sort((a, b) => b.score - a.score || a.doc - b.doc)
-    return hits.slice(0, limit)
+    return { hits: hits.slice(0, limit), touched: new Set(touched) }
   }
 }
 
 function buildIdentityIndex(documents: readonly CorpusDocument[]): Map<string, IdentityEntry> {
   const identities = new Map<string, IdentityEntry>()
-  const offer = (token: string, id: string, kind: IdentityKind, frequency: number) => {
+  const offer = (token: string, id: string, requestedKind: IdentityKind, frequency: number) => {
     const key = token.toLowerCase()
     if (!key) return
+    // A number LDraw retired is described as retired even when it survives as
+    // the part's Rebrickable id: "3023 became 3023b" is the fact the person who
+    // typed the old number needs, and both readings point at the same part.
+    const kind: IdentityKind =
+      requestedKind !== 'canonical' && catalog.isAlias(key) && catalog.resolveId(key) === id ? 'retired' : requestedKind
     const existing = identities.get(key)
     if (
       existing &&

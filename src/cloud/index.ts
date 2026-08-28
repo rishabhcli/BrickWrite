@@ -66,6 +66,13 @@ export {
 } from './protocol'
 
 export {
+  attachCloudSync,
+  settled,
+  type AttachCloudSyncOptions,
+  type CloudSyncHandle,
+} from './attach'
+
+export {
   CloudProjectStore,
   LocalProjectStore,
   MirroredProjectStore,

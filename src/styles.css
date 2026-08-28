@@ -904,10 +904,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent; color: var(--faint); cursor: pointer; border-radius: 2px;
 }
 .dock-collapse:hover { color: var(--ink); border-color: var(--line-hi); background: var(--panel-2); }
-.dock-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* The right dock is a plain vertical scroll of natural-height sections: three
+   open sections competing for flex space is how the inspector ended up one
+   pixel tall. The left dock is the exception — the palette manages its own
+   inner scroll, so that dock hands it the height instead of scrolling. */
+.dock-scroll { flex: 1; min-height: 0; overflow-y: auto; display: block; }
+.dock-left .dock-scroll { display: flex; flex-direction: column; overflow: hidden; }
 
-.dock-section { flex: none; display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--dock-line); }
-.dock-section.grow { flex: 1 1 auto; }
+.dock-section { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--dock-line); scroll-margin-block: 34px; }
+.dock-left .dock-section { flex: 0 0 auto; }
+.dock-left .dock-section.grow { flex: 1 1 auto; }
 .dock-section > header { flex: none; height: 28px; display: flex; align-items: center; gap: 6px; padding-right: 8px; background: linear-gradient(180deg, rgba(255,255,255,.014), transparent); }
 .dock-section-toggle {
   flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 7px; padding: 0 10px;
@@ -918,14 +924,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dock-section-toggle .dock-chevron { flex: none; color: var(--faint); transition: transform .16s ease; }
 .dock-section.closed .dock-chevron { transform: rotate(-90deg); }
 .dock-section.open > header { border-bottom: 1px solid var(--dock-line); }
-.dock-section-body { min-height: 0; overflow-y: auto; }
-.dock-section.grow > .dock-section-body { flex: 1; }
+.dock-section-body { min-height: 0; }
+.dock-left .dock-section.grow > .dock-section-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+/* Inside a dock that already scrolls, the inspector's own scroll container
+   would be a second, nested scrollbar for the same content. */
+.dock-right .inspector-scroll { height: auto; overflow: visible; }
+.dock-right .catalog-panel, .dock-right .inspector-panel { min-height: 0; }
 .dock-badge { font-style: normal; font-family: var(--display); font-size: 9px; color: var(--faint); }
 
 .dock-splitter { position: relative; background: var(--splitter); border: 0; padding: 0; cursor: col-resize; z-index: 9; }
 .dock-splitter.horizontal { cursor: row-resize; }
 .dock-splitter i { position: absolute; inset: 0; display: block; }
-.dock-splitter.vertical i { left: -2px; right: -2px; }
+/* Four pixels is the right *look* for a rule between two panels and the wrong
+   size for a pointer target, so the hit area is widened to 16 without the
+   splitter getting visually heavier. */
+.dock-splitter.vertical i { left: -6px; right: -6px; }
+.dock-splitter.horizontal i { top: -6px; bottom: -6px; }
 .dock-splitter:hover, .dock-splitter:focus-visible { background: var(--splitter-hot); outline: none; }
 .dock-splitter:focus-visible { box-shadow: 0 0 0 1px var(--focus); }
 .dock-splitter::after {

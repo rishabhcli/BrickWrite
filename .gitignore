@@ -9,3 +9,5 @@ artifacts
 *.local
 .sources
 .scratch*
+.share-dev
+.dbg

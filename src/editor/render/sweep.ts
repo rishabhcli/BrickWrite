@@ -205,8 +205,33 @@ export function sweepJoint(
 
   const key = (contact: CollisionContact) =>
     contact.partA < contact.partB ? `${contact.partA}|${contact.partB}` : `${contact.partB}|${contact.partA}`
-  const preexisting = new Set(contactsAt(0).map(key))
-  const introduced = (contacts: CollisionContact[]) => contacts.filter((contact) => !preexisting.has(key(contact)))
+  const inIsland = new Set(island)
+
+  /**
+   * Contacts the motion is responsible for.
+   *
+   * Two subtractions, and both are load-bearing:
+   *
+   *   Pairs *inside* the island are dropped outright. The island moves as one
+   *   rigid body, so the relative pose of any two of its parts is identical at
+   *   every sample — a contact between them cannot be caused by the motion. It
+   *   would nonetheless be *reported* at some samples and not others, because
+   *   the broad phase compares axis-aligned boxes and a rotated brick has a
+   *   larger box than an upright one: the mating allowance that covers a
+   *   stud's legal overlap at rest stops covering the inflated box overlap once
+   *   the pair is turned 40° off axis. Without this the mast would report
+   *   itself as blocking itself the moment the hinge left its rest angle.
+   *
+   *   Pairs already present at rest are dropped too. A model in contact with
+   *   the ground, or two plates resting against each other, would otherwise
+   *   report zero permissible travel in every direction and make every joint
+   *   appear seized.
+   */
+  const external = (contacts: CollisionContact[]) =>
+    contacts.filter((contact) => !(inIsland.has(contact.partA) && inIsland.has(contact.partB)))
+  const preexisting = new Set(external(contactsAt(0)).map(key))
+  const introduced = (contacts: CollisionContact[]) =>
+    external(contacts).filter((contact) => !preexisting.has(key(contact)))
 
   let lastClean = 0
   let firstBlocked = -1

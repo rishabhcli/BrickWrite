@@ -67,6 +67,15 @@ export interface PickStats {
   readonly p50Ms: number
   readonly p95Ms: number
   readonly maxMs: number
+  /**
+   * The very first pick, reported on its own.
+   *
+   * It compiles the identity shader and allocates the target, so it is tens of
+   * milliseconds where every later pick is under three. Folding it into the
+   * distribution would misrepresent both numbers; hiding it would misrepresent
+   * the first click of a session.
+   */
+  readonly firstMs: number
 }
 
 const COLOURS = [4, 15, 1, 14, 71, 0, 2]
@@ -372,6 +381,64 @@ export function measurePicks(
     p50Ms: percentile(sorted, 0.5),
     p95Ms: percentile(sorted, 0.95),
     maxMs: sorted[sorted.length - 1] ?? 0,
+    firstMs: timings[0] ?? 0,
+  }
+}
+
+export interface RenderCostStats {
+  readonly frames: number
+  /** Wall time per render, with the GPU drained, so it is not a queue depth. */
+  readonly meanMs: number
+  readonly p50Ms: number
+  readonly p95Ms: number
+  /** The rate the renderer could sustain if the display were not the limit. */
+  readonly ceilingFps: number
+}
+
+/**
+ * Measures the renderer's own cost, unthrottled.
+ *
+ * `measureFrames` runs on `requestAnimationFrame` and therefore cannot report
+ * more than the display's refresh rate — on a 120 Hz panel a scene costing four
+ * milliseconds and one costing eight both read as 120 FPS, which tells an
+ * operator nothing about how much headroom is left before the model stops being
+ * interactive.
+ *
+ * This drives the same scene as fast as it will go and calls `gl.finish()` each
+ * time, so the measured interval is the frame's real cost rather than how deep
+ * the driver let the command queue get. `finish` is a genuine stall and is
+ * exactly why this is a measurement rather than the render loop.
+ */
+export function measureRenderCost(scene: BenchmarkScene, frames = 90): RenderCostStats {
+  const { renderer, camera } = scene
+  const centre = camera.userData.orbitCentre as THREE.Vector3
+  const radius = camera.userData.orbitRadius as number
+  const startAngle = Math.atan2(camera.position.z - centre.z, camera.position.x - centre.x)
+  const height = camera.position.y - centre.y
+  const context = renderer.getContext()
+  const timings: number[] = []
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    const angle = startAngle + (frame * Math.PI) / 240
+    camera.position.set(centre.x + Math.cos(angle) * radius, centre.y + height, centre.z + Math.sin(angle) * radius)
+    camera.lookAt(centre)
+    const started = performance.now()
+    renderer.render(scene.scene, camera)
+    context.finish()
+    const elapsed = performance.now() - started
+    // The first handful of frames include shader compilation and the first
+    // shadow map, neither of which recurs.
+    if (frame >= 10) timings.push(elapsed)
+  }
+
+  const sorted = [...timings].sort((a, b) => a - b)
+  const mean = timings.reduce((sum, value) => sum + value, 0) / Math.max(1, timings.length)
+  return {
+    frames: timings.length,
+    meanMs: mean,
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+    ceilingFps: mean > 0 ? 1000 / mean : 0,
   }
 }
 

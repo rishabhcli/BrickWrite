@@ -735,6 +735,15 @@ export function CadViewport({
   const [playbackStep, setPlaybackStep] = useState(0)
   const [tier, setTier] = useState<QualityTier>(QUALITY_TIERS[1])
   const controlsHandle = useRef<ViewportControlsHandle | null>(null)
+  // Environment, quality and transmission arrive as props but are also
+  // reachable from the imperative surface, so the viewport keeps an override
+  // and prefers it. A panel and an agent then drive the same state rather than
+  // two copies of it that can disagree.
+  const [environmentOverride, setEnvironmentOverride] = useState<EnvironmentName | null>(null)
+  const [qualityOverride, setQualityOverride] = useState<number | 'auto' | null>(null)
+  const [transmissionOverride, setTransmissionOverride] = useState<boolean | null>(null)
+  useEffect(() => setEnvironmentOverride(null), [environment])
+  useEffect(() => setQualityOverride(null), [quality])
 
   // Visibility and section planes are optionally controlled: the workbench can
   // own them, and when it does not the viewport keeps its own so the imperative
@@ -891,8 +900,11 @@ export function CadViewport({
     [plan.batches],
   )
   useEffect(() => {
-    setTransmissionEnabled(transparentBatches > 0 && transparentBatches <= TRANSMISSION_DRAW_BUDGET)
-  }, [transparentBatches])
+    const withinBudget = transparentBatches > 0 && transparentBatches <= TRANSMISSION_DRAW_BUDGET
+    // A caller may disable transmission for a cheaper diagnostic frame, but it
+    // may not force a glazed facade past the draw budget the viewport owns.
+    setTransmissionEnabled(transmissionOverride === false ? false : withinBudget)
+  }, [transmissionOverride, transparentBatches])
 
   const manipulated =
     selection.length === 1 && renderMode === 'beauty' && !placing && (tool === 'move' || tool === 'rotate')
@@ -1099,9 +1111,12 @@ export function CadViewport({
         sectionPlanes={sectionPlanes}
         onSectionPlanesChange={setSectionPlanes}
         motion={motion}
-        environment={environment}
-        quality={quality}
+        environment={environmentOverride ?? environment}
+        quality={qualityOverride ?? quality}
         onQuality={setTier}
+        onEnvironmentRequest={setEnvironmentOverride}
+        onQualityRequest={setQualityOverride}
+        onTransmissionRequest={setTransmissionOverride}
         onJointPreview={handleJointPreview}
         onOverlay={setOverlay}
         onSelect={onSelect}

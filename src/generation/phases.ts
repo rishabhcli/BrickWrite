@@ -658,6 +658,18 @@ function detailDelta(
 // Model-proposed decomposition
 // ---------------------------------------------------------------------------
 
+/**
+ * The wire schema for a decomposition.
+ *
+ * Written to the subset the structured-output endpoint actually accepts, which
+ * is narrower than JSON Schema and was established by probing rather than
+ * assumed: `minItems`/`maxItems`, `minimum`/`maximum` and open-ended
+ * `additionalProperties` maps are all rejected outright. Two consequences are
+ * visible here — the position is two scalars rather than a two-element array,
+ * and no numeric range appears — and both are enforced anyway, by the zod
+ * validator on the server and by `parseMassing` here. The endpoint constrains
+ * the *shape*; this side constrains the *values*.
+ */
 export const MASSING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -665,20 +677,19 @@ export const MASSING_SCHEMA = {
   properties: {
     boxes: {
       type: 'array',
-      minItems: 1,
-      maxItems: 8,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'role', 'atStuds', 'widthStuds', 'depthStuds', 'courses', 'level', 'fill'],
+        required: ['id', 'role', 'atXStuds', 'atZStuds', 'widthStuds', 'depthStuds', 'courses', 'level', 'fill'],
         properties: {
           id: { type: 'string', minLength: 1, maxLength: 40 },
           role: { type: 'string', minLength: 1, maxLength: 40 },
-          atStuds: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 256 }, minItems: 2, maxItems: 2 },
-          widthStuds: { type: 'integer', minimum: 1, maximum: 256 },
-          depthStuds: { type: 'integer', minimum: 1, maximum: 256 },
-          courses: { type: 'integer', minimum: 1, maximum: 64 },
-          level: { type: 'integer', minimum: 0, maximum: 8 },
+          atXStuds: { type: 'integer' },
+          atZStuds: { type: 'integer' },
+          widthStuds: { type: 'integer' },
+          depthStuds: { type: 'integer' },
+          courses: { type: 'integer' },
+          level: { type: 'integer' },
           fill: { type: 'string', enum: ['shell', 'solid'] },
         },
       },
@@ -686,49 +697,75 @@ export const MASSING_SCHEMA = {
   },
 } as const
 
+/** One box as it travels on the wire, before it becomes a `MassingBox`. */
+export interface RawMassingBox {
+  readonly id: string
+  readonly role: string
+  readonly atXStuds: number
+  readonly atZStuds: number
+  readonly widthStuds: number
+  readonly depthStuds: number
+  readonly courses: number
+  readonly level: number
+  readonly fill: 'shell' | 'solid'
+}
+
 const MASSING_SYSTEM = [
   'You decompose a LEGO design brief into a small set of axis-aligned rectangular boxes on the stud lattice.',
   'Boxes describe volume only. Do not describe parts, colours or connections; a deterministic kernel fills them.',
-  'atStuds is the box minimum corner as [x, z] studs from the build origin. Level 0 rests on the ground plane;',
-  'each higher level rests on the level below. courses is height in standard brick courses (24 LDU each).',
-  'Stay inside the stated envelope. Prefer three boxes or fewer unless the subject genuinely needs more.',
+  'atXStuds and atZStuds are the box minimum corner in studs from the build origin, and are never negative.',
+  'Level 0 rests on the ground plane; each higher level rests on the level below.',
+  'courses is height in standard brick courses (24 LDU each).',
+  'Every box must be at least 3 studs wide and 3 studs deep, and must stay inside the stated envelope.',
+  'Return between one and eight boxes; prefer three or fewer unless the subject genuinely needs more.',
 ].join(' ')
 
 interface RawMassing {
-  boxes: MassingBox[]
+  boxes: RawMassingBox[]
 }
 
 function parseMassing(raw: unknown): RawMassing {
   if (!raw || typeof raw !== 'object') throw new Error('The massing response was not a JSON object.')
   const boxes = (raw as { boxes?: unknown }).boxes
   if (!Array.isArray(boxes) || !boxes.length) throw new Error('Field "boxes" was missing or empty.')
+  if (boxes.length > 8) throw new Error(`Field "boxes" held ${boxes.length} entries; at most 8 are allowed.`)
   return {
-    boxes: boxes.map((entry, index) => {
+    boxes: boxes.map((entry, index): RawMassingBox => {
       const box = entry as Record<string, unknown>
-      const at = box.atStuds
-      if (!Array.isArray(at) || at.length !== 2 || at.some((value) => typeof value !== 'number')) {
-        throw new Error(`Box ${index} has no valid "atStuds" pair.`)
-      }
-      for (const key of ['widthStuds', 'depthStuds', 'courses', 'level'] as const) {
-        if (typeof box[key] !== 'number' || !Number.isFinite(box[key] as number)) {
-          throw new Error(`Box ${index} has no numeric "${key}".`)
-        }
+      const number = (key: string): number => {
+        const value = box[key]
+        if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Box ${index} has no numeric "${key}".`)
+        return Math.trunc(value)
       }
       if (box.fill !== 'shell' && box.fill !== 'solid') throw new Error(`Box ${index} has an unknown "fill".`)
       if (typeof box.id !== 'string' || !box.id.trim()) throw new Error(`Box ${index} has no id.`)
       return {
         id: box.id.trim(),
         role: typeof box.role === 'string' && box.role.trim() ? box.role.trim() : `box${index}`,
-        atStuds: [Math.trunc(at[0] as number), Math.trunc(at[1] as number)] as const,
-        widthStuds: Math.trunc(box.widthStuds as number),
-        depthStuds: Math.trunc(box.depthStuds as number),
-        courses: Math.trunc(box.courses as number),
-        level: Math.trunc(box.level as number),
+        atXStuds: number('atXStuds'),
+        atZStuds: number('atZStuds'),
+        widthStuds: number('widthStuds'),
+        depthStuds: number('depthStuds'),
+        courses: number('courses'),
+        level: number('level'),
         fill: box.fill,
       }
     }),
   }
 }
+
+/** Wire boxes as the pipeline's own type. Range checks happen in `clampBoxes`. */
+export const fromRawBoxes = (boxes: readonly RawMassingBox[]): MassingBox[] =>
+  boxes.map((box) => ({
+    id: box.id,
+    role: box.role,
+    atStuds: [box.atXStuds, box.atZStuds] as const,
+    widthStuds: box.widthStuds,
+    depthStuds: box.depthStuds,
+    courses: box.courses,
+    level: box.level,
+    fill: box.fill,
+  }))
 
 /**
  * Clamps a proposed decomposition to what the brief permits.
@@ -743,8 +780,8 @@ export function clampBoxes(boxes: readonly MassingBox[], footprint: readonly [nu
   const clamped: MassingBox[] = []
   const seen = new Set<string>()
   for (const box of boxes) {
-    const x = clampInt(box.atStuds[0], 0, Math.max(0, width - 3))
-    const z = clampInt(box.atStuds[1], 0, Math.max(0, depth - 3))
+    const x = clampInt(Math.max(0, box.atStuds[0]), 0, Math.max(0, width - 3))
+    const z = clampInt(Math.max(0, box.atStuds[1]), 0, Math.max(0, depth - 3))
     const boxWidth = clampInt(box.widthStuds, 3, width - x)
     const boxDepth = clampInt(box.depthStuds, 3, depth - z)
     if (boxWidth < 3 || boxDepth < 3) continue
@@ -806,7 +843,7 @@ async function decompose(
     temperature: 0,
   })
 
-  const boxes = fit(result.value.boxes)
+  const boxes = fit(fromRawBoxes(result.value.boxes))
   if (!boxes.length) {
     return {
       boxes: fit(deterministic),

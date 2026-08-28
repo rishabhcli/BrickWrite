@@ -91,6 +91,7 @@ export {
 
 export {
   applyRefinement,
+  busFor,
   buildOverlay,
   compileRequest,
   metricsFor,
@@ -99,6 +100,7 @@ export {
   runRefinement,
   RefinementRequestError,
   type PipelineOptions,
+  type RefinementBus,
   type RefinementRun,
 } from './pipeline'
 

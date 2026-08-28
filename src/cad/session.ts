@@ -1,11 +1,13 @@
 import { catalog } from './catalog'
 import { cadEngine } from './engine'
 import {
+  createDriver,
   createRepository,
   indexedDbAvailable,
   ProjectAutosave,
   type ProjectRepository,
   type ProjectSummary,
+  type StorageDriver,
 } from './persistence'
 import { createBlankDocument } from './sample'
 import { loadLocalDocument, clearLocalDocument } from './storage'
@@ -44,7 +46,9 @@ export interface ProjectSwitch {
 }
 
 class Session {
-  private repository: ProjectRepository = createRepository()
+  /** Shared with the optional cloud relay, which stores its queue in `meta`. */
+  readonly driver: StorageDriver = createDriver()
+  private repository: ProjectRepository = createRepository(this.driver)
   private autosave = new ProjectAutosave(this.repository)
   private restore: SessionRestore | null = null
   private detach: (() => void) | null = null

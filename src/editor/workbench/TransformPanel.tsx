@@ -19,6 +19,7 @@ import { getColor, STUD_LDU } from '../../cad/catalog'
 import { findSnapCandidates } from '../../cad/snapping'
 import type { CadOperation } from '../../cad/types'
 import {
+  AXIS_INDEX,
   canonicalisePose,
   connectorFrame,
   numericPose,
@@ -56,9 +57,20 @@ const PIVOTS: Array<{ id: PivotMode; label: string; hint: string }> = [
   { id: 'world-origin', label: 'WORLD 0', hint: 'Turn about the document origin.' },
 ]
 
+/** Axis choices for the array control. LDraw is Y-down, so "up" is negative Y. */
+const ARRAY_AXES: Array<{ id: 'x' | 'y' | 'z'; label: string; unit: [number, number, number] }> = [
+  { id: 'x', label: 'X →', unit: [1, 0, 0] },
+  { id: 'y', label: 'Y ↑', unit: [0, -1, 0] },
+  { id: 'z', label: 'Z →', unit: [0, 0, 1] },
+]
+
 export function TransformPanel({ workbench }: { workbench: Workbench }) {
   const { state, transformPrefs, setTransformPrefs } = workbench
   const [candidateIndex, setCandidateIndex] = useState(0)
+  const [arrayOpen, setArrayOpen] = useState(false)
+  const [arrayCopies, setArrayCopies] = useState(3)
+  const [arrayAxis, setArrayAxis] = useState<'x' | 'y' | 'z'>('x')
+  const [arraySpacing, setArraySpacing] = useState<number | 'auto'>('auto')
 
   const parts = useMemo(
     () => state.selection.map((id) => state.document.parts[id]).filter(Boolean),
@@ -140,6 +152,16 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       })),
     )
   }, [commit, parts, transformPrefs.frame, transformPrefs.pivot, transformPrefs.rotationStep])
+
+  const runArray = useCallback(() => {
+    const axis = ARRAY_AXES.find((entry) => entry.id === arrayAxis)!
+    const measured = extent ? Math.max(1, extent.size[AXIS_INDEX[arrayAxis]]) : STUD_LDU
+    const step = arraySpacing === 'auto' ? Math.max(STUD_LDU / 2, Math.round(measured)) : arraySpacing
+    workbench.runSharedMutation('linear_array', {
+      copies: arrayCopies,
+      offsetLdu: [axis.unit[0] * step, axis.unit[1] * step, axis.unit[2] * step],
+    })
+  }, [arrayAxis, arrayCopies, arraySpacing, extent, workbench])
 
   const align = useCallback((axis: 'x' | 'y' | 'z', edge: AlignEdge) => {
     commit(`Align ${parts.length} parts`, planAlign(parts, axis, edge))
@@ -336,8 +358,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           label="Array"
           shortcut="⇧A"
           disabled={disabled}
+          expanded={arrayOpen}
           reason="Select at least one part first."
-          onClick={() => workbench.runSharedMutation('linear_array', { copies: 3, offsetLdu: [STUD_LDU * 2, 0, 0] })}
+          onClick={() => setArrayOpen((value) => !value)}
         />
         <ActionButton
           icon={<FlipHorizontal2 size={12} />}
@@ -373,6 +396,49 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           onClick={() => workbench.focusSelection()}
         />
       </div>
+
+      {arrayOpen && !disabled && (
+        /* An array is a decision, not a guess: a hardcoded direction and count
+           is exactly what gets refused by a design envelope the operator never
+           saw. Spacing defaults to the selection's own measured extent, so the
+           copies sit edge to edge rather than overlapping. */
+        <div className="array-control" role="group" aria-label="Linear array">
+          <label>
+            <span>COPIES</span>
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={arrayCopies}
+              aria-label="Array copies"
+              onChange={(event) => setArrayCopies(Math.max(1, Math.min(24, Number(event.target.value) || 1)))}
+            />
+          </label>
+          <label>
+            <span>ALONG</span>
+            <select value={arrayAxis} onChange={(event) => setArrayAxis(event.target.value as 'x' | 'y' | 'z')} aria-label="Array axis">
+              {ARRAY_AXES.map((axis) => <option key={axis.id} value={axis.id}>{axis.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>SPACING</span>
+            <select
+              value={String(arraySpacing)}
+              aria-label="Array spacing"
+              onChange={(event) => setArraySpacing(event.target.value === 'auto' ? 'auto' : Number(event.target.value))}
+            >
+              <option value="auto">Its own size</option>
+              <option value={STUD_LDU}>1 stud</option>
+              <option value={STUD_LDU * 2}>2 studs</option>
+              <option value={24}>1 brick</option>
+              <option value={8}>1 plate</option>
+            </select>
+          </label>
+          <button type="button" className="array-run" onClick={() => runArray()}>
+            ARRAY
+          </button>
+        </div>
+      )}
 
       <div className="align-grid" role="group" aria-label="Align and distribute">
         <span className="eyebrow">ALIGN</span>
@@ -483,6 +549,7 @@ function ActionButton({
   reason,
   onClick,
   swatch,
+  expanded,
 }: {
   icon: React.ReactElement
   label: string
@@ -491,15 +558,18 @@ function ActionButton({
   reason: string
   onClick: () => void
   swatch?: string
+  /** Set when the action opens an inline control rather than firing. */
+  expanded?: boolean
 }) {
   return (
     <button
       type="button"
-      className="transform-action"
+      className={`transform-action ${expanded ? 'expanded' : ''}`}
       disabled={disabled}
       onClick={onClick}
       title={disabled ? reason : `${label} (${shortcut})`}
       aria-label={disabled ? `${label} — ${reason}` : label}
+      aria-expanded={expanded === undefined ? undefined : expanded}
       aria-keyshortcuts={shortcut}
     >
       {swatch ? <i className="action-swatch" style={{ background: swatch }} /> : icon}

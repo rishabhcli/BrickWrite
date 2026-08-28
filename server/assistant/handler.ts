@@ -412,6 +412,16 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
         return true
       }
 
+      // Requiring JSON also closes the browser's "simple request" path. A
+      // hostile page can submit text/plain to localhost without a CORS
+      // preflight; it cannot submit application/json unless this server opts in
+      // to that origin, which it deliberately never does.
+      const mediaType = (request.headers['content-type'] ?? '').split(';', 1)[0]?.trim().toLowerCase()
+      if (mediaType !== 'application/json') {
+        sendError(response, 415, 'BAD_REQUEST', 'Use Content-Type: application/json.')
+        return true
+      }
+
       const body = await readBody(request)
       if (!body.ok) {
         sendError(

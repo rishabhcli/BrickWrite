@@ -38,14 +38,59 @@ export interface AnthropicProviderOptions {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
 
+/**
+ * JSON Schema keywords the structured-output validator rejects.
+ *
+ * Measured against the live API rather than assumed: `minLength`/`maxLength`,
+ * `pattern` and `enum` are accepted; numeric bounds and array-length bounds are
+ * refused with a 400 naming the keyword. A caller writing an ordinary Zod
+ * schema — `z.array(...).max(12)`, `z.number().int().min(1)` — would otherwise
+ * get an opaque upstream error for a schema that is perfectly valid.
+ *
+ * Pruning is safe because the advertised schema is not the enforcement point.
+ * `ModelRequest.parse` is, it runs on every attempt, and a violation costs one
+ * correction and then a rejection. Dropping a bound here loses nothing except a
+ * hint the model would not have been given anyway.
+ */
+const UNSUPPORTED_SCHEMA_KEYWORDS = [
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  'minItems',
+  'maxItems',
+] as const
+
+export function pruneToSupportedSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(pruneToSupportedSchema)
+  if (!schema || typeof schema !== 'object') return schema
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if ((UNSUPPORTED_SCHEMA_KEYWORDS as readonly string[]).includes(key)) continue
+    out[key] = pruneToSupportedSchema(value)
+  }
+  return out
+}
+
+export type ProviderErrorCode = 'RATE_LIMITED' | 'UPSTREAM_ERROR' | 'SCHEMA_VIOLATION' | 'TIMEOUT' | 'ABORTED'
+
+/**
+ * Fields are declared and assigned rather than written as constructor
+ * parameter properties: `server/index.ts` is run by Node's strip-only
+ * TypeScript mode, which erases types without transforming syntax, and a
+ * parameter property is a transform. The API process has no build step, and
+ * that is worth keeping.
+ */
 export class ProviderRequestError extends Error {
-  constructor(
-    readonly code: 'RATE_LIMITED' | 'UPSTREAM_ERROR' | 'SCHEMA_VIOLATION' | 'TIMEOUT' | 'ABORTED',
-    message: string,
-    readonly retryable: boolean,
-  ) {
+  readonly code: ProviderErrorCode
+  readonly retryable: boolean
+
+  constructor(code: ProviderErrorCode, message: string, retryable: boolean) {
     super(message)
     this.name = 'ProviderRequestError'
+    this.code = code
+    this.retryable = retryable
   }
 }
 
@@ -151,7 +196,7 @@ export class AnthropicModelProvider implements ModelProvider {
             messages,
             output_config: {
               effort: this.effort,
-              format: { type: 'json_schema', schema: request.schema as Record<string, unknown> },
+              format: { type: 'json_schema', schema: pruneToSupportedSchema(request.schema) as Record<string, unknown> },
             },
             ...(request.temperature !== undefined && !SAMPLING_REJECTING.test(this.model)
               ? { temperature: request.temperature }
