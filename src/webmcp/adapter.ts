@@ -32,6 +32,7 @@ import {
   toolProfileHash,
 } from './contract'
 import { json, resultOf, revisionProperty, schema } from './gateway'
+import { CHROME_SURFACES, readChrome, revealChrome } from './chrome'
 import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
 import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
 import { intelligenceReadTools } from './surfaces/intelligence'
@@ -41,6 +42,10 @@ import { shareBuildTools, shareReadTools } from './surfaces/share'
 import type { CadOperation, ModelDocument } from '../cad/types'
 
 type ToolDefinition = ModelContextToolDefinition
+
+const WorkspaceRevealSchema = z.object({
+  surface: z.enum(CHROME_SURFACES),
+})
 
 const ApplySchema = z.object({
   proposalId: z.string().min(1).max(120),
@@ -89,7 +94,7 @@ function profileContext() {
 const readTools: ToolDefinition[] = [
   {
     name: 'workspace_get',
-    description: 'Read the current Brickwright project, exact document revision, selection, constraints, autonomy state, and validation summary.',
+    description: 'Read the current Brickwright project, exact document revision, selection, constraints, autonomy state, dock chrome, and validation summary.',
     inputSchema: schema({}),
     annotations: { readOnlyHint: true },
     execute: () => {
@@ -129,7 +134,28 @@ const readTools: ToolDefinition[] = [
           project: { id: state.document.id, name: state.document.name },
           share: surfaceSnapshot.share,
         },
+        chrome: readChrome(),
       })
+    },
+  },
+  {
+    name: 'workspace_reveal',
+    description:
+      'Open a workbench dock section so a human can see what the agent is working on. '
+      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, timeline. '
+      + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
+    inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
+    annotations: { readOnlyHint: true },
+    execute: (input) => {
+      try {
+        const request = WorkspaceRevealSchema.parse(input)
+        return json({
+          ...revealChrome(request.surface),
+          chrome: readChrome(),
+        })
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
+      }
     },
   },
   {

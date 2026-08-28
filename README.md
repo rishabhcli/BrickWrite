@@ -311,6 +311,7 @@ stops a generated facade reading as a wall with holes in it.
 | `generation_compile` / `generation_compile_local` / `generation_set` / `generation_run` / `generation_state` / `generation_cancel` |  |  |
 | `refinement_analyse` / `refinement_propose` / `refinement_state` / `refinement_cancel` |  |  |
 | `share_prepare` |  |  |
+| `workspace_reveal` |  |  |
 
 Behind `action_read` / `action_mutate`: the four parametric assembly generators above, LDraw
 and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror and note responses.

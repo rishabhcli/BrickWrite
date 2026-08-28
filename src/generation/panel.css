@@ -72,13 +72,13 @@
   border-radius: 2px;
 }
 
-.bw-gen__btn:hover:not(:disabled) { border-color: var(--bw-g-cyan); color: var(--bw-g-cyan); }
+.bw-gen__btn:hover:not(:disabled) { border-color: var(--bw-g-ink); color: var(--bw-g-ink); }
 .bw-gen__btn:disabled { opacity: .42; cursor: not-allowed; }
 
 .bw-gen__btn--primary {
-  background: color-mix(in srgb, var(--bw-g-cyan) 16%, var(--bw-g-panel-2));
-  border-color: var(--bw-g-cyan);
-  color: var(--bw-g-cyan);
+  background: color-mix(in srgb, var(--bw-g-orange) 16%, var(--bw-g-panel-2));
+  border-color: var(--bw-g-orange);
+  color: var(--bw-g-orange);
   font-weight: 600;
 }
 
@@ -105,7 +105,7 @@
   width: 100%;
   padding: 6px 7px;
   background: var(--bw-g-void);
-  border: 1px solid var(--bw-g-line-hi);
+  border: 1px solid var(--bw-g-line);
   color: var(--bw-g-ink);
   font-size: 11px;
   border-radius: 2px;

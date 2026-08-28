@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { jsonSchemaOf } from '../contract'
+import { withChromeReveal } from '../chrome'
 import { json, schema, tool } from '../gateway'
 
 const PromptSchema = z.object({
@@ -82,7 +83,7 @@ export const generationReadTools = [
     annotations: { readOnlyHint: true },
     execute: async (input) => {
       const request = GenerationRunSchema.parse(input ?? {})
-      return json(await (await host()).runGeneration(request.useModel))
+      return json(withChromeReveal('generation', await (await host()).runGeneration(request.useModel)))
     },
   }),
   tool({
@@ -108,7 +109,7 @@ export const generationProposeTools = [
     inputSchema: jsonSchemaOf(GenerationPreviewSchema),
     execute: async (input) => {
       const request = GenerationPreviewSchema.parse(input)
-      return json((await host()).previewCandidate(request.candidateId))
+      return json(withChromeReveal('generation', (await host()).previewCandidate(request.candidateId)))
     },
   }),
 ]

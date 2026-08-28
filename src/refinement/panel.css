@@ -79,8 +79,8 @@
 }
 
 .bw-refine__btn:hover:not(:disabled) {
-  border-color: var(--bw-r-cyan);
-  color: var(--bw-r-cyan);
+  border-color: var(--bw-r-ink);
+  color: var(--bw-r-ink);
 }
 
 .bw-refine__btn:disabled {
@@ -89,9 +89,9 @@
 }
 
 .bw-refine__btn--primary {
-  background: color-mix(in srgb, var(--bw-r-cyan) 16%, var(--bw-r-panel-2));
-  border-color: var(--bw-r-cyan);
-  color: var(--bw-r-cyan);
+  background: color-mix(in srgb, var(--bw-r-orange) 16%, var(--bw-r-panel-2));
+  border-color: var(--bw-r-orange);
+  color: var(--bw-r-orange);
   font-weight: 600;
 }
 

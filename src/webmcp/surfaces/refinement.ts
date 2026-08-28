@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { jsonSchemaOf } from '../contract'
+import { withChromeReveal } from '../chrome'
 import { json, schema, tool } from '../gateway'
 
 const AnalyseSchema = z.object({
@@ -43,7 +44,7 @@ export const refinementReadTools = [
     annotations: { readOnlyHint: true },
     execute: async (input) => {
       const request = ProposeSchema.parse(input ?? {})
-      return json(await (await host()).proposeRefinements(request))
+      return json(withChromeReveal('refinement', await (await host()).proposeRefinements(request)))
     },
   }),
   tool({
@@ -69,7 +70,7 @@ export const refinementProposeTools = [
     inputSchema: jsonSchemaOf(SelectSchema),
     execute: async (input) => {
       const request = SelectSchema.parse(input)
-      return json((await host()).selectRefinement(request.proposalId))
+      return json(withChromeReveal('refinement', (await host()).selectRefinement(request.proposalId)))
     },
   }),
 ]

@@ -15,6 +15,7 @@ import type { RefinementRunner } from '../refinement/session'
 import type { SearchReport } from '../refinement/search'
 import { WebMcpAdapter } from './adapter'
 import { peekPreparedPublication } from './surfaces/shareHost'
+import { resetChrome, setChromeRevealHandler } from './chrome'
 
 const ARMCHAIR = 'A green armchair 6 x 6 studs, 6 studs tall, at most 90 pieces'
 
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   adapter.stop()
+  resetChrome()
   cadEngine.replaceDocument(createShowcaseDocument())
 })
 
@@ -164,6 +166,7 @@ describe('WebMCP surface inventory', () => {
     'generation_state',
     'refinement_analyse',
     'share_prepare',
+    'workspace_reveal',
   ]
   const inspectHidden = ['generation_apply', 'project_open', 'refinement_apply', 'share_fork_to_project']
   const proposeOnly = ['generation_preview', 'refinement_select']
@@ -201,6 +204,23 @@ describe('WebMCP surface inventory', () => {
       refinement: { status: 'idle', proposalCount: 0, selectedId: null },
       project: { id: cadEngine.getDocument().id },
       share: { slug: null, contentHash: null },
+    })
+    expect(workspace.chrome).toBeNull()
+  })
+
+  it('opens a named dock section through workspace_reveal', async () => {
+    adapter.start()
+    const seen: string[] = []
+    setChromeRevealHandler((surface) => {
+      seen.push(surface)
+    })
+    const revealed = await invoke('workspace_reveal', { surface: 'generation' })
+    expect(seen).toEqual(['generation'])
+    expect(revealed).toMatchObject({
+      surface: 'generation',
+      applied: true,
+      dock: 'right',
+      section: 'generation.panel',
     })
   })
 })
@@ -293,6 +313,7 @@ describe('generation tools', () => {
     expect(candidates[0]).toMatchObject({ id: 'cand_brick', strategy: 'test-brick', partCount: 1 })
     expect(candidates[0].document).toBeUndefined()
     expect(candidates[0].operations).toBeUndefined()
+    expect(ran.revealed).toMatchObject({ surface: 'generation', dock: 'right', section: 'generation.panel' })
 
     expect(window.brickwright?.tools.has('generation_apply')).toBe(false)
     await expect(window.brickwright?.invoke('generation_apply', {})).rejects.toThrow(/not registered/)
@@ -300,6 +321,7 @@ describe('generation tools', () => {
     cadEngine.setAutonomy('propose')
     const preview = await invoke('generation_preview', { candidateId: 'cand_brick' })
     expect(preview.ghost).toMatchObject({ candidateId: 'cand_brick', collisions: 0 })
+    expect(preview.revealed).toMatchObject({ surface: 'generation', section: 'generation.panel' })
     const before = cadEngine.getDocument().revision
 
     cadEngine.setAutonomy('build')
@@ -362,9 +384,11 @@ describe('refinement tools', () => {
     const proposals = proposed.proposals as Array<{ id: string; operations?: unknown }>
     expect(proposals[0]).toMatchObject({ id: 'prop_recolor', operationCount: 1 })
     expect(proposals[0].operations).toBeUndefined()
+    expect(proposed.revealed).toMatchObject({ surface: 'refinement', section: 'refinement.panel' })
 
     cadEngine.setAutonomy('propose')
-    await invoke('refinement_select', { proposalId: 'prop_recolor' })
+    const selected = await invoke('refinement_select', { proposalId: 'prop_recolor' })
+    expect(selected.revealed).toMatchObject({ surface: 'refinement', applied: false })
 
     cadEngine.setAutonomy('build')
     const before = cadEngine.getDocument().revision

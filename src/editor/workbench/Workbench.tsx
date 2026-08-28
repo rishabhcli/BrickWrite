@@ -31,6 +31,9 @@ import {
   clampLayout,
   DOCK_LIMITS,
   LAYOUT_PRESETS,
+  STATUSBAR_HEIGHT,
+  TOOLRAIL_HEIGHT,
+  TOPBAR_HEIGHT,
   defaultLayout,
   loadLayout,
   recommendedPreset,
@@ -40,6 +43,7 @@ import {
   type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
+import { applyChromeReveal, CHROME_SURFACE_TARGETS, publishChrome, setChromeRevealHandler } from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
   chordFromEvent,
@@ -85,6 +89,19 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const saveInput = useRef<HTMLInputElement>(null)
 
   const layout = useMemo(() => clampLayout(rawLayout, viewport), [rawLayout, viewport])
+  const layoutRef = useRef(rawLayout)
+  layoutRef.current = rawLayout
+  const pendingReveal = useRef<string | null>(null)
+  const chromeViewRef = useRef({
+    tool: workbench.tool,
+    cameraView: workbench.cameraView,
+    activeColor: workbench.activeColor,
+  })
+  chromeViewRef.current = {
+    tool: workbench.tool,
+    cameraView: workbench.cameraView,
+    activeColor: workbench.activeColor,
+  }
 
   const updateLayout = useCallback((next: WorkbenchLayout) => {
     setRawLayout(next)
@@ -107,6 +124,47 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const applyPreset = useCallback((preset: LayoutPresetId) => {
     updateLayout({ ...defaultLayout(preset), sections: rawLayout.sections })
   }, [rawLayout.sections, updateLayout])
+
+  useEffect(() => {
+    publishChrome({
+      docks: {
+        left: { collapsed: layout.left.collapsed, size: layout.left.size },
+        right: { collapsed: layout.right.collapsed, size: layout.right.size },
+        bottom: { collapsed: layout.bottom.collapsed, size: layout.bottom.size },
+      },
+      sections: { ...layout.sections },
+      tool: workbench.tool,
+      cameraView: workbench.cameraView,
+      activeColor: workbench.activeColor,
+    })
+  }, [layout, workbench.activeColor, workbench.cameraView, workbench.tool])
+
+  useEffect(() => () => publishChrome(null), [])
+
+  useEffect(() => {
+    setChromeRevealHandler((surface) => {
+      const next = applyChromeReveal(layoutRef.current, surface)
+      pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
+      updateLayout(next)
+      publishChrome({
+        docks: {
+          left: { collapsed: next.left.collapsed, size: next.left.size },
+          right: { collapsed: next.right.collapsed, size: next.right.size },
+          bottom: { collapsed: next.bottom.collapsed, size: next.bottom.size },
+        },
+        sections: { ...next.sections },
+        ...chromeViewRef.current,
+      })
+    })
+    return () => setChromeRevealHandler(null)
+  }, [updateLayout])
+
+  useEffect(() => {
+    const section = pendingReveal.current
+    if (!section) return
+    pendingReveal.current = null
+    document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [layout])
 
   const focusSearch = useCallback(() => {
     if (rawLayout.left.collapsed) updateLayout({ ...rawLayout, left: { ...rawLayout.left, collapsed: false } })
@@ -284,7 +342,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         className="app-shell"
         style={{
           gridTemplateColumns: workspaceColumns(layout),
-          gridTemplateRows: `58px 46px minmax(0, 1fr) ${bottomHeight(layout)}px 26px`,
+          gridTemplateRows: `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px ${STATUSBAR_HEIGHT}px`,
         }}
         data-preset={layout.preset ?? 'custom'}
       >

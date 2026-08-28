@@ -5,12 +5,17 @@ import {
   clampLayout,
   COLLAPSED_RAIL,
   defaultLayout,
+  DEFAULT_SECTIONS,
   DOCK_LIMITS,
   LAYOUT_PRESETS,
+  CHROME_HEIGHT,
   loadLayout,
   MIN_VIEWPORT_WIDTH,
   recommendedPreset,
   saveLayout,
+  STATUSBAR_HEIGHT,
+  TOOLRAIL_HEIGHT,
+  TOPBAR_HEIGHT,
   workspaceColumns,
 } from './layout'
 
@@ -124,5 +129,21 @@ describe('grid templates', () => {
 
   it('shrinks the bottom dock to a bar when collapsed', () => {
     expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBeLessThan(40)
+  })
+})
+
+describe('chrome', () => {
+  it('matches the quieter shell strip heights', () => {
+    expect(TOPBAR_HEIGHT).toBe(52)
+    expect(TOOLRAIL_HEIGHT).toBe(44)
+    expect(STATUSBAR_HEIGHT).toBe(24)
+    expect(CHROME_HEIGHT).toBe(120)
+  })
+
+  it('keeps Generate, Refine and the design partner collapsed in a 300px dock', () => {
+    expect(DEFAULT_SECTIONS['generation.panel']).toBe(false)
+    expect(DEFAULT_SECTIONS['refinement.panel']).toBe(false)
+    expect(DEFAULT_SECTIONS['agent.workbench']).toBe(false)
+    expect(defaultLayout().sections['generation.panel']).toBe(false)
   })
 })

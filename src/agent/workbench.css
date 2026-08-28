@@ -8,24 +8,24 @@
 
 .bw-agent {
   --bw-agent-gap: 0.5rem;
-  --bw-agent-radius: 10px;
-  --bw-agent-surface: var(--surface-raised, #16181d);
-  --bw-agent-surface-sunken: var(--surface-sunken, #0f1115);
-  --bw-agent-border: var(--border-subtle, #2a2f38);
-  --bw-agent-text: var(--text-primary, #e8ebf0);
-  --bw-agent-muted: var(--text-muted, #98a2b3);
-  --bw-agent-accent: var(--accent, #e79032);
-  --bw-agent-danger: var(--danger, #ef6461);
-  --bw-agent-ok: var(--success, #4fb286);
+  --bw-agent-radius: 3px;
+  --bw-agent-surface: var(--panel, #111719);
+  --bw-agent-surface-sunken: var(--panel-2, #151c1f);
+  --bw-agent-border: var(--line, #253034);
+  --bw-agent-text: var(--ink, #dce4e5);
+  --bw-agent-muted: var(--muted, #7c8a8f);
+  --bw-agent-accent: var(--orange, #f5a33f);
+  --bw-agent-current: var(--cyan, #83e7ee);
+  --bw-agent-danger: var(--red, #ff6753);
+  --bw-agent-ok: var(--green, #98d56d);
 
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
   color: var(--bw-agent-text);
-  background: var(--bw-agent-surface);
-  border-left: 1px solid var(--bw-agent-border);
-  font-size: 0.875rem;
+  background: transparent;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -100,10 +100,10 @@
 }
 
 .bw-agent__mode[aria-checked='true'] {
-  background: var(--bw-agent-accent);
-  color: #14161a;
+  background: color-mix(in srgb, var(--bw-agent-current) 16%, var(--bw-agent-surface-sunken));
+  color: var(--bw-agent-current);
   font-weight: 600;
-  border-color: var(--bw-agent-accent);
+  border-color: var(--bw-agent-current);
 }
 
 .bw-agent__body {
@@ -244,7 +244,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--bw-agent-accent);
+  background: var(--bw-agent-current);
   animation: bw-agent-pulse 1.1s ease-in-out infinite;
 }
 
@@ -312,11 +312,13 @@
 
 .bw-agent__button {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   padding: 0.25rem 0.6rem;
-  border-radius: 6px;
+  border-radius: 2px;
   border: 1px solid var(--bw-agent-border);
-  background: var(--bw-agent-surface);
+  background: var(--bw-agent-surface-sunken);
   color: var(--bw-agent-text);
   cursor: pointer;
 }
@@ -361,7 +363,7 @@
   resize: vertical;
   font: inherit;
   padding: 0.45rem 0.55rem;
-  border-radius: 8px;
+  border-radius: 3px;
   border: 1px solid var(--bw-agent-border);
   background: var(--bw-agent-surface-sunken);
   color: inherit;

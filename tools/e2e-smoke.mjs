@@ -81,7 +81,9 @@ try {
   // The catalog must load before the editor mounts at all.
   await page.locator('canvas').waitFor({ timeout: 30_000 })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
-  assert(await page.locator('.bw-agent[aria-label="Design partner"]').count() === 1, 'The design partner contribution is not mounted in the editor')
+  await page.locator('[data-section="agent.workbench"]').waitFor({ timeout: 15_000 })
+  assert(await page.locator('[data-section="generation.panel"]').count() === 1, 'The Generate contribution is not mounted in the editor')
+  assert(await page.locator('[data-section="refinement.panel"]').count() === 1, 'The Refine contribution is not mounted in the editor')
 
   // -- first run explains itself, once ---------------------------------------
   // A dense CAD console that opens with no orientation is a usability defect,
@@ -310,6 +312,13 @@ try {
   assert(!initial.tools.includes('build_apply'), 'build_apply leaked into Propose mode')
   assert(initial.tools.includes('part_intent_resolve'), 'part_intent_resolve was not registered in Inspect')
   assert(initial.tools.includes('project_list'), 'project_list was not registered in Inspect')
+  assert(initial.tools.includes('workspace_reveal'), 'workspace_reveal was not registered in Inspect')
+  assert(initial.workspace.chrome?.docks?.right, 'workspace_get omitted dock chrome')
+  assert(initial.workspace.chrome.sections['generation.panel'] === false, 'Generate should start collapsed in the quieter dock')
+  const revealed = await page.evaluate(async () => (await window.brickwright.invoke('workspace_reveal', { surface: 'generation' }))?.structuredContent)
+  assert(revealed?.applied === true, `workspace_reveal did not open the Generate dock: ${JSON.stringify(revealed)}`)
+  await page.waitForFunction(() => document.querySelector('[data-section="generation.panel"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
+  assert(await page.locator('.bw-gen[aria-label="Generate"]').count() === 1, 'workspace_reveal did not mount the Generate panel')
   const listedProjects = await page.evaluate(async () => (await window.brickwright.invoke('project_list', {}))?.structuredContent)
   assert(Array.isArray(listedProjects?.projects), `project_list did not return summaries: ${JSON.stringify(listedProjects)}`)
   assert(typeof listedProjects?.currentProjectId === 'string' && listedProjects.currentProjectId.length > 0, 'project_list omitted the open project id')

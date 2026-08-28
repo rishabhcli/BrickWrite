@@ -87,6 +87,12 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   transform: true,
   inspector: true,
   validate: false,
+  // The quieter 300px inspector cannot hold Generate, Refine and the design
+  // partner open at once. Headers stay visible; `workspace_reveal` (and a
+  // click) opens the one the operator or agent is actually using.
+  'generation.panel': false,
+  'refinement.panel': false,
+  'agent.workbench': false,
 }
 
 export const defaultLayout = (preset: LayoutPresetId = 'desktop'): WorkbenchLayout => ({
@@ -165,8 +171,12 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
 export const COLLAPSED_RAIL = 34
 /** Height of a collapsed bottom dock. */
 export const COLLAPSED_BAR = 30
+/** Must match `.app-shell` in `src/styles.css` and the Workbench inline grid. */
+export const TOPBAR_HEIGHT = 52
+export const TOOLRAIL_HEIGHT = 44
+export const STATUSBAR_HEIGHT = 24
 /** Top bar + tool rail + status bar, which the docks never overlap. */
-export const CHROME_HEIGHT = 58 + 46 + 26
+export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
 const STORAGE_KEY = 'layout.v1'
 
