@@ -43,10 +43,42 @@ const TARGET = {
   drawCallDeltaFor400: 40,
 }
 
+/**
+ * Names a browser reports when it is rasterising on the CPU.
+ *
+ * A hosted runner has no GPU, so WebGL falls back to SwiftShader: 3.16 M
+ * triangles cost about 9.6 s a frame there, which is 0.1 FPS against a 30 FPS
+ * target. That number is a true fact about the runner and says nothing at all
+ * about the renderer, so asserting on it makes this suite a machine detector
+ * that fails every hosted run for the same non-reason.
+ *
+ * The timing gates are therefore enforced only where there is a GPU to time.
+ * Everything structural stays enforced everywhere, because that is what a
+ * batching or geometry regression actually moves — and it is genuinely
+ * host-independent: an M3 Max and SwiftShader both report 126 draw calls and
+ * 3,160,768 triangles for the same scene.
+ */
+const SOFTWARE_RASTERISER = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i
+
 const measured = {}
+let onCpu = false
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+/**
+ * A target that only means something with a GPU behind it.
+ *
+ * Reported and skipped on a software rasteriser, loudly, so a run that did not
+ * gate on speed can never be mistaken for one that did.
+ */
+function assertTiming(condition, message) {
+  if (!onCpu) {
+    assert(condition, message)
+    return
+  }
+  console.log(`  not enforced (software rasteriser, no GPU to time): ${message}`)
 }
 
 async function available() {
@@ -158,8 +190,16 @@ try {
   const prepared = await bench.evaluate(() => window.__brickwrightBench.prepare())
   assert(prepared.definitions >= 4, `Expected several placeable definitions to benchmark, saw ${prepared.definitions}`)
   measured.gpu = prepared.renderer
+  onCpu = SOFTWARE_RASTERISER.test(prepared.renderer ?? '')
+  measured.softwareRasteriser = onCpu
   console.log(`\nGPU reported by the browser: ${prepared.renderer}`)
   console.log(`Benchmark definitions resident: ${prepared.definitions}`)
+  if (onCpu) {
+    console.log(
+      '\nNo GPU here — WebGL is rasterising on the CPU. Frame rate and pick latency are measured and\n'
+        + 'reported below but not enforced; draw calls, triangle counts and selection correctness are.',
+    )
+  }
 
   // -- gate 1: sustained frame rate at 2,000 and 5,000 parts ----------------
   const runs = []
@@ -191,7 +231,7 @@ try {
   // The sustained figure is the 5th percentile of instantaneous rate: the slow
   // frames are what an operator feels, and a mean can hide a stutter entirely.
   const sustained = atFiveThousand.frames.p5Fps
-  assert(
+  assertTiming(
     sustained >= TARGET.fpsAt5000,
     `Sustained frame rate at 5,000 parts was ${sustained.toFixed(1)} FPS (p5), below the ${TARGET.fpsAt5000} FPS target. ` +
       `Mean ${atFiveThousand.frames.meanFps.toFixed(1)}, worst frame ${atFiveThousand.frames.minFps.toFixed(1)} FPS.`,
@@ -210,7 +250,7 @@ try {
   )
   assert(picks.picks >= 200, `Expected at least 200 picks, measured ${picks.picks}`)
   assert(picks.hits > picks.picks * 0.2, `Only ${picks.hits} of ${picks.picks} picks hit geometry; the grid missed the model`)
-  assert(
+  assertTiming(
     picks.p95Ms < TARGET.pickP95Ms,
     `Pick latency p95 was ${picks.p95Ms.toFixed(2)} ms, above the ${TARGET.pickP95Ms} ms target`,
   )
