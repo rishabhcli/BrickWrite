@@ -72,26 +72,26 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/courtyard-terrace/document.json",
-          "bytes": 421778,
-          "sha256": "82f6dffcadbdca34ca22e33439b3dbdb4b73bb4aadd1db8fdc9fa4b11a7e5eb8",
+          "bytes": 421679,
+          "sha256": "e81accffcce0f6fec77a33ab9f6a2884c247a725d9fc92e3cb46b67a788f9543",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/courtyard-terrace/rough.json",
-          "bytes": 145465,
-          "sha256": "6fe005f4607513e7c53f90d102fd306cd23cb614235fc89be5278169efefdb39",
+          "bytes": 145189,
+          "sha256": "27a49d710ac05f75e9681f40e129a3477f5b1fa58d7a8b8fa5ab0649284a12af",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/courtyard-terrace/preview.json",
-          "bytes": 11059,
-          "sha256": "ad29b0106da5526ebf1a5c0935e85062a05b89be50f39fbfd13206bc70a758a2",
+          "bytes": 10980,
+          "sha256": "07d869c166856512b8c40a450cffb9cc945f486d315d411b16fd51551e57e350",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/courtyard-terrace/rough-preview.json",
-          "bytes": 6677,
-          "sha256": "72a314dd625a12af8526f31401620453bf2e22ade8ba9320e9fa476c6572db63",
+          "bytes": 6464,
+          "sha256": "b2c286ee2ac899a5c6ed7ca040282ef0ded68a71d940e5427b73ef077afbf39b",
           "contentType": "application/json"
         },
         "thumbnail": {
@@ -845,8 +845,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "rough": {
           "url": "/demos/shutter-bay/rough.json",
-          "bytes": 86623,
-          "sha256": "86bcf9fa47daa03f5fab2681c7427474fff48905139332923d5079f1c99e7dbf",
+          "bytes": 86541,
+          "sha256": "adfbc41be3b0aec3980075208c33958d11c98c94a799e7bbd881dd10dfb82463",
           "contentType": "application/json"
         },
         "preview": {
@@ -857,8 +857,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "roughPreview": {
           "url": "/demos/shutter-bay/rough-preview.json",
-          "bytes": 5323,
-          "sha256": "98e0a88325ebcda8f6d121a99d43167ab4904ca15360783e4998300f55eef16a",
+          "bytes": 5261,
+          "sha256": "1d800af468460f2884079e895e6c3b72c13fda09bb6919870808fd7ae52efd02",
           "contentType": "application/json"
         },
         "thumbnail": {

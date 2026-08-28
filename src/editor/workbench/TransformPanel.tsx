@@ -474,10 +474,13 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             <span className="eyebrow">CONNECTOR SEATS</span>
             <em>{candidates.length || 'none'}</em>
           </header>
+          {/* Two solutions can mate the same pair of connectors and differ only in
+              the freedom the joint retains, so the connector pair alone is not a
+              unique key — the rank is part of it. */}
           {candidates.length ? (
             <ul>
               {candidates.slice(0, 5).map((candidate, index) => (
-                <li key={`${candidate.movingFeatureId}_${candidate.targetPartId}_${candidate.targetFeatureId}`}>
+                <li key={`${index}:${candidate.movingFeatureId}:${candidate.targetPartId}:${candidate.targetFeatureId}`}>
                   <button
                     type="button"
                     className={index === candidateIndex ? 'active' : ''}

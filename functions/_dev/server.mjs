@@ -17,7 +17,15 @@
  * the application shell, the compiled catalog under `/catalog`, and the studio
  * harness at `/src/features/share/dev/studio.html`.
  *
+ * With `--proxy <url>` it forwards every non-function request to an already
+ * running Vite instead of serving its own. That is how the composed acceptance
+ * run stays a single application boot: `tools/e2e/run-all.mjs` starts one server
+ * and hands out BRICKWRIGHT_E2E_URL, and this process adds only the edge routes
+ * on top of it — no Vite server can serve a Cloudflare Pages Function, so
+ * something has to.
+ *
  *   node functions/_dev/server.mjs --port 5199 --data .share-dev
+ *   node functions/_dev/server.mjs --port 5199 --proxy http://127.0.0.1:4174
  */
 import { createServer as createHttpServer } from 'node:http'
 import { Readable } from 'node:stream'
@@ -32,6 +40,7 @@ const flag = (name, fallback) => {
 const port = Number.parseInt(flag('port', process.env.SHARE_DEV_PORT ?? '5199'), 10)
 const dataDirectory = flag('data', process.env.SHARE_DEV_DATA ?? '.share-dev')
 const publishToken = process.env.SHARE_PUBLISH_TOKEN ?? 'dev-publish-token'
+const proxyTarget = (flag('proxy', process.env.SHARE_DEV_PROXY ?? '') || '').replace(/\/+$/, '')
 
 const vite = await createViteServer({
   server: { middlewareMode: true },
@@ -124,12 +133,35 @@ async function sendResponse(nodeResponse, response, method) {
   Readable.fromWeb(response.body).pipe(nodeResponse)
 }
 
+/** Forwards a request to the already-running application server. */
+async function proxy(nodeRequest, nodeResponse) {
+  const target = `${proxyTarget}${nodeRequest.url ?? '/'}`
+  const method = nodeRequest.method ?? 'GET'
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(nodeRequest.headers)) {
+    // `host` and `connection` describe the hop, not the request.
+    if (name === 'host' || name === 'connection') continue
+    if (Array.isArray(value)) for (const entry of value) headers.append(name, entry)
+    else if (value !== undefined) headers.set(name, value)
+  }
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await readBody(nodeRequest)
+  const response = await fetch(target, { method, headers, body, redirect: 'manual' })
+  await sendResponse(nodeResponse, response, method)
+}
+
 const server = createHttpServer((nodeRequest, nodeResponse) => {
   const path = (nodeRequest.url ?? '/').split('?')[0]
   const segments = path.split('/').filter(Boolean)
   const match = matchRoute(segments)
 
   if (!match) {
+    if (proxyTarget) {
+      proxy(nodeRequest, nodeResponse).catch((cause) => {
+        nodeResponse.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
+        nodeResponse.end(`Proxy to ${proxyTarget} failed: ${cause?.message ?? String(cause)}`)
+      })
+      return
+    }
     vite.middlewares(nodeRequest, nodeResponse)
     return
   }
@@ -168,7 +200,8 @@ const server = createHttpServer((nodeRequest, nodeResponse) => {
 
 server.listen(port, '127.0.0.1', () => {
   process.stdout.write(
-    `share dev server on http://127.0.0.1:${port}  (data: ${dataDirectory}, publish token: ${publishToken})\n`,
+    `share dev server on http://127.0.0.1:${port}  (data: ${dataDirectory}, publish token: ${publishToken}` +
+      `${proxyTarget ? `, proxying to ${proxyTarget}` : ''})\n`,
   )
 })
 

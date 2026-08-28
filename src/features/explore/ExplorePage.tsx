@@ -353,11 +353,26 @@ export function ExplorePage() {
         </aside>
       </div>
 
+      {/*
+        The canvas is decorative; this is the model's text alternative. It is
+        rendered from the manifest first and refined once the preview arrives,
+        so a screen reader never waits on a fetch to be told what is here.
+      */}
       <section className="bw-visually-hidden" aria-label="Build sequence, as text">
         <h2>Build sequence for {demo.title}</h2>
+        <p>
+          {demo.validation.partCount} parts, {demo.validation.connectionCount} mated connectors,
+          {' '}{demo.validation.steps} verified build steps. Currently showing step {step}.
+        </p>
         <ol>
-          {(preview?.steps ?? []).map((entry) => (
-            <li key={entry.index}>{entry.name}: {entry.partCount} part{entry.partCount === 1 ? '' : 's'}</li>
+          {(preview?.steps ?? Array.from({ length: totalSteps }, (_, index) => ({
+            index: index + 1,
+            name: `Step ${index + 1}`,
+            partCount: 0,
+          }))).map((entry) => (
+            <li key={entry.index}>
+              {entry.name}{entry.partCount ? `: ${entry.partCount} part${entry.partCount === 1 ? '' : 's'}` : ''}
+            </li>
           ))}
         </ol>
       </section>

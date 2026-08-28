@@ -520,6 +520,21 @@ export function ViewportControls(props: ViewportControlsProps) {
   )
 
   // -- pointer wiring ------------------------------------------------------
+  /**
+   * The pointer handlers' dependencies, held in a ref.
+   *
+   * The listeners are installed once and read the current callbacks from here,
+   * rather than being torn down and reinstalled whenever one of them changes
+   * identity. That is not a micro-optimisation: the drag's own state lives in
+   * the effect's closure, so re-running the effect *drops an in-flight drag*.
+   * A parent that re-renders mid-drag — which the workbench does on every
+   * selection change, because it passes inline arrow props — would silently
+   * cancel a box selection between the operator pressing and releasing. It
+   * presented as a marquee that drew correctly and then selected nothing.
+   */
+  const handlers = useRef({ pick, pickRegion, updateJoint, updateSection, endJoint, endSection, onSelect, onSelectMany, onClearSelection, onOverlay })
+  handlers.current = { pick, pickRegion, updateJoint, updateSection, endJoint, endSection, onSelect, onSelectMany, onClearSelection, onOverlay }
+
   useEffect(() => {
     const element = gl.domElement
     let pressed: { x: number; y: number; button: number; shift: boolean; alt: boolean } | null = null
@@ -539,22 +554,22 @@ export function ViewportControls(props: ViewportControlsProps) {
         lasso = [[point.x, point.y]]
         const orbit = controls as { enabled?: boolean } | null
         if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
-        onOverlay({ marquee: null, lasso, sweep: null })
+        handlers.current.onOverlay({ marquee: null, lasso, sweep: null })
       } else if (event.shiftKey) {
         const orbit = controls as { enabled?: boolean } | null
         if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
-        onOverlay({ marquee: { left: point.x, top: point.y, width: 0, height: 0 }, lasso: null, sweep: null })
+        handlers.current.onOverlay({ marquee: { left: point.x, top: point.y, width: 0, height: 0 }, lasso: null, sweep: null })
       }
     }
 
     const onMove = (event: PointerEvent) => {
       const point = local(event)
       if (jointDrag.current) {
-        updateJoint(point.x, point.y)
+        handlers.current.updateJoint(point.x, point.y)
         return
       }
       if (sectionDrag.current) {
-        updateSection(point.x, point.y)
+        handlers.current.updateSection(point.x, point.y)
         return
       }
       if (!pressed) return
@@ -565,12 +580,12 @@ export function ViewportControls(props: ViewportControlsProps) {
         // them.
         if (Math.hypot(point.x - last[0], point.y - last[1]) >= 2) {
           lasso = [...lasso, [point.x, point.y]]
-          onOverlay({ marquee: null, lasso, sweep: null })
+          handlers.current.onOverlay({ marquee: null, lasso, sweep: null })
         }
         return
       }
       if (pressed.shift) {
-        onOverlay({
+        handlers.current.onOverlay({
           marquee: {
             left: Math.min(pressed.x, point.x),
             top: Math.min(pressed.y, point.y),
@@ -591,12 +606,12 @@ export function ViewportControls(props: ViewportControlsProps) {
     const onUp = (event: PointerEvent) => {
       const point = local(event)
       if (jointDrag.current) {
-        endJoint(true)
+        handlers.current.endJoint(true)
         pressed = null
         return
       }
       if (sectionDrag.current) {
-        endSection()
+        handlers.current.endSection()
         pressed = null
         return
       }
@@ -611,23 +626,23 @@ export function ViewportControls(props: ViewportControlsProps) {
         const points = lasso.length >= 3 ? lasso : null
         lasso = null
         restoreOrbit()
-        onOverlay({ marquee: null, lasso: null, sweep: null })
+        handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
         if (points) {
-          const region = pickRegion({ kind: 'lasso', points })
-          onSelectMany([...region.partIds], true)
+          const region = handlers.current.pickRegion({ kind: 'lasso', points })
+          handlers.current.onSelectMany([...region.partIds], true)
         }
         return
       }
 
       if (start.shift) {
         restoreOrbit()
-        onOverlay({ marquee: null, lasso: null, sweep: null })
+        handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
         const width = Math.abs(point.x - start.x)
         const height = Math.abs(point.y - start.y)
         // A shift-click that never became a drag is a click, handled below.
         if (width >= CLICK_SLOP_PX || height >= CLICK_SLOP_PX) {
-          const region = pickRegion({ kind: 'box', x0: start.x, y0: start.y, x1: point.x, y1: point.y })
-          onSelectMany([...region.partIds], true)
+          const region = handlers.current.pickRegion({ kind: 'box', x0: start.x, y0: start.y, x1: point.x, y1: point.y })
+          handlers.current.onSelectMany([...region.partIds], true)
           return
         }
       }
@@ -641,19 +656,19 @@ export function ViewportControls(props: ViewportControlsProps) {
       // are a selection.
       if (Math.hypot(point.x - start.x, point.y - start.y) > CLICK_SLOP_PX) return
 
-      const result = pick(point.x, point.y, { cycle: true })
+      const result = handlers.current.pick(point.x, point.y, { cycle: true })
       if (!result.partId) {
-        onClearSelection()
+        handlers.current.onClearSelection()
         return
       }
-      onSelect(result.partId, event.shiftKey, event.detail > 1)
+      handlers.current.onSelect(result.partId, event.shiftKey, event.detail > 1)
     }
 
     const onCancel = () => {
       pressed = null
       lasso = null
       restoreOrbit()
-      onOverlay({ marquee: null, lasso: null, sweep: null })
+      handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
     }
 
     element.addEventListener('pointerdown', onDown)
@@ -666,20 +681,9 @@ export function ViewportControls(props: ViewportControlsProps) {
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
     }
-  }, [
-    controls,
-    endJoint,
-    endSection,
-    gl,
-    onClearSelection,
-    onOverlay,
-    onSelect,
-    onSelectMany,
-    pick,
-    pickRegion,
-    updateJoint,
-    updateSection,
-  ])
+    // Only the renderer and the orbit controls; everything else is read from
+    // the ref above, so a re-render cannot interrupt a drag.
+  }, [controls, gl])
 
   // -- capture -------------------------------------------------------------
   const capture = useCallback(async (): Promise<CaptureMetadata & { dataUrl: string }> => {

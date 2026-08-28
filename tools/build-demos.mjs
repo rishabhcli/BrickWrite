@@ -417,8 +417,13 @@ function assembleDocument(build, meta) {
     updatedAt: AUTHORED_AT,
     parts: Object.fromEntries(build.parts.map((part) => [part.id, part])),
     connections: {},
+    // An assembly nothing was filed under is noise: an empty group in the
+    // inspector and a direction with no parts in the exploded view. If the
+    // authoring did not use it, it does not ship.
     subassemblies: Object.fromEntries(
-      build.subassemblies.map((entry) => [
+      build.subassemblies
+        .filter((entry) => build.parts.some((part) => part.subassemblyId === entry.id))
+        .map((entry) => [
         entry.id,
         {
           id: entry.id,
@@ -938,8 +943,9 @@ const spec = (fields) => ({ actor: HUMAN, subassemblyId: fields.sub, stepId: 'st
 function courtyardTerrace(rough) {
   const build = new Build({
     subassemblies: [
-      { id: 'deck', name: 'Ground deck', accent: '#6bbbd6' },
-      { id: 'shell', name: 'Perimeter shell', accent: '#f7b04a' },
+      // planEnclosure lays its floor into the same assembly as the walls that
+      // stand on it, so the name says so rather than implying two groups.
+      { id: 'shell', name: 'Deck and shell', accent: '#f7b04a' },
       { id: 'roof', name: 'Roof slab', accent: '#8bcf65' },
       { id: 'parapet', name: 'Parapet', accent: '#87f7ff' },
     ],

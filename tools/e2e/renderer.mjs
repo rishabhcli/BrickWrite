@@ -325,24 +325,52 @@ try {
   console.log(`Click selection reported: ${clickSelected}`)
 
   // -- occlusion cycling ----------------------------------------------------
-  // Repeated picks at one pixel must walk strictly backwards through depth.
-  const cycled = await page.evaluate((point) => {
-    window.__brickwrightRenderer.resetCycle()
-    const seen = []
-    for (let step = 0; step < 6; step += 1) {
-      const result = window.__brickwrightRenderer.pick(point.x, point.y, { cycle: true })
-      seen.push({ partId: result.partId, depth: result.cycleDepth })
-      if (!result.partId) break
+  // Repeated picks at one pixel must walk strictly backwards through depth. The
+  // pixel is searched for rather than assumed: a point on the model's
+  // silhouette has nothing behind it, and cycling there would "pass" by
+  // returning one part and then background, which demonstrates nothing.
+  const cycled = await page.evaluate(() => {
+    const surface = window.__brickwrightRenderer
+    const canvas = document.querySelector('canvas')
+    const walk = (x, y) => {
+      surface.resetCycle()
+      const seen = []
+      for (let step = 0; step < 6; step += 1) {
+        const result = surface.pick(x, y, { cycle: true })
+        seen.push({ partId: result.partId, depth: result.cycleDepth })
+        if (!result.partId) break
+      }
+      return seen
     }
-    return seen
-  }, { x: hit.x, y: hit.y })
+    let best = []
+    for (let row = 6; row < 30; row += 1) {
+      for (let column = 6; column < 30; column += 1) {
+        const x = (column / 36) * canvas.clientWidth
+        const y = (row / 36) * canvas.clientHeight
+        const seen = walk(x, y)
+        const distinct = new Set(seen.filter((entry) => entry.partId).map((entry) => entry.partId))
+        if (distinct.size > best.length) best = seen
+        if (distinct.size >= 3) return { point: { x, y }, seen }
+      }
+    }
+    return { point: null, seen: best }
+  })
   measured.cycle = cycled
-  console.log(`Occlusion cycle at one pixel: ${cycled.map((entry) => entry.partId ?? 'background').join(' → ')}`)
-  assert(cycled[0].partId, 'The first pick of a cycle returned nothing')
-  const distinct = new Set(cycled.filter((entry) => entry.partId).map((entry) => entry.partId))
+  console.log(
+    `Occlusion cycle at one pixel: ${cycled.seen.map((entry) => entry.partId ?? 'background').join(' → ')}` +
+      (cycled.point ? ` (at ${cycled.point.x.toFixed(0)}, ${cycled.point.y.toFixed(0)})` : ''),
+  )
+  assert(cycled.seen.length > 0 && cycled.seen[0].partId, 'The first pick of a cycle returned nothing')
+  const distinct = new Set(cycled.seen.filter((entry) => entry.partId).map((entry) => entry.partId))
   assert(
-    distinct.size > 1 || cycled.some((entry) => !entry.partId),
-    'Cycling returned the same part every time and never exhausted the stack, so it is not walking depth order',
+    distinct.size >= 2,
+    `Cycling never reached a second part at any pixel; it walked ${JSON.stringify(cycled.seen)}`,
+  )
+  // Strictly backwards: each step must return something the walk has not
+  // already returned, which is what "monotonic in depth" means in practice.
+  assert(
+    distinct.size === cycled.seen.filter((entry) => entry.partId).length,
+    `Cycling repeated a part rather than stepping past it: ${JSON.stringify(cycled.seen)}`,
   )
 
   // -- box selection --------------------------------------------------------
@@ -355,10 +383,35 @@ try {
   await page.screenshot({ path: `${ARTIFACTS}/box-select.png` })
   await page.mouse.up()
   await page.keyboard.up('Shift')
+  // The selection travels through the kernel and back out as a React snapshot;
+  // reading the label in the same tick reads the previous render.
+  await page.waitForTimeout(400)
   assert(marqueeVisible === 1, 'Shift-dragging did not draw a selection rectangle')
-  const boxSelection = await page.evaluate(() => document.querySelector('.viewport-title-block p')?.textContent)
-  console.log(`Box selection: ${boxSelection}`)
-  assert(/\d+ parts selected/.test(boxSelection ?? ''), `Box selection did not select a region, viewport reports "${boxSelection}"`)
+  const boxSelection = await page.evaluate(() => {
+    const canvas = document.querySelector('canvas')
+    const region = window.__brickwrightRenderer.pickRegion({
+      kind: 'box',
+      x0: canvas.clientWidth * 0.2,
+      y0: canvas.clientHeight * 0.2,
+      x1: canvas.clientWidth * 0.8,
+      y1: canvas.clientHeight * 0.8,
+    })
+    return {
+      label: document.querySelector('.viewport-title-block p')?.textContent,
+      byPixels: region.partIds.length,
+      byCentre: region.centreRuleWouldSelect.length,
+    }
+  })
+  measured.boxSelect = boxSelection
+  console.log(
+    `Box selection: "${boxSelection.label}"; over the same region the covered-pixel rule finds ` +
+      `${boxSelection.byPixels} parts and the old projected-centre rule ${boxSelection.byCentre}`,
+  )
+  assert(
+    /\d+ parts selected/.test(boxSelection.label ?? ''),
+    `Box selection did not select a region, viewport reports "${boxSelection.label}"`,
+  )
+  assert(boxSelection.byPixels > 1, 'A box over most of the model covered at most one part')
 
   // -- lasso selection ------------------------------------------------------
   await page.evaluate(() => window.__brickwrightRenderer.pickRegion({ kind: 'box', x0: 0, y0: 0, x1: 1, y1: 1 }))
@@ -375,10 +428,14 @@ try {
   await page.screenshot({ path: `${ARTIFACTS}/lasso-select.png` })
   await page.mouse.up()
   await page.keyboard.up('Alt')
+  await page.waitForTimeout(400)
   assert(lassoVisible === 1, 'Alt-dragging did not draw a lasso')
   const lassoSelection = await page.evaluate(() => document.querySelector('.viewport-title-block p')?.textContent)
   console.log(`Lasso selection: ${lassoSelection}`)
-  assert(/\d+ parts selected/.test(lassoSelection ?? ''), `Lasso selection selected nothing, viewport reports "${lassoSelection}"`)
+  assert(
+    /\d+ parts selected/.test(lassoSelection ?? ''),
+    `Lasso selection selected nothing, viewport reports "${lassoSelection}"`,
+  )
 
   // -- isolation by connection distance -------------------------------------
   const isolation = await page.evaluate(async (partId) => {
@@ -444,24 +501,34 @@ try {
 
   // -- a hinge to drag ------------------------------------------------------
   // Built through the kernel's own command path, so the joint under test is a
-  // real connection edge rather than an assertion about one.
+  // real connection edge rather than an assertion about one. Applying a
+  // proposal is a mutation, so the session is put into build autonomy first —
+  // through the same control an operator uses, not by reaching past it.
+  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.waitForFunction(
+    () => window.brickwright?.tools?.has?.('build_apply') ?? false,
+    null,
+    { timeout: 10_000 },
+  )
+
   const hinge = await page.evaluate(async () => {
     const model = window.brickwright.getDocument()
-    const bounds = Object.values(model.parts).reduce(
-      (box, part) => ({
-        x: Math.max(box.x, part.transform.position[0]),
-        z: Math.max(box.z, part.transform.position[2]),
-      }),
-      { x: 0, z: 0 },
-    )
-    const origin = [bounds.x + 240, 0, bounds.z + 240]
+    const positions = Object.values(model.parts).map((part) => part.transform.position)
+    const mean = (axis) => positions.reduce((total, position) => total + position[axis], 0) / Math.max(1, positions.length)
+    const top = Math.min(...positions.map((position) => position[1]))
+    // Directly above the model, not beside it. The showcase carries a hard
+    // envelope constraint on its footprint in studs, so a hinge placed 240 LDU
+    // to one side is refused by the kernel — correctly. LDraw's +Y is down, so
+    // "above" is a *smaller* Y, and height is not part of that envelope.
+    const origin = [mean(0), top - 400, mean(2)]
+    const mast = (level) => [origin[0] + 10, origin[1] - 8 * level, origin[2]]
     const operations = [
       { op: 'add', definitionId: '3937', color: 4, position: origin },
       { op: 'add', definitionId: '3938', color: 14, position: origin },
-      { op: 'add', definitionId: '3024', color: 15, position: [origin[0] + 10, -8, origin[2]] },
-      { op: 'add', definitionId: '3024', color: 15, position: [origin[0] + 10, -16, origin[2]] },
-      { op: 'add', definitionId: '3024', color: 15, position: [origin[0] + 10, -24, origin[2]] },
-      { op: 'add', definitionId: '3024', color: 15, position: [origin[0] + 10, -32, origin[2]] },
+      { op: 'add', definitionId: '3024', color: 15, position: mast(1) },
+      { op: 'add', definitionId: '3024', color: 15, position: mast(2) },
+      { op: 'add', definitionId: '3024', color: 15, position: mast(3) },
+      { op: 'add', definitionId: '3024', color: 15, position: mast(4) },
     ]
     const preflight = await window.brickwright.invoke('build_preflight', {
       expectedRevision: model.revision,
@@ -475,22 +542,36 @@ try {
       return { error: JSON.stringify(applied?.structuredContent).slice(0, 300) }
     }
     const after = window.brickwright.getDocument()
-    const added = Object.values(after.parts).filter((part) => ['3937', '3938'].includes(part.definitionId))
+    // Identify the new parts by diffing, not by definition id: the showcase may
+    // already contain a hinge, and picking the first match by definition would
+    // aim every later step at somebody else's brick.
+    const before = new Set(Object.keys(model.parts))
+    const added = Object.values(after.parts).filter((part) => !before.has(part.id))
     return {
       revision: after.revision,
+      added: added.map((part) => part.id),
       base: added.find((part) => part.definitionId === '3937')?.id ?? null,
       flap: added.find((part) => part.definitionId === '3938')?.id ?? null,
+      mast: added.filter((part) => part.definitionId === '3024').map((part) => part.id),
     }
   })
   assert(!hinge.error, `Could not build the acceptance hinge: ${hinge.error}`)
-  assert(hinge.flap, 'The acceptance hinge produced no flap part')
+  assert(hinge.flap && hinge.base, 'The acceptance hinge produced no hinge parts')
+  assert(hinge.added.length === 6, `Expected six new parts for the hinge, saw ${hinge.added.length}`)
+  console.log(`\nAcceptance hinge: base ${hinge.base}, flap ${hinge.flap}, mast ${hinge.mast.join(', ')}`)
 
   // Frame it and select the flap with a real click, so the joint list is
   // populated the way an operator would populate it.
+  // Isolating the mechanism before articulating it is both the real workflow and
+  // what makes this deterministic: with the rest of the model hidden it is not
+  // drawn, so it cannot be what the click lands on.
   const jointList = await page.evaluate(async (ids) => {
     const surface = window.__brickwrightRenderer
+    const isolated = await surface.setVisibility({ isolateSeedIds: [ids.flap], hops: 6, outside: 'hidden' })
     surface.frameParts([ids.base, ids.flap])
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    for (let frame = 0; frame < 6; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
     const at = surface.screenPositionOf(ids.flap)
     const canvas = document.querySelector('canvas')
     const rect = canvas.getBoundingClientRect()
@@ -499,10 +580,21 @@ try {
     canvas.dispatchEvent(new PointerEvent('pointerdown', options))
     window.dispatchEvent(new PointerEvent('pointerup', options))
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    return { picked: surface.pick(at.x, at.y).partId, joints: surface.listJoints(), at }
+    return { picked: surface.pick(at.x, at.y).partId, joints: surface.listJoints(), at, isolated, flap: ids.flap }
   }, hinge)
   measured.joints = jointList.joints
-  console.log(`\nJoints for the selected flap: ${jointList.joints.map((joint) => `${joint.family}/${joint.kind}`).join(', ') || 'none'}`)
+  console.log(
+    `\nIsolated the mechanism to ${jointList.isolated.solid} solid parts; clicking the flap picked ${jointList.picked}`,
+  )
+  console.log(`Joints for the selected flap: ${jointList.joints.map((joint) => `${joint.family}/${joint.kind}`).join(', ') || 'none'}`)
+  assert(
+    jointList.isolated.solid <= 8,
+    `Isolating the mechanism left ${jointList.isolated.solid} parts solid; the hinge and its mast are six`,
+  )
+  assert(
+    jointList.picked === jointList.flap,
+    `Clicking the flap picked ${jointList.picked} rather than ${jointList.flap}`,
+  )
   assert(jointList.joints.length > 0, `Selecting the flap (picked ${jointList.picked}) surfaced no articulated joint`)
   const joint = jointList.joints.find((entry) => entry.handles.includes('rotate'))
   assert(joint, 'The hinge offered no rotation handle')
@@ -669,6 +761,8 @@ try {
     `The sweep reported the full motion clear even though a part was placed in the arc: ${JSON.stringify(blocked.sweep)}`,
   )
   await page.screenshot({ path: `${ARTIFACTS}/sweep-blocked.png` })
+
+  await page.evaluate(() => window.__brickwrightRenderer.setVisibility({ isolateSeedIds: null, outside: 'ghost' }))
 
   // -- no mutation during a full animation cycle ---------------------------
   // The engine itself is instrumented: any transaction at all during the

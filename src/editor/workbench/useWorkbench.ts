@@ -128,6 +128,9 @@ export function useWorkbench() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('part')
   /** Last committed pose, so the numeric fields can show what the gizmo produced. */
   const lastCommittedPose = useRef<{ partId: string; pose: Transform } | null>(null)
+  /** Mirrors `connect` so the viewport's click handler can read it without re-binding. */
+  const connectRef = useRef(connect)
+  connectRef.current = connect
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const selectedPart = state.selection.length === 1 ? state.document.parts[state.selection[0]] : undefined
@@ -246,14 +249,17 @@ export function useWorkbench() {
     if (tool === 'connect') {
       // Two explicit stages. The first click names the part that will move, the
       // second names what it mates onto; neither commits anything on its own.
-      setConnect((flow) => {
-        if (flow.stage === 'source' || !flow.sourcePartId) {
-          cadEngine.setSelection([partId])
-          return { ...IDLE_CONNECT, stage: 'target', sourcePartId: partId }
-        }
-        if (partId === flow.sourcePartId) return flow
-        return { ...flow, stage: 'review', targetPartId: partId, candidateIndex: 0 }
-      })
+      //
+      // The transition is computed from a ref rather than inside a `setConnect`
+      // updater: React may run an updater during render, and reaching into the
+      // engine from there schedules a store update mid-render.
+      const flow = connectRef.current
+      if (flow.stage === 'source' || !flow.sourcePartId) {
+        cadEngine.setSelection([partId])
+        setConnect({ ...IDLE_CONNECT, stage: 'target', sourcePartId: partId })
+      } else if (partId !== flow.sourcePartId) {
+        setConnect({ ...flow, stage: 'review', targetPartId: partId, candidateIndex: 0 })
+      }
       return
     }
     if (additive) {
