@@ -44,7 +44,11 @@ jobs:
   acceptance:
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Sized from observation, not optimism: the editor smoke suite has taken
+    # twenty minutes on one runner and over thirty-five on another for the same
+    # commit. A job that finishes early costs nothing, and the failure mode this
+    # replaces — killed mid-suite, reporting nothing — costs a whole run.
+    timeout-minutes: 60
     strategy:
       # One failing suite must not cancel the others: the whole point of the
       # split is learning about every regression in one run.
