@@ -569,15 +569,13 @@ export class GenerationSession {
   /**
    * Commits the reviewed candidate as one transaction.
    *
-   * The actor is `human`: the operator typed the request, edited the brief,
-   * resolved its contradictions and looked at the ghost, so recording the agent
-   * as author would misattribute the edit and — because the kernel gates agent
-   * writes on Build autonomy — refuse an edit a person explicitly made. The
-   * independent verification an agent write would have bought is kept: this
-   * refuses unless the kernel's own preflight report on the ghost found zero
-   * collisions.
+   * The panel defaults to `human`: the operator typed the request, edited the
+   * brief, resolved its contradictions and looked at the ghost, so recording the
+   * agent as author would misattribute the edit and — because the kernel gates
+   * agent writes on Build autonomy — refuse an edit a person explicitly made.
+   * WebMCP passes `agent` so the same gate applies to an unattended apply.
    */
-  accept(): GenerateOutcome {
+  accept(actor: Actor = 'human'): GenerateOutcome {
     const ghost = this.state.ghost
     const candidate = ghost ? this.candidate(ghost.candidateId) : null
     if (!ghost || !candidate) {
@@ -607,7 +605,7 @@ export class GenerationSession {
     // Withdrawn first so a successful commit does not leave a stale ghost
     // pointing at a revision that no longer exists.
     this.bus.withdraw(ghost.proposalId)
-    const result = this.bus.dispatch(labelFor(candidate), operations, 'human', ghost.baseRevision, 'generation_apply')
+    const result = this.bus.dispatch(labelFor(candidate), operations, actor, ghost.baseRevision, 'generation_apply')
     if (result.ok) {
       const outcome: GenerateOutcome = {
         kind: 'applied',

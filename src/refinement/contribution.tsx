@@ -4,23 +4,23 @@ import { useRegisterContribution } from '../editor/workbench'
 import { ObjectivesDialog } from './ObjectivesDialog'
 import { RefineOverlay } from './RefineOverlay'
 import { OBJECTIVES_MODAL_ID, RefinePanel } from './RefinePanel'
-import { RefinementSession, type RefinementSessionOptions } from './session'
+import { disposeRefinementHost, getRefinementSession } from './mcpHost'
+import type { RefinementSessionOptions } from './session'
 
 /**
  * Mounts the design doctor into the editor shell.
  *
  * One component registers all three surfaces — the dock panel, the viewport
  * heatmap and the objective reference dialog — because all three read one
- * session and a shared module singleton would leak one editor's search into the
- * next. Creating the session here and closing over it in each `render` keeps the
- * three surfaces in step and disposes the search when the shell unmounts.
+ * session. WebMCP uses the same host so an agent's search appears in the
+ * overlay. The adapter (and this contribution on unmount) disposes it.
  *
  * `src/App.tsx` lists this component in `<Workbench contributions={[…]} />`.
  * Nothing else in the application needs to know refinement exists.
  */
 export function RefinePanelContribution({ options }: { options?: RefinementSessionOptions } = {}) {
-  const session = useMemo(() => new RefinementSession(options), [options])
-  useEffect(() => () => session.dispose(), [session])
+  const session = useMemo(() => getRefinementSession(options), [options])
+  useEffect(() => () => disposeRefinementHost(), [session])
 
   useRegisterContribution({
     id: 'refinement.panel',

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
-import { createShowcaseDocument } from './sample'
+import { createBlankDocument, createShowcaseDocument } from './sample'
 import { session } from './session'
 import type { PartInstance } from './types'
 
@@ -165,6 +165,21 @@ describe('session projects', () => {
     const missing = await session.openProject(disposableId)
     expect(missing.ok).toBe(false)
     expect(missing.code).toBe('NOT_FOUND')
+  })
+
+  it('imports a document as a new stored project without touching the origin', async () => {
+    const originId = session.currentProjectId
+    const originRevision = cadEngine.getSnapshot().document.revision
+    const incoming = createBlankDocument('Imported study')
+    const result = await session.importDocument(incoming)
+    expect(result.ok).toBe(true)
+    expect(session.currentProjectId).not.toBe(originId)
+    expect(cadEngine.getSnapshot().document.name).toBe('Imported study')
+    expect(Object.keys(cadEngine.getSnapshot().document.parts)).toHaveLength(0)
+
+    const back = await session.openProject(originId)
+    expect(back.ok).toBe(true)
+    expect(cadEngine.getSnapshot().document.revision).toBe(originRevision)
   })
 
   it('leaves the document alone when opening the project already open', async () => {

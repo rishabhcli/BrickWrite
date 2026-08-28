@@ -31,30 +31,22 @@ import {
   TOOL_PROFILE,
   toolProfileHash,
 } from './contract'
+import { json, resultOf, revisionProperty, schema } from './gateway'
+import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
+import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
+import { intelligenceReadTools } from './surfaces/intelligence'
+import { projectBuildTools, projectReadTools } from './surfaces/projects'
+import { refinementBuildTools, refinementProposeTools, refinementReadTools } from './surfaces/refinement'
+import { shareBuildTools, shareReadTools } from './surfaces/share'
+import type { CadOperation, ModelDocument } from '../cad/types'
+
+type ToolDefinition = ModelContextToolDefinition
 
 const ApplySchema = z.object({
   proposalId: z.string().min(1).max(120),
   expectedToolProfileHash: z.string().optional(),
   expectedCatalogVersion: z.string().optional(),
 })
-import type { Actor, CadOperation, ModelDocument, PartInstance } from '../cad/types'
-
-type ToolDefinition = ModelContextToolDefinition
-type ToolResult = ModelContextToolResult
-
-const json = (value: unknown): ToolResult => ({
-  content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-  structuredContent: value,
-})
-
-const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
-  type: 'object',
-  properties,
-  required,
-  additionalProperties: false,
-})
-
-const revisionProperty = { type: 'integer', description: 'Revision returned by the most recent read. Mutations reject stale revisions.' }
 
 /**
  * Validates and translates an operation batch.
@@ -94,10 +86,6 @@ function profileContext() {
   }
 }
 
-function resultOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): ToolResult {
-  return result.ok ? json(result.value) : json({ error: result.error })
-}
-
 const readTools: ToolDefinition[] = [
   {
     name: 'workspace_get',
@@ -134,6 +122,12 @@ const readTools: ToolDefinition[] = [
           components: state.validation.componentCount,
           virtualColors: state.validation.virtualColors.length,
           boundsLdu: state.validation.bounds,
+        },
+        surfaces: {
+          generation: surfaceSnapshot.generation ?? { briefPhase: 'idle', runPhase: 'idle', candidateCount: 0, selectedCandidateId: null, ghost: false },
+          refinement: surfaceSnapshot.refinement ?? { status: 'idle', proposalCount: 0, selectedId: null },
+          project: { id: state.document.id, name: state.document.name },
+          share: surfaceSnapshot.share,
         },
       })
     },
@@ -453,6 +447,11 @@ const readTools: ToolDefinition[] = [
       return json({ error: 'UNKNOWN_ACTION', repair: 'Call capabilities_search and capabilities_help.' })
     },
   },
+  ...intelligenceReadTools,
+  ...projectReadTools,
+  ...generationReadTools,
+  ...refinementReadTools,
+  ...shareReadTools,
 ]
 
 const proposalTools: ToolDefinition[] = [
@@ -481,6 +480,8 @@ const proposalTools: ToolDefinition[] = [
     inputSchema: jsonSchemaOf(PreflightSchema),
     execute: (input) => proposalTools[0].execute(input),
   },
+  ...generationProposeTools,
+  ...refinementProposeTools,
 ]
 
 const buildTools: ToolDefinition[] = [
@@ -592,6 +593,10 @@ const buildTools: ToolDefinition[] = [
       }
     },
   },
+  ...generationBuildTools,
+  ...refinementBuildTools,
+  ...projectBuildTools,
+  ...shareBuildTools,
 ]
 
 export class WebMcpAdapter {
@@ -650,6 +655,7 @@ export class WebMcpAdapter {
     this.unsubscribe?.()
     this.fallbackTools.clear()
     this.lastMode = undefined
+    disposeSurfaces()
     delete window.brickwright
   }
 

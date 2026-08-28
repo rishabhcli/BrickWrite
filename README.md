@@ -300,15 +300,22 @@ stops a generated facade reading as a wall with holes in it.
 | --- | --- | --- |
 | `workspace_get` | `build_preflight` | `build_apply` |
 | `catalog_search` | `proposal_create` | `builder_feedback_respond` |
-| `part_inspect` |  | `undo_edit` / `redo_edit` |
-| `scene_query` |  | `action_mutate` |
-| `render_capture` |  |  |
-| `validate_model` |  |  |
-| `builder_feedback_get` |  |  |
-| `capabilities_search` / `capabilities_help` / `action_read` |  |  |
+| `part_inspect` | `generation_preview` | `undo_edit` / `redo_edit` |
+| `scene_query` | `refinement_select` | `action_mutate` |
+| `render_capture` |  | `generation_apply` |
+| `validate_model` |  | `refinement_apply` |
+| `builder_feedback_get` |  | `project_open` / `project_create` / `project_fork` / `project_delete` |
+| `capabilities_search` / `capabilities_help` / `action_read` |  | `share_fork_to_project` |
+| `part_intent_resolve` |  |  |
+| `project_list` |  |  |
+| `generation_compile` / `generation_compile_local` / `generation_set` / `generation_run` / `generation_state` / `generation_cancel` |  |  |
+| `refinement_analyse` / `refinement_propose` / `refinement_state` / `refinement_cancel` |  |  |
+| `share_prepare` |  |  |
 
 Behind `action_read` / `action_mutate`: the four parametric assembly generators above, LDraw
-and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror and note responses. Annotations are hints only — revision
+and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror and note responses.
+Generation, refinement, IndexedDB projects and local share freeze/fork are dedicated tools,
+not `action_mutate` capabilities. Annotations are hints only — revision
 checks, protected-region enforcement, geometry availability, colour policy and collision
 rejection live in the CAD kernel.
 

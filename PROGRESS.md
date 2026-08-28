@@ -56,7 +56,7 @@ snap-grid expansion, measured bounds, hashed files, determinism — not just tha
                   "buildingParts": 326, "buildingWindows": 6, "buildingDoors": 1,
                   "moduleStampedParts": 326, "blockCollisions": 0 },
   "refusedUnplaceableIdentity": "61072",
-  "contractEnforcement": { "profile": "brickwright.tools/2",
+  "contractEnforcement": { "profile": "brickwright.tools/3",
                            "malformedBatch": "INVALID_INPUT",
                            "shearedBasis": "INVALID_INPUT",
                            "staleProfile": "STALE_TOOL_PROFILE" },

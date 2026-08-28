@@ -1,5 +1,5 @@
 import { commandBus } from '../cad/engine'
-import type { ModelDocument } from '../cad/types'
+import type { Actor, ModelDocument } from '../cad/types'
 import { MAX_WEIGHT, OBJECTIVES } from './objectives'
 import { applyRefinement, type RefinementBus } from './pipeline'
 import type { SearchReport } from './search'
@@ -364,7 +364,7 @@ export class RefinementSession {
    * refused with `STALE_DOCUMENT`, which is surfaced with the one recovery that
    * makes sense rather than as a generic failure.
    */
-  accept(proposalId: string): RefineOutcome {
+  accept(proposalId: string, actor: Actor = 'human'): RefineOutcome {
     const proposal = this.state.proposals.find((entry) => entry.id === proposalId)
     if (!proposal) {
       const outcome: RefineOutcome = {
@@ -379,7 +379,7 @@ export class RefinementSession {
       return outcome
     }
 
-    const result = applyRefinement(proposal, 'human', this.bus)
+    const result = applyRefinement(proposal, actor, this.bus)
     if (result.ok) {
       const outcome: RefineOutcome = {
         kind: 'applied',

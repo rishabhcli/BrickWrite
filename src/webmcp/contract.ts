@@ -13,7 +13,7 @@ import { basisFromEulerDegrees, IDENTITY_BASIS, isOrthonormal, orthonormalize, t
  * of bare objects and validated nowhere.
  */
 
-export const TOOL_PROFILE = 'brickwright.tools/2'
+export const TOOL_PROFILE = 'brickwright.tools/3'
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -273,6 +273,10 @@ export type BrickwrightErrorCode =
   | 'INVALID_OPERATION'
   | 'RESOURCE_LIMIT'
   | 'INTERNAL_ERROR'
+  | 'PROJECT_NOT_FOUND'
+  | 'OPEN_PROJECT'
+  | 'UNPLACEABLE_PARTS'
+  | 'MODEL_UNAVAILABLE'
 
 export class ContractError extends Error {
   constructor(

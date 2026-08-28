@@ -213,15 +213,6 @@ class Session {
   }
 
   /**
-   * Forks the open document into a new project.
-   *
-   * The fork gets a new project id, a fresh checkpoint and an empty log, so the
-   * two histories cannot replay into each other. Its id is disambiguated against
-   * the projects that already exist rather than assumed unique, because a name
-   * slug collides the second time the same fork name is used — and a collision
-   * here would overwrite somebody's project.
-   */
-  /**
    * Starts an empty project.
    *
    * Forking was previously the only way to get a second document, which meant
@@ -243,6 +234,11 @@ class Session {
     return { ok: true, restore }
   }
 
+  /**
+   * Project ids are disambiguated against the store rather than assumed unique:
+   * a name slug collides the second time the same fork name is used, and a
+   * collision here would overwrite somebody's project.
+   */
   private async uniqueProjectId(name: string): Promise<string> {
     const base = `doc_${name.toLowerCase().replace(/\W+/g, '_')}`
     const taken = new Set((await this.repository.listProjects()).map((project) => project.projectId))
@@ -251,6 +247,12 @@ class Session {
     return id
   }
 
+  /**
+   * Forks the open document into a new project.
+   *
+   * The fork gets a new project id, a fresh checkpoint and an empty log, so the
+   * two histories cannot replay into each other.
+   */
   async forkProject(name?: string): Promise<ProjectSwitch> {
     const source = await this.partWithCurrent()
     const forkName = name?.trim() || `${source.name} (fork)`
@@ -263,6 +265,33 @@ class Session {
       createdAt: new Date().toISOString(),
     }
     const restore = this.adopt(fork, 0)
+    await this.repository.saveCheckpoint(cadEngine.getSnapshot().document)
+    return { ok: true, restore }
+  }
+
+  /**
+   * Opens an already-built document as a new stored project.
+   *
+   * Used when a publication is forked: the snapshot is a different object from
+   * the live document, so cloning the open project would be the wrong source.
+   */
+  async importDocument(document: ModelDocument): Promise<ProjectSwitch> {
+    await this.partWithCurrent()
+    const id = await this.uniqueProjectId(document.name)
+    const imported: ModelDocument = {
+      ...document,
+      id,
+      createdAt: document.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    if (!this.usable(imported)) {
+      return {
+        ok: false,
+        code: 'UNPLACEABLE_PARTS',
+        message: `"${imported.name}" references parts this catalog revision cannot place, so it was left untouched.`,
+      }
+    }
+    const restore = this.adopt(imported, 0)
     await this.repository.saveCheckpoint(cadEngine.getSnapshot().document)
     return { ok: true, restore }
   }

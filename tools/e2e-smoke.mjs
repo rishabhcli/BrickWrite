@@ -308,6 +308,11 @@ try {
   assert(initial.tools.includes('render_capture'), 'render_capture was not registered')
   assert(initial.tools.includes('build_preflight'), 'proposal tools were not registered in Propose mode')
   assert(!initial.tools.includes('build_apply'), 'build_apply leaked into Propose mode')
+  assert(initial.tools.includes('part_intent_resolve'), 'part_intent_resolve was not registered in Inspect')
+  assert(initial.tools.includes('project_list'), 'project_list was not registered in Inspect')
+  const listedProjects = await page.evaluate(async () => (await window.brickwright.invoke('project_list', {}))?.structuredContent)
+  assert(Array.isArray(listedProjects?.projects), `project_list did not return summaries: ${JSON.stringify(listedProjects)}`)
+  assert(typeof listedProjects?.currentProjectId === 'string' && listedProjects.currentProjectId.length > 0, 'project_list omitted the open project id')
 
   const capture = await page.evaluate(() => window.brickwright.invoke('render_capture', { view: 'isometric', mode: 'beauty' }))
   assert(capture.content.some((item) => item.type === 'image' && item.data.length > 10_000), 'render_capture did not return viewport pixels')
@@ -379,7 +384,7 @@ try {
       drifted: drifted?.structuredContent?.error,
     }
   })
-  assert(contract.profile === 'brickwright.tools/2', `Expected a versioned tool profile, saw ${contract.profile}`)
+  assert(contract.profile === 'brickwright.tools/3', `Expected a versioned tool profile, saw ${contract.profile}`)
   assert(/^fnv1a:[0-9a-f]{8}$/.test(contract.profileHash ?? ''), `Expected a profile hash, saw ${contract.profileHash}`)
   assert(contract.malformed?.code === 'INVALID_INPUT', `Malformed batch was not refused: ${JSON.stringify(contract.malformed)}`)
   assert(contract.sheared?.code === 'INVALID_INPUT', `Sheared basis was not refused: ${JSON.stringify(contract.sheared)}`)

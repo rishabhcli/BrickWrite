@@ -4,22 +4,23 @@ import { useRegisterContribution } from '../editor/workbench'
 import { CompareDialog } from './CompareDialog'
 import { COMPARE_MODAL_ID, GeneratePanel } from './GeneratePanel'
 import { GenerationStatus } from './GenerationStatus'
-import { GenerationSession, type GenerationSessionOptions } from './session'
+import { disposeGenerationHost, getGenerationSession } from './mcpHost'
+import type { GenerationSessionOptions } from './session'
 
 /**
  * Mounts generation into the editor shell.
  *
  * One component registers the dock panel, the status readout and the
- * side-by-side comparison dialog, all reading one session. A shared module
- * singleton would carry one editor's candidates — and its outstanding ghost —
- * into the next mount, so the session is created here and disposed with the
- * shell, which withdraws any ghost still on screen.
+ * side-by-side comparison dialog, all reading one session. WebMCP uses the
+ * same host so an agent's candidates appear in the panel. The adapter (and
+ * this contribution on unmount) disposes it so a remount cannot inherit the
+ * previous editor's ghost.
  *
  * `src/App.tsx` lists this component in `<Workbench contributions={[…]} />`.
  */
 export function GeneratePanelContribution({ options }: { options?: GenerationSessionOptions } = {}) {
-  const session = useMemo(() => new GenerationSession(options), [options])
-  useEffect(() => () => session.dispose(), [session])
+  const session = useMemo(() => getGenerationSession(options), [options])
+  useEffect(() => () => disposeGenerationHost(), [session])
 
   useRegisterContribution({
     id: 'generation.panel',
