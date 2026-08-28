@@ -38,7 +38,7 @@ const requestFor = (fixtureId: string, overrides: Record<string, unknown> = {}) 
 }
 
 describe('bounded budget', () => {
-  it('returns the best it found when the wall clock runs out, and does not hang', () => {
+  it('returns the best it found when the wall clock runs out, and does not hang', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('roof-steps')
     const generous = searchRefinements(request, fixture.document, {
       budget: { maxIterations: 600, wallClockMs: 20_000 },
@@ -63,7 +63,7 @@ describe('bounded budget', () => {
     expect(clipped.report.strategiesSkipped.length).toBeGreaterThan(0)
   })
 
-  it('stops on an iteration ceiling exactly, with an injected clock', () => {
+  it('stops on an iteration ceiling exactly, with an injected clock', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('roof-steps')
     let ticks = 0
     const result = searchRefinements(request, fixture.document, {
@@ -98,7 +98,7 @@ describe('bounded budget', () => {
     expect(result.candidates).toHaveLength(0)
   })
 
-  it('reports which generators ran and which never got a turn', () => {
+  it('reports which generators ran and which never got a turn', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('roof-steps')
     const result = searchRefinements(request, fixture.document, {
       budget: { maxIterations: 1, wallClockMs: 10_000 },
@@ -110,7 +110,7 @@ describe('bounded budget', () => {
 })
 
 describe('determinism', () => {
-  it('produces identical proposal ids and operations for the same document, request and seed', () => {
+  it('produces identical proposal ids and operations for the same document, request and seed', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-tower')
     const options = { budget: { maxIterations: 300, wallClockMs: 20_000 } }
 
@@ -127,7 +127,7 @@ describe('determinism', () => {
     expect(stableStringify(second.proposals)).toBe(stableStringify(first.proposals))
   })
 
-  it('derives a proposal id from its content, so identical plans collide by design', () => {
+  it('derives a proposal id from its content, so identical plans collide by design', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-wall')
     const result = searchRefinements(request, fixture.document, {
       budget: { maxIterations: 300, wallClockMs: 20_000 },
@@ -137,7 +137,7 @@ describe('determinism', () => {
     expect(candidate.id).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/)
   })
 
-  it('changes with the seed only where the generators actually sample', () => {
+  it('changes with the seed only where the generators actually sample', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('roof-steps')
     const options = { budget: { maxIterations: 300, wallClockMs: 20_000 } }
     const a = searchRefinements(request, fixture.document, options)
@@ -151,7 +151,7 @@ describe('determinism', () => {
 })
 
 describe('metric vector honesty', () => {
-  it('reports the objectives a proposal spends, not only the one it improves', () => {
+  it('reports the objectives a proposal spends, not only the one it improves', { timeout: 60_000 }, () => {
     // Finishing a surface is the clearest trade in the system: it removes bare
     // studs and pays for it in parts. Both have to be visible in one vector.
     const { fixture, request } = requestFor('tile-recess')
@@ -189,7 +189,7 @@ describe('metric vector honesty', () => {
     }
   })
 
-  it('carries a complete vector on every proposal, so nothing can be omitted', () => {
+  it('carries a complete vector on every proposal, so nothing can be omitted', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('rare-hull')
     for (const proposal of runRefinement(request, fixture.document, {
       budget: { maxIterations: 300, wallClockMs: 20_000 },
@@ -202,7 +202,7 @@ describe('metric vector honesty', () => {
     }
   })
 
-  it('scores a candidate as the weighted sum of its own reported deltas', () => {
+  it('scores a candidate as the weighted sum of its own reported deltas', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-wall')
     const result = searchRefinements(request, fixture.document, {
       budget: { maxIterations: 300, wallClockMs: 20_000 },

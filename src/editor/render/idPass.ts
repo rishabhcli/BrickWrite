@@ -249,9 +249,22 @@ export class IdPass {
     return this.target ? { width: this.target.width, height: this.target.height } : { width: 0, height: 0 }
   }
 
-  /** Scale from CSS/canvas pixels to id-buffer pixels. */
+  /**
+   * Scale from CSS pixels to id-buffer pixels.
+   *
+   * Every coordinate entering this class comes from `getBoundingClientRect`,
+   * so it is in **CSS** pixels. The id target is sized from the *drawing*
+   * buffer, which is CSS pixels times the device pixel ratio and then capped.
+   * Dividing by the drawing buffer instead of by the element's CSS width drops
+   * the device pixel ratio from the conversion, and on a 1.65× display that
+   * lands every pick roughly forty per cent of the way toward the top-left
+   * corner — close enough to still hit the model, which is exactly why it is
+   * worth stating: the failure looks like it works.
+   */
   get scale(): number {
     if (!this.target) return 1
+    const cssWidth = this.renderer.domElement.clientWidth
+    if (cssWidth > 0) return this.target.width / cssWidth
     const drawing = this.renderer.getDrawingBufferSize(new THREE.Vector2())
     return drawing.x > 0 ? this.target.width / drawing.x : 1
   }

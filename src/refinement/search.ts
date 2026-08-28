@@ -5,7 +5,7 @@ import type { CadOperation, ModelDocument } from '../cad/types'
 import { hash32, mulberry32, stableStringify } from '../platform/contracts'
 import { createScope } from './analyse'
 import { ScopeViolationError, addedPartIds, guardCandidate, modifiedPartIds, removedPartIds } from './guards'
-import { deltaOf, measureAll, regressionsOf, resolveWeights, scoreOf } from './objectives'
+import { measureAll, regressionsOf, resolveWeights, scoreOf } from './objectives'
 import { silhouetteOf } from './cache'
 import { silhouetteFrame } from './silhouette'
 import { getDocumentBounds } from '../cad/geometry'
@@ -14,7 +14,6 @@ import type {
   MetricVector,
   ObjectiveId,
   RefinementRequestV1,
-  RefinementScope,
   RejectionCode,
   SilhouetteV1,
 } from './types'

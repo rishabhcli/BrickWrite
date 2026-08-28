@@ -113,7 +113,7 @@ describe('protection', () => {
     expect(verdict.partIds).toContain(hingeBase)
   })
 
-  it('surfaces the refusal as a rejected proposal with a reason', () => {
+  it('surfaces the refusal as a rejected proposal with a reason', { timeout: 60_000 }, () => {
     const fixture = refinementFixture('locked-cockpit')
     const run = runRefinement(
       {

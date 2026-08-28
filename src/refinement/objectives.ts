@@ -44,9 +44,6 @@ export interface ObjectiveDefinition {
   readonly description: string
 }
 
-const scopeParts = (document: ModelDocument, scope: RefinementScope) =>
-  scope.partIds.map((id) => document.parts[id]).filter((part) => Boolean(part))
-
 /**
  * Parts the region holds, in this document.
  *

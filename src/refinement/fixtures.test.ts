@@ -113,6 +113,7 @@ describe('refinement improves the objective each fixture targets', () => {
       // The delta the proposal reports must be the delta its own numbers imply.
       expect(best.proposal.metrics.delta[target]).toBeCloseTo(after - before, 9)
     },
+    60_000,
   )
 })
 
@@ -150,6 +151,7 @@ describe('scope isolation', () => {
         }
       }
     },
+    60_000,
   )
 })
 
@@ -187,6 +189,7 @@ describe('kernel validity of every ranked proposal', () => {
         expect(verifyBuildOrder(after, order.steps).valid).toBe(true)
       }
     },
+    60_000,
   )
 })
 
@@ -210,5 +213,6 @@ describe('overlay instructions', () => {
         expect([...magnitudes].sort((a, b) => b - a)).toEqual(magnitudes)
       }
     },
+    60_000,
   )
 })

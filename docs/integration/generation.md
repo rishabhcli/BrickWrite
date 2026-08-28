@@ -511,11 +511,13 @@ Stated plainly, because each of these is a real limit on the claims above.
 10. **No UI.** This workstream publishes an API. Nothing here renders, and the
     editor integration is another workstream's.
 
-### Also worth flagging to the integrator
+### A constraint on everything under `server/**`
 
-`server/assistant/provider.ts` uses a TypeScript **parameter property**
-(`constructor(readonly code: ...)`), which Node's strip-only loader rejects with
-`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. It broke `npm run serve:api` for the whole
-process until it was fixed; the same pattern was removed from
-`server/generation/anthropic.ts` for the same reason. Anything under `server/**`
-has to avoid parameter properties.
+`server/index.ts` is executed by Node's strip-only TypeScript loader, which
+**rejects parameter properties** (`constructor(readonly code: ...)`) with
+`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` — erasing one changes runtime behaviour
+rather than just removing a type, so the loader refuses rather than guessing. One
+of these in any route module takes down the whole API process, not just that
+route. `server/generation/anthropic.ts` declares its fields and assigns them in
+the constructor body for this reason. Worth knowing before adding a class to a
+route module; it is not caught by `tsc`.

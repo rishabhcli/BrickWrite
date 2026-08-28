@@ -275,7 +275,9 @@ try {
   })
   page.on('pageerror', (cause) => errors.push(cause.message))
 
-  await page.goto(url, { waitUntil: 'networkidle' })
+  // The shell registers the editor as its own route; the site root is the
+  // landing page and carries no viewport.
+  await page.goto(`${url}/editor`, { waitUntil: 'networkidle' })
   await page.locator('canvas').waitFor({ timeout: 60_000 })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 60_000 })
   // Dismiss the first-run guide if this profile has not seen it.

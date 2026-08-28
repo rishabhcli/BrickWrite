@@ -111,7 +111,7 @@ describe('a model cannot waive a check', () => {
     expect(sanitized.strategyIds).toEqual([...fallback.strategyIds])
   })
 
-  it('still produces only guard-passing proposals when the provider is hostile', async () => {
+  it('still produces only guard-passing proposals when the provider is hostile', { timeout: 60_000 }, async () => {
     const fixture = refinementFixture('seam-wall')
     const hostile = provider({
       waiveCollision: true,

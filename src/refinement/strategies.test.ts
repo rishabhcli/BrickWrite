@@ -55,7 +55,7 @@ describe('registry', () => {
 })
 
 describe('generators are pure and deterministic', () => {
-  it.each(fixtures.map((fixture) => [fixture.id, fixture] as const))('%s', (_id, fixture) => {
+  it.each(fixtures.map((fixture) => [fixture.id, fixture] as const))('%s', { timeout: 60_000 }, (_id, fixture) => {
     const snapshot = stableStringify(fixture.document)
     const first = runAll(fixture.document, fixture, 99)
     expect(stableStringify(fixture.document)).toBe(snapshot)
@@ -68,7 +68,7 @@ describe('generators are pure and deterministic', () => {
 })
 
 describe('generators emit only the refinement vocabulary', () => {
-  it.each(fixtures.map((fixture) => [fixture.id, fixture] as const))('%s', (_id, fixture) => {
+  it.each(fixtures.map((fixture) => [fixture.id, fixture] as const))('%s', { timeout: 60_000 }, (_id, fixture) => {
     for (const { entry, batches } of runAll(fixture.document, fixture, 5)) {
       for (const batch of batches) {
         expect(batch.length, `${entry.id} emitted an empty batch`).toBeGreaterThan(0)

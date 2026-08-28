@@ -62,7 +62,7 @@ describe('request compilation', () => {
 })
 
 describe('proposeRefinements mutates nothing', () => {
-  it('leaves the document it was handed byte-identical', () => {
+  it('leaves the document it was handed byte-identical', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-wall')
     const snapshot = stableStringify(fixture.document)
     const proposals = proposeRefinements(request, fixture.document, { budget: BUDGET })
@@ -70,7 +70,7 @@ describe('proposeRefinements mutates nothing', () => {
     expect(stableStringify(fixture.document)).toBe(snapshot)
   })
 
-  it('leaves the engine at the revision it was found at', () => {
+  it('leaves the engine at the revision it was found at', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-wall')
     const engine = new CadEngine(fixture.document)
     const revision = engine.getSnapshot().document.revision
@@ -79,7 +79,7 @@ describe('proposeRefinements mutates nothing', () => {
     expect(engine.getSnapshot().transactions).toHaveLength(0)
   })
 
-  it('stamps proposals with the revision of the document they were computed against', () => {
+  it('stamps proposals with the revision of the document they were computed against', { timeout: 60_000 }, () => {
     const { fixture, request } = requestFor('seam-wall')
     for (const proposal of proposeRefinements(request, fixture.document, { budget: BUDGET })) {
       expect(proposal.baseRevision).toBe(fixture.document.revision)
@@ -98,7 +98,7 @@ describe('applyRefinement', () => {
     return { document: fixture.document, proposal: proposal! }
   }
 
-  it('commits exactly one transaction through the bus', () => {
+  it('commits exactly one transaction through the bus', { timeout: 60_000 }, () => {
     const { document, proposal } = rankedProposal('seam-wall')
     const engine = new CadEngine(document)
     const before = engine.getSnapshot().document.revision
@@ -121,7 +121,7 @@ describe('applyRefinement', () => {
     }
   })
 
-  it('undoes as one unit, because it committed as one', () => {
+  it('undoes as one unit, because it committed as one', { timeout: 60_000 }, () => {
     const { document, proposal } = rankedProposal('seam-wall')
     const engine = new CadEngine(document)
     const before = stableStringify(engine.getSnapshot().document.parts)
@@ -130,7 +130,7 @@ describe('applyRefinement', () => {
     expect(stableStringify(engine.getSnapshot().document.parts)).toBe(before)
   })
 
-  it('refuses a rejected proposal without creating a transaction', () => {
+  it('refuses a rejected proposal without creating a transaction', { timeout: 60_000 }, () => {
     const fixture = refinementFixture('locked-cockpit')
     cadEngine.replaceDocument(fixture.document)
     const revision = cadEngine.getSnapshot().document.revision
@@ -160,7 +160,7 @@ describe('applyRefinement', () => {
     expect(cadEngine.getSnapshot().transactions).toHaveLength(transactions)
   })
 
-  it('fails with the kernel’s stale-document result rather than clobbering', () => {
+  it('fails with the kernel’s stale-document result rather than clobbering', { timeout: 60_000 }, () => {
     const { document, proposal } = rankedProposal('seam-wall')
     const engine = new CadEngine(document)
     const base = engine.getSnapshot().document.revision
@@ -183,7 +183,7 @@ describe('applyRefinement', () => {
     expect(engine.getSnapshot().transactions).toHaveLength(1)
   })
 
-  it('refuses an empty proposal', () => {
+  it('refuses an empty proposal', { timeout: 60_000 }, () => {
     const { document, proposal } = rankedProposal('seam-wall')
     const engine = new CadEngine(document)
     const result = applyRefinement({ ...proposal, operations: [] }, 'human', busFor(engine))

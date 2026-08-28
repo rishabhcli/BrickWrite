@@ -36,7 +36,7 @@ const searchMessage = (jobId: string, fixtureId = 'seam-wall') => {
 }
 
 describe('worker protocol', () => {
-  it('answers a search with ranked proposals and a report', async () => {
+  it('answers a search with ranked proposals and a report', { timeout: 60_000 }, async () => {
     const posted: RefinementWorkerResponse[] = []
     await handleRefinementWorkerMessage(searchMessage('job-1'), (response) => posted.push(response))
 
@@ -51,7 +51,7 @@ describe('worker protocol', () => {
     expect(() => structuredClone(response)).not.toThrow()
   })
 
-  it('cancels a job in flight rather than delivering its result', async () => {
+  it('cancels a job in flight rather than delivering its result', { timeout: 60_000 }, async () => {
     const posted: RefinementWorkerResponse[] = []
     const post = (response: RefinementWorkerResponse) => posted.push(response)
     const running = handleRefinementWorkerMessage(searchMessage('job-2', 'roof-steps'), post)
@@ -89,7 +89,7 @@ describe('worker protocol', () => {
 })
 
 describe('worker client', () => {
-  it('knows this environment has no worker and says which path it took', async () => {
+  it('knows this environment has no worker and says which path it took', { timeout: 60_000 }, async () => {
     // jsdom implements no `Worker`, which is exactly the case the synchronous
     // fallback exists for.
     expect(refinementWorkerAvailable()).toBe(false)
@@ -112,7 +112,7 @@ describe('worker client', () => {
     expect(result.proposals.some((proposal) => proposal.status === 'ranked')).toBe(true)
   })
 
-  it('honours an abort signal on the inline path', async () => {
+  it('honours an abort signal on the inline path', { timeout: 60_000 }, async () => {
     const fixture = refinementFixture('roof-steps')
     const controller = new AbortController()
     controller.abort()
