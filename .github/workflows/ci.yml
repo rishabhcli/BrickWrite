@@ -34,8 +34,11 @@ jobs:
       - name: Install Chromium for the acceptance run
         run: npx playwright install --with-deps chromium
 
+      # Every workstream owns a suite under tools/e2e/; run-all boots one server
+      # for all of them, so a full pass costs one startup and a failure names
+      # the suite that caused it.
       - name: Browser acceptance run
-        run: npm run test:e2e
+        run: npm run test:e2e:all
 
       # The run writes screenshots and the generated build guide; on a failure
       # they are the fastest way to see what the browser actually did.
