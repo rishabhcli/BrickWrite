@@ -30,10 +30,30 @@ or `BRICKWRIGHT_API_ORIGIN`.
 ## What CI does, and what it deliberately does not
 
 `verify` runs on every push and pull request: catalog integrity, the unit suite,
-strict TypeScript for all three programs and the production build. `acceptance`
-then runs the browser suites under `tools/e2e/`, one runner per suite. `deploy`
-runs only after both pass and only on a push to `main`, so a red acceptance run
-cannot reach the domain.
+strict TypeScript for all three programs and the production build. The browser
+suites under `tools/e2e/` then run one runner per suite, split across two jobs
+by a single question — **does this suite need a GPU?**
+
+`acceptance` holds `landing`, `production` and `share`. Nothing they assert
+changes with the machine: a byte budget, whether the built bundle executes,
+whether publication works. A red leg is a real regression, and `deploy` waits on
+it.
+
+`acceptance-gpu` holds `e2e-smoke` and `renderer`, and is `continue-on-error`.
+A GitHub-hosted runner has no graphics hardware, so Chromium rasterises WebGL
+through SwiftShader: 3.16 M triangles cost about 9.6 s a frame, the renderer
+suite measured 0.1 FPS against a 30 FPS target, and the editor suite's project
+fork blew a 90-second budget that is already ten times what a laptop needs.
+Every hosted run failed for that reason and no other. Raising individual
+timeouts does not fix it — `tools/e2e-smoke.mjs` has roughly a hundred
+assertions and any of them is the next to time out.
+
+**So CI promises less than it looks like it does, on purpose.** The real
+enforcement for those two suites is `npm run verify:all` on a machine with a
+GPU. `tools/e2e/renderer.mjs` detects the software rasteriser and prints, per
+gate, which targets it did not enforce, so a hosted run can never be mistaken
+for a full one. If they should block again, the answer is a runner with a GPU,
+not a longer timeout.
 
 The acceptance split is not premature parallelism. `run-all.mjs` deliberately
 boots one server for every suite, which is right on a workstation — a full pass

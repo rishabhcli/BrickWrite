@@ -27,35 +27,83 @@ jobs:
       - name: Unit tests, strict TypeScript and production build
         run: npm run check
 
-  # One runner per acceptance suite.
+  # Suites that assert on things a runner cannot change the answer to.
   #
-  # `run-all.mjs` boots a single server for every suite, which is the right
-  # trade on a workstation with a real GPU: a full pass there is about seven
-  # minutes. A hosted runner has no GPU, so every WebGL frame goes through
-  # SwiftShader and the editor smoke suite alone takes twenty minutes — running
-  # the other four behind it put a pass past any defensible job timeout, and the
-  # run was killed mid-suite rather than reporting anything. Giving each suite a
-  # runner makes the wall clock the slowest suite instead of their sum, and a red
-  # leg names itself in the checks list without anyone opening a log.
-  #
-  # The names come from `run-all.mjs`'s own argv filter, so this list is the
-  # place a new suite has to be added — a suite in tools/e2e/ that is missing
-  # here still runs locally and simply is not gated.
+  # `landing` gates the render-critical payload in bytes, `production` executes
+  # the built bundle, `share` exercises publication. None of them depend on
+  # having a GPU, so a red leg here is a real regression and this is what the
+  # deploy waits on.
   acceptance:
     needs: verify
     runs-on: ubuntu-latest
-    # The editor smoke suite runs about twenty minutes on a hosted runner. The
-    # budget is triple that because the failure mode being replaced — killed
-    # mid-suite, reporting nothing, after the run had already paid for the
-    # install and the build — costs far more than a job that finishes early,
-    # which costs nothing at all.
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       # One failing suite must not cancel the others: the whole point of the
       # split is learning about every regression in one run.
       fail-fast: false
       matrix:
-        suite: [e2e-smoke, landing, production, renderer, share]
+        suite: [landing, production, share]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify committed catalog assets
+        run: node tools/bootstrap.mjs --verify-only
+
+      # `production` serves dist/ rather than Vite's module graph, so it needs a
+      # build. Building on every leg costs a minute and keeps the legs identical.
+      - name: Build production assets
+        run: npm run build
+
+      # Chromium only: the acceptance run drives one browser, so the other
+      # engines would be pure cost.
+      - name: Install Chromium for the acceptance run
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser acceptance run — ${{ matrix.suite }}
+        run: npm run test:e2e:all -- ${{ matrix.suite }}
+
+      # The run writes screenshots and the generated build guide; on a failure
+      # they are the fastest way to see what the browser actually did.
+      - name: Upload acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: acceptance-artifacts-${{ matrix.suite }}
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Suites that need a GPU, run where there isn't one.
+  #
+  # A GitHub-hosted runner has no graphics hardware, so Chromium rasterises
+  # WebGL through SwiftShader. That is not a small penalty: 3.16 M triangles
+  # cost ~9.6 s a frame, and the editor suite's project fork blew a 90 s budget
+  # that is already ten times what a laptop needs. Both suites failed every
+  # hosted run, for that reason and only that reason, and no amount of raising
+  # individual timeouts fixes it — the editor suite alone has around a hundred
+  # assertions, any of which is the next one to time out.
+  #
+  # So they run here for signal and do not hold the door. Their real enforcement
+  # is `npm run verify:all` on a machine with a GPU, where the timing targets
+  # mean something; `tools/e2e/renderer.mjs` detects the software rasteriser and
+  # says on its own line which gates it did not enforce.
+  #
+  # This is a deliberate narrowing of what CI can promise, not an accident. If
+  # these should block again, the fix is a runner with a GPU, not a longer
+  # timeout.
+  acceptance-gpu:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [e2e-smoke, renderer]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
