@@ -1,5 +1,5 @@
 import { Blocks, Boxes, Check, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { exportLDraw, downloadText } from '../../cad/ldraw'
 import { cadEngine } from '../../cad/engine'
 import { CommandDeck } from '../CommandDeck'
@@ -275,7 +275,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
-      {contributions.map((Contribution, index) => <Contribution key={index} />)}
+      {contributions.map((Contribution, index) => (
+        <Suspense fallback={null} key={index}>
+          <Contribution />
+        </Suspense>
+      ))}
       <main
         className="app-shell"
         style={{

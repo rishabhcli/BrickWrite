@@ -3,8 +3,6 @@ import '@fontsource/chakra-petch/600.css'
 import '@fontsource-variable/manrope'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { registerGalleryRoute } from './features/gallery'
-import { registerShareRoute } from './features/share'
 import { AppShell, registerRoute } from './platform'
 import './styles.css'
 
@@ -24,10 +22,13 @@ import './styles.css'
 registerRoute('landing', () => import('./features/landing/LandingPage'))
 registerRoute('explore', () => import('./features/explore/ExplorePage'))
 registerRoute('editor', () => import('./App'))
-// Share and gallery own their own paths, including the token-bearing ones, so
-// they register themselves rather than exposing a loader for a fixed id.
-registerShareRoute(registerRoute)
-registerGalleryRoute(registerRoute)
+// Do not import the share/gallery barrel modules here. They intentionally
+// expose rich programmatic APIs in addition to their route components, so a
+// static barrel import makes the landing page download the CAD mesh decoder,
+// Three.js and the publication renderer before it paints. Keep the route seam
+// as a literal dynamic import: the shell owns when those bundles are fetched.
+registerRoute('share', () => import('./features/share/viewer/SharePage'))
+registerRoute('gallery', () => import('./features/gallery/GalleryPage'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

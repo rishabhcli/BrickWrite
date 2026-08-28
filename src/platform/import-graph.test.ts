@@ -215,6 +215,6 @@ describe('route-level code splitting', () => {
   it('loads every surface lazily, so a route pays only for itself', () => {
     const routes = readFileSync(resolve(ROOT, 'src/platform/routes.ts'), 'utf8')
     expect(routes).not.toMatch(/^import .* from '\.\.\/(cad|editor|features)\//m)
-    expect(routes).toMatch(/await import\('\.\/states'\)/)
+    expect(routes).toMatch(/await import\('\.\/not-installed'\)/)
   })
 })

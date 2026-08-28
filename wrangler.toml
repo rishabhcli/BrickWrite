@@ -1,0 +1,16 @@
+name = "brickwright"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-08-28"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+BRICKWRIGHT_API_ORIGIN = "https://brickwrite.vercel.app"
+SHARE_ORIGIN = "https://brickwrite.tech"
+
+[[kv_namespaces]]
+binding = "SHARE_KV"
+id = "5bcfe6a058614b66beae3449cb211b2b"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "57b3c96243a842dc8e3cb2254915fa60"

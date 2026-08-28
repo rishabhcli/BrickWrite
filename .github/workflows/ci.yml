@@ -10,9 +10,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # The browser acceptance run compiles the catalog into a real WebGL context
-    # and renders a build guide, so it needs more headroom than the unit suite.
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -29,16 +27,53 @@ jobs:
       - name: Unit tests, strict TypeScript and production build
         run: npm run check
 
-      # Chromium only: the acceptance run drives one browser and starts its own
-      # dev server, so the other engines would be pure cost.
+  # One runner per acceptance suite.
+  #
+  # `run-all.mjs` boots a single server for every suite, which is the right
+  # trade on a workstation with a real GPU: a full pass there is about seven
+  # minutes. A hosted runner has no GPU, so every WebGL frame goes through
+  # SwiftShader and the editor smoke suite alone takes twenty minutes — running
+  # the other four behind it put a pass past any defensible job timeout, and the
+  # run was killed mid-suite rather than reporting anything. Giving each suite a
+  # runner makes the wall clock the slowest suite instead of their sum, and a red
+  # leg names itself in the checks list without anyone opening a log.
+  #
+  # The names come from `run-all.mjs`'s own argv filter, so this list is the
+  # place a new suite has to be added — a suite in tools/e2e/ that is missing
+  # here still runs locally and simply is not gated.
+  acceptance:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # One failing suite must not cancel the others: the whole point of the
+      # split is learning about every regression in one run.
+      fail-fast: false
+      matrix:
+        suite: [e2e-smoke, landing, production, renderer, share]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify committed catalog assets
+        run: node tools/bootstrap.mjs --verify-only
+
+      # `production` serves dist/ rather than Vite's module graph, so it needs a
+      # build. Building on every leg costs a minute against a twenty-minute
+      # suite and keeps the legs identical.
+      - name: Build production assets
+        run: npm run build
+
+      # Chromium only: the acceptance run drives one browser, so the other
+      # engines would be pure cost.
       - name: Install Chromium for the acceptance run
         run: npx playwright install --with-deps chromium
 
-      # Every workstream owns a suite under tools/e2e/; run-all boots one server
-      # for all of them, so a full pass costs one startup and a failure names
-      # the suite that caused it.
-      - name: Browser acceptance run
-        run: npm run test:e2e:all
+      - name: Browser acceptance run — ${{ matrix.suite }}
+        run: npm run test:e2e:all -- ${{ matrix.suite }}
 
       # The run writes screenshots and the generated build guide; on a failure
       # they are the fastest way to see what the browser actually did.
@@ -46,26 +81,27 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: acceptance-artifacts
+          name: acceptance-artifacts-${{ matrix.suite }}
           path: artifacts/
           if-no-files-found: ignore
           retention-days: 7
 
   # Deploys the static build to Cloudflare Pages, which fronts brickwrite.tech.
-  # Only after `verify` passes, and only from the default branch, so a red
+  # Only after every gate passes, and only from the default branch, so a red
   # acceptance run cannot reach the domain.
   #
   # Requires two repository secrets: CLOUDFLARE_API_TOKEN (scoped to
   # "Cloudflare Pages: Edit") and CLOUDFLARE_ACCOUNT_ID. The custom domain
-  # itself is attached to the Pages project in the Cloudflare dashboard, not
-  # from here.
+  # itself is attached to the Pages project in the Cloudflare dashboard, and the
+  # edge proxy's BRICKWRIGHT_PROXY_SECRET is a Pages project secret — neither is
+  # set from here. See docs/deployment.md.
   #
   # Today this ships the ~57MB committed asset pack inside dist/. That is
   # within Pages' limits (largest single file is 1.66MB against a 25MB cap,
   # ~1,800 files against a 20,000 cap), but it is the thing B1 moves to R2
   # when the part library widens and the pack approaches ~900MB.
   deploy:
-    needs: verify
+    needs: [verify, acceptance]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -76,10 +112,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build production assets
+        run: npm run build
+        env:
+          # Both values are public browser configuration. The project id stays
+          # in Actions secrets so it has one source of truth with Hexclave. A
+          # build without them is a working CAD editor with no account layer,
+          # which is a supported mode and therefore fails quietly.
+          VITE_HEXCLAVE_PROJECT_ID: ${{ secrets.HEXCLAVE_PROJECT_ID }}
+          VITE_CONVEX_URL: https://tangible-toucan-87.convex.cloud
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pinned to the version this deployment was proven against. The action
+          # otherwise floats, and `wrangler.toml` here carries a Pages output
+          # directory and a compatibility date that older majors do not read the
+          # same way.
+          wranglerVersion: '4.127.1'
           command: pages deploy dist --project-name=brickwright --branch=main

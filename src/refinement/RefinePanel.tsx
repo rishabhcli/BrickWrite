@@ -133,6 +133,7 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
                     max={MAX_WEIGHT}
                     step={0.25}
                     value={session.weightOf(objective.id)}
+                    aria-label={`${objective.label} weight`}
                     aria-labelledby={`bw-refine-w-${objective.id}`}
                     aria-describedby={`bw-refine-u-${objective.id}`}
                     onChange={(event) => session.setWeight(objective.id, Number(event.target.value))}

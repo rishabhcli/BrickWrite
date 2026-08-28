@@ -23,6 +23,7 @@
   "include": [
     "vite.config.ts",
     "hexclave.config.ts",
+    "api",
     "tools",
     "server",
     "src",

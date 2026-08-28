@@ -348,8 +348,10 @@ shift-drag selects a region, that the build sequence is still on screen after an
 that the first-run guide appears once and not again. It also opens the delivery center, verifies a hierarchical MPD, generates the real
 printable guide and asserts that its step images are embedded rather than remotely fetched.
 
-Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); remaining
-production work is in [PROGRESS.md](PROGRESS.md).
+Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); how the three
+deployed services fit together — and the two configuration mistakes that fail silently — is in
+[docs/deployment.md](docs/deployment.md); remaining production work is in
+[PROGRESS.md](PROGRESS.md).
 
 ## Licence
 

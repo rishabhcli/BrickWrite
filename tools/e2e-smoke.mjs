@@ -1278,6 +1278,19 @@ try {
 
   // Attribution has to be reachable from the running app, not just present in a
   // build artefact, and the review-required flags have to be visible.
+  // The document pointer changes before the outgoing project's checkpoint has
+  // finished. Wait for that real persistence operation instead of asking
+  // Playwright to click a correctly disabled control and timing out at its
+  // generic 30-second actionability limit on a loaded CI runner.
+  await page.waitForFunction(
+    () => {
+      const button = [...document.querySelectorAll('.project-actions button')]
+        .find((candidate) => candidate.textContent?.includes('Data'))
+      return button instanceof HTMLButtonElement && !button.disabled
+    },
+    null,
+    { timeout: 90_000 },
+  )
   await page.locator('.project-actions button', { hasText: 'Data' }).click()
   await page.locator('.legal-list li').first().waitFor({ timeout: 15_000 })
   const attribution = await page.evaluate(() => ({

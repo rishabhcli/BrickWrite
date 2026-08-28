@@ -22,7 +22,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
@@ -172,6 +172,9 @@ async function buildLandingEntry(outDir) {
   const entry = Object.values(built).find((chunk) => chunk.isEntry)
   if (!entry) throw new Error('the landing entry produced no entry chunk')
   const styles = (entry.css ?? []).map((href) => `    <link rel="stylesheet" href="/${href}">`).join('\n')
+  const displayFont = (await readdir(path.join(outDir, 'assets')))
+    .find((file) => /^chakra-petch-latin-600-normal-.*\.woff2$/.test(file))
+  if (!displayFont) throw new Error('the landing build produced no Latin Chakra Petch 600 font')
   await writeFile(
     path.join(outDir, 'index.html'),
     `<!doctype html>
@@ -180,6 +183,7 @@ async function buildLandingEntry(outDir) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Brickwright</title>
+    <link rel="preload" href="/assets/${displayFont}" as="font" type="font/woff2" crossorigin>
 ${styles}
   </head>
   <body>

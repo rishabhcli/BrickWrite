@@ -6,6 +6,7 @@ import {
   type ModelResult,
   type Provenance,
 } from '../platform/contracts'
+import { hexclaveAuthorizationHeader, type AuthorizationHeaderSource } from '../hexclave/authorization'
 
 /**
  * The browser side of the model seam.
@@ -43,6 +44,8 @@ export interface GenerationClientOptions {
   readonly baseUrl?: string
   /** Injected in tests; defaults to the global. */
   readonly fetchImpl?: typeof fetch
+  /** Injected in tests; production asks the configured Hexclave client. */
+  readonly authorizationHeader?: AuthorizationHeaderSource
   /** Reported as the provider's model id until the server says otherwise. */
   readonly model?: string
   readonly onProgress?: (stage: string) => void
@@ -159,9 +162,18 @@ async function postStream(
 
   let response: Response
   try {
+    // A supplied fetch is a test/host seam and must not unexpectedly reach the
+    // ambient account service. Hosts that need both provide both explicitly.
+    const authorization = await (
+      options.authorizationHeader ?? (options.fetchImpl ? async () => null : hexclaveAuthorizationHeader)
+    )()
     response = await fetchImpl(`${options.baseUrl ?? ''}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/x-ndjson',
+        ...(authorization ? { authorization } : {}),
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     })

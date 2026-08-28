@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+/**
+ * Production-bundle runtime gate.
+ *
+ * The normal acceptance server is Vite's development graph. That is ideal for
+ * tracing features, but it cannot catch a minifier or chunking regression that
+ * leaves the deployed root blank. `npm run check` has already built `dist/`;
+ * this suite serves those exact bytes and proves both a light route and the CAD
+ * route can execute without a browser exception.
+ */
+import { spawn } from 'node:child_process'
+import { chromium } from 'playwright'
+
+const PORT = Number(process.env.BRICKWRIGHT_PREVIEW_PORT ?? 4175)
+const origin = `http://127.0.0.1:${PORT}`
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      if ((await fetch(origin)).ok) return
+    } catch {
+      // Still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`Timed out waiting for production preview at ${origin}`)
+}
+
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'],
+  { stdio: 'ignore' },
+)
+
+let browser
+try {
+  await waitForServer()
+  browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const errors = []
+  page.on('pageerror', (cause) => errors.push(cause.stack ?? cause.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  page.on('requestfailed', (request) => errors.push(`${request.failure()?.errorText ?? 'request failed'} ${request.url()}`))
+
+  const landing = await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  assert(landing?.ok(), `Production landing returned ${landing?.status() ?? 'no response'}`)
+  await page.locator('.bw-landing').waitFor({ timeout: 15_000 })
+  assert(errors.length === 0, `Production landing emitted browser errors:\n${errors.join('\n')}`)
+
+  const editor = await page.goto(`${origin}/editor`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  assert(editor?.ok(), `Production editor returned ${editor?.status() ?? 'no response'}`)
+  await page.locator('canvas').first().waitFor({ timeout: 30_000 })
+  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  assert(errors.length === 0, `Production editor emitted browser errors:\n${errors.join('\n')}`)
+
+  process.stdout.write('production bundle executed landing and editor with no browser errors\n')
+} finally {
+  await browser?.close()
+  server.kill()
+}

@@ -62,11 +62,14 @@ export function browserKernelBridge(): CloudKernelBridge {
  * deployment is keyed on the `sub` claim inside this token — the Hexclave user
  * id — and never on an email address.
  */
-const browserTokenSource: AccessTokenSource = async () => {
+const browserTokenSource: AccessTokenSource = async (args) => {
   try {
     const { getHexclaveClientApp } = await import('../hexclave/client')
     const app = getHexclaveClientApp()
-    return app.status === 'ok' ? await app.data.getAccessToken() : null
+    // The Convex helper selects the token shape and refresh behaviour Hexclave
+    // publishes for Convex. A raw access token happens to look similar today,
+    // but bypassing this seam makes an SDK issuer change an outage.
+    return app.status === 'ok' ? await app.data.getConvexClientAuth({})(args) : null
   } catch {
     // An absent or unconfigured account layer is a supported way to run the
     // editor. Every cloud call then answers UNAUTHENTICATED with a reason.

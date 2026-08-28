@@ -1,4 +1,5 @@
 import { ModelProviderUnavailableError, hash32, type ModelProvider, type ModelRequest, type ModelResult } from '../platform/contracts'
+import { hexclaveAuthorizationHeader, type AuthorizationHeaderSource } from '../hexclave/authorization'
 import {
   ASSISTANT_ENDPOINT,
   ASSISTANT_PROTOCOL,
@@ -23,6 +24,8 @@ export interface AssistantClientOptions {
   endpoint?: string
   /** Injected in tests; defaults to the ambient `fetch`. */
   fetchImpl?: typeof fetch
+  /** Injected in tests; production asks the configured Hexclave client. */
+  authorizationHeader?: AuthorizationHeaderSource
 }
 
 export class AssistantTransportError extends Error {
@@ -92,8 +95,14 @@ async function readNdjson(body: ReadableStream<Uint8Array>, onEvent: (event: Ass
 
 async function readErrorBody(response: Response): Promise<{ code: AssistantErrorCode; message: string; retryable: boolean }> {
   try {
-    const body = (await response.json()) as StructuredResponseBody
-    if (body?.error) return body.error
+    const body = (await response.json()) as StructuredResponseBody & { error?: StructuredResponseBody['error'] | string; detail?: string }
+    if (body?.error && typeof body.error === 'object') return body.error
+    if (response.status === 401) {
+      return { code: 'AUTH_REQUIRED', message: body.detail ?? 'Sign in to use model-backed tools.', retryable: false }
+    }
+    if (response.status === 403) {
+      return { code: 'ACCOUNT_RESTRICTED', message: body.detail ?? 'Complete the required account checks first.', retryable: false }
+    }
   } catch {
     // fall through to a status-derived message
   }
@@ -107,15 +116,22 @@ async function readErrorBody(response: Response): Promise<{ code: AssistantError
 export function createAssistantTransport(options: AssistantClientOptions = {}): AgentModelTransport {
   const endpoint = options.endpoint ?? ASSISTANT_ENDPOINT
   const doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
+  // A supplied fetch is a test/host seam and must not unexpectedly reach the
+  // ambient account service. Hosts that need both provide both explicitly.
+  const authorizationHeader = options.authorizationHeader ?? (options.fetchImpl ? async () => null : hexclaveAuthorizationHeader)
 
   return {
     id: 'http',
     async stream(request, handlers, signal) {
       let response: Response
       try {
+        const authorization = await authorizationHeader()
         response = await doFetch(endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(authorization ? { authorization } : {}),
+          },
           body: JSON.stringify(request),
           signal,
         })
@@ -193,15 +209,22 @@ export class HttpModelProvider implements ModelProvider {
   constructor(options: AssistantClientOptions & { model?: string } = {}) {
     this.endpoint = options.endpoint ?? ASSISTANT_ENDPOINT
     this.doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
+    this.authorizationHeader = options.authorizationHeader ?? (options.fetchImpl ? async () => null : hexclaveAuthorizationHeader)
     // The authoritative model id comes back on every response; this is only the
     // label shown before the first call completes.
     this.model = options.model ?? 'claude-sonnet-5'
   }
 
+  private readonly authorizationHeader: AuthorizationHeaderSource
+
   async complete<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
+    const authorization = await this.authorizationHeader()
     const response = await this.doFetch(this.endpoint, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(authorization ? { authorization } : {}),
+      },
       signal: request.signal,
       body: JSON.stringify({
         protocol: ASSISTANT_PROTOCOL,

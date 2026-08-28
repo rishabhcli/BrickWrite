@@ -11,3 +11,6 @@ artifacts
 .scratch*
 .share-dev
 .dbg
+.vercel
+.wrangler/
+.env*

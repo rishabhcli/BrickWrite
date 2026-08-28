@@ -1,7 +1,19 @@
+import { lazy } from 'react'
 import { Workbench } from './editor/workbench'
-import { AgentWorkbenchContribution } from './agent'
-import { GeneratePanelContribution } from './generation'
-import { RefinePanelContribution } from './refinement'
+
+// Contributions register optional workbench surfaces and can arrive after the
+// core CAD cockpit paints. Keeping them behind lazy boundaries removes the
+// assistant SDK, generation pipeline and refinement worker from the editor's
+// critical chunk without changing the shared command kernel they call into.
+const AgentWorkbenchContribution = lazy(() =>
+  import('./agent').then((module) => ({ default: module.AgentWorkbenchContribution })),
+)
+const GeneratePanelContribution = lazy(() =>
+  import('./generation').then((module) => ({ default: module.GeneratePanelContribution })),
+)
+const RefinePanelContribution = lazy(() =>
+  import('./refinement').then((module) => ({ default: module.RefinePanelContribution })),
+)
 
 /**
  * Composition root.

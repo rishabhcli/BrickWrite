@@ -1,0 +1,4 @@
+# Cloudflare Pages serves real Function routes before this fallback. Everything
+# else is a BrowserRouter deep link and must receive the application shell.
+/* /index.html 200
+

@@ -61,8 +61,8 @@ export function resetRouteRegistry(): void {
 async function loadSurface(id: RouteId): Promise<{ default: ComponentType }> {
   const loader = registry.get(id)
   if (loader) return await loader()
-  const states = await import('./states')
-  return { default: states.createNotInstalledSurface(id) }
+  const fallback = await import('./not-installed')
+  return { default: fallback.createNotInstalledSurface(id) }
 }
 
 /**

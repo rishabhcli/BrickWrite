@@ -89,6 +89,8 @@ export interface StructuredRequest {
 
 export type AssistantErrorCode =
   | 'BAD_REQUEST'
+  | 'AUTH_REQUIRED'
+  | 'ACCOUNT_RESTRICTED'
   | 'PAYLOAD_TOO_LARGE'
   | 'MODEL_PROVIDER_UNAVAILABLE'
   | 'TOOL_TURN_LIMIT'
