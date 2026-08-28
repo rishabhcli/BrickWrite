@@ -135,7 +135,6 @@ export function ExplorePage() {
               className="bw-chip"
               aria-current={entry.id === demo.id ? 'true' : undefined}
               data-active={entry.id === demo.id ? 'true' : 'false'}
-              style={entry.id === demo.id ? { color: '#0c1214', background: 'var(--bw-cyan)', borderColor: 'var(--bw-cyan)' } : undefined}
               href={hrefFor({ kind: 'explore', demoId: entry.id })}
               onClick={anchor({ kind: 'explore', demoId: entry.id })}
             >

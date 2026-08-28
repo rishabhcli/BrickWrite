@@ -41,8 +41,11 @@ body:has(.bw-surface),
   --bw-panel: #0d1315;
   --bw-panel-2: #121a1d;
   --bw-panel-glass: rgba(15, 22, 25, 0.72);
-  --bw-line: #1c272a;
-  --bw-line-hi: #2b3b40;
+  /* Matched to the shared ladder in src/styles.css: a hairline that separates
+     without announcing, and a second strength for real divisions only. */
+  --bw-line: #151e21;
+  --bw-line-hi: #202d31;
+  --bw-datum: #374c52;
   --bw-line-glow: rgba(131, 231, 238, 0.22);
   --bw-ink: #f0f5f6;
   --bw-muted: #8a9ba0;
@@ -277,22 +280,42 @@ body:has(.bw-surface),
 .bw-button.small { padding: 8px 14px; font-size: 11px; }
 
 .bw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/*
+ * A chip is a choice, not a card.
+ *
+ * These were drawn as filled, outlined blocks, and the anchor variants picked
+ * up the browser's underline on top of that — a row of them read as a row of
+ * broken links in boxes. An unselected chip is now just its label; weight and a
+ * single hairline carry the selected one, which is the whole job.
+ *
+ * Selection is cyan here and everywhere else. Orange is reserved for identity
+ * and for the one primary action on a screen; when a chip also claimed it, the
+ * page had two things shouting the same colour for different reasons.
+ */
 .bw-chip {
-  border: 1px solid var(--bw-line-hi);
-  background: rgba(16, 23, 25, 0.8);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--bw-muted);
   font-family: var(--bw-display);
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  text-decoration: none;
   padding: 6px 11px;
   border-radius: 3px;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
 }
-button.bw-chip:hover { color: var(--bw-ink); border-color: var(--bw-orange); transform: translateY(-1px); }
+.bw-chip:hover { color: var(--bw-ink); background: rgba(131, 231, 238, 0.07); }
 .bw-chip[aria-pressed='true'],
-.bw-chip.active { color: #1a1208; background: var(--bw-orange); border-color: var(--bw-orange); font-weight: 700; box-shadow: 0 0 12px var(--bw-orange-glow); }
+.bw-chip[aria-current='true'],
+.bw-chip[data-active='true'],
+.bw-chip.active {
+  color: var(--bw-ink);
+  background: rgba(131, 231, 238, 0.1);
+  border-color: rgba(131, 231, 238, 0.34);
+  font-weight: 700;
+}
 
 /* Measurement metrics ------------------------------------------------------- */
 .bw-metrics {

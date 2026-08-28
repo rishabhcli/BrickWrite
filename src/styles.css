@@ -8,12 +8,25 @@
   --muted: #8a9ba0;
   --faint: #526368;
   --dock-bg: rgba(12, 18, 20, 0.94);
-  --dock-line: #1c272a;
-  --splitter: #162023;
+  --dock-line: #151e21;
+  --splitter: #121a1c;
   --splitter-hot: #385157;
   --focus: #83e7ee;
-  --line: #1c272a;
-  --line-hi: #2b3b40;
+  /*
+   * Lines, in three strengths.
+   *
+   * Every surface used to be drawn as a box: 110 rules reach for these two
+   * tokens, so a panel, a chip, a stepper and a table row all arrived at the
+   * same weight and nothing could recede. `--line` is now a hairline that
+   * separates without announcing, `--line-hi` is reserved for a real division
+   * — a dock edge, a table rule — and `--datum` is the only one meant to be
+   * looked at. It draws the corner ticks that frame a viewport the way a
+   * drafting sheet frames a view, which is the one place this interface should
+   * spend a visible line.
+   */
+  --line: #151e21;
+  --line-hi: #202d31;
+  --datum: #374c52;
   --panel: #0d1315;
   --panel-2: #121a1d;
   --void: #06090a;
@@ -58,7 +71,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-rows: 58px 48px minmax(0, 1fr) 152px 28px;
+  /* Four horizontal strips sat above and below the model and took 286px of a
+     1000px viewport before anything was drawn. Trimmed to the smallest height
+     each one can carry its content at, which hands ~28px back to the model. */
+  grid-template-rows: 52px 44px minmax(0, 1fr) 146px 24px;
   grid-template-columns: 268px 4px minmax(0, 1fr) 4px 300px;
   background: var(--void);
   position: relative;
@@ -71,7 +87,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   inset: 0;
   pointer-events: none;
   z-index: 100;
-  opacity: 0.18;
+  /* Grain over the whole application competed with the model it sat on top of.
+     Enough to keep the flat panels from banding, not enough to read as texture. */
+  opacity: 0.09;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
   mix-blend-mode: soft-light;
 }
@@ -341,13 +359,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inspector-panel { min-height: 0; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .panel-heading h2 { font-family: var(--display); font-size: 14px; font-weight: 700; margin: 3px 0 0; }
-.count-badge { color: var(--muted); font-family: var(--display); font-size: 9.5px; font-weight: 700; border: 1px solid var(--line-hi); padding: 3px 8px; border-radius: 3px; background: rgba(0, 0, 0, 0.25); }
+/* Counts and key hints are labels, not components. Outlining them made every
+   number in the interface weigh as much as the control beside it. */
+.count-badge { color: var(--muted); font-family: var(--display); font-size: 9.5px; font-weight: 700; border: 0; padding: 3px 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.04); }
 
 .search-field { margin: 0 12px 10px; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 11px; background: rgba(8, 12, 14, 0.8); border: 1px solid var(--line); border-radius: 4px; color: var(--faint); transition: all 0.18s ease; }
 .search-field:focus-within { border-color: var(--cyan); box-shadow: 0 0 14px rgba(131, 231, 238, 0.12); }
 .search-field input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--ink); font-size: 11px; outline: none; }
 .search-field input::placeholder { color: var(--faint); }
-.search-field kbd { font-family: var(--display); font-size: 7.5px; font-weight: 700; border: 1px solid var(--line-hi); background: var(--panel-2); padding: 2px 5px; border-radius: 2px; color: var(--muted); }
+.search-field kbd { font-family: var(--display); font-size: 7.5px; font-weight: 700; border: 0; background: rgba(255, 255, 255, 0.05); padding: 2px 5px; border-radius: 2px; color: var(--muted); }
 
 .category-row { display: flex; gap: 4px; overflow-x: auto; padding: 0 12px 10px; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
 .category-row::-webkit-scrollbar { display: none; }
@@ -1030,7 +1050,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent; color: var(--faint); cursor: pointer; border-radius: 2px;
 }
 .dock-collapse:hover { color: var(--ink); border-color: var(--line-hi); background: var(--panel-2); }
-.dock-scroll { flex: 1; min-height: 0; overflow-y: auto; display: block; }
+.dock-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: block; }
 .dock-left .dock-scroll { display: flex; flex-direction: column; overflow: hidden; }
 
 .dock-section { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--dock-line); scroll-margin-block: 34px; }
@@ -1178,22 +1198,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .swatches button svg { color: rgba(0, 0, 0, 0.55); }
 
 /* Transform Panel ----------------------------------------------------------- */
-.transform-panel { padding: 12px 14px 16px; display: grid; gap: 12px; }
+.transform-panel { padding: 12px 14px 16px; display: grid; gap: 12px; min-width: 0; }
+.transform-panel > * { min-width: 0; }
 .transform-scope { display: grid; gap: 3px; }
 .transform-scope strong { font-size: 12px; font-weight: 700; color: var(--ink); }
 .transform-scope small { color: var(--muted); font-size: 9.5px; }
 .transform-modes { display: grid; gap: 8px; }
-.segmented { display: flex; gap: 1px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--line); }
+.segmented { display: flex; gap: 1px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--line); min-width: 0; }
 .segmented button {
-  flex: 1; min-height: 26px; display: flex; align-items: center; justify-content: center; gap: 5px;
+  flex: 1 1 0; min-width: 0; min-height: 26px; display: flex; align-items: center; justify-content: center; gap: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   border: 0; background: var(--panel-2); color: var(--muted); cursor: pointer;
   font-family: var(--display); font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
   transition: all 0.16s ease;
 }
 .segmented button:hover { color: var(--ink); background: #1c272a; }
-.segmented button.active { color: var(--orange); background: rgba(245, 163, 63, 0.14); }
+/* Which mode is current is a selection, and selection is cyan everywhere in
+   this interface. Orange stays with identity, the one primary action on a
+   screen, and locks — constraints the operator deliberately imposed. */
+.segmented button.active { color: var(--cyan); background: rgba(131, 231, 238, 0.12); }
 
-.axis-locks { display: flex; align-items: center; gap: 5px; }
+/* This row sits in a 300px dock and used to run straight off its edge: "MATE",
+   "WORLD ORIGIN" and the snap toggle were all sliced in half, which reads as
+   broken rather than as dense. It wraps now, and everything in the panel is
+   allowed to shrink. */
+.axis-locks { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0; }
 .axis-locks > span { font-family: var(--display); font-size: 8px; font-weight: 700; letter-spacing: 0.12em; color: var(--faint); }
 .axis-locks button {
   display: flex; align-items: center; gap: 3px; min-height: 24px; padding: 0 7px;
@@ -1203,7 +1232,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .axis-locks button.locked { color: var(--orange); border-color: rgba(245, 163, 63, 0.45); background: rgba(245, 163, 63, 0.12); }
 .axis-locks .snap-toggle { margin-left: auto; }
-.axis-locks .snap-toggle.on { color: var(--green); border-color: rgba(152, 213, 109, 0.45); background: rgba(152, 213, 109, 0.1); }
+/* Snap is a mode, not a verdict. Green is reserved for the kernel saying a
+   thing is valid, and spending it on a toggle made both meanings weaker. */
+.axis-locks .snap-toggle.on { color: var(--cyan); border-color: rgba(131, 231, 238, 0.45); background: rgba(131, 231, 238, 0.1); }
 
 .number-field.disabled input { opacity: 0.4; }
 .transform-multi-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }

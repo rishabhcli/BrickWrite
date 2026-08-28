@@ -282,7 +282,9 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
     <aside className="panel catalog-panel" aria-label="Parts catalog">
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">BUILD LIBRARY</span>
+          {/* No eyebrow here. This panel already sits inside a dock labelled
+              "Library" and a section labelled "Parts"; a third "BUILD LIBRARY"
+              above "Parts catalog" named the same thing a fourth time. */}
           <h2>Parts catalog</h2>
         </div>
         <div className="palette-views" role="radiogroup" aria-label="Palette layout">
