@@ -41,7 +41,7 @@ export {
   type LandingAnalyticsStatus,
   type RecordedLandingEvent,
 } from './analytics'
-export { useReveal } from './reveal'
+export { useReveal, useFilmStage } from './reveal'
 
 export type RouteRegistrar = (id: RouteId, loader: () => Promise<{ default: React.ComponentType }>) => (() => void) | void
 

@@ -1,42 +1,22 @@
+@import '../landing/surface.css';
+
 /*
  * The public gallery.
  *
- * Scoped to `bw-gallery-*`. The grid is deliberately sparse and evenly weighted:
- * without engagement numbers there is no basis for making one tile larger than
- * another, and faking a hierarchy would be the visual form of inventing a
- * metric.
+ * Sparse on purpose: no engagement numbers, no invented hierarchy.
  */
 
 .bw-gallery {
-  --bw-ink: #dce4e5;
-  --bw-muted: #738085;
-  --bw-faint: #4a5559;
-  --bw-line: #253034;
-  --bw-line-hi: #344247;
-  --bw-panel: #111719;
-  --bw-panel-2: #151c1f;
-  --bw-void: #090d0e;
-  --bw-cyan: #83e7ee;
-  --bw-orange: #f5a33f;
-  --bw-green: #98d56d;
-  --bw-red: #ff6753;
-  --bw-display: 'Chakra Petch', 'DIN Condensed', sans-serif;
   display: block;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 26px 22px 60px;
-  color: var(--bw-ink);
-  font-family: 'Manrope Variable', Manrope, 'Avenir Next', sans-serif;
-  font-size: 13px;
-  line-height: 1.55;
+  padding: clamp(28px, 4vw, 56px) var(--bw-gutter) 72px;
 }
 
-.bw-gallery a { color: var(--bw-cyan); text-decoration: none; }
+.bw-gallery a { color: var(--bw-orange); text-decoration: none; }
 .bw-gallery a:hover { text-decoration: underline; }
 
-.bw-gallery-eyebrow { display: block; font-family: var(--bw-display); font-size: 9px; font-weight: 600; letter-spacing: .18em; color: var(--bw-muted); }
-.bw-gallery-head h1 { margin: 6px 0 4px; font-family: var(--bw-display); font-size: 26px; letter-spacing: .02em; }
-.bw-gallery-head p { margin: 0 0 20px; color: var(--bw-muted); }
+.bw-gallery-head { margin-bottom: 28px; display: grid; gap: 10px; }
 
 .bw-gallery-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 14px; }
 .bw-gallery-search { flex: 1; min-width: 220px; }
@@ -46,7 +26,7 @@
   color: var(--bw-ink); padding: 8px 10px; font: inherit; font-size: 13px;
 }
 .bw-gallery-check { display: flex; align-items: center; gap: 7px; color: var(--bw-muted); font-size: 12px; padding-bottom: 8px; }
-.bw-gallery-check input { accent-color: var(--bw-cyan); }
+.bw-gallery-check input { accent-color: var(--bw-orange); }
 
 .bw-gallery-collections { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .bw-gallery-collections button,
@@ -54,7 +34,7 @@
   background: var(--bw-panel-2); border: 1px solid var(--bw-line-hi); color: var(--bw-muted); border-radius: 2px;
   padding: 5px 10px; font: inherit; font-size: 11px; cursor: pointer;
 }
-.bw-gallery-collections button.is-active, .bw-gallery-facets button.is-active { color: var(--bw-cyan); border-color: var(--bw-cyan); background: rgba(131, 231, 238, .08); }
+.bw-gallery-collections button.is-active, .bw-gallery-facets button.is-active { color: var(--bw-orange); border-color: var(--bw-orange); background: rgba(245, 163, 63, .08); }
 .bw-gallery-collection-note { margin: 0 0 14px; color: var(--bw-muted); font-size: 12px; }
 
 .bw-gallery-facets { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 16px; padding: 0; }
@@ -63,7 +43,8 @@
 .bw-gallery-count { margin: 0 0 12px; color: var(--bw-faint); font-family: var(--bw-display); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
 
 .bw-gallery-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 16px; }
-.bw-gallery-tile { border: 1px solid var(--bw-line); background: var(--bw-panel); border-radius: 3px; overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+.bw-gallery-tile { border: 1px solid var(--bw-line); background: var(--bw-panel); border-radius: 10px; overflow: hidden; height: 100%; display: flex; flex-direction: column; transition: transform 0.24s var(--bw-spring), border-color 0.2s ease; }
+.bw-gallery-tile:hover { border-color: rgba(245, 163, 63, 0.4); transform: translateY(-3px); }
 .bw-gallery-thumb { display: block; aspect-ratio: 1 / 1; background: var(--bw-void); display: grid; place-items: center; }
 .bw-gallery-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bw-gallery-nothumb { color: var(--bw-faint); font-size: 11px; font-style: italic; }
@@ -80,9 +61,9 @@
 .bw-gallery-report:hover { color: var(--bw-red); }
 
 .bw-gallery-more { display: block; margin: 20px auto 0; background: var(--bw-panel-2); border: 1px solid var(--bw-line-hi); color: var(--bw-muted); border-radius: 2px; padding: 9px 18px; font: inherit; font-size: 11px; font-family: var(--bw-display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-.bw-gallery-more:hover { color: var(--bw-cyan); border-color: var(--bw-cyan); }
+.bw-gallery-more:hover { color: var(--bw-orange); border-color: var(--bw-orange); }
 
-.bw-gallery-state { border: 1px solid var(--bw-line); background: var(--bw-panel); border-radius: 3px; padding: 40px 26px; text-align: center; color: var(--bw-muted); }
+.bw-gallery-state { border: 1px solid var(--bw-line); background: var(--bw-panel); border-radius: 10px; padding: 48px 26px; text-align: center; color: var(--bw-muted); }
 .bw-gallery-state h2 { margin: 0 0 8px; font-family: var(--bw-display); font-size: 17px; color: var(--bw-ink); }
 .bw-gallery-state p { margin: 0 auto 10px; max-width: 56ch; }
 .bw-gallery-error { color: var(--bw-red); }

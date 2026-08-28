@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
 import { DEMOS, DEMO_MANIFEST, heroDemo, type DemoEntry } from '../../demos'
 import { setKnownDemoIds, trackLanding } from './analytics'
-import { Hero } from './Hero'
+import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
-import { useReveal } from './reveal'
+import { useFilmStage, useReveal } from './reveal'
 import './landing.css'
 
 /**
@@ -33,9 +33,9 @@ export function LandingPage() {
 
   return (
     <div className="bw-surface bw-landing">
+      <div className="bw-studs" aria-hidden="true" />
       <div id="bw-main">
-        <HeroSection hero={hero} />
-        <RefinementSection hero={hero} />
+        <Film hero={hero} />
         <DemoSection />
         <CapabilitySection />
         <GateSection />
@@ -46,20 +46,30 @@ export function LandingPage() {
   )
 }
 
-function HeroSection({ hero }: { hero: DemoEntry }) {
+function Film({ hero }: { hero: DemoEntry }) {
+  const film = useFilmStage()
   const good = hero.validation
+
   return (
-    <section className="bw-hero" aria-labelledby="bw-hero-title">
-      <div className="bw-shell bw-hero-grid">
-        <div className="bw-hero-copy">
-          <span className="bw-eyebrow accent">Agent-native 3D CAD for physically buildable brick models</span>
+    <div className="bw-film">
+      <div className="bw-film-stage">
+        <Hero
+          demo={hero}
+          stage={film.stage}
+          onStageChange={(stage: HeroStage) => film.setStage(stage)}
+          autoPlay={false}
+          hideBrief
+        />
+      </div>
+
+      <div className="bw-film-chapters">
+        <section className="bw-film-chapter" data-film-stage="brief" aria-labelledby="bw-hero-title">
+          <span className="bw-eyebrow accent">Physically buildable brick CAD</span>
           <h1 className="bw-display x1" id="bw-hero-title">
             A model that <em>stands up</em> is a different thing from a model that renders.
           </h1>
-          <p className="bw-lede">
-            Brickwright compiles the real LDraw library into a CAD kernel with authoritative connection
-            metadata, then refuses to accept an edit that collides, floats or falls over. Humans and agents
-            drive the same revisioned document through the same command bus.
+          <p className="bw-lede bw-lede-short">
+            Real LDraw parts. Real clutch. Edits that collide, float or tip are refused.
           </p>
           <div className="bw-hero-actions">
             <a
@@ -94,53 +104,64 @@ function HeroSection({ hero }: { hero: DemoEntry }) {
             <span><b>{good.steps}</b> verified build steps</span>
             <span><b>{good.statics.massLabel}</b>, stable by <b>{good.statics.tippingMarginLdu}</b> LDU</span>
           </p>
-        </div>
-        <Hero demo={hero} />
+        </section>
+
+        <section className="bw-film-chapter" data-film-stage="candidate" aria-labelledby="bw-refine-title">
+          <span className="bw-section-index">01 / The pass</span>
+          <h2 className="bw-display x2" id="bw-refine-title">Both models were built. Only one of them passed.</h2>
+          <p className="bw-lede bw-lede-short">{hero.refinement}</p>
+          {hero.brief ? (
+            <blockquote className="bw-film-quote">{hero.brief.prompt}</blockquote>
+          ) : null}
+        </section>
+
+        <section className="bw-film-chapter" data-film-stage="refinement" aria-labelledby="bw-ledger-title">
+          <span className="bw-section-index">02 / Measured</span>
+          <h2 className="bw-display x2" id="bw-ledger-title">The kernel keeps score.</h2>
+          <Ledger demo={hero} />
+        </section>
+
+        <section className="bw-film-chapter" data-film-stage="validated" aria-labelledby="bw-validated-title">
+          <span className="bw-section-index">03 / Published</span>
+          <h2 className="bw-display x2" id="bw-validated-title">
+            {good.collisionCount} collisions. {good.componentCount} body. It stands.
+          </h2>
+          <p className="bw-lede bw-lede-short">
+            {good.partCount} parts, {good.connectionCount} mates, {good.steps} build steps — gated before it shipped.
+          </p>
+        </section>
       </div>
-    </section>
+    </div>
   )
 }
 
-function RefinementSection({ hero }: { hero: DemoEntry }) {
+function Ledger({ demo }: { demo: DemoEntry }) {
   const reveal = useReveal<HTMLDivElement>()
-  const rows = ledgerRows(hero)
+  const rows = ledgerRows(demo)
   return (
-    <section className="bw-section" aria-labelledby="bw-refine-title">
-      <div className="bw-shell">
-        <div className="bw-section-head">
-          <span className="bw-section-index">01 / Refinement, measured</span>
-          <h2 className="bw-display x2" id="bw-refine-title">Both models were built. Only one of them passed.</h2>
-          <p className="bw-lede">{hero.refinement}</p>
-        </div>
-        <div ref={reveal.ref} {...reveal.props}>
-          <table className="bw-ledger">
-            <caption>
-              Every figure below is one field of a validation report the kernel produced for a real document.
-              The earlier candidate is published alongside the model, so the comparison can be checked rather
-              than taken on trust.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Measurement</th>
-                <th scope="col">First candidate</th>
-                <th scope="col">Published model</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.label}>
-                  <th scope="row" style={{ fontFamily: 'inherit', fontSize: '13.5px', letterSpacing: 0, textTransform: 'none', color: 'var(--bw-ink)', fontWeight: 500 }}>
-                    {row.label}
-                  </th>
-                  <td className={`value ${row.improved ? 'before' : 'flat'}`}>{row.before}</td>
-                  <td className={`value ${row.improved ? 'after' : 'flat'}`}>{row.after}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    <div ref={reveal.ref} {...reveal.props}>
+      <table className="bw-ledger">
+        <caption>
+          Figures from the kernel’s validation report. The earlier candidate is published beside the model.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Measurement</th>
+            <th scope="col">First candidate</th>
+            <th scope="col">Published model</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              <td className={`value ${row.improved ? 'before' : 'flat'}`}>{row.before}</td>
+              <td className={`value ${row.improved ? 'after' : 'flat'}`}>{row.after}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -149,13 +170,8 @@ function DemoSection() {
     <section className="bw-section" aria-labelledby="bw-demos-title">
       <div className="bw-shell">
         <div className="bw-section-head">
-          <span className="bw-section-index">02 / The demos</span>
-          <h2 className="bw-display x2" id="bw-demos-title">Six builds, authored by the same generators you get.</h2>
-          <p className="bw-lede">
-            Each one is a versioned <code>ModelDocument</code> snapshot compiled against catalog{' '}
-            {DEMO_MANIFEST.catalogVersion} and gated before publication. Open one to orbit it, take it apart,
-            scrub its build sequence and fork it into a project of your own.
-          </p>
+          <span className="bw-section-index">The demos</span>
+          <h2 className="bw-display x2" id="bw-demos-title">Six builds. Same generators you get.</h2>
         </div>
         <div className="bw-demo-grid">
           {DEMOS.map((demo, index) => <DemoCard key={demo.id} demo={demo} index={index} />)}
@@ -207,25 +223,25 @@ function CapabilitySection() {
     {
       eyebrow: 'Catalog',
       title: 'It says what it does not know',
-      body: 'Search answers for the whole catalogue and every hit carries its tier. A part that exists but has no compiled mesh in this build is reported as exactly that, not as absent.',
+      body: 'Every hit carries its tier. A part without a mesh is reported as that — not as absent.',
       code: 'catalog_search · tier: placeable | modelled | catalogued',
     },
     {
       eyebrow: 'Kernel',
       title: 'Every edit is a transaction',
-      body: 'Human and agent edits create the same atomic records against the same revision guard. Protected regions, hard constraints and triangle-confirmed collision apply to both, and one undo reverses either.',
+      body: 'Human and agent share one revision guard. One undo reverses either.',
       code: 'action_mutate · expectedRevision',
     },
     {
       eyebrow: 'Assembly',
       title: 'One instruction, a whole storey',
-      body: 'The parametric solver lays bonded courses, ties corners, seats real window and door frames in openings and reports every course it could not fully bond.',
+      body: 'Bonded courses, tied corners, real frames in openings. Gaps are reported, not hidden.',
       code: 'build_enclosure · build_structure · stamp_module',
     },
     {
       eyebrow: 'Physics',
       title: 'Mass measured from the mesh',
-      body: 'Volume comes from each part’s compiled surface, so centre of mass, support polygon and tipping margin are measurements. The two figures that are assumptions say so in every report.',
+      body: 'Centre of mass, support polygon, tipping margin. Assumptions are labelled as such.',
       code: 'analyse_statics · clutch 100 gf/stud, stated',
     },
   ]
@@ -233,7 +249,7 @@ function CapabilitySection() {
     <section className="bw-section" aria-labelledby="bw-capability-title">
       <div className="bw-shell">
         <div className="bw-section-head">
-          <span className="bw-section-index">03 / What is underneath</span>
+          <span className="bw-section-index">Underneath</span>
           <h2 className="bw-display x2" id="bw-capability-title">A working vertical slice, not a chat interface.</h2>
         </div>
         <div className="bw-columns">
@@ -256,13 +272,8 @@ function GateSection() {
     <section className="bw-section" aria-labelledby="bw-gates-title">
       <div className="bw-shell">
         <div className="bw-section-head">
-          <span className="bw-section-index">04 / Why these six</span>
+          <span className="bw-section-index">Why these six</span>
           <h2 className="bw-display x2" id="bw-gates-title">A demo that fails the kernel is not a demo.</h2>
-          <p className="bw-lede">
-            <code>tools/build-demos.mjs</code> authors each build against the real catalog and the real
-            assembly planners, then puts it through the checks below. A build that fails one is not written
-            to the manifest — the build exits non-zero instead.
-          </p>
         </div>
         <ul className="bw-gates" aria-label="Publication gates">
           {DEMO_MANIFEST.gates.map((gate) => <li key={gate}>{gate}</li>)}
@@ -274,14 +285,10 @@ function GateSection() {
 
 function ClosingSection() {
   return (
-    <section className="bw-section" aria-labelledby="bw-close-title">
+    <section className="bw-section bw-section-close" aria-labelledby="bw-close-title">
       <div className="bw-shell bw-close">
         <span className="bw-eyebrow accent">Start</span>
-        <h2 className="bw-display x2" id="bw-close-title">Open the console.</h2>
-        <p className="bw-lede">
-          The professional editor is the whole application: catalog, viewport, gizmo, command deck, build
-          sequence, exports and the agent surface. Nothing on this page is a separate product.
-        </p>
+        <h2 className="bw-display x1" id="bw-close-title">Open the console.</h2>
         <div className="bw-hero-actions">
           <a
             className="bw-button primary"
@@ -307,9 +314,7 @@ function Colophon() {
     <footer className="bw-footer bw-shell">
       <p>
         Demo assets were generated by <code>tools/build-demos.mjs</code> against catalog{' '}
-        {DEMO_MANIFEST.catalogVersion} and rendered offline by <code>src/cad/raster.ts</code>. Thumbnails are
-        software renders of the compiled LDraw geometry; the interactive views draw each part’s measured
-        envelope.
+        {DEMO_MANIFEST.catalogVersion} and rendered offline by <code>src/cad/raster.ts</code>.
       </p>
       <p>
         LEGO® is a trademark of the LEGO Group, which does not sponsor, endorse or authorise LDraw or

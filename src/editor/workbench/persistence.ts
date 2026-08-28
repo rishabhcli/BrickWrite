@@ -52,10 +52,15 @@ export function writePreference(key: string, value: unknown): void {
  * involve clearing site data by hand. Reachable from the command palette.
  */
 export function resetPreferences(): void {
-  for (const key of [...memory.keys()]) memory.delete(key)
+  memory.clear()
   try {
-    const owned = Object.keys(window.localStorage).filter((key) => key.startsWith(PREFIX))
-    for (const key of owned) window.localStorage.removeItem(key)
+    const storage = window.localStorage
+    // Iterate by index, not Object.keys: Storage is not a plain object, and
+    // Node's experimental localStorage / a polyfill will not enumerate keys.
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index)
+      if (key?.startsWith(PREFIX)) storage.removeItem(key)
+    }
   } catch {
     // No durable storage in this context; the mirror is already cleared.
   }

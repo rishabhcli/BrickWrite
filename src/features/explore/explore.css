@@ -91,7 +91,7 @@
   flex: 1 1 240px;
   min-width: 0;
 }
-.bw-control-row input[type='range'] { flex: 1 1 80px; accent-color: var(--bw-cyan); min-width: 0; }
+.bw-control-row input[type='range'] { flex: 1 1 80px; accent-color: var(--bw-orange); min-width: 0; }
 .bw-control-value { font-family: var(--bw-display); color: var(--bw-ink); font-variant-numeric: tabular-nums; min-width: 7ch; flex: none; }
 
 .bw-step-caption { margin: 0; font-size: 13px; color: var(--bw-muted); }

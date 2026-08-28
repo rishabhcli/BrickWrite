@@ -35,18 +35,26 @@ interface StageCopy {
 
 export interface HeroProps {
   demo: DemoEntry
+  /** When set, the parent owns the stage — used by the landing film. */
+  stage?: HeroStage
+  onStageChange?: (stage: HeroStage) => void
+  /** Timer-driven playback. Scroll storytelling turns this off once the visitor moves. */
+  autoPlay?: boolean
+  /** Hide the brief quote; the landing film already tells that story in type. */
+  hideBrief?: boolean
 }
 
-export function Hero({ demo }: HeroProps) {
+export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, hideBrief = false }: HeroProps) {
   const reduced = useReducedMotion()
   const stageRef = useRef<HTMLDivElement | null>(null)
   const visible = useOnScreen(stageRef, '120px')
-  const [stage, setStage] = useState<HeroStage>('brief')
+  const [internalStage, setInternalStage] = useState<HeroStage>('brief')
+  const stage = stageProp ?? internalStage
   const [wave, setWave] = useState(0)
   const [previews, setPreviews] = useState<{ rough: DemoPreview; published: DemoPreview } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [camera, setCamera] = useState(demo.camera)
-  const [auto, setAuto] = useState(true)
+  const [auto, setAuto] = useState(autoPlay)
 
   // Preview geometry is fetched only once the stage is on screen. Two files,
   // together a few tens of kilobytes; the compiled catalog is never touched.
@@ -65,16 +73,22 @@ export function Hero({ demo }: HeroProps) {
     return () => controller.abort()
   }, [visible, previews, demo])
 
+  const commitStage = (next: HeroStage | ((current: HeroStage) => HeroStage)) => {
+    const resolved = typeof next === 'function' ? next(stage) : next
+    if (stageProp === undefined) setInternalStage(resolved)
+    onStageChange?.(resolved)
+  }
+
   // The stage machine. It advances on a timer only when motion is welcome and
   // the visitor has not taken over; every stage is reachable from the track
   // below either way, so the story is never locked behind an animation.
   useEffect(() => {
-    if (reduced || !auto || !visible || !previews) return
+    if (reduced || !auto || !autoPlay || !visible || !previews) return
     const timer = window.setTimeout(() => {
-      setStage((current) => STAGES[(STAGES.indexOf(current) + 1) % STAGES.length])
+      commitStage((current) => STAGES[(STAGES.indexOf(current) + 1) % STAGES.length])
     }, DWELL[stage])
     return () => window.clearTimeout(timer)
-  }, [reduced, auto, visible, previews, stage])
+  }, [reduced, auto, autoPlay, visible, previews, stage])
 
   // The refinement sweep. Reduced motion gets a fixed mid-sweep frame, which
   // still shows both states at once — resolved behind it, candidate ahead.
@@ -175,7 +189,7 @@ export function Hero({ demo }: HeroProps) {
             aria-current={entry === stage ? 'true' : undefined}
             aria-selected={entry === stage}
             data-done={STAGES.indexOf(stage) > index ? 'true' : 'false'}
-            onClick={() => { setAuto(false); setStage(entry) }}
+            onClick={() => { setAuto(false); commitStage(entry) }}
           >
             <b>{String(index + 1).padStart(2, '0')} {copy[entry].label}</b>
             <span>{copy[entry].detail}</span>
@@ -183,7 +197,7 @@ export function Hero({ demo }: HeroProps) {
         ))}
       </div>
 
-      {demo.brief ? (
+      {demo.brief && !hideBrief ? (
         <div className="bw-brief">
           <span className="bw-eyebrow">The brief this build answers</span>
           <blockquote>{demo.brief.prompt}</blockquote>

@@ -29,6 +29,7 @@ registerRoute('editor', () => import('./App'))
 // as a literal dynamic import: the shell owns when those bundles are fetched.
 registerRoute('share', () => import('./features/share/viewer/SharePage'))
 registerRoute('gallery', () => import('./features/gallery/GalleryPage'))
+registerRoute('projects', () => import('./features/projects/ProjectsPage'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -67,5 +67,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
+    env: {
+      VITE_HEXCLAVE_PROJECT_ID: '',
+      HEXCLAVE_PROJECT_ID: '',
+    },
   },
 })

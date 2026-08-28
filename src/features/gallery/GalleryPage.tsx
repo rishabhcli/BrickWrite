@@ -110,12 +110,13 @@ export default function GalleryPage({
   const collectionState = activeCollection ? resolveCollection(activeCollection, entries) : null
 
   return (
-    <main className="bw-gallery" data-testid="gallery">
-      <header className="bw-gallery-head">
-        <span className="bw-gallery-eyebrow">PUBLISHED MODELS</span>
-        <h1>Gallery</h1>
-        <p>Every model here was published by its author from a real, validated revision.</p>
-      </header>
+    <div className="bw-surface bw-gallery" data-testid="gallery">
+      <div className="bw-studs" aria-hidden="true" />
+      <div className="bw-gallery-head">
+        <span className="bw-eyebrow accent">Published</span>
+        <h1 className="bw-display x2">Gallery</h1>
+        <p className="bw-lede">Validated revisions only.</p>
+      </div>
 
       <div className="bw-gallery-controls">
         <label className="bw-gallery-search">
@@ -264,7 +265,7 @@ export default function GalleryPage({
       {reporting && onReport ? (
         <ReportDialog entry={reporting} onClose={() => setReporting(null)} onSubmit={onReport} />
       ) : null}
-    </main>
+    </div>
   )
 }
 
