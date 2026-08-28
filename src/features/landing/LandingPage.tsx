@@ -347,7 +347,6 @@ function link(target: Parameters<typeof navigate>[0], side?: () => void) {
     event.preventDefault()
     side?.()
     navigate(target)
-    window.scrollTo({ top: 0 })
   }
 }
 

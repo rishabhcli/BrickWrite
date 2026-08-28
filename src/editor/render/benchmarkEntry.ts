@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { catalog, STUD_LDU } from '../../cad/catalog'
+import { lduToScene } from './frame'
 import { IDENTITY_BASIS } from '../../cad/math'
 import type { PartDefinition, PartInstance } from '../../cad/types'
 import {
@@ -8,6 +9,7 @@ import {
   layoutBlock,
   measureFrames,
   measurePicks,
+  measureRenderCost,
   populateBatches,
   prepareCatalog,
   projectPartCentre,
@@ -15,6 +17,7 @@ import {
   type BenchmarkScene,
   type FrameStats,
   type PickStats,
+  type RenderCostStats,
 } from './benchmark'
 import { IdPass } from './idPass'
 import { centresInRegion, type RegionShape } from './regionSelect'
@@ -32,6 +35,15 @@ import { rendererResources } from './resources'
 interface RunResult {
   readonly parts: number
   readonly frames: FrameStats
+  /**
+   * The renderer's own cost, with the display's refresh rate taken out of the
+   * measurement.
+   *
+   * A 120 Hz panel reports 120 FPS for a scene costing four milliseconds and
+   * for one costing eight, so a vsync-bound figure says nothing about how much
+   * headroom is left before a model stops being interactive. This does.
+   */
+  readonly cost: RenderCostStats
   readonly renderer: string
   readonly qualityTier: string
 }
@@ -134,6 +146,23 @@ async function regionCorrectness(): Promise<RegionCorrectnessReport> {
   const buried = part('buried', '3024', [0, 216, 0])
 
   scene = buildBenchmarkScene(element, [beam, blocker, buried], { qualityIndex: 1 })
+
+  /**
+   * Aim the camera straight down the occlusion axis.
+   *
+   * The benchmark's default three-quarter view is right for measuring a model
+   * and wrong for this: an oblique view slides the blocker sideways off the
+   * part it is supposed to bury, and the arrangement stops testing anything. In
+   * LDraw's frame +Y is down and the root turns 180° about X, so the scene's +Z
+   * is the document's −Z — which is where the blocker sits relative to the
+   * buried plate.
+   */
+  const focus = new THREE.Vector3(0, (lduToScene(buried.transform.position).y + lduToScene(beam.transform.position).y) / 2, 0)
+  scene.camera.position.set(focus.x, focus.y, focus.z + 40)
+  scene.camera.lookAt(focus)
+  scene.camera.updateMatrixWorld(true)
+  scene.camera.updateProjectionMatrix()
+
   const root = scene.scene.children.find((child) => child.type === 'Group') as THREE.Group
   // The batches built by `buildBenchmarkScene` are not registered for picking;
   // rebuild them here through the identity registry so the pass has ids.
@@ -165,8 +194,10 @@ async function regionCorrectness(): Promise<RegionCorrectnessReport> {
     { id: 'blocker', x: blockerCentre.x, y: blockerCentre.y, behindCamera: blockerCentre.behindCamera },
   ]
 
-  const beamRegion = around(beamEnd.x, beamEnd.y, 18)
-  const buriedRegion = around(buriedCentre.x, buriedCentre.y, 18)
+  // Small enough that the beam's own centre falls outside it, which is the
+  // whole point of the case.
+  const beamRegion = around(beamEnd.x, beamEnd.y, 14)
+  const buriedRegion = around(buriedCentre.x, buriedCentre.y, 14)
 
   const occluder = idPass.pick(scene.camera, buriedCentre.x, buriedCentre.y, { radius: 0 })
 
@@ -201,9 +232,11 @@ const api: BenchmarkApi = {
     populateBatches(root, parts.map((instance) => ({ part: instance, transform: instance.transform })), idPass)
     scene.scene.updateMatrixWorld(true)
     const frames = await measureFrames(scene, { durationMs })
+    const cost = measureRenderCost(scene, 90)
     return {
       parts: parts.length,
       frames,
+      cost,
       renderer: rendererName(scene.renderer),
       qualityTier: `index ${qualityIndex}`,
     }

@@ -73,6 +73,17 @@ export const onRequestGet = async (context: {
       })
     }
 
+    if (rest.length === 1 && rest[0] === 'view.json') {
+      // Everything the interactive viewer needs, including the snapshot.
+      //
+      // Deliberately *not* gated on the download capability. Anything rendered
+      // can be extracted, so pretending the geometry is secret while drawing it
+      // on screen would be theatre; `download` governs whether a file is
+      // *offered*, which is a licensing and attribution decision, not a
+      // confidentiality one. That distinction is recorded in the integration doc.
+      return json({ publication, capabilities: decision.capabilities })
+    }
+
     if (rest.length === 1 && rest[0] === 'summary.json') {
       return json({
         slug: publication.slug,

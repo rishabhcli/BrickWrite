@@ -24,7 +24,15 @@ import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
-const url = process.env.BRICKWRIGHT_RENDERER_URL ?? 'http://127.0.0.1:4176'
+/**
+ * The server to drive.
+ *
+ * `run-all.mjs` boots one server for every suite and passes its URL here, so a
+ * full acceptance pass costs one startup rather than one per suite. Starting a
+ * server of our own is the fallback for running this file alone.
+ */
+const url = process.env.BRICKWRIGHT_E2E_URL ?? process.env.BRICKWRIGHT_RENDERER_URL ?? 'http://127.0.0.1:4176'
+const OWNS_SERVER = !process.env.BRICKWRIGHT_E2E_URL
 const ARTIFACTS = 'artifacts/renderer'
 let server
 
@@ -94,6 +102,7 @@ const percentile = (values, fraction) => {
 
 try {
   if (!(await available())) {
+    if (!OWNS_SERVER) throw new Error(`BRICKWRIGHT_E2E_URL points at ${url}, which is not reachable`)
     server = spawn(
       process.execPath,
       ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4176', '--strictPort'],
@@ -119,11 +128,24 @@ try {
   // =========================================================================
   // Benchmark page
   // =========================================================================
+  /**
+   * The dev server's hot-reload socket is not part of what is being measured.
+   *
+   * Chromium's local-network access checks block it for a page served from
+   * 127.0.0.1 in headless mode, and Vite logs the failure as a console error.
+   * Failing the renderer's acceptance run on that would be failing on the
+   * harness. Everything else is still fatal.
+   */
+  const isHarnessNoise = (text) =>
+    /\[vite\]|@vite\/client|Vite server|WebSocket connection to 'ws:|ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS|failed to connect to websocket/.test(
+      text,
+    )
+
   const bench = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
   const benchErrors = []
   bench.on('pageerror', (cause) => benchErrors.push(cause.message))
   bench.on('console', (message) => {
-    if (message.type() === 'error') benchErrors.push(message.text())
+    if (message.type() === 'error' && !isHarnessNoise(message.text())) benchErrors.push(message.text())
   })
   await bench.route('**/__renderer-bench', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: BENCH_HTML }),
@@ -156,8 +178,14 @@ try {
         `${result.frames.drawCalls} draw calls, ${result.frames.triangles.toLocaleString()} triangles, ` +
         `${result.frames.frames} frames measured`,
     )
+    console.log(
+      `${String(count).padStart(5)} parts — renderer cost with the display taken out of it: ` +
+        `mean ${result.cost.meanMs.toFixed(2)} ms, p50 ${result.cost.p50Ms.toFixed(2)} ms, ` +
+        `p95 ${result.cost.p95Ms.toFixed(2)} ms → ceiling ${result.cost.ceilingFps.toFixed(0)} FPS ` +
+        `over ${result.cost.frames} drained frames`,
+    )
   }
-  measured.frames = runs.map((run) => ({ parts: run.parts, ...run.frames }))
+  measured.frames = runs.map((run) => ({ parts: run.parts, ...run.frames, cost: run.cost }))
 
   const atFiveThousand = runs.find((run) => run.parts === 5000)
   // The sustained figure is the 5th percentile of instantaneous rate: the slow
@@ -177,7 +205,8 @@ try {
   console.log(
     `\nPick latency over ${picks.picks} picks (5,000-part scene, ${picks.hits} hits): ` +
       `mean ${picks.meanMs.toFixed(2)} ms, p50 ${picks.p50Ms.toFixed(2)} ms, ` +
-      `p95 ${picks.p95Ms.toFixed(2)} ms, worst ${picks.maxMs.toFixed(2)} ms`,
+      `p95 ${picks.p95Ms.toFixed(2)} ms, worst ${picks.maxMs.toFixed(2)} ms; ` +
+      `the first pick, which compiles the identity shader and allocates its target, took ${picks.firstMs.toFixed(2)} ms`,
   )
   assert(picks.picks >= 200, `Expected at least 200 picks, measured ${picks.picks}`)
   assert(picks.hits > picks.picks * 0.2, `Only ${picks.hits} of ${picks.picks} picks hit geometry; the grid missed the model`)
@@ -242,7 +271,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
   const errors = []
   page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text())
+    if (message.type() === 'error' && !isHarnessNoise(message.text())) errors.push(message.text())
   })
   page.on('pageerror', (cause) => errors.push(cause.message))
 
@@ -888,12 +917,13 @@ try {
     console.log(
       `${String(run.parts).padStart(5)} parts             ` +
         `mean ${run.meanFps.toFixed(1)} FPS · p50 ${run.p50Fps.toFixed(1)} · sustained (p5) ${run.p5Fps.toFixed(1)} · ` +
-        `worst ${run.minFps.toFixed(1)} · ${run.drawCalls} draw calls`,
+        `worst ${run.minFps.toFixed(1)} · ${run.drawCalls} draw calls · ` +
+        `uncapped ceiling ${run.cost.ceilingFps.toFixed(0)} FPS (${run.cost.meanMs.toFixed(2)} ms/frame)`,
     )
   }
   console.log(
     `Pick latency              p50 ${measured.picks.p50Ms.toFixed(2)} ms · p95 ${measured.picks.p95Ms.toFixed(2)} ms ` +
-      `over ${measured.picks.picks} picks`,
+      `over ${measured.picks.picks} picks · first (cold shader) ${measured.picks.firstMs.toFixed(2)} ms`,
   )
   console.log(
     `Draw calls +400 parts     ${measured.drawCalls.before} → ${measured.drawCalls.after} (delta ${measured.drawCalls.delta})`,

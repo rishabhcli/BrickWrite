@@ -1326,3 +1326,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .tool-button kbd { display: none; }
   .selection-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Inline array control: an array is a decision, so it asks rather than guesses. */
+.array-control { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 8px; border: 1px solid var(--line-hi); background: var(--panel-2); border-radius: 2px; }
+.array-control label { display: grid; gap: 3px; min-width: 0; }
+.array-control label span { font-family: var(--display); font-size: 7px; letter-spacing: .1em; color: var(--faint); }
+.array-control input, .array-control select { min-width: 0; height: 24px; background: #0c1113; border: 1px solid var(--line-hi); color: var(--ink); font-size: 9.5px; padding: 0 5px; border-radius: 2px; }
+.array-run { grid-column: 1 / -1; min-height: 26px; border: 1px solid #9b6629; background: linear-gradient(180deg,#f0a342,#ca7628); color: #150f08; cursor: pointer; border-radius: 2px; font-family: var(--display); font-size: 8px; letter-spacing: .08em; }
+.transform-action.expanded { color: var(--orange); border-color: rgba(245,163,63,.42); background: rgba(245,163,63,.09); }

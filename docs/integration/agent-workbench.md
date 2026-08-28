@@ -68,15 +68,19 @@ function, with the same re-check).
 ## 3. Mounting it — the exact snippet
 
 The registry contract is `docs/integration/workbench-ui.md` §1. The integrator
-lists the contribution component on `<Workbench contributions={…}>`:
+lists the contribution component in the `CONTRIBUTIONS` array in `src/App.tsx`.
+**This is already wired** — the entry below is the live one, reproduced here so
+the contract is readable without opening the composition root:
 
 ```tsx
 // src/App.tsx
 import { Workbench } from './editor/workbench'
 import { AgentWorkbenchContribution } from './agent'
 
+const CONTRIBUTIONS = [AgentWorkbenchContribution]
+
 export default function App() {
-  return <Workbench contributions={[AgentWorkbenchContribution]} />
+  return <Workbench contributions={CONTRIBUTIONS} />
 }
 ```
 
@@ -322,20 +326,24 @@ same `WaveLedger.apply`.
 ## 9. Live provider smoke test
 
 ```bash
-# The key must be present in the environment that runs the test.
-npx vitest run server/assistant/live.test.ts --reporter=verbose
+npm run test:live:assistant
+# = BRICKWRIGHT_LIVE_TESTS=1 vitest run server/assistant/live.test.ts --reporter=verbose
 ```
 
-Guarded by `process.env.ANTHROPIC_API_KEY`. When it is absent the suite is
-skipped *visibly*, with a companion test that asserts the reason.
+Gated on an explicit opt-in **and** the credential:
+`BRICKWRIGHT_LIVE_TESTS === '1' && ANTHROPIC_API_KEY`. A developer shell usually
+carries a model key for the running application, and `npm test` must not turn
+that ambient credential into a paid, nondeterministic network test. When the
+suite is skipped it says so through a companion test that asserts the reason,
+rather than vanishing from the report.
 
-Actual output from a real run on 2026-08-28, model `claude-sonnet-5`:
+Actual output, run on 2026-08-28 against `claude-sonnet-5`:
 
 ```
 [live] model: claude-sonnet-5
 
 [live] structured value: {
-  "summary": "A standard LEGO brick described as 2x4 has 2 studs on the short side and 4 studs on the long side.",
+  "summary": "A standard LEGO 2x4 brick measures 2 studs wide by 4 studs long.",
   "studsPerBrickLength": 4,
   "confident": true
 }
@@ -345,39 +353,46 @@ Actual output from a real run on 2026-08-28, model `claude-sonnet-5`:
   "model": "claude-sonnet-5",
   "promptHash": "fnv1a:f4efdf01",
   "seed": 4204170187,
-  "createdAt": "2026-08-28T09:41:27.984Z"
+  "createdAt": "2026-08-28T14:23:45.570Z"
 }
 
-[live] usage: { "inputTokens": 383, "outputTokens": 64 }
- ✓ satisfies the ModelProvider contract against the real API 3743ms
+[live] usage: { "inputTokens": 383, "outputTokens": 58 }
+ ✓ satisfies the ModelProvider contract against the real API 2726ms
 
 [live] event types: [ "start", "turn", "tool_call", "tool_call", "usage", "done" ]
 
 [live] tool calls: [
-  { "id": "toolu_01XDDAvks2QtYcipNSKHKDiB", "name": "scene_query",
-    "input": { "subassemblyId": "Chassis" } },
-  { "id": "toolu_019DCbRkHMoGbULFkFdgbEVM", "name": "scene_query",
-    "input": { "selectionOnly": true } }
+  { "id": "toolu_018SXJsoBpxwiRBRAeuGHoJ1", "name": "scene_overview", "input": {} },
+  { "id": "toolu_01UEoq8qjg5cjGfg5Stp9ow4", "name": "scene_query",
+    "input": { "partIds": ["part_0001"] } }
 ]
 
-[live] usage: { "inputTokens": 312, "outputTokens": 135, "cacheReadInputTokens": 4054 }
+[live] usage: { "inputTokens": 312, "outputTokens": 222 }
 
 [live] stop: { "type": "done", "stop": "tool_use" }
- ✓ streams a grounded turn through the real route and asks for a real tool 1891ms
+ ✓ streams a grounded turn through the real route and asks for a real tool 2952ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 1 skipped (3)
 ```
 
-Two things worth reading in that output. The model reached for a tool rather
-than answering from the grounding block — that is the behaviour the system
-prompt is written to produce. And `cacheReadInputTokens: 4054` shows the
-prompt-cache breakpoint working: the standing prompt and tool schemas are
-cached, the volatile grounding block sits after them.
+The point of the second test is the `stop: "tool_use"`. Asked what is in the
+chassis and what is selected, the model reached for `scene_overview` and
+`scene_query` instead of answering from the grounding block it had already been
+given. That is the behaviour the system prompt is written to produce, and it is
+the difference between a partner that reads the model and one that guesses about
+it.
 
-An honest wart in the same output: the second run asked for
-`subassemblyId: "Chassis"` — the display name, not the id `chassis`. The tool
-would have returned zero matches and the model would have had to correct itself.
-The tool descriptions could name that distinction more sharply.
+An earlier run of the same test showed the model asking for
+`scene_query { subassemblyId: "Chassis" }` — the display name rather than the id
+`chassis`. The tool would have returned zero matches and the model would have
+had to correct itself. The tool descriptions could name that distinction more
+sharply; recorded here rather than papered over.
 
----
+Also measured live: a first pass failed with
+`output_config.format.schema: For 'integer' type, properties maximum, minimum
+are not supported`. That is what produced `pruneToSupportedSchema` (§8) — the
+supported keyword set was established by probing the API, not by guessing.
 
 ## 10. Verification
 
@@ -391,15 +406,24 @@ $ npx vitest run src/agent src/webmcp 2>&1 | tail -30
 
 $ npx vitest run server/assistant
  Test Files  6 passed (6)
-      Tests  50 passed | 1 skipped (51)
+      Tests  50 passed | 2 skipped (52)
+
+$ npm run test:live:assistant
+ Test Files  1 passed (1)
+      Tests  2 passed | 1 skipped (3)
 
 $ npx tsc --noEmit --ignoreConfig --target ES2022 --module ESNext \
     --moduleResolution Bundler --lib ES2022,DOM --strict --skipLibCheck \
     --esModuleInterop --allowImportingTsExtensions --resolveJsonModule \
     --types node,react server/assistant/index.ts
 (no output)
+
+$ npm run serve:api & curl -s http://127.0.0.1:8787/api/health
+[api] listening on http://127.0.0.1:8787 with 2 route module(s): /api/assistant, /api/
+{"ok":true,"routes":["/api/assistant","/api/"]}
 ```
 
-The one skipped test is the companion that documents why the live suite would be
-skipped; it is skipped here because the key *is* configured and the live tests
-ran.
+In the default `npx vitest run server/assistant` the two skips are the live
+tests, held back by `BRICKWRIGHT_LIVE_TESTS`; in `npm run test:live:assistant`
+the one skip is the companion that documents why they would be held back. Both
+reports name the reason rather than quietly omitting the suite.

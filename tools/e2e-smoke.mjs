@@ -582,9 +582,14 @@ try {
   assert(afterClone.revision === beforeClone.revision + 1, 'Clone was not a single transaction')
   workflow.clone = afterClone
 
-  // array
+  // array. The control is parameterised rather than a fixed guess, so the run
+  // states its own copies, axis and spacing.
   const beforeArray = await modelState()
   await page.locator('.dock-right').getByRole('button', { name: 'Array' }).click()
+  await page.locator('.array-control').waitFor({ timeout: 5_000 })
+  await page.locator('.array-control').getByLabel('Array copies').fill('3')
+  await page.locator('.array-control').getByLabel('Array axis').selectOption('y')
+  await page.locator('.array-control').getByRole('button', { name: 'ARRAY' }).click()
   await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeArray.parts, { timeout: 10_000 })
   const afterArray = await modelState()
   assert(afterArray.parts === beforeArray.parts + 3, `A three-copy array added ${afterArray.parts - beforeArray.parts} parts`)

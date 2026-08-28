@@ -1,3 +1,9 @@
+// @vitest-environment node
+//
+// The Anthropic SDK refuses to construct under a browser-like global, which is
+// the right default for a library that reads a secret — and jsdom, the suite's
+// default environment, looks exactly like one. The server module is Node-only,
+// so it is tested in a Node environment rather than by disabling that guard.
 import { afterEach, describe, expect, it } from 'vitest'
 import { ModelProviderUnavailableError } from '../../src/platform/contracts.ts'
 import { AnthropicGenerationProvider, SchemaViolationError, configFromEnv, redact } from './anthropic.ts'

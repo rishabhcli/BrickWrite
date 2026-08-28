@@ -404,10 +404,12 @@ export interface RenderCostStats {
  * operator nothing about how much headroom is left before the model stops being
  * interactive.
  *
- * This drives the same scene as fast as it will go and calls `gl.finish()` each
- * time, so the measured interval is the frame's real cost rather than how deep
- * the driver let the command queue get. `finish` is a genuine stall and is
- * exactly why this is a measurement rather than the render loop.
+ * This drives the same scene as fast as it will go and forces a genuine sync
+ * after each frame by reading one pixel back from the drawing buffer. A pixel
+ * read cannot be answered until everything queued before it has executed, which
+ * `glFinish` alone does not guarantee on every driver — on ANGLE/Metal it
+ * returned in under a fifth of a millisecond for a three-million-triangle
+ * frame, which is not a frame time, it is a queue submission.
  */
 export function measureRenderCost(scene: BenchmarkScene, frames = 90): RenderCostStats {
   const { renderer, camera } = scene
@@ -416,6 +418,7 @@ export function measureRenderCost(scene: BenchmarkScene, frames = 90): RenderCos
   const startAngle = Math.atan2(camera.position.z - centre.z, camera.position.x - centre.x)
   const height = camera.position.y - centre.y
   const context = renderer.getContext()
+  const drain = new Uint8Array(4)
   const timings: number[] = []
 
   for (let frame = 0; frame < frames; frame += 1) {
@@ -424,7 +427,8 @@ export function measureRenderCost(scene: BenchmarkScene, frames = 90): RenderCos
     camera.lookAt(centre)
     const started = performance.now()
     renderer.render(scene.scene, camera)
-    context.finish()
+    renderer.setRenderTarget(null)
+    context.readPixels(0, 0, 1, 1, context.RGBA, context.UNSIGNED_BYTE, drain)
     const elapsed = performance.now() - started
     // The first handful of frames include shader compilation and the first
     // shadow map, neither of which recurs.

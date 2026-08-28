@@ -144,13 +144,27 @@ already-applied transaction is stale by definition, and answering
 ## Required integration edits
 
 I do not own `src/cad/session.ts` or `src/cad/persistence.ts`. The cloud layer
-wraps them from outside and needs exactly one thing they do not currently
-publish: the `StorageDriver`. The outbox and the project links live in the
-existing `meta` object store, so **no IndexedDB schema change is needed** —
-`TABLES` already contains `meta`, and `IndexedDbDriver` already creates it.
+wraps them from outside and needs exactly one thing from them: the
+`StorageDriver`. The outbox and the project links live in the existing `meta`
+object store, so **no IndexedDB schema change is needed** — `TABLES` already
+contains `meta`, and `IndexedDbDriver` already creates it. Nothing about the
+local-first behaviour changes: `ProjectAutosave` remains the only writer of the
+local checkpoint and log.
 
-This patch has been verified with `git apply --check` against the working tree
-and typechecked together with `src/cloud/**`.
+**Status: applied.** As of this pass the change is present in the tree —
+`src/cad/persistence.ts` exports `createDriver()` and `Session` exposes
+`readonly driver`. The diff is kept below as the record of exactly what the
+cloud layer needs from the kernel; if either file is ever reverted, this is what
+has to go back. Confirm in one line:
+
+```
+grep -n 'export const createDriver' src/cad/persistence.ts
+grep -n 'readonly driver: StorageDriver' src/cad/session.ts
+```
+
+Verified two ways: `git apply --check` against the pre-patch tree, and a
+typecheck of the wiring snippet below against the real `src/cad/session.ts`,
+`src/cad/engine.ts` and `src/hexclave/client.ts` — it compiles with no errors.
 
 ```diff
 --- a/src/cad/persistence.ts
@@ -372,6 +386,7 @@ What *is* proven, locally and reproducibly:
 | Payload ceilings | `src/cloud/__tests__/limits.test.ts` |
 | Audit redaction | `src/cloud/__tests__/limits.test.ts` |
 | Integration seam queues without writing the local log | `src/cloud/__tests__/attach.test.ts` |
+| Published surface matches this document | `src/cloud/__tests__/entrypoint.test.ts` |
 
 ## Design decisions worth knowing
 
