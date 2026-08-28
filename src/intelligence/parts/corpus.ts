@@ -50,6 +50,36 @@ interface RawExternalEntry {
 /** Counts of `${family}/${gender}` on a part, which is its mating interface. */
 export type ConnectorProfile = ReadonlyMap<string, number>
 
+/**
+ * Alternate numbers, kept apart by where they came from.
+ *
+ * Flattening them into one list would be smaller but would lose the only thing
+ * that makes a collision resolvable: an element number and a design number can
+ * be the same digits, and the answer to "which part is 4497066" depends on
+ * knowing which register the number belongs to.
+ */
+export interface DocumentIdentity {
+  /** LDraw file name, e.g. "3001.dat". */
+  ldraw: string | null
+  rebrickable: string | null
+  design: readonly string[]
+  element: readonly string[]
+  bricklink: readonly string[]
+}
+
+const EMPTY_IDENTITY: DocumentIdentity = { ldraw: null, rebrickable: null, design: [], element: [], bricklink: [] }
+
+/** Every alternate number as flat text, for the BM25 identifier field. */
+export function identityTokens(identity: DocumentIdentity): string[] {
+  return Array.from(
+    new Set(
+      [identity.ldraw ?? '', identity.ldraw?.replace(/\.dat$/i, '') ?? '', identity.rebrickable ?? '']
+        .concat(identity.design, identity.element, identity.bricklink)
+        .filter(Boolean),
+    ),
+  )
+}
+
 export interface CorpusDocument {
   id: string
   name: string
@@ -73,8 +103,8 @@ export interface CorpusDocument {
   variantOf: string | null
   /** LDraw kind ("Part", "Shortcut"); known only for pack identities. */
   kind: string | null
-  /** Canonical id plus every alternate number this identity answers to. */
-  identityIds: readonly string[]
+  /** Every alternate number this identity answers to, kept typed by source. */
+  identity: DocumentIdentity
   /** Mating interface; null when the part is outside the compiled pack. */
   connectors: ConnectorProfile | null
   /** Positions of the part's anti-studs in LDU, for gap-bridging analysis. */
@@ -175,19 +205,15 @@ function connectorProfile(definition: PartDefinition): ConnectorProfile {
   return counts
 }
 
-function identityIds(definition: PartDefinition): string[] {
+function documentIdentity(definition: PartDefinition): DocumentIdentity {
   const { identity } = definition
-  const ids = [
-    definition.canonicalId,
-    definition.ldrawId,
-    definition.ldrawId.replace(/\.dat$/i, ''),
-    identity.rebrickableId ?? '',
-    identity.baseRebrickableId ?? '',
-    ...identity.legoDesignIds,
-    ...identity.legoElementIds,
-    ...identity.bricklinkIds,
-  ].filter(Boolean)
-  return Array.from(new Set(ids))
+  return {
+    ldraw: definition.ldrawId,
+    rebrickable: identity.rebrickableId,
+    design: identity.legoDesignIds,
+    element: identity.legoElementIds,
+    bricklink: identity.bricklinkIds,
+  }
 }
 
 async function fetchVerified(url: string, descriptor: { hash: string; bytes: number }, signal?: AbortSignal) {
@@ -269,7 +295,7 @@ export function buildPartCorpus(
       helper: entry.h === 1,
       variantOf: definition?.identity.baseRebrickableId ?? null,
       kind,
-      identityIds: definition ? identityIds(definition) : [entry.id],
+      identity: definition ? documentIdentity(definition) : EMPTY_IDENTITY,
       connectors: definition ? connectorProfile(definition) : null,
       antiStudsLdu: definition
         ? definition.connectors.filter((feature) => feature.family === 'anti-stud').map((feature) => feature.pos)
@@ -294,7 +320,7 @@ export function buildPartCorpus(
       helper: false,
       variantOf: entry.p ?? null,
       kind: null,
-      identityIds: [entry.id],
+      identity: EMPTY_IDENTITY,
       connectors: null,
       antiStudsLdu: null,
       colors: null,

@@ -8,3 +8,4 @@ artifacts
 *.tsbuildinfo
 *.local
 .sources
+.scratch*

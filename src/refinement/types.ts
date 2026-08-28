@@ -141,7 +141,7 @@ export const refinementRequestSchema = z.object({
   boundaryPartIds: z.array(z.string().min(1)).default([]),
   /** Parts a symmetry strategy is explicitly allowed to leave unmatched. */
   symmetryExceptionPartIds: z.array(z.string().min(1)).default([]),
-  objectiveWeights: z.record(objectiveIdSchema, z.number().finite()).default({}),
+  objectiveWeights: z.partialRecord(objectiveIdSchema, z.number().finite()).default({}),
   baseRevision: z.number().int().nonnegative(),
   instruction: z.string().default(''),
   referenceSilhouette: silhouetteSchema.nullable().default(null),
