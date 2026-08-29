@@ -149,10 +149,12 @@ jobs:
   # edge proxy's BRICKWRIGHT_PROXY_SECRET is a Pages project secret — neither is
   # set from here. See docs/deployment.md.
   #
-  # Today this ships the ~57MB committed asset pack inside dist/. That is
-  # within Pages' limits (largest single file is 1.66MB against a 25MB cap,
-  # ~1,800 files against a 20,000 cap), but it is the thing B1 moves to R2
-  # when the part library widens and the pack approaches ~900MB.
+  # Today this ships a 76MB committed asset pack inside dist/: 1,904 files, the
+  # largest of them catalog/2026-07/search-external.json at 7.4MB. That is still
+  # inside Pages' limits (25MB per file, 20,000 files), but every figure in the
+  # previous version of this comment was stale — it predated search-external.json
+  # and the semantic index, and understated the pack by 19MB. Measure before
+  # trusting it again; better still, assert it (see docs/improvements/10-devex-operations.md).
   deploy:
     needs: [verify, acceptance]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
