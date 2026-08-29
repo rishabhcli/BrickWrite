@@ -357,13 +357,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .panel { min-height: 0; background: var(--panel); position: relative; z-index: 8; }
 .catalog-panel { display: flex; flex-direction: column; min-height: 0; }
 .inspector-panel { min-height: 0; }
-.panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
-.panel-heading h2 { font-family: var(--display); font-size: 14px; font-weight: 700; margin: 3px 0 0; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; }
+/*
+ * The panel's heading, kept for screen readers and taken out of the layout.
+ *
+ * The dock above already says "Library", its section says "Parts", and this
+ * landmark is named "Parts catalog" — so the visible <h2> was a third name for
+ * one list, sitting on its own row above the controls that actually do
+ * something. The accessible name is unchanged; only the pixels are gone.
+ */
+.panel-heading h2 {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 /* Counts and key hints are labels, not components. Outlining them made every
    number in the interface weigh as much as the control beside it. */
 .count-badge { color: var(--muted); font-family: var(--display); font-size: 9.5px; font-weight: 700; border: 0; padding: 3px 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.04); }
 
-.search-field { margin: 0 12px 10px; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 11px; background: rgba(8, 12, 14, 0.8); border: 1px solid var(--line); border-radius: 4px; color: var(--faint); transition: all 0.18s ease; }
+.search-field { margin: 0 12px 8px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 11px; background: rgba(8, 12, 14, 0.8); border: 1px solid var(--line); border-radius: 4px; color: var(--faint); transition: all 0.18s ease; }
 .search-field:focus-within { border-color: var(--cyan); box-shadow: 0 0 14px rgba(131, 231, 238, 0.12); }
 .search-field input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--ink); font-size: 11px; outline: none; }
 .search-field input::placeholder { color: var(--faint); }
@@ -1041,7 +1052,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dock-left { border-right: 1px solid var(--line); }
 .dock-right { border-left: 1px solid var(--line); }
 .dock-head {
-  flex: none; height: 28px; display: flex; align-items: center; justify-content: space-between;
+  flex: none; height: 26px; display: flex; align-items: center; justify-content: space-between;
   padding: 0 8px 0 14px; border-bottom: 1px solid var(--dock-line); background: rgba(8, 12, 14, 0.85);
 }
 .dock-head .eyebrow { color: var(--faint); font-size: 8px; font-weight: 700; letter-spacing: 0.18em; }
@@ -1056,7 +1067,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dock-section { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--dock-line); scroll-margin-block: 34px; }
 .dock-left .dock-section { flex: 0 0 auto; }
 .dock-left .dock-section.grow { flex: 1 1 auto; }
-.dock-section > header { flex: none; height: 30px; display: flex; align-items: center; gap: 6px; padding-right: 8px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent); }
+.dock-section > header { flex: none; height: 28px; display: flex; align-items: center; gap: 6px; padding-right: 8px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent); }
 .dock-section-toggle {
   flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px; padding: 0 12px;
   border: 0; background: transparent; color: var(--muted); cursor: pointer; text-align: left;
