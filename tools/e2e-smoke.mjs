@@ -39,6 +39,31 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+const CHROME_SECTIONS = {
+  generation: 'generation.panel',
+  refinement: 'refinement.panel',
+  agent: 'agent.workbench',
+  inspector: 'inspector',
+  transform: 'transform',
+  selection: 'selection',
+}
+
+/** Open one quieter-dock sheet. Opening it closes the others. */
+async function revealChrome(page, surface) {
+  const revealed = await page.evaluate(
+    async (name) => (await window.brickwright.invoke('workspace_reveal', { surface: name }))?.structuredContent,
+    surface,
+  )
+  const section = CHROME_SECTIONS[surface]
+  if (section) {
+    await page.waitForFunction(
+      (id) => document.querySelector(`[data-section="${id}"] .dock-section-toggle`)?.getAttribute('aria-expanded') === 'true',
+      section,
+    )
+  }
+  return revealed
+}
+
 try {
   if (!(await available())) {
     server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], { stdio: 'ignore' })
@@ -315,9 +340,8 @@ try {
   assert(initial.tools.includes('workspace_reveal'), 'workspace_reveal was not registered in Inspect')
   assert(initial.workspace.chrome?.docks?.right, 'workspace_get omitted dock chrome')
   assert(initial.workspace.chrome.sections['generation.panel'] === false, 'Generate should start collapsed in the quieter dock')
-  const revealed = await page.evaluate(async () => (await window.brickwright.invoke('workspace_reveal', { surface: 'generation' }))?.structuredContent)
+  const revealed = await revealChrome(page, 'generation')
   assert(revealed?.applied === true, `workspace_reveal did not open the Generate dock: ${JSON.stringify(revealed)}`)
-  await page.waitForFunction(() => document.querySelector('[data-section="generation.panel"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
   assert(await page.locator('.bw-gen[aria-label="Generate"]').count() === 1, 'workspace_reveal did not mount the Generate panel')
   const listedProjects = await page.evaluate(async () => (await window.brickwright.invoke('project_list', {}))?.structuredContent)
   assert(Array.isArray(listedProjects?.projects), `project_list did not return summaries: ${JSON.stringify(listedProjects)}`)
@@ -408,11 +432,7 @@ try {
   const canvasBox = await page.locator('canvas').boundingBox()
   const canvasCentre = { x: canvasBox.width / 2, y: canvasBox.height / 2 }
   await page.locator('canvas').click({ position: canvasCentre })
-  // Inspector starts collapsed so the column can hold one sheet. Reveal it
-  // the same way VALIDATE does below, instead of assuming the identity panel
-  // is already mounted.
-  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'inspector' }))
-  await page.waitForFunction(() => document.querySelector('[data-section="inspector"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
+  await revealChrome(page, 'inspector')
   await page.locator('.inspector-panel .selection-identity').waitFor({ timeout: 5_000 })
   await page.keyboard.press('g')
   await page.waitForFunction(() => Boolean(window.__brickwrightGizmo), null, { timeout: 5_000 })
@@ -536,6 +556,7 @@ try {
 
   // numeric transform: an exact coordinate, committed through the same bus, and
   // shown back in the field exactly as it was stored.
+  await revealChrome(page, 'transform')
   const numericX = page.locator('.dock-right').getByLabel('X in LDraw units')
   const numericY = page.locator('.dock-right').getByLabel('Y in LDraw units')
   await numericX.waitFor({ timeout: 5_000 })
@@ -662,6 +683,7 @@ try {
   await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
 
   // recolour: choose an active colour in the palette, then paint the selection.
+  await revealChrome(page, 'transform')
   const beforeColour = await page.evaluate((id) => ({
     revision: window.brickwright.getDocument().revision,
     color: window.brickwright.getDocument().parts[id].color,
@@ -702,6 +724,7 @@ try {
   workflow.array = afterArray
 
   // isolate: view state, never a document edit.
+  await revealChrome(page, 'selection')
   const beforeIsolate = await page.evaluate(() => window.brickwright.getDocument().revision)
   await page.locator('.dock-right').getByRole('button', { name: /Isolate/ }).click()
   await page.locator('.status-visibility').waitFor({ timeout: 5_000 })
@@ -886,6 +909,7 @@ try {
   assert(guide.includes('every part after the first step attaches'), 'Build guide omitted the build-order verification claim')
   await page.locator('.export-panel > header').getByRole('button', { name: 'Close deliverables' }).click()
 
+  await revealChrome(page, 'inspector')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
@@ -1365,8 +1389,7 @@ try {
 
   // The inspector's validation report, which is also the last existing
   // assertion's target — proven reachable rather than assumed.
-  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'inspector' }))
-  await page.waitForFunction(() => document.querySelector('[data-section="inspector"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
+  await revealChrome(page, 'inspector')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
   await page.locator('.validation-hero').waitFor({ timeout: 10_000 })
   await shot('state-validate')
@@ -1511,7 +1534,7 @@ try {
   // -- contrast -------------------------------------------------------------
   // Sampled on the text that carries meaning rather than blanket-scanned: the
   // status bar, the dock headers, the tool labels and the palette copy.
-  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'transform' }))
+  await revealChrome(page, 'transform')
   await page.waitForFunction(() => document.querySelector('.transform-action span'))
   const contrast = await page.evaluate(() => {
     const luminance = (rgb) => {
