@@ -7,6 +7,26 @@ that would reach it does not exist.** Conflict recovery, presence, sharing,
 roles and invitations are all implemented server-side with passing tests and
 zero call sites in any `.tsx` file.
 
+> ### Correction, added after deeper research
+>
+> The root cause is narrower and more fixable than these ten findings imply.
+> **`src/App.tsx` mounts no cloud contribution at all** — its `CONTRIBUTIONS`
+> array is `[AgentWorkbenchContribution, GeneratePanelContribution,
+> RefinePanelContribution]`, with zero occurrences of "cloud" in the file.
+> `CloudProjectsContribution` is exported from `src/cloud/index.ts`, exercised by
+> `src/cloud/__tests__/contributions.test.tsx`, and referenced by **nothing
+> outside `src/cloud/`**.
+>
+> So it is not only sharing and presence that have no UI. The sync-status
+> indicator, the cloud projects panel and version history are all built,
+> registered and tested — and none of them is reachable by opening the
+> application. `src/cloud/index.ts:192-204` even documents the intended wiring
+> ("so `src/App.tsx` lists `CloudProjectsContribution` and nothing else in the
+> editor changes"); that line was never added.
+>
+> Adding it is one line, and it is the precondition for findings 1, 8, 9 and 10.
+> See [specs/02-sharing-roles-invitations.md](../specs/02-sharing-roles-invitations.md).
+
 **Verified by hand:** zero `.tsx` callers of `executeConflictFork`,
 `resolveDivergence`, `backfill` or `discardHead`. Zero `.tsx` callers of
 `listMembers`, `setMemberRole` or `createInvitation`.
@@ -17,7 +37,18 @@ zero call sites in any `.tsx` file.
 
 **Evidence:** `src/cloud/rebase.ts:244` (`executeConflictFork`), `src/cloud/projectStore.ts:884` (`resolveDivergence`), `:837` (`backfill`) and `src/cloud/outbox.ts:408` (`discardHead`) are implemented and unit-tested. **No UI reaches any of them.** `executeConflictFork` is called from exactly one place — inside `resolveDivergence` — and `resolveDivergence` has no callers at all, so the chain terminates before anything can start it. `src/cloud/attach.ts:32-57` exposes only `claim`, `listProjects`, `reconnected`, `flush`, `detach`.
 Meanwhile `src/cloud/outbox.ts:277-339` drains one **global** FIFO shared by every local project (`attach.ts:75`), and on `STALE_DOCUMENT` (`:304`), any permanent error (`FORBIDDEN`, `PAYLOAD_TOO_LARGE`, `SCHEMA_MISMATCH`, `UNAUTHENTICATED` — none in the `TRANSIENT` set at `:110`), or `OUTBOX_FULL` (capacity 500, `:101`), it stops and returns. Nothing ever resumes it, not even on re-sign-in (`runtime.ts:265-272` never re-drains). `syncReadout.ts:86` tells the user "Reconcile the divergence: the local tail is kept and replays onto a fork" — **a repair instruction with no corresponding control.**
-**Why it matters:** The one write path this workstream is built around has no way to resolve its own designed failure mode. The first conflict, oversized checkpoint, expired token or full queue on **any** project permanently halts sync for **every** local project in that browser — silently. Local IndexedDB stays intact, but the cloud replica never catches up again.
+**Why it matters:** The one write path this workstream is built around has no way to resolve its own designed failure mode. The first conflict, oversized checkpoint, expired token or full queue on **any** project halts sync for **every** local project in that browser. Local IndexedDB stays intact, but the cloud replica never catches up again.
+
+> **Correction.** I first wrote that the queue halts "silently" and that "nothing
+> ever resumes it." The second half is wrong, in a direction that makes this
+> worse. `startAutoDrain` re-enters every **2 seconds** (`outbox.ts:447`, and
+> production never overrides the default), and neither the `STALE_DOCUMENT`
+> branch nor the permanent branch ever pushes `nextAttemptAt` forward — only the
+> `TRANSIENT` branch does. Since `nextAttemptAt` was set to `now()` at enqueue,
+> the skip guard never fires. **The identical refused request is re-sent to the
+> deployment every ~2 seconds indefinitely**, incrementing `attempts` with no
+> backoff. "Permanent" means self-identical and non-self-healing, not inert. See
+> [specs/03-sync-conflict-recovery.md](../specs/03-sync-conflict-recovery.md) §1a.
 **Change:** Add a Resolve action in the sync-status/version-history UI calling `resolveDivergence`; call `discardHead` with confirmation for permanently refused entries; call `backfill` on reconnect and identity change; consider per-project queues so one stuck project cannot block the rest.
 **Effort:** M    **Risk:** Touches the core sync state machine; must not regress OCC or idempotency (existing `concurrency.test.ts` / `rebase.test.ts` scaffolding helps).
 
