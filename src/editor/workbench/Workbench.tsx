@@ -47,7 +47,15 @@ import {
   type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
-import { applyChromeReveal, applyDockFocus, applyExclusiveDock, CHROME_SURFACE_TARGETS, publishChrome, revealChrome, setChromeRevealHandler } from '../../webmcp/chrome'
+import {
+  applyChromeReveal,
+  applyDockFocus,
+  applyExclusiveDock,
+  CHROME_SURFACE_TARGETS,
+  publishChrome,
+  revealChrome,
+  setChromeRevealHandler,
+} from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
   chordFromEvent,
@@ -87,9 +95,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const viewport = useViewportSize()
 
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcutMap())
-  const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() => applyExclusiveDock(loadLayout(
-    typeof window === 'undefined' ? 1600 : window.innerWidth,
-  )))
+  const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() =>
+    applyExclusiveDock(loadLayout(typeof window === 'undefined' ? 1600 : window.innerWidth)),
+  )
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
   const saveInput = useRef<HTMLInputElement>(null)
@@ -114,24 +122,62 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     saveLayout(next)
   }, [])
 
-  const resizeDock = useCallback((dock: DockId, size: number) => {
-    const clamped = Math.min(DOCK_LIMITS[dock].max, Math.max(DOCK_LIMITS[dock].min, size))
-    updateLayout({ ...rawLayout, [dock]: { size: clamped, collapsed: false }, preset: null })
-  }, [rawLayout, updateLayout])
+  const resizeDock = useCallback(
+    (dock: DockId, size: number) => {
+      const clamped = Math.min(DOCK_LIMITS[dock].max, Math.max(DOCK_LIMITS[dock].min, size))
+      updateLayout({ ...rawLayout, [dock]: { size: clamped, collapsed: false }, preset: null })
+    },
+    [rawLayout, updateLayout],
+  )
 
-  const toggleDock = useCallback((dock: DockId) => {
-    updateLayout({ ...rawLayout, [dock]: { ...rawLayout[dock], collapsed: !rawLayout[dock].collapsed }, preset: null })
-  }, [rawLayout, updateLayout])
+  const toggleDock = useCallback(
+    (dock: DockId) => {
+      updateLayout({
+        ...rawLayout,
+        [dock]: { ...rawLayout[dock], collapsed: !rawLayout[dock].collapsed },
+        preset: null,
+      })
+    },
+    [rawLayout, updateLayout],
+  )
 
-  const toggleSection = useCallback((id: string) => {
-    if (workbench.tool === 'connect' && id !== 'connect') workbench.setTool('select')
-    const open = rawLayout.sections[id] !== false
-    updateLayout(applyDockFocus(rawLayout, id, !open))
-  }, [rawLayout, updateLayout, workbench])
+  const toggleSection = useCallback(
+    (id: string) => {
+      if (workbench.tool === 'connect' && id !== 'connect') workbench.setTool('select')
+      const open = rawLayout.sections[id] !== false
+      updateLayout(applyDockFocus(rawLayout, id, !open))
+    },
+    [rawLayout, updateLayout, workbench],
+  )
 
-  const applyPreset = useCallback((preset: LayoutPresetId) => {
-    updateLayout({ ...defaultLayout(preset), sections: rawLayout.sections })
-  }, [rawLayout.sections, updateLayout])
+  // The inspector is no longer permanent chrome. It arrives when the work
+  // creates context, then stays under the operator's control. A new selection
+  // opens Selection; entering Connect opens the guided mate sheet. Collapsing
+  // the dock afterwards is respected until a genuinely new context begins.
+  const previousContext = useRef({ selection: workbench.state.selection.length, tool: workbench.tool })
+  useEffect(() => {
+    const before = previousContext.current
+    const selection = workbench.state.selection.length
+    const enteredSelection = before.selection === 0 && selection > 0
+    const enteredConnect = before.tool !== 'connect' && workbench.tool === 'connect'
+    previousContext.current = { selection, tool: workbench.tool }
+    if (!enteredSelection && !enteredConnect) return
+    const next = enteredConnect
+      ? applyDockFocus(
+          { ...layoutRef.current, right: { ...layoutRef.current.right, collapsed: false } },
+          'connect',
+          true,
+        )
+      : applyChromeReveal(layoutRef.current, 'selection')
+    updateLayout(next)
+  }, [updateLayout, workbench.state.selection.length, workbench.tool])
+
+  const applyPreset = useCallback(
+    (preset: LayoutPresetId) => {
+      updateLayout({ ...defaultLayout(preset), sections: rawLayout.sections })
+    },
+    [rawLayout.sections, updateLayout],
+  )
 
   useEffect(() => {
     publishChrome({
@@ -178,7 +224,10 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     const run = async () => {
       if (query.get('doc') === 'blank' || query.get('project')) {
         const sessionMod = await import('../../cad/session')
-        const result = await applyEditorQuery(sessionMod, typeof window === 'undefined' ? search : window.location.search)
+        const result = await applyEditorQuery(
+          sessionMod,
+          typeof window === 'undefined' ? search : window.location.search,
+        )
         if (result.applied !== 'none' && !result.ok) {
           notifyRef.current({
             kind: 'error',
@@ -213,7 +262,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   }, [rawLayout, updateLayout])
 
   const exportLdr = useCallback(() => {
-    const name = workbench.state.document.name.trim().replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'brickwright_model'
+    const name =
+      workbench.state.document.name
+        .trim()
+        .replace(/\W+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'brickwright_model'
     downloadText(`${name}.ldr`, exportLDraw(workbench.state.document))
   }, [workbench.state.document])
 
@@ -235,11 +288,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     [exportLdr, focusSearch, resetWorkspace, toggleDock, workbench],
   )
 
-  const runCommand = useCallback((commandId: string) => {
-    const handler = handlers[commandId]
-    if (!handler) return { ran: false, reason: `No command "${commandId}" is registered.` }
-    return handler()
-  }, [handlers])
+  const runCommand = useCallback(
+    (commandId: string) => {
+      const handler = handlers[commandId]
+      if (!handler) return { ran: false, reason: `No command "${commandId}" is registered.` }
+      return handler()
+    },
+    [handlers],
+  )
 
   // -- first run ------------------------------------------------------------
   const bootModal = useRef(false)
@@ -349,34 +405,37 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   }, [])
 
   // -- the API handed to extensions ----------------------------------------
-  const api = useMemo<WorkbenchApi>(() => ({
-    snapshot: workbench.state,
-    selection: workbench.state.selection,
-    tool: workbench.tool,
-    activeColor: workbench.activeColor,
-    renderMode: workbench.renderMode,
-    cameraView: workbench.cameraView,
-    placement: workbench.placement,
-    online,
-    hiddenPartIds: workbench.hidden,
-    activeModal: modal,
-    select: (ids) => cadEngine.setSelection([...ids]),
-    setTool: workbench.setTool,
-    setActiveColor: workbench.setActiveColor,
-    setRenderMode: workbench.setRenderMode,
-    setCameraView: workbench.setCameraView,
-    frameSelection: workbench.focusSelection,
-    armPart: (definitionId) => workbench.armPart({ id: definitionId, name: definitionId }),
-    runCapability: workbench.runSharedMutation,
-    execute: workbench.dispatch,
-    notify: workbench.notify,
-    openModal: workbench.setModal,
-  }), [modal, online, workbench])
+  const api = useMemo<WorkbenchApi>(
+    () => ({
+      snapshot: workbench.state,
+      selection: workbench.state.selection,
+      tool: workbench.tool,
+      activeColor: workbench.activeColor,
+      renderMode: workbench.renderMode,
+      cameraView: workbench.cameraView,
+      placement: workbench.placement,
+      online,
+      hiddenPartIds: workbench.hidden,
+      activeModal: modal,
+      select: (ids) => cadEngine.setSelection([...ids]),
+      setTool: workbench.setTool,
+      setActiveColor: workbench.setActiveColor,
+      setRenderMode: workbench.setRenderMode,
+      setCameraView: workbench.setCameraView,
+      frameSelection: workbench.focusSelection,
+      armPart: (definitionId) => workbench.armPart({ id: definitionId, name: definitionId }),
+      runCapability: workbench.runSharedMutation,
+      execute: workbench.dispatch,
+      notify: workbench.notify,
+      openModal: workbench.setModal,
+    }),
+    [modal, online, workbench],
+  )
 
   const sections = layout.sections
   const { state } = workbench
   const connectActive = workbench.tool === 'connect'
-  const rightSectionOpen = (id: string) => !connectActive && sections[id] !== false
+  const rightSectionOpen = (id: string) => !connectActive && sections[id] === true
 
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
@@ -428,7 +487,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     id={id}
                     title={title ?? id}
                     icon={icon}
-                    open={sections[id] !== false}
+                    open={sections[id] === true}
                     onToggle={() => toggleSection(id)}
                   >
                     {content}
@@ -439,11 +498,21 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           </div>
         )}
 
-        <DockSplitter dock="left" size={layout.left.size} onResize={(size) => resizeDock('left', size)} onDoubleClick={() => toggleDock('left')} />
+        <DockSplitter
+          dock="left"
+          size={layout.left.size}
+          onResize={(size) => resizeDock('left', size)}
+          onDoubleClick={() => toggleDock('left')}
+        />
 
         <ViewportStage workbench={workbench} />
 
-        <DockSplitter dock="right" size={layout.right.size} onResize={(size) => resizeDock('right', size)} onDoubleClick={() => toggleDock('right')} />
+        <DockSplitter
+          dock="right"
+          size={layout.right.size}
+          onResize={(size) => resizeDock('right', size)}
+          onDoubleClick={() => toggleDock('right')}
+        />
 
         {layout.right.collapsed ? (
           <CollapsedRail dock="right" label="Inspector" onExpand={() => toggleDock('right')} />
@@ -452,9 +521,23 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             <div className="dock-head">
               <span className="eyebrow">INSPECT</span>
               <nav className="dock-jump" aria-label="Jump to inspector section">
-                <button type="button" onClick={() => revealChrome('agent')}>Partner</button>
-                <button type="button" onClick={() => revealChrome('generation')}>Generate</button>
-                <button type="button" onClick={() => revealChrome('refinement')}>Refine</button>
+                <button type="button" onClick={() => revealChrome(state.selection.length ? 'selection' : 'inspector')}>
+                  {state.selection.length ? 'Selection' : 'Details'}
+                </button>
+                {state.selection.length > 0 && (
+                  <button type="button" onClick={() => revealChrome('transform')}>
+                    Transform
+                  </button>
+                )}
+                <button type="button" onClick={() => revealChrome('agent')}>
+                  Partner
+                </button>
+                <button type="button" onClick={() => revealChrome('generation')}>
+                  Generate
+                </button>
+                <button type="button" onClick={() => revealChrome('refinement')}>
+                  Refine
+                </button>
               </nav>
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
             </div>
@@ -575,7 +658,13 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           onClose={() => workbench.setModal(null)}
           onReplayWelcome={() => workbench.setModal('core:welcome')}
         />
-        <WelcomeGuide open={welcomeOpen} onClose={() => { markWelcomeSeen(); workbench.setModal(null) }} />
+        <WelcomeGuide
+          open={welcomeOpen}
+          onClose={() => {
+            markWelcomeSeen()
+            workbench.setModal(null)
+          }}
+        />
         <CommandPalette
           open={paletteOpen}
           initialTab={modal === 'core:keymap' ? 'keys' : 'run'}
@@ -587,10 +676,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         />
 
         {saveSetOpen && (
-          <div className="workbench-prompt-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && workbench.setModal(null)}>
+          <div
+            className="workbench-prompt-backdrop"
+            role="presentation"
+            onMouseDown={(event) => event.target === event.currentTarget && workbench.setModal(null)}
+          >
             <div className="workbench-prompt" role="dialog" aria-modal="true" aria-label="Save selection set">
               <h3>Save this selection</h3>
-              <p>{state.selection.length} part{state.selection.length === 1 ? '' : 's'} will be recorded by id.</p>
+              <p>
+                {state.selection.length} part{state.selection.length === 1 ? '' : 's'} will be recorded by id.
+              </p>
               <input
                 ref={saveInput}
                 value={savingSelection}
@@ -604,12 +699,17 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 }}
               />
               <div>
-                <button type="button" onClick={() => workbench.setModal(null)}>Cancel</button>
+                <button type="button" onClick={() => workbench.setModal(null)}>
+                  Cancel
+                </button>
                 <button
                   type="button"
                   className="prompt-primary"
                   disabled={!savingSelection.trim()}
-                  onClick={() => { workbench.saveSelectionSet(savingSelection.trim()); workbench.setModal(null) }}
+                  onClick={() => {
+                    workbench.saveSelectionSet(savingSelection.trim())
+                    workbench.setModal(null)
+                  }}
                 >
                   Save
                 </button>
@@ -659,10 +759,21 @@ function ToastStatus({ toast, onDismiss }: { toast: WorkbenchNotice | null; onDi
       {toast && (
         <div className={`toast ${toast.kind}`}>
           <span>
-            {toast.kind === 'success' ? <Check size={15} /> : toast.kind === 'error' ? <X size={15} /> : <CircleDot size={15} />}
+            {toast.kind === 'success' ? (
+              <Check size={15} />
+            ) : toast.kind === 'error' ? (
+              <X size={15} />
+            ) : (
+              <CircleDot size={15} />
+            )}
           </span>
-          <div><strong>{toast.title}</strong><p>{toast.detail}</p></div>
-          <button onClick={onDismiss} aria-label="Dismiss"><X size={13} /></button>
+          <div>
+            <strong>{toast.title}</strong>
+            <p>{toast.detail}</p>
+          </div>
+          <button onClick={onDismiss} aria-label="Dismiss">
+            <X size={13} />
+          </button>
         </div>
       )}
     </div>

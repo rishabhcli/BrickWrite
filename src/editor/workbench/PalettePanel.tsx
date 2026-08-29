@@ -19,12 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { catalog, getColor, searchCatalogPage } from '../../cad/catalog'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../../cad/catalog-loader'
-import type {
-  CatalogSearchPage,
-  CatalogSearchRecord,
-  CatalogTier,
-  ConnectionFamily,
-} from '../../cad/types'
+import type { CatalogSearchPage, CatalogSearchRecord, CatalogTier, ConnectionFamily } from '../../cad/types'
 import { usePersistentState } from './persistence'
 
 /**
@@ -45,7 +40,11 @@ export type PaletteView = 'card' | 'compact' | 'list'
 
 const TIERS: Array<{ id: CatalogTier | 'all'; label: string; hint: string }> = [
   { id: 'placeable', label: 'BUILDABLE', hint: 'Compiled geometry and connectors — these can be placed.' },
-  { id: 'modelled', label: 'MODELLED', hint: 'LDraw models the shape and connections, but this build carries no mesh.' },
+  {
+    id: 'modelled',
+    label: 'MODELLED',
+    hint: 'LDraw models the shape and connections, but this build carries no mesh.',
+  },
   { id: 'catalogued', label: 'CATALOGUED', hint: 'The wider LEGO catalogue records that these exist. Identity only.' },
   { id: 'all', label: 'EVERYTHING', hint: 'Every identity this build knows about, across all three tiers.' },
 ]
@@ -97,14 +96,26 @@ const SIZE_FACETS: Array<{ id: string; label: string; min?: number; max?: number
  */
 export function PartPreview({ record, color }: { record: CatalogSearchRecord; color: string }) {
   const thumbnail = catalog.get(record.id)?.thumbnail
-  if (!thumbnail) return <div className="part-glyph empty" aria-hidden><span /></div>
+  if (!thumbnail)
+    return (
+      <div className="part-glyph empty" aria-hidden>
+        <span />
+      </div>
+    )
   return (
     <div className="part-thumb" aria-hidden>
       <span
         className="thumb-tint"
         style={{ '--part-color': color, '--thumb': `url(${thumbnail.file})` } as React.CSSProperties}
       />
-      <img className="thumb-shade" src={thumbnail.file} alt="" width={thumbnail.size} height={thumbnail.size} loading="lazy" />
+      <img
+        className="thumb-shade"
+        src={thumbnail.file}
+        alt=""
+        width={thumbnail.size}
+        height={thumbnail.size}
+        loading="lazy"
+      />
     </div>
   )
 }
@@ -143,8 +154,8 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
   const [customPalettes, setCustomPalettes] = usePersistentState<CustomPalette[]>('palette.sets.v1', [])
   const [activeSet, setActiveSet] = useState<string | null>(null)
   const [cursor, setCursor] = useState(-1)
-  const [catalogueState, setCatalogueState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
-    () => (catalog.catalogueLoaded ? 'ready' : 'idle'),
+  const [catalogueState, setCatalogueState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(() =>
+    catalog.catalogueLoaded ? 'ready' : 'idle',
   )
   const searchRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -153,7 +164,10 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
     // Categories that actually contain placeable parts, most populous first.
     const counts = new Map<string, number>()
     for (const part of catalog.placeable()) counts.set(part.category, (counts.get(part.category) ?? 0) + 1)
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name]) => name)
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 7)
+      .map(([name]) => name)
   }, [])
 
   const allCategories = useMemo(() => catalog.categories, [])
@@ -170,66 +184,97 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
     let cancelled = false
     setCatalogueState('loading')
     loadExternalCatalogue()
-      .then(() => { if (!cancelled) setCatalogueState('ready') })
-      .catch(() => { if (!cancelled) setCatalogueState('failed') })
-    return () => { cancelled = true }
+      .then(() => {
+        if (!cancelled) setCatalogueState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogueState('failed')
+      })
+    return () => {
+      cancelled = true
+    }
   }, [tier])
 
   const sizeRange = SIZE_FACETS.find((entry) => entry.id === sizeFacet)
 
   const page = useMemo<CatalogSearchPage>(
-    () => searchCatalogPage({
-      text: query,
-      category: category === 'All parts' ? undefined : category,
-      tier,
-      limit: PAGE_SIZE,
-      offset,
-      ...(connectorFacet === 'any' ? {} : { connectorTypes: [connectorFacet] }),
-      ...(sizeRange?.min === undefined ? {} : { minStuds: { width: sizeRange.min } }),
-      ...(sizeRange?.max === undefined ? {} : { maxStuds: { width: sizeRange.max } }),
-      ...(colourFacet ? { colors: [activeColor] } : {}),
-    }),
+    () =>
+      searchCatalogPage({
+        text: query,
+        category: category === 'All parts' ? undefined : category,
+        tier,
+        limit: PAGE_SIZE,
+        offset,
+        ...(connectorFacet === 'any' ? {} : { connectorTypes: [connectorFacet] }),
+        ...(sizeRange?.min === undefined ? {} : { minStuds: { width: sizeRange.min } }),
+        ...(sizeRange?.max === undefined ? {} : { maxStuds: { width: sizeRange.max } }),
+        ...(colourFacet ? { colors: [activeColor] } : {}),
+      }),
     [activeColor, category, colourFacet, connectorFacet, offset, query, sizeRange, tier, catalogueState],
   )
 
   // A new query starts at the top of its own result set.
-  useEffect(() => { setOffset(0); setCursor(-1) }, [query, category, tier, connectorFacet, sizeFacet, colourFacet])
+  useEffect(() => {
+    setOffset(0)
+    setCursor(-1)
+  }, [query, category, tier, connectorFacet, sizeFacet, colourFacet])
 
   const shownRecords = useMemo<CatalogSearchRecord[]>(() => {
     if (activeSet === 'favourites') {
-      return favourites.map((id) => catalog.describe(id)).filter((entry): entry is CatalogSearchRecord => Boolean(entry))
+      return favourites
+        .map((id) => catalog.describe(id))
+        .filter((entry): entry is CatalogSearchRecord => Boolean(entry))
     }
     if (activeSet === 'recents') {
       return recents.map((id) => catalog.describe(id)).filter((entry): entry is CatalogSearchRecord => Boolean(entry))
     }
     if (activeSet) {
       const set = customPalettes.find((entry) => entry.id === activeSet)
-      return (set?.partIds ?? []).map((id) => catalog.describe(id)).filter((entry): entry is CatalogSearchRecord => Boolean(entry))
+      return (set?.partIds ?? [])
+        .map((id) => catalog.describe(id))
+        .filter((entry): entry is CatalogSearchRecord => Boolean(entry))
     }
     return page.records
   }, [activeSet, customPalettes, favourites, page.records, recents])
 
-  const remember = useCallback((record: CatalogSearchRecord) => {
-    setRecents((current) => [record.id, ...current.filter((id) => id !== record.id)].slice(0, 24))
-  }, [setRecents])
+  const remember = useCallback(
+    (record: CatalogSearchRecord) => {
+      setRecents((current) => [record.id, ...current.filter((id) => id !== record.id)].slice(0, 24))
+    },
+    [setRecents],
+  )
 
-  const arm = useCallback((record: CatalogSearchRecord) => {
-    remember(record)
-    onArm(record)
-  }, [onArm, remember])
+  const arm = useCallback(
+    (record: CatalogSearchRecord) => {
+      remember(record)
+      onArm(record)
+    },
+    [onArm, remember],
+  )
 
-  const add = useCallback((record: CatalogSearchRecord) => {
-    remember(record)
-    onAdd(record)
-  }, [onAdd, remember])
+  const add = useCallback(
+    (record: CatalogSearchRecord) => {
+      remember(record)
+      onAdd(record)
+    },
+    [onAdd, remember],
+  )
 
-  const toggleFavourite = useCallback((id: string) => {
-    setFavourites((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]))
-  }, [setFavourites])
+  const toggleFavourite = useCallback(
+    (id: string) => {
+      setFavourites((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]))
+    },
+    [setFavourites],
+  )
 
-  const toggleColourFavourite = useCallback((code: number) => {
-    setColourFavourites((current) => (current.includes(code) ? current.filter((entry) => entry !== code) : [...current, code]))
-  }, [setColourFavourites])
+  const toggleColourFavourite = useCallback(
+    (code: number) => {
+      setColourFavourites((current) =>
+        current.includes(code) ? current.filter((entry) => entry !== code) : [...current, code],
+      )
+    },
+    [setColourFavourites],
+  )
 
   /**
    * Keyboard-first search.
@@ -238,30 +283,33 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
    * without leaving it, so a part can be found and armed without the hand
    * moving to the pointer.
    */
-  const onSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setCursor((value) => Math.min(shownRecords.length - 1, value + 1))
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setCursor((value) => Math.max(-1, value - 1))
-    } else if (event.key === 'Enter') {
-      const record = shownRecords[cursor] ?? shownRecords[0]
-      if (!record) return
-      event.preventDefault()
-      if (event.shiftKey) add(record)
-      else arm(record)
-    } else if (event.key === 'Escape' && query) {
-      event.preventDefault()
-      setQuery('')
-    } else if (event.key === 'PageDown' && !activeSet) {
-      event.preventDefault()
-      setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
-    } else if (event.key === 'PageUp' && !activeSet) {
-      event.preventDefault()
-      setOffset((value) => Math.max(0, value - PAGE_SIZE))
-    }
-  }, [activeSet, add, arm, cursor, page.total, query, shownRecords])
+  const onSearchKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setCursor((value) => Math.min(shownRecords.length - 1, value + 1))
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setCursor((value) => Math.max(-1, value - 1))
+      } else if (event.key === 'Enter') {
+        const record = shownRecords[cursor] ?? shownRecords[0]
+        if (!record) return
+        event.preventDefault()
+        if (event.shiftKey) add(record)
+        else arm(record)
+      } else if (event.key === 'Escape' && query) {
+        event.preventDefault()
+        setQuery('')
+      } else if (event.key === 'PageDown' && !activeSet) {
+        event.preventDefault()
+        setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
+      } else if (event.key === 'PageUp' && !activeSet) {
+        event.preventDefault()
+        setOffset((value) => Math.max(0, value - PAGE_SIZE))
+      }
+    },
+    [activeSet, add, arm, cursor, page.total, query, shownRecords],
+  )
 
   useEffect(() => {
     if (cursor < 0) return
@@ -274,6 +322,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
   const tierHint = TIERS.find((entry) => entry.id === tier)!.hint
   const indexTotal = catalog.totalIdentityCount
   const facetCount = (connectorFacet === 'any' ? 0 : 1) + (sizeFacet === 'any' ? 0 : 1) + (colourFacet ? 1 : 0)
+  const advancedCount = facetCount + (tier === 'placeable' ? 0 : 1) + (activeSet ? 1 : 0)
   const paletteColours = paletteOpen
     ? catalog.colors().map((color) => color.code)
     : [...new Set([...colourFavourites, ...DOCK_COLORS])]
@@ -288,22 +337,26 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           <h2>Parts catalog</h2>
         </div>
         <div className="palette-views" role="radiogroup" aria-label="Palette layout">
-          {([['card', LayoutGrid, 'Cards'], ['compact', Rows3, 'Compact'], ['list', List, 'List']] as const).map(
-            ([id, Icon, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={view === id}
-                aria-label={`${label} view`}
-                title={`${label} view`}
-                className={view === id ? 'active' : ''}
-                onClick={() => setView(id)}
-              >
-                <Icon size={12} />
-              </button>
-            ),
-          )}
+          {(
+            [
+              ['card', LayoutGrid, 'Cards'],
+              ['compact', Rows3, 'Compact'],
+              ['list', List, 'List'],
+            ] as const
+          ).map(([id, Icon, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={view === id}
+              aria-label={`${label} view`}
+              title={`${label} view`}
+              className={view === id ? 'active' : ''}
+              onClick={() => setView(id)}
+            >
+              <Icon size={12} />
+            </button>
+          ))}
         </div>
         <span className="count-badge" title={`${page.total.toLocaleString()} identities match`}>
           {page.total > 999 ? `${Math.round(page.total / 1000)}k` : page.total}
@@ -322,37 +375,31 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           aria-describedby="palette-keyboard-help"
           data-catalog-search
         />
-        {query
-          ? <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={12} /></button>
-          : <kbd>⌘ K</kbd>}
+        {query ? (
+          <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}>
+            <X size={12} />
+          </button>
+        ) : (
+          <kbd>⌘ K</kbd>
+        )}
       </label>
       <p id="palette-keyboard-help" className="visually-hidden">
         Arrow keys move through results, Enter arms the highlighted part for placement, Shift and Enter adds it
         immediately, Page Down and Page Up move between pages.
       </p>
 
-      {/* Tier is the honest axis of this catalogue: what can be built, what is
-          modelled, and what is merely known to exist. Hiding it behind a single
-          on/off toggle made two very different "no results" mean the same thing. */}
-      <div className="tier-row" role="tablist" aria-label="Catalog knowledge tier">
-        {TIERS.map((entry) => (
-          <button
-            key={entry.id}
-            role="tab"
-            aria-selected={tier === entry.id}
-            className={tier === entry.id ? 'active' : ''}
-            title={entry.hint}
-            onClick={() => { setTier(entry.id); setActiveSet(null) }}
-          >
-            {entry.label}
-            <em>{tierCount(page, entry.id, catalogueState)}</em>
-          </button>
-        ))}
-      </div>
-
       <div className="category-row" role="tablist" aria-label="Part categories">
         {['All parts', ...categories].map((item) => (
-          <button key={item} className={category === item ? 'active' : ''} onClick={() => { setCategory(item); setActiveSet(null) }} role="tab" aria-selected={category === item}>
+          <button
+            key={item}
+            className={category === item ? 'active' : ''}
+            onClick={() => {
+              setCategory(item)
+              setActiveSet(null)
+            }}
+            role="tab"
+            aria-selected={category === item}
+          >
             {item.replace('Windscreens', 'Glass')}
           </button>
         ))}
@@ -363,30 +410,69 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           aria-controls="palette-facets"
           title="Filter by category, size, connector family and colour availability"
         >
-          FILTERS{facetCount ? ` · ${facetCount}` : ''}
+          FILTERS{advancedCount ? ` · ${advancedCount}` : ''}
         </button>
       </div>
 
       {facetsOpen && (
         <div className="palette-facets" id="palette-facets">
+          <div className="tier-row" role="tablist" aria-label="Catalog knowledge tier">
+            {TIERS.map((entry) => (
+              <button
+                key={entry.id}
+                role="tab"
+                aria-selected={tier === entry.id}
+                className={tier === entry.id ? 'active' : ''}
+                title={entry.hint}
+                onClick={() => {
+                  setTier(entry.id)
+                  setActiveSet(null)
+                }}
+              >
+                {entry.label}
+                <em>{tierCount(page, entry.id, catalogueState)}</em>
+              </button>
+            ))}
+          </div>
           <label>
             <span>Category</span>
-            <select value={category} onChange={(event) => { setCategory(event.target.value); setActiveSet(null) }}>
+            <select
+              value={category}
+              onChange={(event) => {
+                setCategory(event.target.value)
+                setActiveSet(null)
+              }}
+            >
               <option value="All parts">All parts</option>
-              {allCategories.map((name) => <option key={name} value={name}>{name}</option>)}
+              {allCategories.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
             </select>
           </label>
           <label>
             <span>Footprint</span>
             <select value={sizeFacet} onChange={(event) => setSizeFacet(event.target.value)}>
-              {SIZE_FACETS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+              {SIZE_FACETS.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
             </select>
           </label>
           <label>
             <span>Connector</span>
-            <select value={connectorFacet} onChange={(event) => setConnectorFacet(event.target.value as ConnectionFamily | 'any')}>
+            <select
+              value={connectorFacet}
+              onChange={(event) => setConnectorFacet(event.target.value as ConnectionFamily | 'any')}
+            >
               <option value="any">Any connector</option>
-              {CONNECTOR_FACETS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+              {CONNECTOR_FACETS.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
             </select>
           </label>
           <div className="facet-toggle-row">
@@ -405,75 +491,97 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
             <button
               type="button"
               className="facet-clear"
-              onClick={() => { setConnectorFacet('any'); setSizeFacet('any'); setColourFacet(false) }}
+              onClick={() => {
+                setConnectorFacet('any')
+                setSizeFacet('any')
+                setColourFacet(false)
+              }}
             >
               Clear {facetCount} filter{facetCount === 1 ? '' : 's'}
             </button>
           )}
+          <div className="palette-sets" role="tablist" aria-label="Saved part sets">
+            <button
+              role="tab"
+              aria-selected={activeSet === null}
+              className={activeSet === null ? 'active' : ''}
+              onClick={() => setActiveSet(null)}
+            >
+              <Search size={10} /> RESULTS
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeSet === 'favourites'}
+              className={activeSet === 'favourites' ? 'active' : ''}
+              onClick={() => setActiveSet('favourites')}
+              disabled={!favourites.length}
+              title={favourites.length ? `${favourites.length} favourites` : 'Star a part to add it here'}
+            >
+              <Star size={10} /> FAVOURITES <em>{favourites.length}</em>
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeSet === 'recents'}
+              className={activeSet === 'recents' ? 'active' : ''}
+              onClick={() => setActiveSet('recents')}
+              disabled={!recents.length}
+              title={recents.length ? `${recents.length} recently placed` : 'Parts you place appear here'}
+            >
+              <Clock3 size={10} /> RECENT <em>{recents.length}</em>
+            </button>
+            {customPalettes.map((set) => (
+              <button
+                key={set.id}
+                role="tab"
+                aria-selected={activeSet === set.id}
+                className={activeSet === set.id ? 'active' : ''}
+                onClick={() => setActiveSet(set.id)}
+              >
+                {set.name} <em>{set.partIds.length}</em>
+              </button>
+            ))}
+            <button
+              className="palette-set-new"
+              title="Save the current results as a named palette"
+              aria-label="Save the current results as a named palette"
+              disabled={!page.records.length}
+              onClick={() => {
+                const name = window.prompt('Name this palette', `Palette ${customPalettes.length + 1}`)
+                if (!name) return
+                setCustomPalettes((current) => [
+                  ...current.filter((entry) => entry.name !== name),
+                  {
+                    id: `set_${Date.now().toString(36)}`,
+                    name,
+                    partIds: page.records.slice(0, 40).map((record) => record.id),
+                  },
+                ])
+              }}
+            >
+              <Plus size={10} />
+            </button>
+          </div>
         </div>
       )}
-
-      <div className="palette-sets" role="tablist" aria-label="Saved part sets">
-        <button role="tab" aria-selected={activeSet === null} className={activeSet === null ? 'active' : ''} onClick={() => setActiveSet(null)}>
-          <Search size={10} /> RESULTS
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeSet === 'favourites'}
-          className={activeSet === 'favourites' ? 'active' : ''}
-          onClick={() => setActiveSet('favourites')}
-          disabled={!favourites.length}
-          title={favourites.length ? `${favourites.length} favourites` : 'Star a part to add it here'}
-        >
-          <Star size={10} /> FAVOURITES <em>{favourites.length}</em>
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeSet === 'recents'}
-          className={activeSet === 'recents' ? 'active' : ''}
-          onClick={() => setActiveSet('recents')}
-          disabled={!recents.length}
-          title={recents.length ? `${recents.length} recently placed` : 'Parts you place appear here'}
-        >
-          <Clock3 size={10} /> RECENT <em>{recents.length}</em>
-        </button>
-        {customPalettes.map((set) => (
-          <button
-            key={set.id}
-            role="tab"
-            aria-selected={activeSet === set.id}
-            className={activeSet === set.id ? 'active' : ''}
-            onClick={() => setActiveSet(set.id)}
-          >
-            {set.name} <em>{set.partIds.length}</em>
-          </button>
-        ))}
-        <button
-          className="palette-set-new"
-          title="Save the current results as a named palette"
-          aria-label="Save the current results as a named palette"
-          disabled={!page.records.length}
-          onClick={() => {
-            const name = window.prompt('Name this palette', `Palette ${customPalettes.length + 1}`)
-            if (!name) return
-            setCustomPalettes((current) => [
-              ...current.filter((entry) => entry.name !== name),
-              { id: `set_${Date.now().toString(36)}`, name, partIds: page.records.slice(0, 40).map((record) => record.id) },
-            ])
-          }}
-        >
-          <Plus size={10} />
-        </button>
-      </div>
 
       <div className="catalog-meta">
         <span title={tierHint}>
           {page.total.toLocaleString()} of {indexTotal.toLocaleString()} identities
         </span>
-        {catalogueState === 'loading' && <span className="catalog-loading"><LoaderCircle size={10} /> indexing the wider catalogue</span>}
-        {catalogueState === 'failed' && <span className="catalog-failed"><CircleAlert size={10} /> catalogue index unavailable</span>}
+        {catalogueState === 'loading' && (
+          <span className="catalog-loading">
+            <LoaderCircle size={10} /> indexing the wider catalogue
+          </span>
+        )}
+        {catalogueState === 'failed' && (
+          <span className="catalog-failed">
+            <CircleAlert size={10} /> catalogue index unavailable
+          </span>
+        )}
         {catalogueState !== 'loading' && catalogueState !== 'failed' && (
-          <span className="status-ready"><CircleDot size={10} /> {catalog.placeableCount} placeable</span>
+          <span className="status-ready">
+            <CircleDot size={10} /> {catalog.placeableCount} placeable
+          </span>
         )}
       </div>
 
@@ -497,18 +605,31 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
               onClick={() => arm(record)}
               onFocus={() => setCursor(index)}
               aria-pressed={armedId === record.id}
-              aria-label={record.geometryAvailable ? `Pick up ${record.name} to place in the viewport` : `${record.name}: ${TIER_LABEL[record.tier]}`}
+              aria-label={
+                record.geometryAvailable
+                  ? `Pick up ${record.name} to place in the viewport`
+                  : `${record.name}: ${TIER_LABEL[record.tier]}`
+              }
             >
               <PartPreview record={record} color={getColor(activeColor).hex} />
               <div className="part-copy">
                 <strong>{record.name.replace(/^(Brick|Plate|Tile|Slope) /, '')}</strong>
-                <span>{record.id}{record.dimensions ? ` · ${record.dimensions[0]}×${record.dimensions[2]}` : ` · ${TIER_LABEL[record.tier]}`}</span>
+                <span>
+                  {record.id}
+                  {record.dimensions
+                    ? ` · ${record.dimensions[0]}×${record.dimensions[2]}`
+                    : ` · ${TIER_LABEL[record.tier]}`}
+                </span>
               </div>
             </button>
             <button
               type="button"
               className={`part-favourite ${favourites.includes(record.id) ? 'on' : ''}`}
-              aria-label={favourites.includes(record.id) ? `Remove ${record.name} from favourites` : `Add ${record.name} to favourites`}
+              aria-label={
+                favourites.includes(record.id)
+                  ? `Remove ${record.name} from favourites`
+                  : `Add ${record.name} to favourites`
+              }
               aria-pressed={favourites.includes(record.id)}
               onClick={() => toggleFavourite(record.id)}
             >
@@ -530,15 +651,25 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
         {!shownRecords.length && (
           <div className="parts-empty">
             <SearchX size={20} strokeWidth={1.4} />
-            <strong>
-              {activeSet ? 'This set is empty' : `Nothing matches “${query || category}”`}
-            </strong>
-            <p>{activeSet ? 'Star parts, or place some, and they collect here.' : emptyExplanation(tier, catalogueState)}</p>
+            <strong>{activeSet ? 'This set is empty' : `Nothing matches “${query || category}”`}</strong>
+            <p>
+              {activeSet ? 'Star parts, or place some, and they collect here.' : emptyExplanation(tier, catalogueState)}
+            </p>
             {!activeSet && tier !== 'all' && (
-              <button type="button" onClick={() => setTier('all')}>Search every identity</button>
+              <button type="button" onClick={() => setTier('all')}>
+                Search every identity
+              </button>
             )}
-            {!activeSet && !!query && <button type="button" onClick={() => setQuery('')}>Clear search</button>}
-            {activeSet && <button type="button" onClick={() => setActiveSet(null)}>Back to results</button>}
+            {!activeSet && !!query && (
+              <button type="button" onClick={() => setQuery('')}>
+                Clear search
+              </button>
+            )}
+            {activeSet && (
+              <button type="button" onClick={() => setActiveSet(null)}>
+                Back to results
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -556,7 +687,8 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           </button>
           <span>
             {(offset + 1).toLocaleString()}–{Math.min(offset + page.records.length, page.total).toLocaleString()}
-            {' of '}{page.total.toLocaleString()}
+            {' of '}
+            {page.total.toLocaleString()}
           </span>
           <button
             type="button"
@@ -584,20 +716,25 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           </button>
         </div>
         <div className="swatches compact">
-          {paletteColours.map((code) => getColor(code)).map((color) => (
-            <button
-              key={color.code}
-              className={`${activeColor === color.code ? 'selected' : ''} ${colourFavourites.includes(color.code) ? 'favourite' : ''}`}
-              style={{ '--swatch': color.hex } as React.CSSProperties}
-              onClick={() => onColorChange(color.code)}
-              onContextMenu={(event) => { event.preventDefault(); toggleColourFavourite(color.code) }}
-              aria-label={color.name}
-              aria-pressed={activeColor === color.code}
-              title={`${color.name} · LDraw ${color.code} · right-click to ${colourFavourites.includes(color.code) ? 'unpin' : 'pin'}`}
-            >
-              {colourFavourites.includes(color.code) ? <Check size={8} /> : null}
-            </button>
-          ))}
+          {paletteColours
+            .map((code) => getColor(code))
+            .map((color) => (
+              <button
+                key={color.code}
+                className={`${activeColor === color.code ? 'selected' : ''} ${colourFavourites.includes(color.code) ? 'favourite' : ''}`}
+                style={{ '--swatch': color.hex } as React.CSSProperties}
+                onClick={() => onColorChange(color.code)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  toggleColourFavourite(color.code)
+                }}
+                aria-label={color.name}
+                aria-pressed={activeColor === color.code}
+                title={`${color.name} · LDraw ${color.code} · right-click to ${colourFavourites.includes(color.code) ? 'unpin' : 'pin'}`}
+              >
+                {colourFavourites.includes(color.code) ? <Check size={8} /> : null}
+              </button>
+            ))}
         </div>
       </div>
     </aside>
@@ -610,9 +747,7 @@ function tierCount(page: CatalogSearchPage, tier: CatalogTier | 'all', state: st
   // run. An em dash is the ordinary way a table says "no value here"; the
   // interpunct that used to sit here read as a glyph that had failed to render.
   if (tier === 'catalogued' && state === 'idle') return '—'
-  const value = tier === 'all'
-    ? page.tiers.placeable + page.tiers.modelled + page.tiers.catalogued
-    : page.tiers[tier]
+  const value = tier === 'all' ? page.tiers.placeable + page.tiers.modelled + page.tiers.catalogued : page.tiers[tier]
   return value > 9999 ? `${Math.round(value / 1000)}k` : String(value)
 }
 
@@ -620,7 +755,8 @@ export function describeRecord(record: CatalogSearchRecord): string {
   const appearances = record.frequency
     ? `${record.frequency.toLocaleString()} official set appearance${record.frequency === 1 ? '' : 's'}`
     : 'no recorded set appearances'
-  if (record.tier === 'placeable') return `Pick up ${record.name} and click in the viewport to place it · ${appearances}`
+  if (record.tier === 'placeable')
+    return `Pick up ${record.name} and click in the viewport to place it · ${appearances}`
   if (record.tier === 'modelled') {
     return `${record.name} is modelled by LDraw, but this build has no compiled geometry for it, so it cannot be placed · ${appearances}`
   }
@@ -631,7 +767,8 @@ export function describeRecord(record: CatalogSearchRecord): string {
 
 export function emptyExplanation(tier: CatalogTier | 'all', state: string): string {
   if (state === 'loading') return 'The wider catalogue index is still loading.'
-  if (state === 'failed') return 'The wider catalogue index could not be fetched, so only modelled identities were searched.'
+  if (state === 'failed')
+    return 'The wider catalogue index could not be fetched, so only modelled identities were searched.'
   if (tier === 'placeable') {
     return `${catalog.placeableCount} of ${catalog.identityCount.toLocaleString()} modelled identities have compiled geometry in this build. Widen the tier to search the rest.`
   }

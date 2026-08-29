@@ -67,13 +67,17 @@ describe('clamping', () => {
       sections: {},
     }
     const fitted = clampLayout(greedy, { width: 1024, height: 800 })
-    const used = (fitted.left.collapsed ? COLLAPSED_RAIL : fitted.left.size)
-      + (fitted.right.collapsed ? COLLAPSED_RAIL : fitted.right.size)
+    const used =
+      (fitted.left.collapsed ? COLLAPSED_RAIL : fitted.left.size) +
+      (fitted.right.collapsed ? COLLAPSED_RAIL : fitted.right.size)
     expect(1024 - used).toBeGreaterThanOrEqual(MIN_VIEWPORT_WIDTH)
   })
 
   it('pulls an over-wide dock back inside its limit', () => {
-    const fitted = clampLayout({ ...defaultLayout(), left: { size: 5000, collapsed: false } }, { width: 2560, height: 1400 })
+    const fitted = clampLayout(
+      { ...defaultLayout(), left: { size: 5000, collapsed: false } },
+      { width: 2560, height: 1400 },
+    )
     expect(fitted.left.size).toBe(DOCK_LIMITS.left.max)
   })
 
@@ -119,7 +123,7 @@ describe('persistence', () => {
 
 describe('grid templates', () => {
   it('reserves splitter tracks between every dock and the viewport', () => {
-    expect(workspaceColumns(defaultLayout('desktop'))).toBe('268px 4px minmax(0, 1fr) 4px 300px')
+    expect(workspaceColumns(defaultLayout('desktop'))).toBe(`268px 4px minmax(0, 1fr) 4px ${COLLAPSED_RAIL}px`)
   })
 
   it('leaves a reopen rail when a dock is collapsed', () => {
@@ -141,6 +145,8 @@ describe('chrome', () => {
   })
 
   it('keeps Generate, Refine and the design partner collapsed in a 300px dock', () => {
+    expect(defaultLayout().right.collapsed).toBe(true)
+    expect(defaultLayout().bottom.collapsed).toBe(true)
     expect(DEFAULT_SECTIONS['generation.panel']).toBe(false)
     expect(DEFAULT_SECTIONS['refinement.panel']).toBe(false)
     expect(DEFAULT_SECTIONS['agent.workbench']).toBe(false)

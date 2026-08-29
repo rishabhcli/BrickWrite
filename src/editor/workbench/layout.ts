@@ -47,14 +47,17 @@ export const MIN_VIEWPORT_HEIGHT = 280
  * timeline; ultrawide spends the extra pixels on the palette and inspector
  * rather than on an ever-wider viewport nobody asked for.
  */
-export const LAYOUT_PRESETS: Record<LayoutPresetId, { label: string; hint: string; layout: Omit<WorkbenchLayout, 'sections'> }> = {
+export const LAYOUT_PRESETS: Record<
+  LayoutPresetId,
+  { label: string; hint: string; layout: Omit<WorkbenchLayout, 'sections'> }
+> = {
   laptop: {
     label: 'Laptop',
     hint: '13–14 inch. Narrow docks, short timeline, viewport first.',
     layout: {
       left: { size: 224, collapsed: false },
-      right: { size: 260, collapsed: false },
-      bottom: { size: 124, collapsed: false },
+      right: { size: 260, collapsed: true },
+      bottom: { size: 124, collapsed: true },
       preset: 'laptop',
     },
   },
@@ -63,8 +66,8 @@ export const LAYOUT_PRESETS: Record<LayoutPresetId, { label: string; hint: strin
     hint: '1600–1920 wide. The default balance.',
     layout: {
       left: { size: 268, collapsed: false },
-      right: { size: 300, collapsed: false },
-      bottom: { size: 152, collapsed: false },
+      right: { size: 300, collapsed: true },
+      bottom: { size: 152, collapsed: true },
       preset: 'desktop',
     },
   },
@@ -73,8 +76,8 @@ export const LAYOUT_PRESETS: Record<LayoutPresetId, { label: string; hint: strin
     hint: '2560 and wider. Both docks open at full width.',
     layout: {
       left: { size: 340, collapsed: false },
-      right: { size: 392, collapsed: false },
-      bottom: { size: 168, collapsed: false },
+      right: { size: 392, collapsed: true },
+      bottom: { size: 168, collapsed: true },
       preset: 'ultrawide',
     },
   },
@@ -131,8 +134,9 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
 
   let fitted = { left, right, bottom }
   if (spare < 0) {
-    const flexible = (left.collapsed ? 0 : left.size - DOCK_LIMITS.left.min)
-      + (right.collapsed ? 0 : right.size - DOCK_LIMITS.right.min)
+    const flexible =
+      (left.collapsed ? 0 : left.size - DOCK_LIMITS.left.min) +
+      (right.collapsed ? 0 : right.size - DOCK_LIMITS.right.min)
     if (flexible > 0) {
       const ratio = Math.max(0, 1 + spare / flexible)
       fitted = {
@@ -149,9 +153,10 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
     // has a home elsewhere — the inspector's sections are all reachable from
     // the command palette.
     const stillShort =
-      viewport.width - MIN_VIEWPORT_WIDTH
-      - (fitted.left.collapsed ? COLLAPSED_RAIL : fitted.left.size)
-      - (fitted.right.collapsed ? COLLAPSED_RAIL : fitted.right.size)
+      viewport.width -
+      MIN_VIEWPORT_WIDTH -
+      (fitted.left.collapsed ? COLLAPSED_RAIL : fitted.left.size) -
+      (fitted.right.collapsed ? COLLAPSED_RAIL : fitted.right.size)
     if (stillShort < 0) fitted = { ...fitted, right: { ...fitted.right, collapsed: true } }
   }
 
@@ -180,7 +185,10 @@ export const STATUSBAR_HEIGHT = 24
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
-const STORAGE_KEY = 'layout.v1'
+// v2 starts with a viewport-first workspace. The earlier key is deliberately
+// not migrated: carrying its always-open inspector/timeline forward would make
+// the simplification invisible to existing operators.
+const STORAGE_KEY = 'layout.v2'
 
 export function loadLayout(viewportWidth: number): WorkbenchLayout {
   const stored = readPreference<WorkbenchLayout | null>(STORAGE_KEY, null)
@@ -190,7 +198,10 @@ export function loadLayout(viewportWidth: number): WorkbenchLayout {
   return {
     left: { size: clampSize('left', Number(stored.left.size) || 268), collapsed: Boolean(stored.left.collapsed) },
     right: { size: clampSize('right', Number(stored.right.size) || 300), collapsed: Boolean(stored.right.collapsed) },
-    bottom: { size: clampSize('bottom', Number(stored.bottom.size) || 152), collapsed: Boolean(stored.bottom.collapsed) },
+    bottom: {
+      size: clampSize('bottom', Number(stored.bottom.size) || 152),
+      collapsed: Boolean(stored.bottom.collapsed),
+    },
     preset: stored.preset ?? null,
     sections: { ...DEFAULT_SECTIONS, ...(stored.sections ?? {}) },
   }

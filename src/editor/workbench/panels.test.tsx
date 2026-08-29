@@ -69,7 +69,14 @@ describe('palette', () => {
     const onAdd = vi.fn()
     const onColorChange = vi.fn()
     const view = render(
-      <PalettePanel activeColor={15} armedId={null} onArm={onArm} onAdd={onAdd} onColorChange={onColorChange} {...overrides} />,
+      <PalettePanel
+        activeColor={15}
+        armedId={null}
+        onArm={onArm}
+        onAdd={onAdd}
+        onColorChange={onColorChange}
+        {...overrides}
+      />,
     )
     return { ...view, onArm, onAdd, onColorChange }
   }
@@ -82,7 +89,10 @@ describe('palette', () => {
 
   it('faces the catalogue by knowledge tier', () => {
     renderPalette()
-    const tabs = screen.getAllByRole('tab').filter((tab) => /BUILDABLE|MODELLED|CATALOGUED|EVERYTHING/.test(tab.textContent ?? ''))
+    fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
+    const tabs = screen
+      .getAllByRole('tab')
+      .filter((tab) => /BUILDABLE|MODELLED|CATALOGUED|EVERYTHING/.test(tab.textContent ?? ''))
     expect(tabs).toHaveLength(4)
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
   })
@@ -118,6 +128,7 @@ describe('palette', () => {
 
   it('collects favourites into their own set', () => {
     const { container } = renderPalette()
+    fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
     const favouritesTab = screen.getByRole('tab', { name: /FAVOURITES/ })
     expect(favouritesTab.getAttribute('disabled')).not.toBeNull()
     fireEvent.click(container.querySelectorAll('.part-favourite')[0])
@@ -212,7 +223,11 @@ describe('transform controls', () => {
     expect(options.map((option) => option.textContent)).toEqual(['WORLD', 'LOCAL', 'MATE'])
     expect(options[0].getAttribute('aria-checked')).toBe('true')
     fireEvent.click(options[1])
-    expect(within(screen.getByRole('radiogroup', { name: 'Reference frame' })).getAllByRole('radio')[1].getAttribute('aria-checked')).toBe('true')
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'Reference frame' }))
+        .getAllByRole('radio')[1]
+        .getAttribute('aria-checked'),
+    ).toBe('true')
   })
 
   it('offers a pivot choice for rotation', () => {
@@ -236,7 +251,9 @@ describe('transform controls', () => {
     select(ids)
     const before = revision()
     const positions = ids.map((id) => cadEngine.getDocument().parts[id].transform.position[0])
-    act(() => { fireEvent.click(screen.getByLabelText('Nudge X positive')) })
+    act(() => {
+      fireEvent.click(screen.getByLabelText('Nudge X positive'))
+    })
     expect(revision()).toBe(before + 1)
     ids.forEach((id, index) => {
       expect(cadEngine.getDocument().parts[id].transform.position[0]).toBeCloseTo(positions[index] + 20, 4)
@@ -245,12 +262,21 @@ describe('transform controls', () => {
 
   it('nudges a keyboard multi-selection as one transaction', () => {
     let api: Workbench | null = null
-    render(<Harness>{(w) => { api = w; return null }}</Harness>)
+    render(
+      <Harness>
+        {(w) => {
+          api = w
+          return null
+        }}
+      </Harness>,
+    )
     const ids = showcasePartIds().slice(0, 3)
     select(ids)
     const before = revision()
     const positions = ids.map((id) => cadEngine.getDocument().parts[id].transform.position[0])
-    act(() => { api!.nudgeSelection(20, 0) })
+    act(() => {
+      api!.nudgeSelection(20, 0)
+    })
     expect(revision()).toBe(before + 1)
     ids.forEach((id, index) => {
       expect(cadEngine.getDocument().parts[id].transform.position[0]).toBeCloseTo(positions[index] + 20, 4)
@@ -272,11 +298,21 @@ describe('transform controls', () => {
     cadEngine.execute('Foundation', [{ type: 'part.add', part: brick('a', [0, 0, 0]) }], 'human', 0)
     cadEngine.execute('Stack', [{ type: 'part.add', part: brick('b', [0, -24, 0]) }], 'human', 1)
     let api: Workbench | null = null
-    render(<Harness>{(w) => { api = w; return null }}</Harness>)
+    render(
+      <Harness>
+        {(w) => {
+          api = w
+          return null
+        }}
+      </Harness>,
+    )
     select(['a', 'b'])
     const before = revision()
-    const dy = cadEngine.getDocument().parts.b.transform.position[1] - cadEngine.getDocument().parts.a.transform.position[1]
-    act(() => { api!.rotateSelection(90) })
+    const dy =
+      cadEngine.getDocument().parts.b.transform.position[1] - cadEngine.getDocument().parts.a.transform.position[1]
+    act(() => {
+      api!.rotateSelection(90)
+    })
     expect(revision()).toBe(before + 1)
     const after = cadEngine.getDocument().parts
     expect(after.b.transform.position[1] - after.a.transform.position[1]).toBeCloseTo(dy, 4)
@@ -285,10 +321,18 @@ describe('transform controls', () => {
   it('needs two parts to align and three to distribute', () => {
     renderTransform()
     select(showcasePartIds().slice(0, 1))
-    expect(screen.getAllByTitle('Select two or more parts to align.').every((button) => (button as HTMLButtonElement).disabled)).toBe(true)
+    expect(
+      screen
+        .getAllByTitle('Select two or more parts to align.')
+        .every((button) => (button as HTMLButtonElement).disabled),
+    ).toBe(true)
     select(showcasePartIds().slice(0, 2))
     expect((screen.getByTitle('Align min on X') as HTMLButtonElement).disabled).toBe(false)
-    expect(screen.getAllByTitle('Select three or more parts to distribute.').every((button) => (button as HTMLButtonElement).disabled)).toBe(true)
+    expect(
+      screen
+        .getAllByTitle('Select three or more parts to distribute.')
+        .every((button) => (button as HTMLButtonElement).disabled),
+    ).toBe(true)
     select(showcasePartIds().slice(0, 3))
     expect((screen.getByTitle('Distribute evenly on X') as HTMLButtonElement).disabled).toBe(false)
   })
@@ -298,7 +342,9 @@ describe('transform controls', () => {
     renderTransform()
     select(ids)
     const before = revision()
-    act(() => { fireEvent.click(screen.getByTitle('Align min on X')) })
+    act(() => {
+      fireEvent.click(screen.getByTitle('Align min on X'))
+    })
     expect(revision()).toBeGreaterThan(before)
     const mins = ids.map((id) => getPartBounds(cadEngine.getDocument().parts[id]).min[0])
     for (const min of mins) expect(min).toBeCloseTo(mins[0], 3)
@@ -337,14 +383,18 @@ describe('selection modes', () => {
     select([first])
     const colour = cadEngine.getDocument().parts[first].color
     const expected = Object.values(cadEngine.getDocument().parts).filter((part) => part.color === colour).length
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^Colour/ })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /^Colour/ }))
+    })
     expect(cadEngine.getSnapshot().selection).toHaveLength(expected)
   })
 
   it('walks the connection graph', () => {
     renderSelection()
     select([showcasePartIds()[0]])
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^Connected/ })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /^Connected/ }))
+    })
     expect(cadEngine.getSnapshot().selection.length).toBeGreaterThan(1)
   })
 
@@ -352,7 +402,9 @@ describe('selection modes', () => {
     const total = showcasePartIds().length
     renderSelection()
     select([showcasePartIds()[0]])
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Inverse' })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Inverse' }))
+    })
     expect(cadEngine.getSnapshot().selection).toHaveLength(total - 1)
   })
 
@@ -360,10 +412,14 @@ describe('selection modes', () => {
     const before = revision()
     renderSelection()
     select([showcasePartIds()[0]])
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Hide/ })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Hide/ }))
+    })
     expect(revision()).toBe(before)
     expect(screen.getByRole('button', { name: /Show everything/ }).hasAttribute('disabled')).toBe(false)
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Show everything/ })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Show everything/ }))
+    })
     expect(screen.queryByRole('button', { name: /Show everything/ })).toBeNull()
   })
 
@@ -376,7 +432,9 @@ describe('selection modes', () => {
       fireEvent.click(screen.getByRole('button', { name: /SAVE/ }))
     })
     select([])
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^Rear hatch/ })) })
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /^Rear hatch/ }))
+    })
     expect(cadEngine.getSnapshot().selection.sort()).toEqual([...ids].sort())
   })
 
@@ -421,7 +479,9 @@ describe('command palette', () => {
   it('opens with the keyboard already in the search field', async () => {
     renderPalette()
     const input = screen.getByLabelText('Search commands')
-    await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))) })
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+    })
     expect(document.activeElement).toBe(input)
   })
 
@@ -497,7 +557,9 @@ describe('command palette', () => {
   it('rebinds a command from the keys tab', () => {
     const { onShortcuts } = renderPalette({ initialTab: 'keys' })
     fireEvent.click(screen.getByLabelText(/Change the shortcut for Move tool/))
-    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' })) })
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }))
+    })
     expect(onShortcuts).toHaveBeenCalled()
     expect(onShortcuts.mock.calls[0][0]['tool.move']).toBe('w')
   })
