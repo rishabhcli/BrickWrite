@@ -38,6 +38,7 @@ export interface UiHarness {
 
 export interface UiHarnessOptions {
   document?: ModelDocument
+  driver?: MemoryDriver
   /** Omit for the unconfigured path, which is this repo's default. */
   configured?: boolean
   identity?: CloudIdentity
@@ -99,7 +100,7 @@ export function overrideBackend(
 export function makeUiHarness(options: UiHarnessOptions = {}): UiHarness {
   const document = options.document ?? blankProject('doc_ui', 'Rover chassis')
   const engine = new CadEngine(document)
-  const driver = new MemoryDriver()
+  const driver = options.driver ?? new MemoryDriver()
   const deployment = options.deployment ?? new FakeConvexDeployment()
   const real = deployment.as(options.as ?? ALICE)
   const decorated = options.unreachable ? unreachableBackend(real) : real

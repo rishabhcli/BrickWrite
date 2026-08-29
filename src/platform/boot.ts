@@ -95,6 +95,79 @@ async function loadCatalogStage(): Promise<BootStageCatalog> {
   return { level: 'catalog', catalog }
 }
 
+/**
+ * Strip one-shot editor query keys from the live address bar.
+ *
+ * `?doc=blank` and `?project=` take effect once at boot. Leaving them in the
+ * URL would create another untitled project (or re-open the same one) on every
+ * refresh. `?intent=describe` is consumed by the workbench after it reveals
+ * the generate panel, so it is not stripped here.
+ */
+export function consumeSearchParams(keys: readonly string[]): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  let changed = false
+  for (const key of keys) {
+    if (!url.searchParams.has(key)) continue
+    url.searchParams.delete(key)
+    changed = true
+  }
+  if (!changed) return
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+function normalisedSearch(search: string): string {
+  if (!search) return ''
+  return search.startsWith('?') ? search : `?${search}`
+}
+
+function appliedLiveQuery(appliedSearch: string): boolean {
+  if (typeof window === 'undefined') return false
+  return normalisedSearch(appliedSearch) === normalisedSearch(window.location.search)
+}
+
+export type EditorQueryApplication =
+  | { applied: 'none' }
+  | { applied: 'blank' | 'project'; ok: true }
+  | { applied: 'blank' | 'project'; ok: false; message: string }
+
+/**
+ * Honours `/editor` query flags after restore, before the workbench paints.
+ *
+ * `?project=` opens that stored project. `?doc=blank` starts an empty document
+ * instead of the showcase. Plain `/editor` still restores the newest project.
+ * Applied here rather than in the React tree so the showcase cannot flash.
+ * One-shot keys are then stripped from the live URL so a refresh cannot repeat
+ * the action. A failed open keeps `?project=` so a refresh can retry, and still
+ * drops `?doc=blank` so the two flags cannot combine into a later blank create.
+ */
+export async function applyEditorQuery(
+  session: SessionModule,
+  search: string = typeof window === 'undefined' ? '' : window.location.search,
+): Promise<EditorQueryApplication> {
+  const query = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  const projectId = query.get('project')
+  if (projectId) {
+    const opened = await session.session.openProject(projectId)
+    if (appliedLiveQuery(search)) {
+      if (opened.ok) consumeSearchParams(['project', 'doc'])
+      else consumeSearchParams(['doc'])
+    }
+    return opened.ok
+      ? { applied: 'project', ok: true }
+      : { applied: 'project', ok: false, message: opened.message ?? 'That project could not be opened.' }
+  }
+  if (query.get('doc') === 'blank') {
+    const created = await session.session.createProject()
+    if (!created.ok) {
+      return { applied: 'blank', ok: false, message: created.message ?? 'A blank project could not be created.' }
+    }
+    if (appliedLiveQuery(search)) consumeSearchParams(['doc'])
+    return { applied: 'blank', ok: true }
+  }
+  return { applied: 'none' }
+}
+
 async function loadEditorStage(): Promise<BootStageEditor> {
   // Reuses the cached catalog promise, so `/editor` after `/explore` pays the
   // fetch once even though the two routes declare different stages.
@@ -103,6 +176,7 @@ async function loadEditorStage(): Promise<BootStageEditor> {
   // Restore the operator's own project *before* the editor mounts, so their
   // work never flashes past behind an empty document.
   await session.session.start()
+  await applyEditorQuery(session)
   // Warm the geometry that document needs so the first painted frame shows real
   // meshes instead of streaming placeholders.
   const loader = catalogLoaderModule ?? (await import('../cad/catalog-loader'))

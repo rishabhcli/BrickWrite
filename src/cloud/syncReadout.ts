@@ -1,4 +1,5 @@
 import type { SyncState, SyncStatus } from './outbox'
+import type { CloudErrorCode } from './protocol'
 import type { CloudConfiguration, CloudIdentity } from './runtime'
 
 /**
@@ -37,6 +38,8 @@ export interface SyncReadout {
   lastSyncedAt: string | null
   /** The head the local tail has to rebase onto, while `conflict`. */
   conflictHeadRevision: number | null
+  /** Stable machine code for choosing a recovery without reaching into runtime state. */
+  code: CloudErrorCode | null
 }
 
 export interface SyncReadoutInput {
@@ -46,6 +49,9 @@ export interface SyncReadoutInput {
   /** True when the open project has a recorded cloud replica. */
   linked: boolean
   online: boolean
+  /** Identifies whether the global queue head belongs to the open project. */
+  activeProjectId?: string
+  blockedProjectName?: string | null
 }
 
 const time = (iso: string): string => {
@@ -59,6 +65,24 @@ export function describeSync(input: SyncReadoutInput): SyncReadout {
     pending: sync.pending,
     lastSyncedAt: sync.lastSyncedAt,
     conflictHeadRevision: sync.conflict?.headRevision ?? null,
+    code: sync.lastError?.code ?? null,
+  }
+
+  const blockedElsewhere =
+    sync.blocked !== null &&
+    input.activeProjectId !== undefined &&
+    sync.blocked.localProjectId !== input.activeProjectId
+
+  if (blockedElsewhere && (sync.status === 'conflict' || sync.status === 'error')) {
+    const project = input.blockedProjectName ? ` “${input.blockedProjectName}”` : ' another project'
+    return {
+      ...base,
+      status: sync.status,
+      label: 'Sync blocked',
+      reason: `Sync is blocked by${project}; the open project is not the one that was refused.`,
+      repair: 'Open that project to inspect and repair its queued change.',
+      tone: sync.status === 'conflict' ? 'warn' : 'error',
+    }
   }
 
   // 1. No deployment. The editor is whole; it just has nowhere to replicate to.

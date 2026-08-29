@@ -27,7 +27,7 @@ const moveP1: CadOperation[] = [
   {
     type: 'part.transform',
     partId: 'p1',
-    transform: { position: [0, -24, 0], basis: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
+    transform: { position: [40, 0, 0], basis: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
   },
 ]
 const recolourP2: CadOperation[] = [{ type: 'part.recolor', partId: 'p2', color: 4 }]
@@ -56,8 +56,8 @@ describe('entity scope', () => {
 
   it('treats two part additions as overlapping, because both rewrite the step list', () => {
     const base = twoPartBase()
-    const left = commitAll(base.final, [[{ type: 'part.add', part: part('a') }]])
-    const right = commitAll(base.final, [[{ type: 'part.add', part: part('b') }]])
+    const left = commitAll(base.final, [[{ type: 'part.add', part: part('a', [300, 0, 0]) }]])
+    const right = commitAll(base.final, [[{ type: 'part.add', part: part('b', [400, 0, 0]) }]])
     const overlap = overlapOf(scopeOf(left.transactions), scopeOf(right.transactions))
     expect(isDisjoint(overlap)).toBe(false)
     expect(overlap.globals).toContain('steps')
@@ -89,7 +89,7 @@ describe('planning a rebase', () => {
     expect(plan.rebased[0].patch.baseRevision).toBe(3)
 
     // Both edits are present in the reconciled document.
-    expect(plan.document.parts.p1.transform.position).toEqual([0, -24, 0])
+    expect(plan.document.parts.p1.transform.position).toEqual([40, 0, 0])
     expect(plan.document.parts.p2.color).toBe(4)
     expect(plan.document.revision).toBe(4)
   })
@@ -132,7 +132,7 @@ describe('planning a rebase', () => {
     // Both histories are carried out of the planner intact.
     expect(plan.localTail).toEqual(local.transactions)
     expect(plan.remoteTail).toEqual(remote.transactions)
-    expect(plan.localDocument.parts.p1.transform.position).toEqual([0, -24, 0])
+    expect(plan.localDocument.parts.p1.transform.position).toEqual([40, 0, 0])
     expect(plan.remoteDocument.parts.p1.color).toBe(14)
     expect(plan.branchName).toBe('conflict/2026-03-04T05-06-07-000Z')
   })
@@ -147,7 +147,7 @@ describe('planning a rebase', () => {
         },
       ],
     ])
-    const remote = commitAll(base.final, [[{ type: 'part.add', part: part('p9') }]])
+    const remote = commitAll(base.final, [[{ type: 'part.add', part: part('p9', [300, 0, 0]) }]])
     const plan = planRebase({
       base: base.final,
       localTail: local.transactions,
@@ -244,7 +244,7 @@ describe('reconciling against a live deployment', () => {
     expect(cloud.ok && local.ok).toBe(true)
     if (cloud.ok && cloud.value && local.ok && local.value) {
       expect(cloud.value.document.revision).toBe(4)
-      expect(cloud.value.document.parts.p1.transform.position).toEqual([0, -24, 0])
+      expect(cloud.value.document.parts.p1.transform.position).toEqual([40, 0, 0])
       expect(cloud.value.document.parts.p2.color).toBe(4)
       expect(local.value.document.parts).toEqual(cloud.value.document.parts)
     }
@@ -292,7 +292,7 @@ describe('reconciling against a live deployment', () => {
       expect(mainDoc.value.document.parts.p1.transform.position).toEqual(
         scene.base.final.parts.p1.transform.position,
       )
-      expect(forkDoc.value.document.parts.p1.transform.position).toEqual([0, -24, 0])
+      expect(forkDoc.value.document.parts.p1.transform.position).toEqual([40, 0, 0])
       expect(forkDoc.value.document.parts.p1.color).toBe(scene.base.final.parts.p1.color)
     }
 
@@ -301,6 +301,8 @@ describe('reconciling against a live deployment', () => {
     for (const transaction of [...scene.local.transactions, ...scene.remote.transactions]) {
       expect(stored.has(transaction.id), `${transaction.id} was discarded`).toBe(true)
     }
+
+    expect(scene.alice.outbox.pending).toHaveLength(0)
   })
 
   it('refuses to fork past the parent head', async () => {

@@ -3,7 +3,8 @@ import { DEMOS, DEMO_MANIFEST, heroDemo, type DemoEntry } from '../../demos'
 import { setKnownDemoIds, trackLanding } from './analytics'
 import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
-import { useFilmStage, useReveal } from './reveal'
+import { CountUp, PlateAtmosphere } from './plate'
+import { useFilmStage, usePointerField, usePointerTilt, useReveal } from './reveal'
 import './landing.css'
 
 /**
@@ -25,6 +26,7 @@ setKnownDemoIds(DEMOS.map((demo) => demo.id))
 
 export function LandingPage() {
   const hero = heroDemo()
+  const pointer = usePointerField<HTMLDivElement>()
 
   useEffect(() => {
     trackLanding({ name: 'landing.viewed' })
@@ -32,10 +34,22 @@ export function LandingPage() {
   }, [hero.id])
 
   return (
-    <div className="bw-surface bw-landing">
+    <div
+      ref={pointer.ref}
+      className="bw-surface bw-landing"
+      data-pointer={pointer.live ? 'live' : 'off'}
+    >
+      <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
+      <div className="bw-cursor" aria-hidden="true">
+        <i /><i /><i /><i />
+      </div>
+      <div className="bw-cursor bw-cursor-ghost" aria-hidden="true">
+        <i /><i /><i /><i />
+      </div>
       <div id="bw-main">
         <Film hero={hero} />
+        <BillRail demo={hero} />
         <DemoSection />
         <CapabilitySection />
         <GateSection />
@@ -52,18 +66,32 @@ function Film({ hero }: { hero: DemoEntry }) {
 
   return (
     <div className="bw-film">
-      <div className="bw-film-stage">
+      <div className="bw-film-stage" data-stage={film.stage}>
+        <div className="bw-film-progress" aria-hidden="true">
+          <span />
+        </div>
+        <ol className="bw-film-ruler" aria-hidden="true">
+          {FILM_MARKS.map((mark) => (
+            <li key={mark.id} data-current={film.stage === mark.id ? 'true' : 'false'}>{mark.n}</li>
+          ))}
+        </ol>
         <Hero
           demo={hero}
           stage={film.stage}
           onStageChange={(stage: HeroStage) => film.setStage(stage)}
           autoPlay={false}
           hideBrief
+          scrub={film.progress}
         />
       </div>
 
       <div className="bw-film-chapters">
-        <section className="bw-film-chapter" data-film-stage="brief" aria-labelledby="bw-hero-title">
+        <section
+          className="bw-film-chapter bw-film-hero"
+          data-film-stage="brief"
+          data-active={film.stage === 'brief' ? 'true' : 'false'}
+          aria-labelledby="bw-hero-title"
+        >
           <span className="bw-eyebrow accent">Physically buildable brick CAD</span>
           <h1 className="bw-display x1" id="bw-hero-title">
             A model that <em>stands up</em> is a different thing from a model that renders.
@@ -71,11 +99,18 @@ function Film({ hero }: { hero: DemoEntry }) {
           <p className="bw-lede bw-lede-short">
             Real LDraw parts. Real clutch. Edits that collide, float or tip are refused.
           </p>
+          {hero.techniques.length ? (
+            <p className="bw-hero-techniques">
+              {hero.techniques.map((technique) => (
+                <span key={technique}>{technique}</span>
+              ))}
+            </p>
+          ) : null}
           <div className="bw-hero-actions">
             <a
-              className="bw-button primary"
-              href={hrefFor({ kind: 'editor' })}
-              onClick={link({ kind: 'editor' }, () => {
+              className="bw-button primary bw-magnet"
+              href={hrefFor({ kind: 'editor', blank: true })}
+              onClick={link({ kind: 'editor', blank: true }, () => {
                 trackLanding({ name: 'landing.cta_selected', cta: 'start-blank' })
                 trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
               })}
@@ -99,14 +134,19 @@ function Film({ hero }: { hero: DemoEntry }) {
           </div>
           <p className="bw-hero-facts" data-testid="hero-facts">
             <span>Catalog <b>{DEMO_MANIFEST.catalogVersion}</b></span>
-            <span>This build: <b>{good.partCount}</b> parts</span>
-            <span><b>{good.connectionCount}</b> mated connectors</span>
-            <span><b>{good.steps}</b> verified build steps</span>
+            <span>This build: <b><CountUp value={good.partCount} fromZero /></b> parts</span>
+            <span><b><CountUp value={good.connectionCount} fromZero /></b> mated connectors</span>
+            <span><b><CountUp value={good.steps} fromZero /></b> verified build steps</span>
             <span><b>{good.statics.massLabel}</b>, stable by <b>{good.statics.tippingMarginLdu}</b> LDU</span>
           </p>
         </section>
 
-        <section className="bw-film-chapter" data-film-stage="candidate" aria-labelledby="bw-refine-title">
+        <section
+          className="bw-film-chapter"
+          data-film-stage="candidate"
+          data-active={film.stage === 'candidate' ? 'true' : 'false'}
+          aria-labelledby="bw-refine-title"
+        >
           <span className="bw-section-index">01 / The pass</span>
           <h2 className="bw-display x2" id="bw-refine-title">Both models were built. Only one of them passed.</h2>
           <p className="bw-lede bw-lede-short">{hero.refinement}</p>
@@ -115,13 +155,23 @@ function Film({ hero }: { hero: DemoEntry }) {
           ) : null}
         </section>
 
-        <section className="bw-film-chapter" data-film-stage="refinement" aria-labelledby="bw-ledger-title">
+        <section
+          className="bw-film-chapter"
+          data-film-stage="refinement"
+          data-active={film.stage === 'refinement' ? 'true' : 'false'}
+          aria-labelledby="bw-ledger-title"
+        >
           <span className="bw-section-index">02 / Measured</span>
           <h2 className="bw-display x2" id="bw-ledger-title">The kernel keeps score.</h2>
           <Ledger demo={hero} />
         </section>
 
-        <section className="bw-film-chapter" data-film-stage="validated" aria-labelledby="bw-validated-title">
+        <section
+          className="bw-film-chapter"
+          data-film-stage="validated"
+          data-active={film.stage === 'validated' ? 'true' : 'false'}
+          aria-labelledby="bw-validated-title"
+        >
           <span className="bw-section-index">03 / Published</span>
           <h2 className="bw-display x2" id="bw-validated-title">
             {good.collisionCount} collisions. {good.componentCount} body. It stands.
@@ -138,6 +188,7 @@ function Film({ hero }: { hero: DemoEntry }) {
 function Ledger({ demo }: { demo: DemoEntry }) {
   const reveal = useReveal<HTMLDivElement>()
   const rows = ledgerRows(demo)
+  const shown = reveal.props['data-shown'] === 'true'
   return (
     <div ref={reveal.ref} {...reveal.props}>
       <table className="bw-ledger">
@@ -155,12 +206,48 @@ function Ledger({ demo }: { demo: DemoEntry }) {
           {rows.map((row) => (
             <tr key={row.label}>
               <th scope="row">{row.label}</th>
-              <td className={`value ${row.improved ? 'before' : 'flat'}`}>{row.before}</td>
-              <td className={`value ${row.improved ? 'after' : 'flat'}`}>{row.after}</td>
+              <td className={`value ${row.improved ? 'before' : 'flat'}`}>
+                <CountUp value={Number(row.before)} play={shown} fromZero />
+              </td>
+              <td className={`value ${row.improved ? 'after' : 'flat'}`}>
+                <CountUp value={Number(row.after)} play={shown} fromZero />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+const FILM_MARKS = [
+  { id: 'brief', n: '01' },
+  { id: 'candidate', n: '02' },
+  { id: 'refinement', n: '03' },
+  { id: 'validated', n: '04' },
+] as const
+
+function BillRail({ demo }: { demo: DemoEntry }) {
+  const items = demo.bill.slice(0, 18)
+  if (!items.length) return null
+  return (
+    <div className="bw-bill-rail" aria-hidden="true">
+      <div className="bw-bill-track">
+        <span className="bw-bill-group">
+          {items.map((line) => (
+            <span className="bw-bill-pill" key={line.definitionId}>
+              <b>{line.count}×</b> {line.name}
+            </span>
+          ))}
+        </span>
+        <span className="bw-bill-group" data-clone="true">
+          {items.map((line) => (
+            <span className="bw-bill-pill" key={`clone-${line.definitionId}`}>
+              <b>{line.count}×</b> {line.name}
+            </span>
+          ))}
+        </span>
+      </div>
     </div>
   )
 }
@@ -183,12 +270,13 @@ function DemoSection() {
 
 function DemoCard({ demo, index }: { demo: DemoEntry; index: number }) {
   const reveal = useReveal<HTMLAnchorElement>(Math.min(index, 5) * 60)
+  usePointerTilt(reveal.ref)
   const target = { kind: 'explore' as const, demoId: demo.id }
   return (
     <a
       ref={reveal.ref}
       {...reveal.props}
-      className={`bw-demo-card ${reveal.props.className}`}
+      className={`bw-demo-card bw-lit ${reveal.props.className}`}
       href={hrefFor(target)}
       onClick={link(target, () => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' }))}
     >
@@ -253,17 +341,30 @@ function CapabilitySection() {
           <h2 className="bw-display x2" id="bw-capability-title">A working vertical slice, not a chat interface.</h2>
         </div>
         <div className="bw-columns">
-          {columns.map((column) => (
-            <article className="bw-column" key={column.title}>
-              <span className="bw-eyebrow">{column.eyebrow}</span>
-              <h3>{column.title}</h3>
-              <p>{column.body}</p>
-              <p><code>{column.code}</code></p>
-            </article>
+          {columns.map((column, index) => (
+            <CapabilityCard key={column.title} column={column} index={index} />
           ))}
         </div>
       </div>
     </section>
+  )
+}
+
+function CapabilityCard({
+  column,
+  index,
+}: {
+  column: { eyebrow: string; title: string; body: string; code: string }
+  index: number
+}) {
+  const reveal = useReveal<HTMLElement>(Math.min(index, 3) * 80)
+  return (
+    <article ref={reveal.ref} {...reveal.props} className={`bw-column bw-lit ${reveal.props.className}`}>
+      <span className="bw-eyebrow">{column.eyebrow}</span>
+      <h3>{column.title}</h3>
+      <p>{column.body}</p>
+      <p><code>{column.code}</code></p>
+    </article>
   )
 }
 
@@ -274,6 +375,20 @@ function GateSection() {
         <div className="bw-section-head">
           <span className="bw-section-index">Why these six</span>
           <h2 className="bw-display x2" id="bw-gates-title">A demo that fails the kernel is not a demo.</h2>
+        </div>
+        <div className="bw-gate-rail" aria-hidden="true">
+          <div className="bw-gate-track">
+            <span className="bw-gate-group">
+              {DEMO_MANIFEST.gates.map((gate) => (
+                <span className="bw-gate-pill" key={gate}>{gate}</span>
+              ))}
+            </span>
+            <span className="bw-gate-group" data-clone="true">
+              {DEMO_MANIFEST.gates.map((gate) => (
+                <span className="bw-gate-pill" key={`clone-${gate}`}>{gate}</span>
+              ))}
+            </span>
+          </div>
         </div>
         <ul className="bw-gates" aria-label="Publication gates">
           {DEMO_MANIFEST.gates.map((gate) => <li key={gate}>{gate}</li>)}
@@ -288,10 +403,10 @@ function ClosingSection() {
     <section className="bw-section bw-section-close" aria-labelledby="bw-close-title">
       <div className="bw-shell bw-close">
         <span className="bw-eyebrow accent">Start</span>
-        <h2 className="bw-display x1" id="bw-close-title">Open the console.</h2>
+        <h2 className="bw-display x1 bw-close-mark" id="bw-close-title">Open the console.</h2>
         <div className="bw-hero-actions">
           <a
-            className="bw-button primary"
+            className="bw-button primary bw-magnet"
             href={hrefFor({ kind: 'editor' })}
             onClick={link({ kind: 'editor' }, () => {
               trackLanding({ name: 'landing.cta_selected', cta: 'open-editor' })

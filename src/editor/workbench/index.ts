@@ -37,6 +37,8 @@ export {
   numericPose,
   planAlign,
   planDistribute,
+  planRotateSelection,
+  planTranslateSelection,
   poseKey,
   posesEqual,
   readNumericPose,

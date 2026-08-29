@@ -5,6 +5,9 @@ const cad = vi.hoisted(() => ({
   sessionStarts: 0,
   preloads: [] as string[][],
   failNext: false,
+  opened: [] as string[],
+  created: 0,
+  openFails: false,
 }))
 
 vi.mock('../cad/catalog-loader', () => ({
@@ -35,15 +38,26 @@ vi.mock('../cad/session', () => ({
     start: vi.fn(async () => {
       cad.sessionStarts += 1
     }),
+    openProject: vi.fn(async (projectId: string) => {
+      cad.opened.push(projectId)
+      if (cad.openFails) return { ok: false, message: 'That project is no longer in local storage.' }
+      return { ok: true }
+    }),
+    createProject: vi.fn(async () => {
+      cad.created += 1
+      return { ok: true }
+    }),
   },
 }))
 
 const {
   BootCancelledError,
   BootLevelError,
+  applyEditorQuery,
   bootForRoute,
   bootLevelRank,
   bootTo,
+  consumeSearchParams,
   isBooting,
   peekBootStage,
   requireCatalogStage,
@@ -58,6 +72,53 @@ describe('staged boot', () => {
     cad.sessionStarts = 0
     cad.preloads = []
     cad.failNext = false
+    cad.opened = []
+    cad.created = 0
+    cad.openFails = false
+    window.history.replaceState(null, '', '/')
+  })
+
+  it('honours ?doc=blank and ?project= after restore, before paint', async () => {
+    const session = await import('../cad/session')
+    await applyEditorQuery(session, '?doc=blank')
+    expect(cad.created).toBe(1)
+    expect(cad.opened).toEqual([])
+    await applyEditorQuery(session, '?project=doc_rover')
+    expect(cad.opened).toEqual(['doc_rover'])
+  })
+
+  it('strips one-shot editor query keys from the live address bar', async () => {
+    const session = await import('../cad/session')
+    window.history.replaceState(null, '', '/editor?doc=blank&intent=describe')
+    await applyEditorQuery(session)
+    expect(cad.created).toBe(1)
+    expect(window.location.pathname).toBe('/editor')
+    expect(window.location.search).toBe('?intent=describe')
+    consumeSearchParams(['intent'])
+    expect(window.location.search).toBe('')
+  })
+
+  it('keeps ?project= when open fails so a refresh can retry', async () => {
+    const session = await import('../cad/session')
+    cad.openFails = true
+    window.history.replaceState(null, '', '/editor?project=doc_missing&doc=blank')
+    const result = await applyEditorQuery(session)
+    expect(result).toEqual({
+      applied: 'project',
+      ok: false,
+      message: 'That project is no longer in local storage.',
+    })
+    expect(cad.opened).toEqual(['doc_missing'])
+    expect(cad.created).toBe(0)
+    expect(window.location.search).toBe('?project=doc_missing')
+  })
+
+  it('strips leftover ?doc=blank when opening a project succeeds', async () => {
+    const session = await import('../cad/session')
+    window.history.replaceState(null, '', '/editor?project=doc_rover&doc=blank')
+    const result = await applyEditorQuery(session)
+    expect(result).toEqual({ applied: 'project', ok: true })
+    expect(window.location.search).toBe('')
   })
 
   it('boots "none" without touching the CAD kernel at all', async () => {

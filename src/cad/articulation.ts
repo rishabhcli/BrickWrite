@@ -2,6 +2,7 @@ import { catalog } from './catalog'
 import { featureFrame } from './connections'
 import {
   composeTransform,
+  clamp,
   degreesToRadians,
   rotateWorld,
   type RigidTransform,
@@ -184,8 +185,6 @@ export interface ArticulationRequest {
   /** Translation along the joint axis, in LDU. */
   readonly slideLdu?: number
 }
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
 /**
  * Operations that drive a joint, clamped to what the joint actually permits.

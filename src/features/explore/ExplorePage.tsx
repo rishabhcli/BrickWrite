@@ -2,6 +2,8 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { DEMOS, getDemo, loadPreview, type DemoEntry, type DemoPreview } from '../../demos'
 import { setKnownDemoIds, trackLanding } from '../landing/analytics'
 import { hrefFor, navigate, useLandingRoute } from '../landing/navigation'
+import { PlateAtmosphere, StageHud } from '../landing/plate'
+import { usePointerField } from '../landing/reveal'
 import { forkDemo, type ForkOutcome } from './fork'
 import { PART_FIELDS } from './projection'
 import './explore.css'
@@ -27,6 +29,7 @@ export function ExplorePage() {
   const route = useLandingRoute()
   const demo = (route.demoId ? getDemo(route.demoId) : undefined) ?? DEMOS[0]
   const unknownId = route.demoId !== null && !getDemo(route.demoId)
+  const pointer = usePointerField<HTMLDivElement>()
 
   const [preview, setPreview] = useState<DemoPreview | null>(null)
   const [roughPreview, setRoughPreview] = useState<DemoPreview | null>(null)
@@ -118,8 +121,16 @@ export function ExplorePage() {
     return entry ? entry.name : `Step ${step}`
   }, [preview, step])
 
+  const report = view === 'before-after' ? demo.roughValidation : demo.validation
+
   return (
-    <div className="bw-surface bw-explore">
+    <div
+      ref={pointer.ref}
+      className="bw-surface bw-explore"
+      data-pointer={pointer.live ? 'live' : 'off'}
+    >
+      <PlateAtmosphere />
+      <div className="bw-studs" aria-hidden="true" />
       <a className="bw-button small bw-skip" href="#bw-explore-main">Skip to the model</a>
       <header className="bw-explore-bar">
         <a className="bw-button ghost small" href={hrefFor({ kind: 'landing' })} onClick={anchor({ kind: 'landing' })}>← Brickwright</a>
@@ -154,6 +165,15 @@ export function ExplorePage() {
         <section className="bw-explore-view" aria-label={`${demo.title} model view`}>
           <div className="bw-stage bw-corners">
             <i /><i /><i /><i />
+            <StageHud
+              yaw={camera.yaw}
+              pitch={camera.pitch}
+              zoom={camera.zoom}
+              explode={view === 'exploded' ? explode : 0}
+              parts={report.partCount}
+              mates={report.connectionCount}
+              bodies={report.componentCount}
+            />
             {activePreview ? (
               <Suspense fallback={null}>
                 <EnvelopeView
@@ -247,7 +267,7 @@ export function ExplorePage() {
 
           <div className="bw-inspector-section bw-fork">
             <span className="bw-eyebrow">Fork it</span>
-            <button type="button" className="bw-button primary" onClick={startFork} disabled={fork.pending}>
+            <button type="button" className="bw-button primary bw-magnet" onClick={startFork} disabled={fork.pending}>
               {fork.pending ? 'Copying…' : 'Edit this build'} <span className="bw-key" aria-hidden="true">→</span>
             </button>
             <p className="bw-note">

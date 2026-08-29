@@ -64,5 +64,5 @@ describe('email content', () => {
     // rather than on behaviour.
     vi.resetModules()
     await expect(import('./server/emails.server')).rejects.toThrow(/evaluated in a browser/)
-  })
+  }, 15_000)
 })

@@ -1,8 +1,11 @@
 import { cadEngine } from '../cad/engine'
 import { createId } from '../cad/ids'
 import { STUD_LDU } from '../cad/catalog'
+import { analyseStatics } from '../cad/statics'
 import type { DesignBrief } from '../platform/contracts'
 import { briefGrounding } from './brief'
+import { situationFromLive, nextAgentAction } from './guidance'
+import { ASSISTANT_TOOLS } from './toolschemas'
 import { WaveLedger, capabilitiesFor, setMode, type AgentMode, type Wave, type WaveFailure } from './modes'
 import type { AgentModelTransport } from './provider'
 import { createAssistantTransport } from './provider'
@@ -245,6 +248,16 @@ export class AgentSession {
     const snapshot = cadEngine.getSnapshot()
     const document = snapshot.document
     const validation = snapshot.validation
+    const statics = analyseStatics(document)
+    const next = nextAgentAction(
+      situationFromLive(document, {
+        partCount: validation.partCount,
+        selectionCount: snapshot.selection.length,
+        collisions: validation.collisions.length,
+        disconnectedParts: validation.disconnectedPartIds.length,
+        tipping: statics.support ? statics.support.marginLdu < 0 : null,
+      }),
+    )
     return {
       documentRevision: document.revision,
       documentName: document.name,
@@ -278,6 +291,9 @@ export class AgentSession {
           Math.round((validation.bounds.size[2] / STUD_LDU) * 100) / 100,
         ],
       },
+      nextAction: next.action,
+      nextTool: next.tool,
+      nextArgs: next.args,
       references: references.map((reference) => ({
         token: reference.token,
         kind: reference.kind,
@@ -517,12 +533,27 @@ export class AgentSession {
         patch({ status: 'complete', text })
         this.publish()
 
-        const results: ToolResult[] = []
-        for (const call of toolCalls) {
-          if (controller.signal.aborted) break
-          const result = await this.toolHost.execute(call)
-          results.push(result)
+        const results: ToolResult[] = new Array(toolCalls.length)
+        const kindOf = (name: string) => ASSISTANT_TOOLS.find((tool) => tool.name === name)?.kind ?? 'read'
+        const reads: number[] = []
+        const preflights: number[] = []
+        toolCalls.forEach((call, index) => {
+          if (kindOf(call.name) === 'preflight') preflights.push(index)
+          else reads.push(index)
+        })
+        // Reads do not mutate the wave ledger; they can run together. Preflights
+        // append ghosts and check revision, so they stay serial.
+        if (reads.length) {
+          const settled = await Promise.all(reads.map((index) => this.toolHost.execute(toolCalls[index]!)))
+          settled.forEach((result, offset) => {
+            results[reads[offset]!] = result
+          })
         }
+        for (const index of preflights) {
+          if (controller.signal.aborted) break
+          results[index] = await this.toolHost.execute(toolCalls[index]!)
+        }
+        const completed = results.filter((entry): entry is ToolResult => Boolean(entry))
 
         if (controller.signal.aborted) {
           this.trace.failAllPending('Cancelled by the operator')
@@ -535,11 +566,11 @@ export class AgentSession {
           toolCalls: toolCalls.map((call) => ({
             id: call.id,
             name: call.name,
-            ok: results.find((result) => result.id === call.id)?.ok ?? null,
+            ok: completed.find((result) => result.id === call.id)?.ok ?? null,
           })),
         })
 
-        this.wire = [...this.wire, { role: 'tool', results }]
+        this.wire = [...this.wire, { role: 'tool', results: completed }]
         this.toolTurn += 1
 
         // If a human moved the document while the tools ran, the pending waves

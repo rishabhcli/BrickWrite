@@ -152,7 +152,7 @@ describe('claiming a local project', () => {
     expect(link?.branchId).toBe(claimed.value.branchId)
     expect(link?.syncedRevision).toBe(history.final.revision)
 
-    const follow = commitAll(history.final, [[{ type: 'part.add', part: part('p_after') }]])
+    const follow = commitAll(history.final, [[{ type: 'part.add', part: part('p_after', [400, 0, 0]) }]])
     expect((await harness.store.appendTransaction('doc_link', follow.transactions[0])).ok).toBe(true)
     expect((await harness.outbox.drain()).status).toBe('idle')
     expect(harness.deployment.transactions).toHaveLength(1)

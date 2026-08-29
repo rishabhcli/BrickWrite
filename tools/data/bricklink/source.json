@@ -1,0 +1,26 @@
+{
+  "source": "BrickLink Studio 2.0",
+  "version": "2.26.7_1",
+  "downloadUrl": "https://studio.download.bricklink.info/Studio2.0/Archive/2.26.7_1/Studio+2.0.pkg",
+  "packageSha256": "526d727e85ab9104429a41c63bc1d3ace63f76353843d98a2fab9d6f7c5ff95d",
+  "extractedFiles": {
+    "parts": {
+      "path": "data/StudioPartDefinition2.txt",
+      "columns": [
+        "LDraw ItemNo",
+        "BL ItemNo"
+      ],
+      "mappedLdrawIds": 18848,
+      "mappingPairs": 18930
+    },
+    "colors": {
+      "path": "data/StudioColorDefinition.txt",
+      "columns": [
+        "LDraw Color Code",
+        "BL Color Code"
+      ],
+      "mappedLdrawColors": 228
+    }
+  },
+  "policy": "Only non-empty first-party crosswalk cells are retained. Multiple BrickLink ids remain explicit; the compiler reports ambiguity and prefers an exact LDraw-number match when present."
+}

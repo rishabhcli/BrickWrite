@@ -11,7 +11,7 @@ or from another workstream's published entry point.
 | # | Workstream | Owns |
 |---|---|---|
 | 1 | Part intelligence | `src/intelligence/**`, `tools/semantic-index.mjs` |
-| 2 | Agent workbench | `src/agent/**`, `server/assistant/**` |
+| 2 | Agent workbench | `src/agent/**`, `src/webmcp/**`, `server/assistant/**` |
 | 3 | Generation | `src/generation/**` |
 | 4 | Refinement | `src/refinement/**` |
 | 5 | Workbench UI | `src/editor/workbench/**` |

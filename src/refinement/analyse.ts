@@ -1,7 +1,7 @@
 import { catalog, STUD_LDU } from '../cad/catalog'
 import { getDocumentBounds } from '../cad/geometry'
 import { transformsEqual } from '../cad/math'
-import type { StaticsReport } from '../cad/statics'
+import { overhangPenaltyGrams, type StaticsReport } from '../cad/statics'
 import type { Bounds, ModelDocument, Vec3 } from '../cad/types'
 import { rowsOf, silhouetteOf, stackedSeamsOf, staticsOf, weakAttachmentsOf } from './cache'
 import { canMirror, mirrorPlaneFor, mirrorTransform, type MirrorAxis } from './mirror'
@@ -239,7 +239,7 @@ export function analyseRegion(document: ModelDocument, scope: RefinementScope): 
       'overhang-overload',
       overhang.partIds,
       anchor?.transform.position ?? [0, 0, 0],
-      overhang.grams - overhang.capacityGrams,
+      overhangPenaltyGrams(overhang),
       'grams',
       overhang.severity === 'over-capacity' ? 'error' : 'warning',
       overhang.message,

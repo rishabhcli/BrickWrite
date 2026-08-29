@@ -47,6 +47,10 @@ export interface StorageDriver {
   get<T>(table: string, key: string): Promise<T | undefined>
   put<T>(table: string, key: string, value: T): Promise<void>
   delete(table: string, key: string): Promise<void>
+  /** One transaction covering every key, so checkpoint cleanup is not N writes. */
+  deleteMany(table: string, keys: string[]): Promise<void>
+  /** Keys in a table, so a listing can detect missing summaries without loading documents. */
+  keys(table: string): Promise<string[]>
   /** Values whose key starts with `prefix`, in ascending key order. */
   range<T>(table: string, prefix: string): Promise<T[]>
   all<T>(table: string): Promise<T[]>
@@ -80,6 +84,15 @@ export class MemoryDriver implements StorageDriver {
 
   async delete(table: string, key: string) {
     this.table(table).delete(key)
+  }
+
+  async deleteMany(table: string, keys: string[]) {
+    const store = this.table(table)
+    for (const key of keys) store.delete(key)
+  }
+
+  async keys(table: string) {
+    return [...this.table(table).keys()]
   }
 
   async range<T>(table: string, prefix: string) {
@@ -146,6 +159,23 @@ export class IndexedDbDriver implements StorageDriver {
     await this.run(table, 'readwrite', (store) => store.delete(key))
   }
 
+  async deleteMany(table: string, keys: string[]) {
+    if (!keys.length) return
+    const database = await this.open()
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(table, 'readwrite')
+      const store = transaction.objectStore(table)
+      for (const key of keys) store.delete(key)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB deleteMany failed'))
+    })
+  }
+
+  async keys(table: string) {
+    const raw = await this.run<IDBValidKey[]>(table, 'readonly', (store) => store.getAllKeys())
+    return raw.map(String)
+  }
+
   range<T>(table: string, prefix: string) {
     // `prefix￿` is the largest string sharing the prefix, so this bounds the
     // scan to one project's keys instead of walking the whole log.
@@ -176,6 +206,18 @@ export interface LoadedProject {
   checkpointRevision: number
 }
 
+const SUMMARY_PREFIX = 'summary:'
+
+function summaryFromCheckpoint(checkpoint: StoredCheckpoint): ProjectSummary {
+  return {
+    projectId: checkpoint.projectId,
+    name: checkpoint.document.name,
+    revision: checkpoint.revision,
+    savedAt: checkpoint.savedAt,
+    partCount: Object.keys(checkpoint.document.parts).length,
+  }
+}
+
 export class ProjectRepository {
   constructor(private readonly driver: StorageDriver) {}
 
@@ -192,12 +234,12 @@ export class ProjectRepository {
       document,
     }
     await this.driver.put('checkpoints', document.id, checkpoint)
+    await this.driver.put('meta', `${SUMMARY_PREFIX}${document.id}`, summaryFromCheckpoint(checkpoint))
     // Everything up to the checkpoint is now redundant.
     const stale = await this.driver.range<StoredTransaction>('transactions', `${document.id}:`)
-    await Promise.all(
-      stale
-        .filter((entry) => entry.resultRevision <= document.revision)
-        .map((entry) => this.driver.delete('transactions', entry.key)),
+    await this.driver.deleteMany(
+      'transactions',
+      stale.filter((entry) => entry.resultRevision <= document.revision).map((entry) => entry.key),
     )
   }
 
@@ -235,22 +277,30 @@ export class ProjectRepository {
   }
 
   async listProjects(): Promise<ProjectSummary[]> {
-    const checkpoints = await this.driver.all<StoredCheckpoint>('checkpoints')
-    return checkpoints
-      .map((checkpoint) => ({
-        projectId: checkpoint.projectId,
-        name: checkpoint.document.name,
-        revision: checkpoint.revision,
-        savedAt: checkpoint.savedAt,
-        partCount: Object.keys(checkpoint.document.parts).length,
-      }))
+    const summaries = await this.driver.range<ProjectSummary>('meta', SUMMARY_PREFIX)
+    const checkpointIds = await this.driver.keys('checkpoints')
+    const known = new Map(summaries.map((summary) => [summary.projectId, summary]))
+    if (known.size !== checkpointIds.length) {
+      for (const projectId of checkpointIds) {
+        if (known.has(projectId)) continue
+        const checkpoint = await this.driver.get<StoredCheckpoint>('checkpoints', projectId)
+        if (!checkpoint) continue
+        const summary = summaryFromCheckpoint(checkpoint)
+        await this.driver.put('meta', `${SUMMARY_PREFIX}${projectId}`, summary)
+        known.set(projectId, summary)
+      }
+    }
+    return checkpointIds
+      .map((projectId) => known.get(projectId))
+      .filter((summary): summary is ProjectSummary => Boolean(summary))
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
   }
 
   async deleteProject(projectId: string): Promise<void> {
     await this.driver.delete('checkpoints', projectId)
+    await this.driver.delete('meta', `${SUMMARY_PREFIX}${projectId}`)
     const log = await this.driver.range<StoredTransaction>('transactions', `${projectId}:`)
-    await Promise.all(log.map((entry) => this.driver.delete('transactions', entry.key)))
+    await this.driver.deleteMany('transactions', log.map((entry) => entry.key))
   }
 
   /** Transactions currently pending on top of the checkpoint. */
@@ -259,6 +309,18 @@ export class ProjectRepository {
     const log = await this.driver.range<StoredTransaction>('transactions', `${projectId}:`)
     const from = checkpoint?.revision ?? 0
     return log.filter((entry) => entry.resultRevision > from).length
+  }
+
+  async readCheckpoint(projectId: string): Promise<StoredCheckpoint | undefined> {
+    return this.driver.get<StoredCheckpoint>('checkpoints', projectId)
+  }
+
+  /** Log entries above `afterRevision`, oldest first. */
+  async listTransactions(projectId: string, afterRevision = 0): Promise<StoredTransaction[]> {
+    const log = await this.driver.range<StoredTransaction>('transactions', `${projectId}:`)
+    return log
+      .filter((entry) => entry.resultRevision > afterRevision)
+      .sort((a, b) => a.resultRevision - b.resultRevision)
   }
 }
 

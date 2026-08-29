@@ -2,9 +2,13 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.hexclave.com https://*.hexclave.com; img-src 'self' data: blob:; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:
 
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
+  X-Frame-Options: DENY
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
@@ -12,6 +16,8 @@
 /catalog/2026-07/*
   Cache-Control: public, max-age=31536000, immutable
 
+/semantic-index.*
+  Cache-Control: public, max-age=31536000, immutable
+
 /demos/*
   Cache-Control: public, max-age=3600, stale-while-revalidate=86400
-

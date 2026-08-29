@@ -20,6 +20,7 @@ import {
   type RigidTransform,
   type Vec3,
 } from './math'
+import { nearbyParts } from './geometry'
 import type { ConnectionEdge, ConnectionFamily, ConnectionFeature, ModelDocument, PartInstance } from './types'
 
 export interface WorldConnector {
@@ -502,6 +503,193 @@ export function bestSnapTransform(
 /** Connector occupancy for the current document, exposed for inspection tools. */
 export const computeOccupancy = (document: ModelDocument): ReadonlySet<string> =>
   deriveConnections(document).occupied
+
+export interface ConnectorAvailability {
+  readonly occupiedExclusive: number
+  readonly freeByFamily: Readonly<Record<string, number>>
+  readonly approaches: {
+    readonly 'on-top': boolean
+    readonly underneath: boolean
+    readonly beside: boolean
+  }
+}
+
+/**
+ * Which connector families on `partIds` are still free, and which placement
+ * faces that implies.
+ *
+ * An agent that can see "on-top: false" does not try to stack a brick on a
+ * tile. Occupied exclusive connectors are counted but not offered as approaches.
+ */
+export function connectorAvailability(document: ModelDocument, partIds: readonly string[]): ConnectorAvailability {
+  const world = deriveConnections(document)
+  const subject = new Set(partIds)
+  const freeByFamily: Record<string, number> = {}
+  let occupiedExclusive = 0
+  let freeStuds = 0
+  let freeAntiStuds = 0
+  let freeSide = 0
+  for (const connector of world.connectors) {
+    if (!subject.has(connector.partId)) continue
+    const key = `${connector.partId}/${connector.id}`
+    if (isExclusiveFamily(connector.family) && world.occupied.has(key)) {
+      occupiedExclusive += 1
+      continue
+    }
+    freeByFamily[connector.family] = (freeByFamily[connector.family] ?? 0) + 1
+    if (connector.family === 'stud') freeStuds += 1
+    else if (connector.family === 'anti-stud') freeAntiStuds += 1
+    if (Math.abs(connector.axis[1]) < 0.99) freeSide += 1
+  }
+  return {
+    occupiedExclusive,
+    freeByFamily,
+    approaches: {
+      'on-top': freeStuds > 0,
+      underneath: freeAntiStuds > 0,
+      beside: freeSide > 0,
+    },
+  }
+}
+
+/**
+ * Per-part availability from one connection derivation, so a scene listing does
+ * not rebuild the world once per row.
+ */
+export function connectorAvailabilityByPart(
+  document: ModelDocument,
+  partIds: readonly string[],
+): Record<string, ConnectorAvailability> {
+  const world = deriveConnections(document)
+  const wanted = new Set(partIds)
+  const buckets = new Map<
+    string,
+    {
+      occupiedExclusive: number
+      freeByFamily: Record<string, number>
+      freeStuds: number
+      freeAntiStuds: number
+      freeSide: number
+    }
+  >()
+  for (const id of partIds) {
+    buckets.set(id, { occupiedExclusive: 0, freeByFamily: {}, freeStuds: 0, freeAntiStuds: 0, freeSide: 0 })
+  }
+  for (const connector of world.connectors) {
+    if (!wanted.has(connector.partId)) continue
+    const bucket = buckets.get(connector.partId)
+    if (!bucket) continue
+    const key = `${connector.partId}/${connector.id}`
+    if (isExclusiveFamily(connector.family) && world.occupied.has(key)) {
+      bucket.occupiedExclusive += 1
+      continue
+    }
+    bucket.freeByFamily[connector.family] = (bucket.freeByFamily[connector.family] ?? 0) + 1
+    if (connector.family === 'stud') bucket.freeStuds += 1
+    else if (connector.family === 'anti-stud') bucket.freeAntiStuds += 1
+    if (Math.abs(connector.axis[1]) < 0.99) bucket.freeSide += 1
+  }
+  const result: Record<string, ConnectorAvailability> = {}
+  for (const [id, bucket] of buckets) {
+    result[id] = {
+      occupiedExclusive: bucket.occupiedExclusive,
+      freeByFamily: bucket.freeByFamily,
+      approaches: {
+        'on-top': bucket.freeStuds > 0,
+        underneath: bucket.freeAntiStuds > 0,
+        beside: bucket.freeSide > 0,
+      },
+    }
+  }
+  return result
+}
+
+export function openApproachNames(availability: ConnectorAvailability): string[] {
+  const open: string[] = []
+  if (availability.approaches['on-top']) open.push('on-top')
+  if (availability.approaches.underneath) open.push('underneath')
+  if (availability.approaches.beside) {
+    open.push('beside-x', 'beside-minus-x', 'beside-z', 'beside-minus-z')
+  }
+  return open
+}
+
+export type ApproachOccupancy = 'open' | 'occupied' | 'absent'
+
+/**
+ * Why an approach cannot receive a part: the face still has free connectors,
+ * every exclusive connector on that face is taken, or the identity never had
+ * that family (a tile has no studs).
+ */
+export function approachOccupancy(
+  document: ModelDocument,
+  partId: string,
+  approach: string,
+): ApproachOccupancy {
+  const part = document.parts[partId]
+  if (!part) return 'absent'
+  const availability = connectorAvailability(document, [partId])
+  const definition = catalog.get(part.definitionId)
+  const studs = definition?.connectors.filter((feature) => feature.family === 'stud').length ?? 0
+  const anti = definition?.connectors.filter((feature) => feature.family === 'anti-stud').length ?? 0
+  if (approach === 'on-top') {
+    if (availability.approaches['on-top']) return 'open'
+    return studs > 0 ? 'occupied' : 'absent'
+  }
+  if (approach === 'underneath') {
+    if (availability.approaches.underneath) return 'open'
+    return anti > 0 ? 'occupied' : 'absent'
+  }
+  if (approach.startsWith('beside')) {
+    if (availability.approaches.beside) return 'open'
+    return availability.occupiedExclusive > 0 ? 'occupied' : 'absent'
+  }
+  return 'absent'
+}
+
+export interface PlaceableAnchor {
+  readonly id: string
+  readonly freeStuds: number
+  readonly approaches: ConnectorAvailability['approaches']
+}
+
+/**
+ * Unlocked parts that can still receive a brick on top, richest free-stud
+ * count first. Agents copy these ids instead of guessing which brick is full.
+ */
+export function placeableAnchors(document: ModelDocument, limit = 8): PlaceableAnchor[] {
+  const ids = Object.keys(document.parts)
+  const byPart = connectorAvailabilityByPart(document, ids)
+  const rows: PlaceableAnchor[] = []
+  for (const id of ids) {
+    const part = document.parts[id]
+    if (!part || part.protected) continue
+    if (document.subassemblies[part.subassemblyId]?.locked) continue
+    const availability = byPart[id]
+    if (!availability?.approaches['on-top']) continue
+    rows.push({
+      id,
+      freeStuds: availability.freeByFamily.stud ?? 0,
+      approaches: availability.approaches,
+    })
+  }
+  rows.sort((a, b) => b.freeStuds - a.freeStuds || a.id.localeCompare(b.id))
+  return rows.slice(0, Math.max(0, limit))
+}
+
+/**
+ * The nearest part that can still receive a brick on top, measured from
+ * `partId`. A hovering brick has no graph neighbours; this is the id an agent
+ * should copy into connect_parts rather than inventing one.
+ */
+export function nearestPlaceableNeighbour(document: ModelDocument, partId: string): PlaceableAnchor | undefined {
+  const byId = new Map(placeableAnchors(document, 32).map((anchor) => [anchor.id, anchor]))
+  for (const neighbour of nearbyParts(document, partId, 16)) {
+    const anchor = byId.get(neighbour.id)
+    if (anchor) return anchor
+  }
+  return undefined
+}
 
 export { connectorsCompatible } from './connections'
 

@@ -26,6 +26,7 @@ const idle: SyncState = {
   lastSyncedAt: null,
   lastError: null,
   conflict: null,
+  blocked: null,
 }
 
 const sync = (over: Partial<SyncState> = {}): SyncState => ({ ...idle, ...over })
@@ -146,6 +147,31 @@ describe('describeSync', () => {
     })
     expect(readout.conflictHeadRevision).toBe(9)
     expect(readout.tone).toBe('warn')
+  })
+
+  it('reports which project is blocking when it is not the open one', () => {
+    const readout = describeSync({
+      configuration: READY,
+      identity: SIGNED_IN,
+      sync: sync({
+        status: 'conflict',
+        reason: 'stale',
+        lastError: {
+          code: 'STALE_DOCUMENT',
+          message: 'stale',
+          repair: 'Reconcile.',
+        },
+        blocked: { projectId: 'cloud_a', localProjectId: 'doc_a' },
+      }),
+      linked: true,
+      online: true,
+      activeProjectId: 'doc_b',
+      blockedProjectName: 'Rover chassis',
+    })
+    expect(readout.label).toBe('Sync blocked')
+    expect(readout.reason).toContain('Rover chassis')
+    expect(readout.code).toBe('STALE_DOCUMENT')
+    expect(readout.repair).toContain('Open that project')
   })
 
   it('always populates a reason, in every reachable state', () => {

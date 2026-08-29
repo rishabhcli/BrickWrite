@@ -8,19 +8,22 @@ import {
   type SharedMutationId,
 } from '../cad/capabilities'
 import { cadEngine } from '../cad/engine'
-import { getPartBounds } from '../cad/geometry'
+import { getPartBounds, nearbyParts } from '../cad/geometry'
 import { createId } from '../cad/ids'
 import { basisFromEulerDegrees, IDENTITY_BASIS } from '../cad/math'
 import { documentModules, findModule } from '../cad/modules'
+import { poseMatchesApproach, searchMateOnTarget } from '../cad/placement'
 import { frameScene, renderScene, rgbFromHex, type RasterImage, type RasterPart } from '../cad/raster'
-import { bestSnapTransform } from '../cad/snapping'
-import { findWeakAttachments, validateDocument } from '../cad/validation'
-import type { ModelDocument, PartInstance, Vec3 } from '../cad/types'
+import { connectorAvailability, connectorAvailabilityByPart, openApproachNames, approachOccupancy, placeableAnchors } from '../cad/snapping'
+import { findWeakAttachments, floatingPartIds, validateDocument } from '../cad/validation'
+import { analyseStatics } from '../cad/statics'
+import type { ModelDocument, PartInstance, Vec3, ConnectionFamily } from '../cad/types'
 import { capabilityJsonSchema, parseCapabilityArgs } from './schemas'
 import { describeScope, parseReferenceTokens, resolveReference, type ViewportPin } from './references'
 import type { WaveLedger } from './modes'
 import type { TraceLedger } from './trace'
 import { ASSISTANT_TOOLS, type AssistantToolDeclaration } from './toolschemas'
+import { nextAgentAction, situationFromLive, type AgentSituation } from './guidance'
 import type { ToolCall, ToolResult } from './protocol'
 
 /**
@@ -233,11 +236,28 @@ export interface ToolHost {
 
 export function createToolHost(options: ToolHostOptions): ToolHost {
   const declarations = ASSISTANT_TOOLS
+  let lastFailedPreflight: string | null = null
+
+  const liveNext = (extra: Partial<AgentSituation> = {}) => {
+    const state = cadEngine.getSnapshot()
+    return nextAgentAction(
+      situationFromLive(state.document, {
+        partCount: state.validation.partCount,
+        selectionCount: state.selection.length,
+        collisions: state.validation.collisions.length,
+        disconnectedParts: state.validation.disconnectedPartIds.length,
+        ...extra,
+      }),
+    )
+  }
 
   const runners: Record<string, (input: Record<string, unknown>) => unknown | Promise<unknown>> = {
     scene_overview: () => {
       const state = cadEngine.getSnapshot()
       const validation = state.validation
+      const statics = analyseStatics(state.document)
+      const floating = floatingPartIds(state.document)
+      const next = liveNext({ tipping: statics.support ? statics.support.marginLdu < 0 : null })
       return {
         documentRevision: state.document.revision,
         documentName: state.document.name,
@@ -267,8 +287,20 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
           unverifiedCollisions: validation.unverifiedCollisions,
           components: validation.componentCount,
           disconnectedParts: validation.disconnectedPartIds.length,
+          floatingParts: floating.length,
           virtualColors: validation.virtualColors.length,
         },
+        statics: {
+          massGrams: Math.round(statics.mass.grams * 10) / 10,
+          supportMarginLdu: statics.support ? Math.round(statics.support.marginLdu * 10) / 10 : null,
+          stable: statics.support?.stable ?? null,
+          overloadedJoints: statics.overloaded.length,
+          unsupportedParts: statics.unsupportedPartIds.length,
+        },
+        nextAction: next.action,
+        nextTool: next.tool,
+        nextArgs: next.args ?? {},
+        placeableAnchors: placeableAnchors(state.document),
         catalogTiers: {
           placeable: catalog.placeableCount,
           modelled: catalog.identityCount,
@@ -303,6 +335,18 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         }
       }
 
+      const availabilityIds = new Set(page.map((part) => part.id))
+      const nearbyByPart = new Map<string, ReturnType<typeof nearbyParts>>()
+      if (input.includeNeighbours === true) {
+        for (const part of page) {
+          const near = nearbyParts(document, part.id, 4)
+          nearbyByPart.set(part.id, near)
+          for (const neighbour of near) availabilityIds.add(neighbour.id)
+        }
+      }
+
+      const availability = connectorAvailabilityByPart(document, [...availabilityIds])
+
       return {
         documentRevision: document.revision,
         matched: total,
@@ -310,6 +354,8 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         truncated: total > page.length,
         parts: page.map((part) => {
           const definition = catalog.get(part.definitionId)
+          const connectors = availability[part.id]
+          const near = nearbyByPart.get(part.id) ?? []
           return {
             id: part.id,
             definitionId: part.definitionId,
@@ -322,8 +368,17 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
             provenance: part.provenance,
             protected: part.protected || Boolean(document.subassemblies[part.subassemblyId]?.locked),
             positionLdu: part.transform.position,
+            approaches: connectors?.approaches ?? { 'on-top': false, underneath: false, beside: false },
+            occupiedExclusive: connectors?.occupiedExclusive ?? 0,
             ...(input.includeNeighbours === true
-              ? { connectedTo: [...new Set(neighbours.get(part.id) ?? [])] }
+              ? {
+                  connectedTo: [...new Set(neighbours.get(part.id) ?? [])],
+                  nearby: near.map((entry) => ({
+                    id: entry.id,
+                    distanceLdu: Math.round(entry.distanceLdu * 10) / 10,
+                    approaches: availability[entry.id]?.approaches ?? { 'on-top': false, underneath: false, beside: false },
+                  })),
+                }
               : {}),
           }
         }),
@@ -367,6 +422,11 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         ? scope.partIds.filter((id) => Math.abs(getPartBounds(document.parts[id]).min[1] - scope.boundsLdu!.min[1]) < 1e-6)
         : []
 
+      const focusId = scope.partIds[0]
+      const near = focusId ? nearbyParts(document, focusId, 6) : []
+      const availabilityIds = [...new Set([...scope.partIds, ...near.map((entry) => entry.id)])]
+      const nearbyAvailability = connectorAvailabilityByPart(document, availabilityIds)
+
       return {
         documentRevision: document.revision,
         reference: token,
@@ -380,12 +440,18 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         topMatingPlaneLdu: topPlane,
         partsAtTopPlane: atTopPlane.slice(0, 40),
         neighbourPartIds: scope.neighbourPartIds.slice(0, 60),
+        nearby: near.map((entry) => ({
+          id: entry.id,
+          distanceLdu: Math.round(entry.distanceLdu * 10) / 10,
+          approaches: nearbyAvailability[entry.id]?.approaches ?? { 'on-top': false, underneath: false, beside: false },
+        })),
         protectedPartIds: scope.protectedPartIds,
         lockedSubassemblyIds: scope.lockedSubassemblyIds,
+        connectors: connectorAvailability(document, scope.partIds),
         note:
           scope.protectedPartIds.length || scope.lockedSubassemblyIds.length
             ? 'Some parts in this scope are protected; the kernel will refuse edits that touch them.'
-            : undefined,
+            : 'Use connectors.approaches to pick a face. on-top is false when there are no free studs. nearby ids have no graph edge — copy one whose approaches.on-top is true into connect_parts.',
       }
     },
 
@@ -557,6 +623,9 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
     validate_model: () => {
       const state = cadEngine.getSnapshot()
       const validation = state.validation
+      const statics = analyseStatics(state.document)
+      const floating = floatingPartIds(state.document)
+      const next = liveNext({ tipping: statics.support ? statics.support.marginLdu < 0 : null })
       return {
         documentRevision: state.document.revision,
         healthy: validation.healthy,
@@ -564,6 +633,7 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         connectionCount: validation.connectionCount,
         componentCount: validation.componentCount,
         disconnectedPartIds: validation.disconnectedPartIds.slice(0, 40),
+        floatingPartIds: floating.slice(0, 40),
         collisions: validation.collisions.slice(0, 20).map((collision) => ({
           partA: collision.partA,
           partB: collision.partB,
@@ -575,6 +645,15 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         virtualColors: validation.virtualColors.slice(0, 20),
         constraints: validation.constraints,
         boundsLdu: validation.bounds,
+        statics: {
+          massGrams: Math.round(statics.mass.grams * 10) / 10,
+          supportMarginLdu: statics.support ? Math.round(statics.support.marginLdu * 10) / 10 : null,
+          stable: statics.support?.stable ?? null,
+          overloadedJoints: statics.overloaded.length,
+        },
+        nextAction: next.action,
+        nextTool: next.tool,
+        nextArgs: next.args ?? {},
       }
     },
 
@@ -606,7 +685,23 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         })
       } catch (cause) {
         if (cause instanceof SharedCapabilityError) {
-          return fail(cause.code, cause.message, cause.repair, cause.details)
+          const details = { ...(cause.details ?? {}) }
+          const nearbyPartId = typeof details.nearbyPartId === 'string' ? details.nearbyPartId : undefined
+          const movingPartId = typeof details.movingPartId === 'string' ? details.movingPartId : undefined
+          const next =
+            capabilityId === 'connect_parts' && nearbyPartId && movingPartId
+              ? {
+                  action: `Mate ${movingPartId} onto ${nearbyPartId} with connect_parts. Copy those ids; do not invent XYZ.`,
+                  tool: 'preflight_capability',
+                  why: 'connect-elsewhere',
+                  args: { capability: 'connect_parts', args: { movingPartId, targetPartId: nearbyPartId } },
+                }
+              : liveNext({
+                  failureCode: cause.code,
+                  nearbyAnchorId: nearbyPartId,
+                  floatingPartId: movingPartId,
+                })
+          return fail(cause.code, cause.message, cause.repair, { ...details, next })
         }
         throw cause
       }
@@ -697,17 +792,63 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         protected: false,
       }
 
-      const solved = bestSnapTransform(candidate, document, candidate.transform, {
-        radiusLdu: STUD_LDU,
-        targetPartIds: [anchor.id],
-      })
+      const mate = searchMateOnTarget(candidate, document, anchor, candidate.transform, approach, STUD_LDU)
+      const seated = mate.transform ? { ...candidate, transform: mate.transform } : null
+      const solved = seated && poseMatchesApproach(seated, anchor, approach) ? mate.transform : null
       if (!solved) {
-        return fail(
-          'NO_COMPATIBLE_CONNECTOR',
-          `No legal connector mate was found between ${definitionId} and ${anchor.id} on the ${approach} face.`,
-          'Try another face, another identity, or inspect the anchor with selection_geometry to see what it exposes.',
-          { anchorDefinitionId: anchor.definitionId, approach },
-        )
+        if (mate.blockedByCollision) {
+          const next = liveNext({
+            collisions: 1,
+            disconnectedParts: 0,
+            floatingParts: 0,
+            failureCode: 'COLLISION',
+            triedDefinitionId: definitionId,
+            placeableAnchorId: placeableAnchors(document).filter((entry) => entry.id !== anchor.id)[0]?.id,
+          })
+          return fail(
+            'COLLISION',
+            `Every legal mate of ${definitionId} on the ${approach} face of ${anchor.id} would collide with another part.`,
+            next.action,
+            { approach, next, placeableAnchors: placeableAnchors(document).filter((entry) => entry.id !== anchor.id) },
+          )
+        }
+        const occupancy = approachOccupancy(document, anchor.id, approach)
+        const availability = connectorAvailability(document, [anchor.id])
+        const code = occupancy === 'occupied' ? 'CONNECTOR_OCCUPIED' : 'NO_COMPATIBLE_CONNECTOR'
+        const wantedFamily: ConnectionFamily = approach === 'underneath' ? 'stud' : 'anti-stud'
+        const alternatives = catalog
+          .searchPage({
+            requireGeometry: true,
+            tier: 'placeable',
+            connectorTypes: [wantedFamily],
+            limit: 8,
+          })
+          .records.filter((record) => record.id !== definitionId)
+          .slice(0, 5)
+          .map((record) => ({ id: record.id, name: record.name }))
+        const anchors = placeableAnchors(document).filter((entry) => entry.id !== anchor.id)
+        const next = liveNext({
+          collisions: 0,
+          disconnectedParts: 0,
+          floatingParts: 0,
+          failureCode: code,
+          triedDefinitionId: definitionId,
+          placeableAnchorId: anchors[0]?.id,
+        })
+        const message =
+          code === 'CONNECTOR_OCCUPIED'
+            ? `Every exclusive connector on the ${approach} face of ${anchor.id} is occupied.`
+            : `No legal connector mate was found between ${definitionId} and ${anchor.id} on the ${approach} face.`
+        return fail(code, message, next.action, {
+          anchorDefinitionId: anchor.definitionId,
+          approach,
+          occupancy,
+          openApproaches: openApproachNames(availability),
+          occupiedExclusive: availability.occupiedExclusive,
+          alternativeIdentities: alternatives,
+          placeableAnchors: anchors,
+          next,
+        })
       }
 
       const result = options.waves.propose({
@@ -718,6 +859,21 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         expectedRevision: document.revision,
       })
       if (!result.ok) return { error: result.error }
+      if (result.wave.validation?.collisions.length) {
+        options.waves.reject(result.wave.id, 'Preview collides with another part.')
+        const next = liveNext({
+          collisions: result.wave.validation.collisions.length,
+          failureCode: 'COLLISION',
+          triedDefinitionId: definitionId,
+          placeableAnchorId: placeableAnchors(document).filter((entry) => entry.id !== anchor.id)[0]?.id,
+        })
+        return fail(
+          'COLLISION',
+          `The solved pose of ${definitionId} on ${anchor.id} collides with another part.`,
+          next.action,
+          { approach, next, collisions: result.wave.validation.collisions.slice(0, 8) },
+        )
+      }
 
       return {
         documentRevision: document.revision,
@@ -760,7 +916,8 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
             overlapLdu: collision.overlapLdu,
             certainty: collision.certainty,
             suggestedClearanceLdu: clearance,
-            suggestion: `Move ${collision.partB} by ${clearance.join(', ')} LDU, or place it against a different face.`,
+            suggestion:
+              'Do not invent XYZ or type a transform. Call next.tool with next.args. Place against a different face with preflight_placement, or mate with connect_parts.',
           }
         })
 
@@ -773,6 +930,22 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         .filter((entry) => entry.status === 'stale')
         .map((entry) => ({ waveId: entry.id, label: entry.label, problem: entry.problem ?? 'The document moved on.' }))
 
+      const statics = analyseStatics(document)
+      const floating = floatingPartIds(document)
+      const failureCode =
+        (input.failureCode as string | undefined)
+        ?? (collisions.length ? 'COLLISION' : floating.length ? 'DISCONNECTED' : null)
+      const next = liveNext({
+        collisions: collisions.length,
+        disconnectedParts: validation.disconnectedPartIds.length,
+        floatingParts: floating.length,
+        floatingPartId: floating[0],
+        tipping: statics.support ? statics.support.marginLdu < 0 : null,
+        failureCode,
+        seenRepair: true,
+        placeableAnchorId: placeableAnchors(document)[0]?.id,
+      })
+
       return {
         documentRevision: document.revision,
         failureCode: (input.failureCode as string | undefined) ?? null,
@@ -784,6 +957,7 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
             ? `That wave was planned at revision ${wave.baseRevision} and the document is at ${document.revision}. Reread the changed region and preflight again.`
             : null,
         collisions,
+        floatingPartIds: floating.slice(0, 20),
         protectedRegions,
         protectedPartIds: Object.values(document.parts)
           .filter((part) => part.protected)
@@ -792,6 +966,10 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         weakAttachments: findWeakAttachments(document).slice(0, 10),
         failingConstraints: validation.constraints.filter((constraint) => constraint.status === 'fail'),
         staleWaves,
+        next,
+        nextAction: next.action,
+        nextTool: next.tool,
+        nextArgs: next.args ?? {},
       }
     },
   }
@@ -856,9 +1034,24 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
         )
       }
 
+      const fingerprint = `${call.name}:${JSON.stringify(parsed.data)}`
+      if (declaration.kind === 'preflight' && lastFailedPreflight === fingerprint) {
+        const next = liveNext({ failureCode: 'REPEAT_REFUSED' })
+        return respond(
+          false,
+          fail(
+            'REPEAT_REFUSED',
+            `Those exact arguments to ${call.name} were already refused.`,
+            'Call repair_suggest with the earlier failureCode, then change the identity, face, or anchor. Do not retry the same call.',
+            { next, nextTool: next.tool, nextArgs: next.args ?? {} },
+          ),
+        )
+      }
+
       try {
         const value = await runners[call.name](parsed.data as Record<string, unknown>)
         const failed = typeof value === 'object' && value !== null && 'error' in value
+        if (declaration.kind === 'preflight') lastFailedPreflight = failed ? fingerprint : null
         return respond(!failed, value)
       } catch (cause) {
         // A thrown error is a defect in this host, not a repairable model

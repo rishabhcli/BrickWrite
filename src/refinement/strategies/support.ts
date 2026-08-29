@@ -1,4 +1,5 @@
 import { catalog, originForSurface, STUD_LDU } from '../../cad/catalog'
+import { partPoseCollides } from '../../cad/collisionGate'
 import { IDENTITY_BASIS, type Mat3, type RigidTransform } from '../../cad/math'
 import { QUARTER_TURN_BASES } from '../../cad/placement'
 import { findSnapCandidates } from '../../cad/snapping'
@@ -126,7 +127,9 @@ export function snapOnto(
   for (const candidate of candidates) {
     const matched = [...new Set(candidate.matches.map((match) => match.targetPartId))]
     const wanted = matched.filter((id) => targetPartIds.includes(id))
-    if (wanted.length >= minParts) return { transform: candidate.transform, matchedPartIds: matched }
+    if (wanted.length < minParts) continue
+    if (partPoseCollides(document, { ...probe, transform: candidate.transform })) continue
+    return { transform: candidate.transform, matchedPartIds: matched }
   }
   return null
 }

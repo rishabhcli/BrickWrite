@@ -258,7 +258,10 @@ export function applyGeneration(expectedRevision?: number) {
   }
   const outcome = session.accept('agent')
   if (outcome.kind !== 'applied') {
-    const code = outcome.code === 'STALE_DOCUMENT' ? 'STALE_DOCUMENT' : outcome.code === 'COLLISION' ? 'COLLISION' : 'INVALID_OPERATION'
+    const code =
+      outcome.code === 'STALE_DOCUMENT' || outcome.code === 'COLLISION' || outcome.code === 'DISCONNECTED'
+        ? outcome.code
+        : 'INVALID_OPERATION'
     throw new ContractError(code, outcome.detail, outcome.repair ?? 'Call generation_state and preview another candidate.')
   }
   return {

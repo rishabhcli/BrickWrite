@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportLDraw, exportMpd, parseLDraw } from './ldraw'
+import { exportLDraw, exportMpd, parseLDraw, describeLDrawImport } from './ldraw'
 import { basisFromAxisAngle, basisFromEulerDegrees, canonicalTransform, IDENTITY_BASIS, type Mat3 } from './math'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import type { ModelDocument, PartInstance, Transform } from './types'
@@ -96,6 +96,35 @@ describe('LDraw interoperability', () => {
     const imported = parseLDraw(source, createEmptyDocument())
     expect(imported.report.placed).toBe(1)
     expect(imported.report.unknownParts).toEqual(['999999'])
+  })
+
+  it('reports unrecognised meta commands instead of dropping them silently', () => {
+    const source = [
+      '0 FILE main.ldr',
+      '0 GROUP hull',
+      '0 !LEOCAD GROUP_BEGIN hull',
+      '0 !LPUB ASSEMBLY',
+      '1 15 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat',
+      '0 NOFILE',
+    ].join('\n')
+    const imported = parseLDraw(source, createEmptyDocument())
+    expect(imported.report.placed).toBe(1)
+    expect(imported.report.ignoredMeta.count).toBe(3)
+    expect(imported.report.ignoredMeta.samples).toEqual(expect.arrayContaining(['GROUP', '!LEOCAD', '!LPUB']))
+    expect(describeLDrawImport(imported.report).detail).toMatch(/Ignored 3 unrecognised meta lines/)
+  })
+
+  it('reports hovering and colliding parts instead of silently accepting them', () => {
+    const source = [
+      '0 FILE main.ldr',
+      '1 72 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat',
+      '1 72 0 -200 0 1 0 0 0 1 0 0 0 1 3001.dat',
+      '0 NOFILE',
+    ].join('\n')
+    const imported = parseLDraw(source, createEmptyDocument())
+    expect(imported.report.placed).toBe(2)
+    expect(imported.report.floatingPartCount).toBeGreaterThan(0)
+    expect(describeLDrawImport(imported.report).detail).toMatch(/hover/i)
   })
 
   it('leaves an identity placement as the identity basis', () => {

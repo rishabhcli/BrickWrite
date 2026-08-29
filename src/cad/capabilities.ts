@@ -13,11 +13,13 @@ import {
 } from './assembly'
 import { captureModule, describeModule, documentModules, findModule, ModuleError, stampModule } from './modules'
 import { catalog, PLATE_LDU, STUD_LDU, studPlaneLdu, underPlaneLdu } from './catalog'
-import { getPartBounds } from './geometry'
+import { getPartBounds, nearbyParts, snapLdu } from './geometry'
 import { createId } from './ids'
+import { composeTransform, invertTransform } from './math'
 import { computeBuildOrder } from './instructions'
-import { bestSnapTransform } from './snapping'
-import type { Actor, CadOperation, ModelDocument, Transform, Vec3 } from './types'
+import { searchMateBetween } from './placement'
+import type { Actor, CadOperation, ModelDocument, PartInstance, Transform, Vec3 } from './types'
+import { floatingPartIds, unclutchedRestCode, unclutchedRestPartIds, airbornePartIds } from './validation'
 
 /**
  * The advanced capability catalog shared by the human command deck and WebMCP.
@@ -36,16 +38,16 @@ export const SHARED_CAPABILITIES = [
   { id: 'weak_attachments', kind: 'read', group: 'inspect', title: 'Weak attachments', summary: 'Find parts held by only one neighbouring part.', input: {} },
   { id: 'list_joints', kind: 'read', group: 'mechanism', title: 'List joints', summary: 'Inspect drivable joints in the current scope.', input: { partIds: 'string[], optional' } },
   { id: 'compute_build_order', kind: 'read', group: 'sequence', title: 'Preview build order', summary: 'Derive and verify an attachment-aware build sequence.', input: { maxPartsPerStep: 'integer, optional' } },
-  { id: 'duplicate_selection', kind: 'mutate', group: 'transform', title: 'Duplicate precisely', summary: 'Copy parts by an exact LDraw-unit offset.', input: { partIds: 'string[], optional', offsetLdu: '[x,y,z], default [20,0,0]' } },
-  { id: 'mirror_selection', kind: 'mutate', group: 'transform', title: 'Mirror across X', summary: 'Reflect selected transforms across an exact X plane.', input: { partIds: 'string[], optional', axisLdu: 'number, default 0' } },
-  { id: 'linear_array', kind: 'mutate', group: 'transform', title: 'Linear array', summary: 'Create deterministic repeated copies along an exact vector.', input: { partIds: 'string[], optional', copies: 'integer 1-24', offsetLdu: '[x,y,z]' } },
-  { id: 'build_wall', kind: 'mutate', group: 'assemble', title: 'Lay a wall', summary: 'Generate a bonded brick wall in one transaction, with staggered courses and optional openings.', input: { lengthStuds: 'integer 1-256', courses: 'integer 1-64', axis: '"x" | "z", default "x"', color: 'LDraw colour, optional', family: '"brick" | "plate" | "tile", default "brick"', depthStuds: '1 or 2, default 1', originLdu: '[x,y,z], optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
-  { id: 'build_enclosure', kind: 'mutate', group: 'assemble', title: 'Lay a storey', summary: 'Generate four interlocking walls and an optional floor: one storey of a building, in one transaction.', input: { widthStuds: 'integer', depthStuds: 'integer', courses: 'integer 1-64', color: 'LDraw colour, optional', family: '"brick" | "plate", default "brick"', wallDepthStuds: '1 or 2, default 1', floor: 'boolean, default false', floorLayers: '1 or 2, default 2 (2 is cross-bonded and rigid)', originLdu: '[x,y,z], optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
-  { id: 'build_field', kind: 'mutate', group: 'assemble', title: 'Lay a floor', summary: 'Tile a rectangular footprint with staggered rows, optionally cross-bonded into a rigid slab.', input: { widthStuds: 'integer', depthStuds: 'integer', layers: '1 or 2, default 1', color: 'LDraw colour, optional', family: '"plate" | "tile" | "brick", default "plate"', originLdu: '[x,y,z], optional' } },
-  { id: 'build_structure', kind: 'mutate', group: 'assemble', title: 'Raise a building', summary: 'Compose a whole multi-storey building in one transaction: deck, storeys with real windows, a ground-floor door, colour banding and a parapet.', input: { widthStuds: 'integer', depthStuds: 'integer', storeys: 'integer 1-24', coursesPerStorey: 'integer 2-12, default 4', color: 'LDraw colour', bandColor: 'LDraw colour, optional', windowsPerSide: 'integer 0-8, default 2', windowWidthStuds: '2 or 4, default 2', door: 'boolean, default true', trimColor: 'LDraw colour for window and door frames, default White', glassColor: 'LDraw colour for glazing, default Trans-Clear', deckLayers: '1 or 2, default 2 (2 is cross-bonded and rigid)', originLdu: '[x,y,z], optional' } },
-  { id: 'build_hinged_flap', kind: 'mutate', group: 'assemble', title: 'Hinge a flap', summary: 'Build a flap that actually opens: a hinge line and a plate panel that the kernel can drive as a revolute joint.', input: { widthStuds: 'even integer ≥ 2', reachStuds: 'integer ≥ 1', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional' } },
+  { id: 'duplicate_selection', kind: 'mutate', group: 'transform', title: 'Duplicate precisely', summary: 'Copy parts by a measured direction or an exact LDraw-unit offset.', input: { partIds: 'string[], optional', offsetLdu: '[x,y,z], optional', along: '"x" | "z" | "on-top", optional' } },
+  { id: 'mirror_selection', kind: 'mutate', group: 'transform', title: 'Mirror across X', summary: 'Reflect selected transforms across an exact X plane, or about the selection centre.', input: { partIds: 'string[], optional', axisLdu: 'number, default 0', about: '"world" | "selection", default world' } },
+  { id: 'linear_array', kind: 'mutate', group: 'transform', title: 'Linear array', summary: 'Create deterministic repeated copies along a measured direction or an exact vector.', input: { partIds: 'string[], optional', copies: 'integer 1-24', offsetLdu: '[x,y,z], optional', along: '"x" | "z" | "on-top", optional' } },
+  { id: 'build_wall', kind: 'mutate', group: 'assemble', title: 'Lay a wall', summary: 'Generate a bonded brick wall in one transaction, with staggered courses and optional openings.', input: { lengthStuds: 'integer 1-256', courses: 'integer 1-64', axis: '"x" | "z", default "x"', color: 'LDraw colour, optional', family: '"brick" | "plate" | "tile", default "brick"', depthStuds: '1 or 2, default 1', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
+  { id: 'build_enclosure', kind: 'mutate', group: 'assemble', title: 'Lay a storey', summary: 'Generate four interlocking walls and an optional floor: one storey of a building, in one transaction.', input: { widthStuds: 'integer', depthStuds: 'integer', courses: 'integer 1-64', color: 'LDraw colour, optional', family: '"brick" | "plate", default "brick"', wallDepthStuds: '1 or 2, default 1', floor: 'boolean, default false', floorLayers: '1 or 2, default 2 (2 is cross-bonded and rigid)', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
+  { id: 'build_field', kind: 'mutate', group: 'assemble', title: 'Lay a floor', summary: 'Tile a rectangular footprint with staggered rows, optionally cross-bonded into a rigid slab.', input: { widthStuds: 'integer', depthStuds: 'integer', layers: '1 or 2, default 1', color: 'LDraw colour, optional', family: '"plate" | "tile" | "brick", default "plate"', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  { id: 'build_structure', kind: 'mutate', group: 'assemble', title: 'Raise a building', summary: 'Compose a whole multi-storey building in one transaction: deck, storeys with real windows, a ground-floor door, colour banding and a parapet.', input: { widthStuds: 'integer', depthStuds: 'integer', storeys: 'integer 1-24', coursesPerStorey: 'integer 2-12, default 4', color: 'LDraw colour', bandColor: 'LDraw colour, optional', windowsPerSide: 'integer 0-8, default 2', windowWidthStuds: '2 or 4, default 2', door: 'boolean, default true', trimColor: 'LDraw colour for window and door frames, default White', glassColor: 'LDraw colour for glazing, default Trans-Clear', deckLayers: '1 or 2, default 2 (2 is cross-bonded and rigid)', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  { id: 'build_hinged_flap', kind: 'mutate', group: 'assemble', title: 'Hinge a flap', summary: 'Build a flap that actually opens: a hinge line and a plate panel that the kernel can drive as a revolute joint.', input: { widthStuds: 'even integer ≥ 2', reachStuds: 'integer ≥ 1', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
   { id: 'capture_module', kind: 'mutate', group: 'assemble', title: 'Capture a module', summary: 'Save the selection as a reusable named sub-build, rebased onto its own origin.', input: { name: 'string', partIds: 'string[], optional' } },
-  { id: 'stamp_module', kind: 'mutate', group: 'assemble', title: 'Stamp a module', summary: 'Place copies of a captured module at an exact pose, with quarter-turn rotation and spacing.', input: { module: 'module id or name', atLdu: '[x,y,z]', quarterTurns: 'integer, optional', copies: 'integer 1-64, default 1', spacingLdu: '[x,y,z], optional', color: 'LDraw colour, optional' } },
+  { id: 'stamp_module', kind: 'mutate', group: 'assemble', title: 'Stamp a module', summary: 'Place copies of a captured module at an exact pose, or onto an existing part id. Prefer anchorPartId so the pose is measured.', input: { module: 'module id or name', atLdu: '[x,y,z], optional when anchorPartId is set', anchorPartId: 'existing part id, optional', quarterTurns: 'integer, optional', copies: 'integer 1-64, default 1', spacingLdu: '[x,y,z], optional', color: 'LDraw colour, optional' } },
   { id: 'remove_module', kind: 'mutate', group: 'assemble', title: 'Remove a module', summary: 'Delete a captured module. Parts already stamped from it are untouched.', input: { module: 'module id or name' } },
   { id: 'stack_selection', kind: 'mutate', group: 'assemble', title: 'Stack storeys', summary: 'Repeat the selection upward by its own measured height — a tower from one floor.', input: { copies: 'integer 1-32', partIds: 'string[], optional', gapLdu: 'number, default 0' } },
   { id: 'connect_parts', kind: 'mutate', group: 'mechanism', title: 'Connect parts', summary: 'Use the deterministic 6-DOF solver to mate two placed parts.', input: { movingPartId: 'string', targetPartId: 'string' } },
@@ -78,7 +80,7 @@ export function sharedCapability(id: string): SharedCapability | undefined {
 
 export class SharedCapabilityError extends Error {
   constructor(
-    readonly code: 'INVALID_OPERATION' | 'PART_NOT_FOUND' | 'NO_COMPATIBLE_CONNECTOR' | 'RESOURCE_LIMIT',
+    readonly code: 'INVALID_OPERATION' | 'PART_NOT_FOUND' | 'NO_COMPATIBLE_CONNECTOR' | 'CONNECTOR_OCCUPIED' | 'COLLISION' | 'DISCONNECTED' | 'RESOURCE_LIMIT',
     message: string,
     readonly repair: string,
     readonly details?: Record<string, unknown>,
@@ -86,6 +88,151 @@ export class SharedCapabilityError extends Error {
     super(message)
     this.name = 'SharedCapabilityError'
   }
+}
+
+function previewAddedParts(document: ModelDocument, operations: readonly CadOperation[]): ModelDocument {
+  const parts = { ...document.parts }
+  for (const operation of operations) {
+    if (operation.type === 'part.add') parts[operation.part.id] = operation.part
+  }
+  return { ...document, parts }
+}
+
+/** Copies that hover or rest unclutched are refused here, before they become a wave. */
+function refuseIllegalAdds(document: ModelDocument, operations: readonly CadOperation[]): void {
+  const addedIds = operations.filter((operation) => operation.type === 'part.add').map((operation) => operation.part.id)
+  if (!addedIds.length) return
+  const preview = previewAddedParts(document, operations)
+  const floating = new Set(floatingPartIds(preview))
+  const airborne = new Set(airbornePartIds(preview))
+  const hovering = addedIds.filter((id) => floating.has(id) || airborne.has(id))
+  if (hovering.length) {
+    throw new SharedCapabilityError(
+      'DISCONNECTED',
+      `The new parts would leave ${hovering[0]} floating with no clutch and no ground under ${hovering.length === 1 ? 'it' : 'them'}.`,
+      'Offset along the ground so copies rest or clutch. Do not invent a hover in Y. Mate an already-placed hovering brick with connect_parts. Prefer anchorPartId or along over invented XYZ.',
+      { partIds: hovering },
+    )
+  }
+  const rest = unclutchedRestPartIds(preview)
+  const sitting = addedIds.filter((id) => rest.includes(id))
+  if (sitting.length) {
+    const code = unclutchedRestCode(preview, sitting[0]!)
+    throw new SharedCapabilityError(
+      code,
+      `The new parts would rest ${sitting[0]} on another part without clutching.`,
+      code === 'CONNECTOR_OCCUPIED'
+        ? 'Every exclusive connector on that face is occupied. Offset onto the ground, or onto a face with free studs.'
+        : 'That surface cannot clutch this part. Offset onto the ground, or onto a face with free studs.',
+      { partIds: sitting },
+    )
+  }
+}
+
+function originOnParts(parts: readonly PartInstance[]): Vec3 {
+  const boxes = parts.map(getPartBounds)
+  let y = Infinity
+  for (const part of parts) {
+    const definition = catalog.get(part.definitionId)
+    const studs = definition ? studPlaneLdu(definition) : null
+    const plane = studs !== null ? part.transform.position[1] + studs : getPartBounds(part).min[1]
+    y = Math.min(y, plane)
+  }
+  return [
+    snapLdu(Math.min(...boxes.map((box) => box.min[0]))),
+    y,
+    snapLdu(Math.min(...boxes.map((box) => box.min[2]))),
+  ]
+}
+
+function stampOriginOnAnchor(anchor: PartInstance): Vec3 {
+  return originOnParts([anchor])
+}
+
+/** Rigidly seat a stamp onto an existing part using the same solver as connect_parts. */
+function seatStampOnAnchor(document: ModelDocument, parts: readonly PartInstance[], anchor: PartInstance): PartInstance[] {
+  const first = parts[0]
+  if (!first) return [...parts]
+  const probe: ModelDocument = { ...document, parts: { ...document.parts, [first.id]: first } }
+  const mate = searchMateBetween(first, anchor, probe)
+  if (!mate.transform) return [...parts]
+  const delta = composeTransform(mate.transform, invertTransform(first.transform))
+  return parts.map((part) => ({ ...part, transform: composeTransform(delta, part.transform) }))
+}
+
+function seatAddedOperations(
+  document: ModelDocument,
+  operations: readonly CadOperation[],
+  anchor: PartInstance,
+): CadOperation[] {
+  const added = operations
+    .filter((operation): operation is Extract<CadOperation, { type: 'part.add' }> => operation.type === 'part.add')
+    .map((operation) => operation.part)
+  if (!added.length) return [...operations]
+  const seated = seatStampOnAnchor(document, added, anchor)
+  const byId = new Map(seated.map((part) => [part.id, part]))
+  return operations.map((operation) => {
+    if (operation.type !== 'part.add') return operation
+    const next = byId.get(operation.part.id)
+    return next ? { ...operation, part: next } : operation
+  })
+}
+
+function measuredAlongOffset(document: ModelDocument, partIds: readonly string[], along: 'x' | 'z' | 'on-top'): Vec3 {
+  if (along === 'on-top') {
+    let lowestUnderside = -Infinity
+    let highestStudPlane = Infinity
+    for (const id of partIds) {
+      const part = document.parts[id]
+      const definition = catalog.get(part.definitionId)
+      if (!definition?.dimensions) continue
+      lowestUnderside = Math.max(lowestUnderside, part.transform.position[1] + underPlaneLdu(definition))
+      const studs = studPlaneLdu(definition)
+      if (studs !== null) highestStudPlane = Math.min(highestStudPlane, part.transform.position[1] + studs)
+    }
+    const measured = lowestUnderside - highestStudPlane
+    const pitch = Math.round(measured / PLATE_LDU) * PLATE_LDU
+    if (!Number.isFinite(pitch) || pitch <= 0) {
+      throw new SharedCapabilityError(
+        'INVALID_OPERATION',
+        'The selection exposes no studs to copy onto, so its height cannot be measured.',
+        'Select parts whose top course has studs, or pass offsetLdu.',
+      )
+    }
+    return [0, -pitch, 0]
+  }
+  const boxes = partIds.map((id) => getPartBounds(document.parts[id]))
+  const index = along === 'x' ? 0 : 2
+  const size = Math.max(...boxes.map((box) => box.max[index])) - Math.min(...boxes.map((box) => box.min[index]))
+  const snapped = Math.max(STUD_LDU, Math.round(size / STUD_LDU) * STUD_LDU)
+  return along === 'x' ? [snapped, 0, 0] : [0, 0, snapped]
+}
+
+function copyOffset(context: SharedMutationContext, args: Record<string, unknown>, partIds: readonly string[]): Vec3 {
+  const along = args.along === 'x' || args.along === 'z' || args.along === 'on-top' ? args.along : null
+  if (along) return measuredAlongOffset(context.document, partIds, along)
+  return vector(args.offsetLdu, [STUD_LDU, 0, 0], 'offsetLdu')
+}
+
+function connectFailureDetails(document: ModelDocument, movingPartId: string, targetPartId: string): Record<string, unknown> {
+  const nearby = nearbyParts(document, movingPartId, 8).filter((entry) => entry.id !== targetPartId)
+  return {
+    movingPartId,
+    targetPartId,
+    nearbyPartId: nearby[0]?.id,
+    nearbyPartIds: nearby.slice(0, 4).map((entry) => entry.id),
+  }
+}
+
+function connectRepair(code: 'COLLISION' | 'CONNECTOR_OCCUPIED' | 'NO_COMPATIBLE_CONNECTOR', details: Record<string, unknown>): string {
+  const next = typeof details.nearbyPartId === 'string' ? details.nearbyPartId : null
+  const moving = String(details.movingPartId)
+  if (next) {
+    return `Call preflight_capability connect_parts with movingPartId ${moving} and targetPartId ${next}. Do not invent XYZ.`
+  }
+  if (code === 'COLLISION') return 'Pick a different target, or move the colliding part clear of the overlap.'
+  if (code === 'CONNECTOR_OCCUPIED') return 'Pick a target whose approaches.on-top is true, or rest the moving part on the ground.'
+  return 'Inspect both part definitions and choose a compatible, unoccupied target. Call selection_geometry and read nearby.'
 }
 
 export interface SharedMutationContext {
@@ -182,19 +329,40 @@ export function mirrorTransformAcrossX(transform: Transform, axis: number): Tran
  * Where a generated assembly starts, when the caller does not say.
  *
  * Defaulting to the origin would drop a storey through whatever is already
- * built. Defaulting to the top of the selection is what a person means by
- * "now put a floor on that", and it is stud-aligned so the result mates.
+ * built. Defaulting to the stud plane of the selection is what a person means
+ * by "now put a floor on that". An agent copies `anchorPartId` instead of XYZ.
  */
-function assemblyOrigin(context: SharedMutationContext, args: Record<string, unknown>): Vec3 {
-  if (args.originLdu !== undefined) return vector(args.originLdu, [0, 0, 0], 'originLdu')
+function assemblyPlacement(
+  context: SharedMutationContext,
+  args: Record<string, unknown>,
+): { origin: Vec3; anchor: PartInstance | null } {
+  const anchorPartId = typeof args.anchorPartId === 'string' && args.anchorPartId ? args.anchorPartId : ''
+  if (anchorPartId) {
+    const anchor = context.document.parts[anchorPartId]
+    if (!anchor) {
+      throw new SharedCapabilityError(
+        'PART_NOT_FOUND',
+        `Part ${anchorPartId} is not present at revision ${context.document.revision}.`,
+        'Pass an id from scene_query. Do not invent a part id or XYZ.',
+      )
+    }
+    return { origin: stampOriginOnAnchor(anchor), anchor }
+  }
+  if (args.originLdu !== undefined) return { origin: vector(args.originLdu, [0, 0, 0], 'originLdu'), anchor: null }
   const scope = context.selection.filter((id) => context.document.parts[id])
-  if (!scope.length) return [0, 0, 0]
-  const bounds = scope.map((id) => getPartBounds(context.document.parts[id]))
-  return [
-    Math.round(Math.min(...bounds.map((item) => item.min[0])) / STUD_LDU) * STUD_LDU,
-    Math.min(...bounds.map((item) => item.min[1])),
-    Math.round(Math.min(...bounds.map((item) => item.min[2])) / STUD_LDU) * STUD_LDU,
-  ]
+  if (!scope.length) return { origin: [0, 0, 0], anchor: null }
+  const parts = scope.map((id) => context.document.parts[id])
+  return { origin: originOnParts(parts), anchor: parts[0] ?? null }
+}
+
+function finishAssemblyOperations(
+  context: SharedMutationContext,
+  operations: readonly CadOperation[],
+  anchor: PartInstance | null,
+): CadOperation[] {
+  const seated = anchor ? seatAddedOperations(context.document, operations, anchor) : [...operations]
+  refuseIllegalAdds(context.document, seated)
+  return seated
 }
 
 function assemblyFamily(value: unknown, fallback: BrickFamily): BrickFamily {
@@ -235,7 +403,7 @@ function planGeneratedAssembly(
   args: Record<string, unknown>,
   context: SharedMutationContext,
 ): SharedMutationPlan {
-  const origin = assemblyOrigin(context, args)
+  const { origin, anchor } = assemblyPlacement(context, args)
   const color = integer(args.color, 71, 0, 999999, 'color')
   const base = {
     origin,
@@ -320,11 +488,14 @@ function planGeneratedAssembly(
   }
 
   const bonded = plan.unbondedCourses === 0
+  const operations = finishAssemblyOperations(context, plan.operations, anchor)
   return {
     capability,
     label,
-    operations: plan.operations,
-    nextSelection: plan.partIds,
+    operations,
+    nextSelection: operations
+      .filter((operation): operation is Extract<CadOperation, { type: 'part.add' }> => operation.type === 'part.add')
+      .map((operation) => operation.part.id),
     summary:
       `${plan.partCount} parts in ${plan.courses} course${plan.courses === 1 ? '' : 's'}, `
       + `${bonded ? 'every course staggered against the one below' : `${plan.unbondedCourses} course(s) could not be fully staggered`}`
@@ -337,6 +508,8 @@ function planGeneratedAssembly(
       bill: plan.bill,
       notes: plan.notes,
       warnings: plan.warnings,
+      origin,
+      ...(anchor ? { anchorPartId: anchor.id } : {}),
     },
   }
 }
@@ -381,7 +554,7 @@ function planStructure(args: Record<string, unknown>, context: SharedMutationCon
   const windowsPerSide = integer(args.windowsPerSide, 2, 0, 8, 'windowsPerSide')
   const windowWidth = integer(args.windowWidthStuds, 2, 1, 8, 'windowWidthStuds')
   const wantDoor = args.door !== false
-  const origin = assemblyOrigin(context, args)
+  const { origin, anchor } = assemblyPlacement(context, args)
 
   const base = {
     color,
@@ -393,7 +566,6 @@ function planStructure(args: Record<string, unknown>, context: SharedMutationCon
   }
 
   const operations: CadOperation[] = []
-  const created: string[] = []
   const bill = new Map<string, { definitionId: string; name: string; count: number }>()
   const notes: string[] = []
   const warnings: string[] = []
@@ -403,7 +575,6 @@ function planStructure(args: Record<string, unknown>, context: SharedMutationCon
 
   const absorb = (plan: AssemblyPlan) => {
     operations.push(...plan.operations)
-    created.push(...plan.partIds)
     for (const entry of plan.bill) {
       const existing = bill.get(entry.definitionId)
       if (existing) existing.count += entry.count
@@ -497,17 +668,20 @@ function planStructure(args: Record<string, unknown>, context: SharedMutationCon
   notes.push(`${storeys} storey(s) of ${coursesPerStorey} courses, each on its own deck, capped with a parapet.`)
   if (bandColor !== null) notes.push('A contrasting band separates the storeys.')
 
+  const seated = finishAssemblyOperations(context, operations, anchor)
   return {
     capability: 'build_structure',
     label: `Raise a ${width} × ${depth} building, ${storeys} storey${storeys === 1 ? '' : 's'}`,
-    operations,
-    nextSelection: created,
+    operations: seated,
+    nextSelection: seated
+      .filter((operation): operation is Extract<CadOperation, { type: 'part.add' }> => operation.type === 'part.add')
+      .map((operation) => operation.part.id),
     summary:
-      `${operations.length} parts across ${storeys} storey${storeys === 1 ? '' : 's'}, `
+      `${seated.length} parts across ${storeys} storey${storeys === 1 ? '' : 's'}, `
       + `${windows} window${windows === 1 ? '' : 's'}${doors ? ` and ${doors} door${doors === 1 ? '' : 's'}` : ''} seated, `
       + `${unbonded === 0 ? 'every course staggered' : `${unbonded} course(s) not fully staggered`}.`,
     report: {
-      parts: operations.length,
+      parts: seated.length,
       storeys,
       coursesPerStorey,
       storeyPitchLdu: storeyLdu,
@@ -519,6 +693,8 @@ function planStructure(args: Record<string, unknown>, context: SharedMutationCon
       bill: [...bill.values()].sort((a, b) => b.count - a.count || a.definitionId.localeCompare(b.definitionId)),
       notes,
       warnings,
+      origin,
+      ...(anchor ? { anchorPartId: anchor.id } : {}),
     },
   }
 }
@@ -583,7 +759,7 @@ export function planSharedMutation(
   switch (capability) {
     case 'duplicate_selection': {
       const partIds = scopedPartIds(context, args)
-      const offset = vector(args.offsetLdu, [STUD_LDU, 0, 0], 'offsetLdu')
+      const offset = copyOffset(context, args, partIds)
       const operations = partIds.map((partId): CadOperation => {
         const source = context.document.parts[partId]
         return {
@@ -604,12 +780,18 @@ export function planSharedMutation(
         }
       })
       const nextSelection = operations.map((operation) => operation.type === 'part.add' ? operation.part.id : '')
+      refuseIllegalAdds(context.document, operations)
       return { capability, label: `Duplicate ${partIds.length} part${partIds.length === 1 ? '' : 's'}`, operations, nextSelection, summary: `${partIds.length} exact cop${partIds.length === 1 ? 'y' : 'ies'} at [${offset.join(', ')}] LDU.` }
     }
 
     case 'mirror_selection': {
       const partIds = scopedPartIds(context, args)
-      const axis = finite(args.axisLdu, 0, 'axisLdu')
+      const about = args.about === 'selection' ? 'selection' : 'world'
+      let axis = finite(args.axisLdu, 0, 'axisLdu')
+      if (about === 'selection') {
+        const boxes = partIds.map((id) => getPartBounds(context.document.parts[id]))
+        axis = (Math.min(...boxes.map((box) => box.min[0])) + Math.max(...boxes.map((box) => box.max[0]))) / 2
+      }
       return {
         capability,
         label: `Mirror ${partIds.length} part${partIds.length === 1 ? '' : 's'}`,
@@ -625,7 +807,7 @@ export function planSharedMutation(
       if (partIds.length * copies > MAX_PART_SCOPE) {
         throw new SharedCapabilityError('RESOURCE_LIMIT', `The array would create ${partIds.length * copies} parts.`, `Reduce the selection or copies so the command creates at most ${MAX_PART_SCOPE} parts.`)
       }
-      const offset = vector(args.offsetLdu, [STUD_LDU, 0, 0], 'offsetLdu')
+      const offset = copyOffset(context, args, partIds)
       const operations: CadOperation[] = []
       const nextSelection: string[] = []
       for (let copy = 1; copy <= copies; copy += 1) {
@@ -651,6 +833,7 @@ export function planSharedMutation(
           })
         }
       }
+      refuseIllegalAdds(context.document, operations)
       return { capability, label: `Array ${partIds.length} part${partIds.length === 1 ? '' : 's'} × ${copies}`, operations, nextSelection, summary: `${copies} repeated cop${copies === 1 ? 'y' : 'ies'} along [${offset.join(', ')}] LDU.` }
     }
 
@@ -689,7 +872,16 @@ export function planSharedMutation(
     case 'stamp_module': {
       const module = requireModule(context, args)
       const copies = integer(args.copies, 1, 1, 64, 'copies')
-      const atLdu = vector(args.atLdu, [0, 0, 0], 'atLdu')
+      const anchorPartId = typeof args.anchorPartId === 'string' && args.anchorPartId ? args.anchorPartId : ''
+      const anchor = anchorPartId ? context.document.parts[anchorPartId] : undefined
+      if (anchorPartId && !anchor) {
+        throw new SharedCapabilityError(
+          'PART_NOT_FOUND',
+          `Part ${anchorPartId} is not present at revision ${context.document.revision}.`,
+          'Pass an id from scene_query. Do not invent a part id or XYZ.',
+        )
+      }
+      const atLdu = anchor ? stampOriginOnAnchor(anchor) : vector(args.atLdu, [0, 0, 0], 'atLdu')
       let result
       try {
         result = stampModule(
@@ -714,13 +906,16 @@ export function planSharedMutation(
         }
         throw cause
       }
+      const seated = anchor ? seatStampOnAnchor(context.document, result.parts, anchor) : result.parts
+      const operations = seated.map((part): CadOperation => ({ type: 'part.add', part }))
+      refuseIllegalAdds(context.document, operations)
       return {
         capability,
         label: `Stamp ${copies} × “${module.name}”`,
-        operations: result.parts.map((part) => ({ type: 'part.add', part })),
-        nextSelection: result.parts.map((part) => part.id),
-        summary: `${result.parts.length} parts placed from a ${describeModule(module)} module.`,
-        report: { moduleId: module.id, name: module.name, copies, parts: result.parts.length, footprintLdu: result.footprintLdu },
+        operations,
+        nextSelection: seated.map((part) => part.id),
+        summary: `${seated.length} parts placed from a ${describeModule(module)} module.`,
+        report: { moduleId: module.id, name: module.name, copies, parts: seated.length, footprintLdu: result.footprintLdu, atLdu, ...(anchor ? { anchorPartId: anchor.id } : {}) },
       }
     }
 
@@ -786,6 +981,7 @@ export function planSharedMutation(
           `Stack fewer copies; the ceiling is ${MAX_GENERATED_PARTS} parts per command.`,
         )
       }
+      refuseIllegalAdds(context.document, operations)
       return {
         capability,
         label: `Stack ${copies} storey${copies === 1 ? '' : 's'}`,
@@ -805,19 +1001,36 @@ export function planSharedMutation(
       if (!moving || !target || moving.id === target.id) {
         throw new SharedCapabilityError('PART_NOT_FOUND', 'Connect parts needs two different current part ids.', 'Pass movingPartId and targetPartId from the current scene.')
       }
-      const bounds = getPartBounds(target)
-      const coarse: Transform = {
-        position: [target.transform.position[0], bounds.min[1], target.transform.position[2]],
-        basis: moving.transform.basis,
-      }
-      const solved = bestSnapTransform(moving, context.document, coarse, { radiusLdu: STUD_LDU, targetPartIds: [target.id] })
-      if (!solved) {
-        throw new SharedCapabilityError('NO_COMPATIBLE_CONNECTOR', `No legal connector mate was found between ${moving.id} and ${target.id}.`, 'Inspect both part definitions and choose a compatible, unoccupied target connector.')
+      const mate = searchMateBetween(moving, target, context.document)
+      if (!mate.transform) {
+        const details = connectFailureDetails(context.document, moving.id, target.id)
+        if (mate.blockedByCollision) {
+          throw new SharedCapabilityError(
+            'COLLISION',
+            `Every legal mate of ${moving.id} onto ${target.id} would collide with another part.`,
+            connectRepair('COLLISION', details),
+            details,
+          )
+        }
+        if (mate.occupancy === 'occupied') {
+          throw new SharedCapabilityError(
+            'CONNECTOR_OCCUPIED',
+            `Every exclusive connector on ${target.id} that could receive ${moving.id} is occupied.`,
+            connectRepair('CONNECTOR_OCCUPIED', details),
+            details,
+          )
+        }
+        throw new SharedCapabilityError(
+          'NO_COMPATIBLE_CONNECTOR',
+          `No legal connector mate was found between ${moving.id} and ${target.id}.`,
+          connectRepair('NO_COMPATIBLE_CONNECTOR', details),
+          details,
+        )
       }
       return {
         capability,
         label: `Connect ${moving.definitionId} to ${target.definitionId}`,
-        operations: [{ type: 'part.transform', partId: moving.id, transform: solved }],
+        operations: [{ type: 'part.transform', partId: moving.id, transform: mate.transform }],
         nextSelection: [moving.id],
         summary: `Solved a full connector-frame pose for ${moving.id} → ${target.id}.`,
       }

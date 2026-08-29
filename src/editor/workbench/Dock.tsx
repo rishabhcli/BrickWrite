@@ -147,7 +147,7 @@ export function DockSection({
         >
           <ChevronDown size={11} className="dock-chevron" />
           {icon}
-          <span>{title}</span>
+          <h3>{title}</h3>
         </button>
         {badge}
         {actions}

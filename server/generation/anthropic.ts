@@ -206,7 +206,7 @@ export class AnthropicGenerationProvider {
     const body = {
       model: this.model,
       max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-      system: request.system,
+      system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' as const } }],
       messages: history,
       // The schema is enforced by the API as well as validated here. `effort:
       // low` suits a bounded decomposition and keeps an interactive request

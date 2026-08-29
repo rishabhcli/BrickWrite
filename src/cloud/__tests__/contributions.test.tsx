@@ -17,7 +17,7 @@ import { CloudProjectsContribution } from '../contributions'
 /**
  * The registration contract, and the default path through it.
  *
- * Two things are checked. First, that the three surfaces land in the slots
+ * Two things are checked. First, that the four surfaces land in the slots
  * `docs/integration/cloud-projects.md` says they land in, and are withdrawn
  * when the composition root unmounts them — a contribution that outlived its
  * owner would keep a dead panel on screen.
@@ -69,10 +69,12 @@ describe('cloud workbench contributions', () => {
     })
 
     expect(registry.list('status').map((entry) => entry.id)).toEqual(['cloud.sync-status'])
-    expect(registry.list('panel-left').map((entry) => entry.id)).toEqual(['cloud.projects'])
+    expect(registry.list('panel-left').map((entry) => entry.id)).toEqual(['cloud.projects', 'cloud.members'])
     expect(registry.list('modal').map((entry) => entry.id)).toEqual(['cloud.version-history'])
     expect(registry.list('panel-left')[0].title).toBe('Projects')
     expect(registry.list('panel-left')[0].priority).toBe(120)
+    expect(registry.list('panel-left')[1].title).toBe('Share')
+    expect(registry.list('panel-left')[1].id).toBe('cloud.members')
     // Nothing leaks into a slot this workstream does not own.
     for (const slot of ['toolbar', 'panel-right', 'inspector', 'overlay'] as const) {
       expect(registry.list(slot)).toHaveLength(0)
@@ -89,7 +91,7 @@ describe('cloud workbench contributions', () => {
         </ExtensionRegistryProvider>,
       )
     })
-    expect(registry.all()).toHaveLength(3)
+    expect(registry.all()).toHaveLength(4)
 
     await act(async () => {
       view!.unmount()
@@ -115,6 +117,7 @@ describe('cloud workbench contributions', () => {
 
     expect(screen.getByTestId('cloud-sync-status')).toHaveAttribute('data-status', 'unconfigured')
     expect(screen.getByTestId('cloud-projects-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('cloud-members-panel')).toBeInTheDocument()
     expect(screen.getByTestId('cloud-version-history')).toBeInTheDocument()
     // The reason is stated on every surface, not just one of them.
     const text = document.body.textContent ?? ''

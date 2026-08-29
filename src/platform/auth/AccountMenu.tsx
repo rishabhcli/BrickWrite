@@ -4,7 +4,8 @@ import { UserAvatar, type CurrentUser } from '@hexclave/react'
 import { PLATFORM_PATHS } from '../config'
 import { CAD_CONTENT_MASK_CLASS, usePlatformAnalytics } from '../analytics'
 import { useFocusTrap } from '../a11y'
-import { accountLabel, useAccountAvailability, useAccountSession } from './account'
+import { accountLabel, useAccountAvailability } from './account'
+import { useAccountSession } from './accountSession'
 import { signInHref, signUpHref, useSignOut } from './guards'
 
 /**
@@ -160,6 +161,16 @@ function AccountControl() {
  */
 export function AccountMenu() {
   const availability = useAccountAvailability()
+  if (availability.status === 'pending') {
+    return (
+      <span className="pf-account pf-account--pending" role="status" aria-label="Checking your account">
+        <span className="pf-account__dot pf-account__dot--pending" aria-hidden="true" />
+        <span className="pf-account__lines">
+          <strong>Checking…</strong>
+        </span>
+      </span>
+    )
+  }
   if (availability.status === 'unavailable') {
     return <LocalOnlyBadge label="Local only" hint="This build has no account layer configured" />
   }

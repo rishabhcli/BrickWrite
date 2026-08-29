@@ -1,6 +1,8 @@
 import { catalog } from './catalog'
+import { findCollisions } from './collision'
 import { cleanBasis, composeTransform, IDENTITY_TRANSFORM, type Mat3, type RigidTransform } from './math'
 import type { ModelDocument, PartInstance, Transform } from './types'
+import { airbornePartIds, floatingPartIds, unclutchedRestPartIds } from './validation'
 
 /**
  * LDraw serialization.
@@ -121,6 +123,16 @@ export interface ImportReport {
   steps: number
   unknownParts: string[]
   withoutGeometry: string[]
+  /** Unrecognised `0` meta commands (Studio groups, LPUB, local palettes). */
+  ignoredMeta: { count: number; samples: string[] }
+  /** Hovering parts the kernel measured after flatten. Reported, never auto-repaired. */
+  floatingPartCount: number
+  /** Internally clutched islands that never reach the ground. */
+  airbornePartCount: number
+  /** Parts sitting on another part with no clutch. */
+  unclutchedRestCount: number
+  /** Confirmed and unverified collision contacts. */
+  collisionCount: number
 }
 
 interface SourceFile {
@@ -163,7 +175,18 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
   next.subassemblies = {}
   next.steps = []
 
-  const report: ImportReport = { placed: 0, submodels: 0, steps: 0, unknownParts: [], withoutGeometry: [] }
+  const report: ImportReport = {
+    placed: 0,
+    submodels: 0,
+    steps: 0,
+    unknownParts: [],
+    withoutGeometry: [],
+    ignoredMeta: { count: 0, samples: [] },
+    floatingPartCount: 0,
+    airbornePartCount: 0,
+    unclutchedRestCount: 0,
+    collisionCount: 0,
+  }
   const unknown = new Set<string>()
   const noGeometry = new Set<string>()
   let sequence = 0
@@ -193,6 +216,15 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
         if (depth === 0) {
           stepIndex += 1
           next.steps.push({ id: `step_${stepIndex}`, index: stepIndex, name: `Imported step ${stepIndex}`, partIds: [] })
+        }
+        continue
+      }
+      if (line.startsWith('0 ')) {
+        if (/^0\s+(FILE|NOFILE|BFC|Name:|Author:|!BRICKWRIGHT)\b/i.test(line)) continue
+        const keyword = line.replace(/^0\s+/, '').split(/\s+/)[0] ?? '0'
+        report.ignoredMeta.count += 1
+        if (report.ignoredMeta.samples.length < 8 && !report.ignoredMeta.samples.includes(keyword)) {
+          report.ignoredMeta.samples.push(keyword)
         }
         continue
       }
@@ -265,11 +297,41 @@ export function parseLDraw(source: string, baseDocument: ModelDocument): { docum
   report.steps = next.steps.length
   report.unknownParts = Array.from(unknown).sort()
   report.withoutGeometry = Array.from(noGeometry).sort()
+  report.floatingPartCount = floatingPartIds(next).length
+  report.unclutchedRestCount = unclutchedRestPartIds(next).length
+  report.collisionCount = findCollisions(next).length
+  report.airbornePartCount = airbornePartIds(next).length
 
   next.revision = baseDocument.revision + 1
   next.updatedAt = new Date().toISOString()
   next.name = 'Imported LDraw model'
   return { document: next, report }
+}
+
+export function describeLDrawImport(report: ImportReport): { title: string; detail: string } {
+  const skipped = report.unknownParts.length + report.withoutGeometry.length
+  const meta =
+    report.ignoredMeta.count > 0
+      ? ` Ignored ${report.ignoredMeta.count} unrecognised meta line${report.ignoredMeta.count === 1 ? '' : 's'} (${report.ignoredMeta.samples.join(', ')}).`
+      : ''
+  const clutch: string[] = []
+  if (report.floatingPartCount || report.airbornePartCount) {
+    const count = Math.max(report.floatingPartCount, report.airbornePartCount)
+    clutch.push(`${count} hovering part${count === 1 ? '' : 's'} with no clutch`)
+  }
+  if (report.unclutchedRestCount) {
+    clutch.push(`${report.unclutchedRestCount} resting without clutch`)
+  }
+  if (report.collisionCount) {
+    clutch.push(`${report.collisionCount} collision contact${report.collisionCount === 1 ? '' : 's'}`)
+  }
+  const clutchNote = clutch.length ? ` ${clutch.join(', ')}.` : ''
+  return {
+    title: 'LDraw imported',
+    detail: skipped
+      ? `${report.placed} parts placed across ${report.submodels} submodels. ${skipped} references had no compiled geometry and were reported, not dropped silently.${meta}${clutchNote}`
+      : `${report.placed} parts across ${report.submodels} submodels are now an editable revisioned CAD document.${meta}${clutchNote}`,
+  }
 }
 
 export function downloadText(filename: string, contents: string, type = 'text/plain') {

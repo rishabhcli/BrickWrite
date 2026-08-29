@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { IndexedDbDriver, MemoryDriver, ProjectRepository, type ProjectSummary } from '../../cad/persistence'
 import { DEMOS } from '../../demos'
+import { PlateAtmosphere } from '../landing/plate'
+import { usePointerField } from '../landing/reveal'
 import './projects.css'
 
 const STARTERS = [
-  { id: 'blank', title: 'Blank', href: '/editor', demoId: null as string | null },
-  { id: 'describe', title: 'Describe', href: '/editor?intent=describe', demoId: null },
+  { id: 'blank', title: 'Blank', href: '/editor?doc=blank', demoId: null as string | null },
+  { id: 'describe', title: 'Describe', href: '/editor?doc=blank&intent=describe', demoId: null },
   ...DEMOS.slice(0, 4).map((demo) => ({
     id: demo.id,
     title: demo.title,
@@ -17,6 +19,7 @@ const STARTERS = [
 
 export function ProjectsPage() {
   const navigate = useNavigate()
+  const pointer = usePointerField<HTMLDivElement>()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -63,7 +66,12 @@ export function ProjectsPage() {
   }, [projects, search])
 
   return (
-    <div className="bw-surface bw-projects-page">
+    <div
+      ref={pointer.ref}
+      className="bw-surface bw-projects-page"
+      data-pointer={pointer.live ? 'live' : 'off'}
+    >
+      <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div className="bw-shell">
         <section className="bw-projects-hero" aria-labelledby="bw-dashboard-title">
@@ -75,7 +83,7 @@ export function ProjectsPage() {
               </h1>
             </div>
             <div className="bw-projects-actions">
-              <Link className="bw-button primary" to="/editor">
+              <Link className="bw-button primary bw-magnet" to="/editor">
                 New model <span className="bw-key" aria-hidden="true">→</span>
               </Link>
               <Link className="bw-button ghost" to="/explore">
@@ -155,7 +163,7 @@ export function ProjectsPage() {
                     ? 'Clear the search to see every saved build.'
                     : 'A blank plate, or any of the six demos.'}
                 </p>
-                <Link className="bw-button primary small" to="/editor">
+                <Link className="bw-button primary small" to="/editor?doc=blank">
                   Start a blank build
                 </Link>
               </div>
@@ -178,13 +186,22 @@ export function ProjectsPage() {
                       Open <span className="bw-key" aria-hidden="true">→</span>
                     </Link>
                     {deleteConfirm === project.projectId ? (
-                      <button
-                        type="button"
-                        className="bw-button small"
-                        onClick={() => handleDelete(project.projectId)}
-                      >
-                        Confirm delete
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="bw-button small"
+                          onClick={() => handleDelete(project.projectId)}
+                        >
+                          Confirm delete
+                        </button>
+                        <button
+                          type="button"
+                          className="bw-button small ghost"
+                          onClick={() => setDeleteConfirm(null)}
+                        >
+                          Cancel
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"

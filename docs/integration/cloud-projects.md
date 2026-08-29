@@ -346,14 +346,15 @@ public URL and the credential never enters the browser bundle.
    on the production deployment and `VITE_CONVEX_URL` in the hosting
    environment.
 
-## NOT_COMPLETE — live deployment
+## Live deployment
 
-**No Convex account is logged in on this machine, so no live deployment was
-ever exercised.** `npx convex dev`, `npx convex codegen` and `npx convex deploy`
-have not been run; no schema has been pushed; no function has been executed by
-the Convex runtime; no Hexclave token has been validated by Convex. Steps 1–4
-above are unperformed, and this workstream is **NOT_COMPLETE** until somebody
-with credentials runs them.
+Production bakes Convex deployment `tangible-toucan-87` into the bundle
+(`VITE_CONVEX_URL` in `.github/workflows/ci.yml`; see `docs/deployment.md`).
+A signed-in Hexclave session has been verified end to end against that
+deployment. A signed-in **Convex write** (claim / append / checkpoint) has
+still not been demonstrated in this repository's records — treat sync as
+provisioned and reachable, and treat a first production write as the remaining
+live proof.
 
 What *is* proven, locally and reproducibly:
 

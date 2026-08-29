@@ -3,7 +3,8 @@ import '@fontsource/chakra-petch/600.css'
 import '@fontsource-variable/manrope'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AppShell, registerRoute } from './platform'
+import { AppShell } from './platform/AppShell'
+import { registerRoute } from './platform/routes'
 import './styles.css'
 
 /**

@@ -39,6 +39,8 @@ export interface SyncState {
   lastError: CloudErrorShape | null
   /** Set while `status` is `conflict`: the head the local tail must rebase onto. */
   conflict: StaleDocumentDetails | null
+  /** The queue head responsible for a conflict/error, so another project is not blamed. */
+  blocked: { projectId: string; localProjectId: string } | null
 }
 
 /**
@@ -56,6 +58,7 @@ export const UNCONFIGURED_SYNC_STATE: SyncState = {
   lastSyncedAt: null,
   lastError: null,
   conflict: null,
+  blocked: null,
 }
 
 export type OutboxPayload =
@@ -84,6 +87,8 @@ export interface OutboxEntry {
   attempts: number
   /** Epoch milliseconds; `drain` skips the queue head until this passes. */
   nextAttemptAt: number
+  /** A non-transient refusal is retried only after an explicit recovery signal. */
+  parked?: boolean
   lastError: CloudErrorShape | null
 }
 
@@ -129,6 +134,7 @@ export class Outbox {
     lastSyncedAt: null,
     lastError: null,
     conflict: null,
+    blocked: null,
   }
   private listeners = new Set<(state: SyncState) => void>()
   private readonly now: () => number
@@ -207,7 +213,15 @@ export class Outbox {
         repair:
           'Reconnect so the queue can drain. Your work is saved in this browser either way, and `backfill()` re-derives the missing tail from the local log.',
       }
-      this.publish({ status: 'error', reason: error.message, lastError: error })
+      const head = this.entries[0]
+      this.publish({
+        status: 'error',
+        reason: error.message,
+        lastError: error,
+        blocked: head
+          ? { projectId: head.projectId, localProjectId: head.localProjectId }
+          : { projectId, localProjectId },
+      })
       return { ok: false, error }
     }
     this.sequence += 1
@@ -223,6 +237,7 @@ export class Outbox {
       enqueuedAt: new Date(this.now()).toISOString(),
       attempts: 0,
       nextAttemptAt: this.now(),
+      parked: false,
       lastError: null,
     }
     this.entries.push(entry)
@@ -269,13 +284,32 @@ export class Outbox {
   private async runDrain(): Promise<SyncState> {
     await this.hydrate()
     if (this.entries.length === 0) {
-      this.publish({ status: 'idle', reason: null, lastError: null, conflict: null })
+      this.publish({ status: 'idle', reason: null, lastError: null, conflict: null, blocked: null })
       return this.getState()
     }
-    this.publish({ status: 'syncing', reason: `Sending ${this.entries.length} change(s).` })
+    this.publish({
+      status: 'syncing',
+      reason: `Sending ${this.entries.length} change(s).`,
+      lastError: null,
+      conflict: null,
+      blocked: null,
+    })
 
     while (this.entries.length > 0) {
       const entry = this.entries[0]
+      if (entry.parked) {
+        const conflict = entry.lastError?.code === 'STALE_DOCUMENT'
+        this.publish({
+          status: conflict ? 'conflict' : 'error',
+          reason: entry.lastError?.message ?? 'A queued change needs attention.',
+          lastError: entry.lastError,
+          conflict: conflict
+            ? ((entry.lastError?.details as StaleDocumentDetails | undefined) ?? null)
+            : null,
+          blocked: { projectId: entry.projectId, localProjectId: entry.localProjectId },
+        })
+        return this.getState()
+      }
       if (entry.nextAttemptAt > this.now()) {
         this.publish({
           status: 'offline',
@@ -293,6 +327,7 @@ export class Outbox {
           lastSyncedAt: new Date(this.now()).toISOString(),
           lastError: null,
           conflict: null,
+          blocked: null,
         })
         continue
       }
@@ -305,12 +340,14 @@ export class Outbox {
         // Not a transport failure and not retryable by repetition: the cloud has
         // moved on. The entry stays queued, untouched, until `rebase.ts` decides
         // what to do with it. Nothing is discarded here.
+        entry.parked = true
         await this.persist(entry)
         this.publish({
           status: 'conflict',
           reason: error.message,
           lastError: error,
           conflict: (error.details as StaleDocumentDetails | undefined) ?? null,
+          blocked: { projectId: entry.projectId, localProjectId: entry.localProjectId },
         })
         return this.getState()
       }
@@ -333,12 +370,19 @@ export class Outbox {
       // Permanent: too large, refused, malformed. The queue stops rather than
       // skipping, because every later entry is built on this one's revision.
       // The entry is kept so an operator can see exactly what is stuck.
+      entry.parked = true
       await this.persist(entry)
-      this.publish({ status: 'error', reason: error.message, lastError: error })
+      this.publish({
+        status: 'error',
+        reason: error.message,
+        lastError: error,
+        conflict: null,
+        blocked: { projectId: entry.projectId, localProjectId: entry.localProjectId },
+      })
       return this.getState()
     }
 
-    this.publish({ status: 'idle', reason: null, lastError: null, conflict: null })
+    this.publish({ status: 'idle', reason: null, lastError: null, conflict: null, blocked: null })
     return this.getState()
   }
 
@@ -389,11 +433,30 @@ export class Outbox {
     await this.hydrate()
     const at = this.now()
     for (const entry of this.entries) {
+      const code = entry.lastError?.code
+      // Permanent refusals stay parked until the operator retries or discards.
+      // Stale heads still unpark: reconnect is the recovery signal the conflict
+      // UI uses, and a later drain re-parks them if the cloud has not moved.
+      if (entry.parked && code && !TRANSIENT.has(code) && code !== 'STALE_DOCUMENT') continue
+      const wasParked = entry.parked === true
+      entry.parked = false
       if (entry.nextAttemptAt > at) {
         entry.nextAttemptAt = at
-        await this.persist(entry)
       }
+      if (wasParked || entry.nextAttemptAt === at) await this.persist(entry)
     }
+    return this.drain()
+  }
+
+  /** Retries the current head after re-authentication or an out-of-band repair. */
+  async retryHead(): Promise<SyncState> {
+    await this.hydrate()
+    const entry = this.entries[0]
+    if (!entry) return this.drain()
+    entry.parked = false
+    entry.nextAttemptAt = this.now()
+    entry.lastError = null
+    await this.persist(entry)
     return this.drain()
   }
 
@@ -410,7 +473,7 @@ export class Outbox {
     const entry = this.entries[0]
     if (!entry) return { ok: true, value: null }
     await this.forget(entry)
-    this.publish({ status: 'idle', reason: null, lastError: null, conflict: null })
+    this.publish({ status: 'idle', reason: null, lastError: null, conflict: null, blocked: null })
     return { ok: true, value: entry }
   }
 

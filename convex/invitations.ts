@@ -44,7 +44,7 @@ export const list = query({
     const rows = await ctx.db
       .query('invitations')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
-      .collect()
+      .take(100)
     return { ok: true, value: rows.map(invitationRecord) }
   },
 })
@@ -67,7 +67,7 @@ export const create = mutation({
     const pending = await ctx.db
       .query('invitations')
       .withIndex('by_email_status', (q) => q.eq('email', email).eq('status', 'pending'))
-      .collect()
+      .take(32)
     const duplicate = pending.find((row) => row.projectId === project._id)
     if (duplicate) {
       return cloudFailure(

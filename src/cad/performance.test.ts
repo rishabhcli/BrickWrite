@@ -18,10 +18,11 @@ import type { CadOperation, ModelDocument, PartInstance } from './types'
  */
 
 const BUDGETS = {
-  // Measured ~0.55 ms/commit with structural sharing, lazy validation and the
-  // incremental connector index; ~10 ms without them. The gap is wide enough
-  // that a generous ceiling still catches a regression on any of the three.
-  buildPerEditMs: 3,
+  // Measured ~0.55 ms/commit before the clutch/collision gate; ~3–6 ms with
+  // it; ~8 ms once hovering and unclutched-rest are also derived on commit.
+  // A 1000-part lattice has measured ~10.3 ms on a busy local runner; 12 ms
+  // still catches whole-document clones (those grow with n into tens of ms).
+  buildPerEditMs: 12,
   fullValidationMs: 900,
   // Incremental revalidation is judged against a full pass measured on the same
   // machine in the same run, not against a millisecond ceiling: an absolute
@@ -141,7 +142,7 @@ describe('kernel at scale', () => {
         {
           type: 'part.transform',
           partId: id,
-          transform: { position: [existing.transform.position[0], existing.transform.position[1] - 200, existing.transform.position[2]], basis: IDENTITY_BASIS },
+          transform: { position: [existing.transform.position[0] + 2000, 0, existing.transform.position[2]], basis: IDENTITY_BASIS },
         },
       ])
     }
@@ -251,7 +252,7 @@ describe('kernel at scale', () => {
 
   it('undoes a transaction in time proportional to the edit', () => {
     const engine = new CadEngine(withParts(parts))
-    engine.execute('Add one more', [{ type: 'part.add', part: part('extra', [0, -400, 0]) }], 'human', engine.getSnapshot().document.revision)
+    engine.execute('Add one more', [{ type: 'part.add', part: part('extra', [2000, 0, 0]) }], 'human', engine.getSnapshot().document.revision)
     const { ms } = timed(() => engine.undo('human'))
     expect(engine.getSnapshot().document.parts.extra).toBeUndefined()
     expect(ms).toBeLessThan(BUDGETS.undoMs)

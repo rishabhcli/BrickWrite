@@ -31,7 +31,7 @@ export const list = query({
     const rows = await ctx.db
       .query('members')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
-      .collect()
+      .take(200)
     return { ok: true, value: rows.map(memberRecord) }
   },
 })
@@ -49,7 +49,7 @@ export const setRole = mutation({
       return cloudFailure(
         'FORBIDDEN',
         "The owner's role cannot be changed.",
-        'Transfer ownership first if the owner should step back.',
+        'The owner role stays with the account that created the project.',
       )
     }
     const membership = await ctx.db
@@ -103,7 +103,7 @@ export const remove = mutation({
       return cloudFailure(
         'FORBIDDEN',
         'The owner cannot be removed from their own project.',
-        'Transfer ownership first, or delete the project.',
+        'The owner cannot leave this project. Delete it instead, or keep the owner account signed in.',
       )
     }
     const membership = await ctx.db
@@ -122,7 +122,7 @@ export const remove = mutation({
       .withIndex('by_project_subject', (q) =>
         q.eq('projectId', project._id).eq('subject', args.subject),
       )
-      .collect()
+      .take(32)
     for (const session of sessions) await ctx.db.delete(session._id)
 
     await writeAuditEvent(ctx, {

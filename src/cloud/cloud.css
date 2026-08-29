@@ -258,3 +258,39 @@
   .bw-cloud-backdrop { backdrop-filter: none; }
   .bw-cloud *, .bw-cloud-dialog * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* --- Members, invitations and live collaboration ------------------------ */
+
+.bw-cloud-members { gap: 10px; }
+.bw-cloud-sharing-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--bw-cloud-line);
+}
+.bw-cloud-sharing-section:first-of-type { border-top: 0; padding-top: 0; }
+.bw-cloud-label { color: var(--bw-cloud-muted); font-size: 10px; }
+.bw-cloud-select {
+  min-width: 92px;
+  max-width: 100%;
+  background: var(--bw-cloud-panel);
+  border: 1px solid var(--bw-cloud-line-hi);
+  border-radius: 2px;
+  color: var(--bw-cloud-ink);
+  padding: 3px 22px 3px 6px;
+  font-size: 10px;
+}
+.bw-cloud-select:focus-visible { outline: 1px solid var(--bw-cloud-cyan); outline-offset: -1px; }
+.bw-cloud-select:disabled { opacity: .45; cursor: not-allowed; }
+.bw-cloud-inline-form--wrap { flex-wrap: wrap; }
+.bw-cloud-inline-form--wrap .bw-cloud-field { min-width: 150px; flex: 1 1 150px; }
+.bw-cloud-member {
+  border: 1px solid var(--bw-cloud-line);
+  border-radius: 3px;
+  background: var(--bw-cloud-panel-2);
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}

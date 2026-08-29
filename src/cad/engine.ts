@@ -5,7 +5,8 @@ import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from '
 import { applyMutations, invertMutations, mutationsForOperations, touchedBy, type DocumentPatch, type EntityMutation } from './patch'
 import { connectionEdgeId as edgeId, deriveConnections, IncrementalConnectorWorld, type MatedPair } from './snapping'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
-import { evaluateConstraints, validateDocument } from './validation'
+import { introducedCollisions } from './collisionGate'
+import { evaluateConstraints, floatingPartIds, unclutchedRestCode, unclutchedRestPartIds, validateDocument } from './validation'
 import type {
   Actor,
   AutonomyMode,
@@ -28,19 +29,6 @@ const now = () => new Date().toISOString()
 
 function error(code: EngineErrorShape['code'], message: string, repair: string, details?: unknown): CommandResult<never> {
   return { ok: false, error: { code, message, repair, details } }
-}
-
-function affectedPartIds(operations: CadOperation[]) {
-  return Array.from(
-    new Set(
-      operations.flatMap((operation) => {
-        if (operation.type === 'part.add') return [operation.part.id]
-        if ('partId' in operation) return [operation.partId]
-        if (operation.type === 'note.add') return operation.note.anchorPartIds
-        return []
-      }),
-    ),
-  )
 }
 
 /**
@@ -667,21 +655,57 @@ export class CadEngine {
       }
     }
 
-    // Collisions are discovered physical facts rather than declared intent, so
-    // they warn a human and refuse an agent — the asymmetry the UI already
-    // presents. The reports stay inside this branch because they are the
-    // expensive part of a commit.
-    if (actor === 'agent') {
-      const beforeReport = validateDocument(this.document)
-      const afterReport = validateDocument(after)
-      const introduced = afterReport.collisions.length - beforeReport.collisions.length
-      if (introduced > 0) {
+    // Confirmed collisions and unconnected unverified overlaps refuse every
+    // actor. Mated partners (hinge flaps, stud stacks) may keep an unverified
+    // box overlap — blocking those would freeze legal mechanisms. Two buildings
+    // on the table are legal LEGO. Undo/redo go through `replay`, not this gate.
+    const touched = [...patch.touched.partIds]
+    if (touched.length) {
+      const placing = operations.some((operation) => operation.type === 'part.add')
+      const introduced = introducedCollisions(this.document, after, touched, { placing })
+      if (introduced.length) {
         return error(
           'COLLISION',
-          `Agent transaction would introduce ${introduced} collision${introduced === 1 ? '' : 's'}.`,
-          'Run build_preflight, inspect the collision entities, and choose another snap candidate.',
-          afterReport.collisions,
+          `Transaction would introduce ${introduced.length} collision${introduced.length === 1 ? '' : 's'}.`,
+          'Place against a different face, or move the colliding part clear of the overlap. An agent should call repair_suggest then preflight_placement.',
+          introduced,
         )
+      }
+    }
+
+    const addedIds = operations.filter((operation) => operation.type === 'part.add').map((operation) => operation.part.id)
+    const movedIds = operations.filter((operation) => operation.type === 'part.transform').map((operation) => operation.partId)
+    // Walls and storeys are many *adds* in one transaction; their clutch is the
+    // planner's job. Every *moved* part is still a brick the operator or agent
+    // is dragging — lifting two unconnected bricks into the air, or aligning a
+    // brick onto a tile, is not a wall. Hinge flaps stay clutched via the joint.
+    const idsToGate = [...movedIds]
+    if (addedIds.length === 1 && movedIds.length === 0) idsToGate.push(addedIds[0]!)
+    if (idsToGate.length) {
+      const beforeFloating = new Set(floatingPartIds(this.document))
+      const afterFloating = new Set(floatingPartIds(after))
+      const beforeRest = new Set(unclutchedRestPartIds(this.document))
+      const afterRest = unclutchedRestPartIds(after)
+      for (const id of idsToGate) {
+        if (!beforeFloating.has(id) && afterFloating.has(id)) {
+          return error(
+            'DISCONNECTED',
+            `Transaction would leave ${id} floating with no clutch and no ground under it.`,
+            'Mate the part to an existing connector, or rest it on the ground. An already-placed hovering brick is mated with preflight_capability connect_parts — do not invent XYZ.',
+            { partIds: [id] },
+          )
+        }
+        if (!beforeRest.has(id) && afterRest.includes(id)) {
+          const code = unclutchedRestCode(after, id)
+          return error(
+            code,
+            `Transaction would rest ${id} on another part without clutching.`,
+            code === 'CONNECTOR_OCCUPIED'
+              ? 'Every exclusive connector on that face is occupied. Place on the ground, or on a face with free studs.'
+              : 'That surface has no free connector that can receive this part. Place on the ground, or on a face with free studs. An agent should call selection_geometry and read approaches before preflight_placement.',
+            { partIds: [id] },
+          )
+        }
       }
     }
 
@@ -763,8 +787,31 @@ export class CadEngine {
       return error(
         'COLLISION',
         `${proposal.validation.collisions.length} collision${proposal.validation.collisions.length === 1 ? '' : 's'} found in proposal ${proposalId}.`,
-        'Choose another snap candidate or move the colliding part by at least 8 LDU.',
+        'Choose another snap candidate or move the colliding part by at least 8 LDU. Call repair_suggest, then preflight_placement against a different face.',
         proposal.validation.collisions,
+      )
+    }
+    const liveFloating = new Set(floatingPartIds(this.document))
+    const proposalFloating = floatingPartIds(proposal.previewDocument).filter((id) => !liveFloating.has(id))
+    if (proposalFloating.length) {
+      return error(
+        'DISCONNECTED',
+        `Proposal ${proposalId} would leave ${proposalFloating.length} part${proposalFloating.length === 1 ? '' : 's'} floating with no clutch and no ground under ${proposalFloating.length === 1 ? 'it' : 'them'}.`,
+        'Mate the part to an existing connector with preflight_capability connect_parts, or rest it on the ground. Do not invent XYZ.',
+        { partIds: proposalFloating },
+      )
+    }
+    const liveRest = new Set(unclutchedRestPartIds(this.document))
+    const proposalRest = unclutchedRestPartIds(proposal.previewDocument).filter((id) => !liveRest.has(id))
+    if (proposalRest.length) {
+      const code = unclutchedRestCode(proposal.previewDocument, proposalRest[0]!)
+      return error(
+        code,
+        `Proposal ${proposalId} would rest ${proposalRest.length} part${proposalRest.length === 1 ? '' : 's'} on another part without clutching.`,
+        code === 'CONNECTOR_OCCUPIED'
+          ? 'Every exclusive connector on that face is occupied. Place on the ground, or on a face with free studs.'
+          : 'Place on the ground, or on a face with a free compatible connector. Call selection_geometry and read approaches.',
+        { partIds: proposalRest },
       )
     }
     const priorAutonomy = this.autonomy

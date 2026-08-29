@@ -51,6 +51,10 @@ export interface Grounding {
   constraints: Array<{ id: string; kind: string; label: string; hard: boolean; status?: string }>
   openNotes: Array<{ id: string; text: string; anchorPartIds: string[] }>
   validation: { healthy: boolean; collisions: number; components: number; boundsStuds?: [number, number, number] }
+  /** Kernel-authored next move. Present so the model does not have to invent a plan. */
+  nextAction?: string
+  nextTool?: string
+  nextArgs?: Record<string, unknown>
   references?: Array<{ token: string; kind: string; partIds: string[]; label: string }>
   brief?: {
     subject: string

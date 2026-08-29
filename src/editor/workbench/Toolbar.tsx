@@ -14,12 +14,13 @@ import {
   Move3d,
   Redo2,
   Rotate3d,
+  Search,
   Trash2,
   Undo2,
 } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { cadEngine } from '../../cad/engine'
-import type { CameraView, EditorTool, RenderMode } from '../CadViewport'
+import type { RenderMode } from '../CadViewport'
 import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
@@ -141,6 +142,12 @@ export function Toolbar({
           disabledReason="Nothing to redo"
         />
         <IconButton
+          icon={<Search />}
+          label="Command palette"
+          shortcut={chord('project.command-palette')}
+          onClick={() => workbench.setModal('core:command-palette')}
+        />
+        <IconButton
           icon={<Command />}
           label="Command deck"
           shortcut={chord('project.command-deck')}
@@ -177,7 +184,6 @@ function ToolButton({
       onClick={onClick}
       role="radio"
       aria-checked={active}
-      aria-pressed={active}
       aria-keyshortcuts={shortcut}
       title={`${label} (${shortcut})`}
     >

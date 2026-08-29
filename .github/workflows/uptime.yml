@@ -1,0 +1,27 @@
+name: production uptime
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe application and API health
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --max-time 20 https://brickwrite.tech/ >/dev/null
+          health="$(curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --max-time 20 https://brickwrite.tech/api/health)"
+          node -e '
+            const value = JSON.parse(process.argv[1]);
+            if (value.ok !== true) throw new Error(`health endpoint is not ok: ${process.argv[1]}`);
+          ' "$health"

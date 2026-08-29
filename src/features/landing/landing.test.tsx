@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEMOS } from '../../demos'
 import {
@@ -13,6 +13,7 @@ import {
 } from './analytics'
 import { LandingPage } from './LandingPage'
 import { hrefFor, parseRoute } from './navigation'
+import { filmAccent } from './reveal'
 import { installBrowserDoubles } from './testing'
 
 let restore: () => void
@@ -21,6 +22,7 @@ afterEach(() => {
   cleanup()
   resetLandingAnalytics()
   restore?.()
+  window.history.replaceState(null, '', '/')
 })
 
 describe('the landing page', () => {
@@ -56,8 +58,8 @@ describe('the landing page', () => {
 
   it('offers all four calls to action', () => {
     render(<LandingPage />)
-    expect(screen.getByRole('link', { name: /Start a blank build/ })).toHaveAttribute('href', '/editor')
-    expect(screen.getByRole('link', { name: 'Describe a build' })).toHaveAttribute('href', '/editor?intent=describe')
+    expect(screen.getByRole('link', { name: /Start a blank build/ })).toHaveAttribute('href', '/editor?doc=blank')
+    expect(screen.getByRole('link', { name: 'Describe a build' })).toHaveAttribute('href', '/editor?doc=blank&intent=describe')
     expect(screen.getByRole('link', { name: `Explore ${DEMOS.length} demos` })).toHaveAttribute('href', '/explore')
     expect(screen.getByRole('link', { name: /Open the professional editor/ })).toHaveAttribute('href', '/editor')
   })
@@ -101,6 +103,40 @@ describe('the landing page', () => {
     expect(tabs).toHaveLength(4)
     for (const tab of tabs) expect(tab.tagName).toBe('BUTTON')
     expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
+  })
+
+  it('lights the page from the pointer only on a fine cursor, and hides decorative motion from assistive tech', () => {
+    const { container } = render(<LandingPage />)
+    expect(container.querySelector('.bw-landing')?.getAttribute('data-pointer')).toBe('off')
+    expect(container.querySelector('.bw-atmosphere')).toBeTruthy()
+    expect(container.querySelector('.bw-cursor')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-bill-rail')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-gate-rail')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-film-ruler')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-reticle')).toBeTruthy()
+    expect(container.querySelector('.bw-film-stage')?.getAttribute('data-stage')).toBe('brief')
+    expect(container.querySelector('[data-film-stage="brief"]')?.getAttribute('data-active')).toBe('true')
+    expect(container.querySelector('[data-film-stage="validated"]')?.getAttribute('data-active')).toBe('false')
+    expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('stands up')
+    const hero = DEMOS.find((demo) => demo.hero)!
+    for (const technique of hero.techniques) {
+      expect(container.textContent).toContain(technique)
+    }
+    expect(container.querySelector('.bw-bill-rail')?.textContent).toContain(hero.bill[0].name)
+    expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.roughValidation.partCount))
+    expect(container.querySelectorAll('.bw-film-ruler li')).toHaveLength(4)
+    expect(container.querySelectorAll('.bw-cursor')).toHaveLength(2)
+    expect(container.querySelector('.bw-stage-keys')?.textContent).toBe('1–4')
+  })
+
+  it('jumps the film with the number keys and writes the beat into the URL', () => {
+    window.history.replaceState(null, '', '/')
+    const { container } = render(<LandingPage />)
+    fireEvent.keyDown(window, { key: '4' })
+    expect(container.querySelector('.bw-film-stage')?.getAttribute('data-stage')).toBe('validated')
+    expect(window.location.search).toContain('beat=validated')
   })
 })
 
@@ -152,6 +188,14 @@ describe('landing analytics', () => {
   })
 })
 
+describe('film accent', () => {
+  it('walks cyan to orange to green along the reel', () => {
+    expect(filmAccent(0)).toBe('rgb(131 231 238)')
+    expect(filmAccent(1)).toBe('rgb(152 213 109)')
+    expect(filmAccent(0.5)).toBe('rgb(245 163 63)')
+  })
+})
+
 describe('deep-link parsing', () => {
   it('reads a demo and a step out of the query the surfaces write', () => {
     expect(parseRoute('/explore', '?demo=heron-sculpture&step=3')).toEqual({
@@ -171,6 +215,7 @@ describe('deep-link parsing', () => {
 
   it('treats anything else as the landing page', () => {
     expect(parseRoute('/', '')).toEqual({ surface: 'landing', demoId: null, step: null })
+    expect(parseRoute('/', '?beat=validated')).toEqual({ surface: 'landing', demoId: null, step: null })
     expect(parseRoute('/editor', '?project=x')).toEqual({ surface: 'landing', demoId: null, step: null })
   })
 

@@ -50,6 +50,8 @@ export function useFocusTrap(
 ): RefObject<HTMLElement | null> {
   const containerRef = useRef<HTMLElement | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  const onEscapeRef = useRef(onEscape)
+  onEscapeRef.current = onEscape
 
   useEffect(() => {
     if (!active) return
@@ -63,8 +65,9 @@ export function useFocusTrap(
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         event.stopPropagation()
-        onEscape?.()
+        onEscapeRef.current?.()
         return
       }
       if (event.key !== 'Tab') return
@@ -93,7 +96,7 @@ export function useFocusTrap(
       const target = restoreTo?.current ?? previouslyFocused.current
       if (target && target.isConnected) target.focus()
     }
-  }, [active, onEscape, restoreTo])
+  }, [active, restoreTo])
 
   return containerRef
 }

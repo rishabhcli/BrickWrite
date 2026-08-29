@@ -5,10 +5,12 @@ import {
   SHARED_MUTATION_CAPABILITIES,
   SharedCapabilityError,
 } from './capabilities'
+import { catalog } from './catalog'
 import { CadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import type { ModelDocument, PartInstance } from './types'
+import { floatingPartIds } from './validation'
 
 const part = (id: string, position: readonly [number, number, number] = [0, 0, 0]): PartInstance => ({
   id,
@@ -51,11 +53,11 @@ describe('shared human/agent capabilities', () => {
     const document = withParts(source)
     const context = { document, selection: ['source'], actor: 'human' as const }
 
-    const duplicate = planSharedMutation('duplicate_selection', { offsetLdu: [20, -8, 40] }, context)
+    const duplicate = planSharedMutation('duplicate_selection', { offsetLdu: [20, 0, 40] }, context)
     expect(duplicate.operations).toHaveLength(1)
     expect(duplicate.operations[0]).toMatchObject({
       type: 'part.add',
-      part: { transform: { position: [30, -32, 70] } },
+      part: { transform: { position: [30, -24, 70] } },
     })
 
     const array = planSharedMutation('linear_array', { copies: 3, offsetLdu: [0, 0, 20] }, context)
@@ -84,6 +86,20 @@ describe('shared human/agent capabilities', () => {
     ])
   })
 
+  it('mates a hovering brick onto a measured anchor instead of leaving it in the air', () => {
+    const document = withParts(part('base'), part('moving', [0, -200, 0]))
+    const plan = planSharedMutation(
+      'connect_parts',
+      { movingPartId: 'moving', targetPartId: 'base' },
+      { document, selection: [], actor: 'human' },
+    )
+    expect(plan.operations[0]).toMatchObject({
+      type: 'part.transform',
+      partId: 'moving',
+      transform: { position: [0, -24, 0] },
+    })
+  })
+
   it('creates and assigns a subassembly as one consistent transaction', () => {
     const document = withParts(part('a'))
     const plan = planSharedMutation(
@@ -101,6 +117,61 @@ describe('shared human/agent capabilities', () => {
     expect(next.parts.a.subassemblyId).toBe(created?.id)
     expect(next.subassemblies.hull.partIds).not.toContain('a')
     expect(result.ok && result.value.patch.touched.subassemblyIds).toEqual(expect.arrayContaining(['hull', created!.id]))
+  })
+
+  it('refuses a duplicate that would hover', () => {
+    const document = withParts(part('source'))
+    try {
+      planSharedMutation(
+        'duplicate_selection',
+        { offsetLdu: [0, -200, 0] },
+        { document, selection: ['source'], actor: 'human' },
+      )
+      throw new Error('expected DISCONNECTED')
+    } catch (cause) {
+      expect(cause).toMatchObject({ code: 'DISCONNECTED', name: 'SharedCapabilityError' })
+    }
+  })
+
+  it('still plans a colliding duplicate so propose can show a ghost', () => {
+    const document = withParts(part('source'))
+    const plan = planSharedMutation(
+      'duplicate_selection',
+      { offsetLdu: [0, 0, 0] },
+      { document, selection: ['source'], actor: 'human' },
+    )
+    expect(plan.operations).toHaveLength(1)
+    expect(plan.operations[0]).toMatchObject({ type: 'part.add', part: { transform: { position: [0, 0, 0] } } })
+  })
+
+  it('names another nearby part when connect_parts cannot mate', () => {
+    const tileId = catalog.get('3070b')?.canonicalId
+    expect(tileId).toBeTruthy()
+    const tile = (id: string, position: readonly [number, number, number]): PartInstance => ({
+      ...part(id, position),
+      definitionId: tileId!,
+    })
+    const document = withParts(tile('tileA'), tile('tileB', [400, 0, 0]), part('anchor', [800, 0, 0]))
+    try {
+      planSharedMutation(
+        'connect_parts',
+        { movingPartId: 'tileA', targetPartId: 'tileB' },
+        { document, selection: [], actor: 'human' },
+      )
+      throw new Error('expected connect_parts to refuse two tiles')
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(SharedCapabilityError)
+      expect(cause).toMatchObject({
+        details: {
+          movingPartId: 'tileA',
+          targetPartId: 'tileB',
+        },
+      })
+      const details = (cause as SharedCapabilityError).details
+      expect(details?.nearbyPartId).toBeTruthy()
+      expect(details?.nearbyPartId).not.toBe('tileB')
+      expect(String((cause as SharedCapabilityError).repair)).toMatch(/connect_parts/)
+    }
   })
 
   it('renames revisioned document state and round-trips it through shared undo/redo', () => {
@@ -173,5 +244,107 @@ describe('shared human/agent capabilities', () => {
     } catch (cause) {
       expect(cause).toMatchObject({ code: 'RESOURCE_LIMIT' })
     }
+  })
+
+  it('refuses a stamp that would hover', () => {
+    const document = withParts(part('source'))
+    const captured = planSharedMutation(
+      'capture_module',
+      { name: 'Bay', partIds: ['source'] },
+      { document, selection: ['source'], actor: 'human' },
+    )
+    const engine = new CadEngine(document)
+    expect(engine.execute(captured.label, [...captured.operations], 'human', document.revision).ok).toBe(true)
+    try {
+      planSharedMutation(
+        'stamp_module',
+        { module: 'Bay', atLdu: [0, -200, 0] },
+        { document: engine.getSnapshot().document, selection: [], actor: 'human' },
+      )
+      throw new Error('expected DISCONNECTED')
+    } catch (cause) {
+      expect(cause).toMatchObject({ code: 'DISCONNECTED', name: 'SharedCapabilityError' })
+    }
+  })
+
+  it('stamps onto a measured anchor instead of invented XYZ', () => {
+    const document = withParts(part('source'), part('island', [400, 0, 0]))
+    const captured = planSharedMutation(
+      'capture_module',
+      { name: 'Bay', partIds: ['source'] },
+      { document, selection: ['source'], actor: 'human' },
+    )
+    const engine = new CadEngine(document)
+    expect(engine.execute(captured.label, [...captured.operations], 'human', document.revision).ok).toBe(true)
+    const plan = planSharedMutation(
+      'stamp_module',
+      { module: 'Bay', anchorPartId: 'island' },
+      { document: engine.getSnapshot().document, selection: [], actor: 'human' },
+    )
+    expect(plan.operations.length).toBeGreaterThan(0)
+    expect(plan.report).toMatchObject({ anchorPartId: 'island' })
+  })
+
+  it('refuses a wall that would hover beside a grounded brick', () => {
+    const document = withParts(part('ground'))
+    try {
+      planSharedMutation(
+        'build_wall',
+        { lengthStuds: 8, courses: 3, originLdu: [0, -200, 0] },
+        { document, selection: [], actor: 'human' },
+      )
+      throw new Error('expected DISCONNECTED')
+    } catch (cause) {
+      expect(cause).toMatchObject({ code: 'DISCONNECTED', name: 'SharedCapabilityError' })
+    }
+  })
+
+  it('lays a wall onto a measured anchor instead of invented XYZ', () => {
+    const document = withParts(part('island', [400, 0, 0]))
+    const plan = planSharedMutation(
+      'build_wall',
+      { lengthStuds: 4, courses: 1, anchorPartId: 'island' },
+      { document, selection: [], actor: 'human' },
+    )
+    expect(plan.report).toMatchObject({ anchorPartId: 'island' })
+    const engine = new CadEngine(document)
+    const result = engine.execute(plan.label, [...plan.operations], 'human', document.revision)
+    expect(result.ok).toBe(true)
+    expect(floatingPartIds(engine.getSnapshot().document)).toEqual([])
+  })
+
+  it('duplicates beside the selection by its measured width instead of an invented offset', () => {
+    const source = part('source')
+    const document = withParts(source)
+    const plan = planSharedMutation(
+      'duplicate_selection',
+      { along: 'x' },
+      { document, selection: ['source'], actor: 'human' },
+    )
+    expect(plan.operations).toHaveLength(1)
+    const copy = plan.operations[0]
+    expect(copy?.type).toBe('part.add')
+    if (copy?.type !== 'part.add') return
+    expect(copy.part.transform.position[0]).toBeGreaterThan(source.transform.position[0] + 40)
+    expect(copy.part.transform.position[1]).toBe(source.transform.position[1])
+    expect(copy.part.transform.position[2]).toBe(source.transform.position[2])
+  })
+
+  it('mirrors a clutched pair about its own centre when about is selection', () => {
+    const document = withParts(part('a', [400, 0, 0]), part('b', [480, 0, 0]))
+    const plan = planSharedMutation(
+      'mirror_selection',
+      { about: 'selection' },
+      { document, selection: ['a', 'b'], actor: 'human' },
+    )
+    const poses = Object.fromEntries(
+      plan.operations.flatMap((operation) =>
+        operation.type === 'part.transform' ? [[operation.partId, operation.transform.position]] : [],
+      ),
+    ) as Record<string, [number, number, number]>
+    expect(poses.a[0]).toBeCloseTo(480, 6)
+    expect(poses.b[0]).toBeCloseTo(400, 6)
+    expect(poses.a[1]).toBe(0)
+    expect(poses.b[1]).toBe(0)
   })
 })

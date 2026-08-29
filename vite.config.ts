@@ -24,6 +24,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 2_000,
     // Keep the interactive CAD shell cacheable without allowing Three/R3F and
     // the kernel to collapse back into megabyte-scale monoliths.
+    modulePreload: {
+      resolveDependencies: (_filename, deps) => deps.filter((dep) => !/hexclave/i.test(dep)),
+    },
     rolldownOptions: {
       output: {
         codeSplitting: {
@@ -39,13 +42,11 @@ export default defineConfig({
               test: /node_modules\/(?:react|react-dom|react-reconciler|scheduler|its-fine|use-sync-external-store)\//,
             },
             {
-              // The account layer is statically imported by the entry module, so
-              // without its own group the whole Hexclave SDK — and the Stripe,
-              // Radix, rrweb and ai-sdk trees it carries — lands in the entry
-              // chunk and takes it past a megabyte on its own. Keep this group
-              // intact: splitting the SDK's mutually dependent modules across
-              // max-size subchunks breaks their ESM initialization order in
-              // Rolldown and leaves the production root blank.
+              // The account layer is dynamically imported after first paint.
+              // Keep this group intact: splitting the SDK's mutually dependent
+              // modules across max-size subchunks breaks their ESM
+              // initialization order in Rolldown and leaves the production
+              // root blank.
               name: 'hexclave',
               test: /node_modules\/(?:@hexclave|@stripe|@ai-sdk|@radix-ui|@hookform|ai|react-hook-form|rrweb|@rrweb)\//,
               maxSize: 10_000_000,

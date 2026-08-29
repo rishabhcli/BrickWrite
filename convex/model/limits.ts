@@ -49,7 +49,7 @@ export function validateSnapshotUpload(upload: SnapshotUpload): CloudResult<stri
       return cloudFailure(
         'PAYLOAD_TOO_LARGE',
         'One checkpoint chunk exceeded the per-row ceiling.',
-        `Re-chunk the document at ${SNAPSHOT_CHUNK_BYTES} characters per chunk.`,
+        `Re-chunk the document at ${SNAPSHOT_CHUNK_BYTES} UTF-8 bytes per chunk.`,
         { limit: MAX_CHUNK_BYTES },
       )
     }

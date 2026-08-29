@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { redactAuditDetail } from '../../../convex/model/redaction'
-import { validateSnapshotUpload } from '../../../convex/model/limits'
+import { MAX_CHUNK_BYTES, validateSnapshotUpload } from '../../../convex/model/limits'
 import type { CadOperation } from '../../cad/types'
 import {
   MAX_COMMENT_BYTES,
@@ -74,6 +74,16 @@ describe('payload ceilings', () => {
     }
     // Refused, not truncated: not one chunk row was written.
     expect(scene.deployment.snapshots).toHaveLength(before)
+  })
+
+  it('cuts CJK text by UTF-8 bytes so a chunk stays under the server cap', () => {
+    const text = '漢'.repeat(300_000)
+    const chunks = chunkText(text, SNAPSHOT_CHUNK_BYTES)
+    expect(chunks.join('')).toBe(text)
+    for (const chunk of chunks) {
+      expect(utf8Bytes(chunk)).toBeLessThanOrEqual(SNAPSHOT_CHUNK_BYTES)
+    }
+    expect(utf8Bytes(text)).toBeGreaterThan(MAX_CHUNK_BYTES)
   })
 
   it('refuses an oversized project creation without leaving a half-made project', async () => {

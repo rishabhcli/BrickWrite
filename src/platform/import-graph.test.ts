@@ -192,6 +192,7 @@ describe('client bundle cannot reach a server secret', () => {
 
 describe('route-level code splitting', () => {
   const eager = walk(['src/platform/index.ts'], { followDynamic: false })
+  const landingEntry = walk(['src/main.tsx'], { followDynamic: false })
 
   it('keeps the renderer out of the shell chunk entirely', () => {
     const rendering = ['three', 'three-mesh-bvh', '@react-three/fiber', '@react-three/drei', 'three-stdlib']
@@ -202,6 +203,13 @@ describe('route-level code splitting', () => {
       expect(file, 'the shell statically imports a CAD kernel module').not.toMatch(/^src\/cad\//)
       expect(file, 'the shell statically imports an editor module').not.toMatch(/^src\/editor\//)
     }
+  })
+
+  it('keeps Hexclave off the landing document entry', () => {
+    expect(landingEntry.packages.some((pkg) => pkg.startsWith('@hexclave/'))).toBe(false)
+    expect(landingEntry.files).not.toContain('src/hexclave/client.ts')
+    expect(landingEntry.files).not.toContain('src/platform/auth/AccountMenu.tsx')
+    expect(landingEntry.files).not.toContain('src/platform/auth/HexclaveLayer.tsx')
   })
 
   it('reaches the CAD kernel only through dynamic imports', () => {

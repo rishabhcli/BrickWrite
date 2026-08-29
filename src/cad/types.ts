@@ -2,7 +2,7 @@ export type { DocumentPatch, EntityMutation } from './patch'
 export type { Mat3, RigidTransform, Vec3 } from './math'
 export type { RigidTransform as Transform } from './math'
 
-import type { Mat3, RigidTransform, RigidTransform as Transform, Vec3 } from './math'
+import type { Mat3, RigidTransform as Transform, Vec3 } from './math'
 import type { DocumentPatch } from './patch'
 
 export type Actor = 'human' | 'agent'
@@ -231,6 +231,8 @@ export interface ColorDefinition {
   /** 1 for opaque; LDraw ALPHA values below 255 render as transparent. */
   alpha: number
   finish: string
+  /** BrickLink colour id, when the compiler found a mapping. */
+  bricklinkId?: number
 }
 
 export interface PartInstance {
@@ -434,6 +436,7 @@ export interface EngineErrorShape {
     | 'CATALOG_NOT_LOADED'
     | 'COLOR_UNAVAILABLE'
     | 'COLLISION'
+    | 'DISCONNECTED'
     | 'CONSTRAINT_VIOLATION'
     | 'PROPOSAL_NOT_FOUND'
     | 'PROPOSAL_STALE'

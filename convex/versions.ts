@@ -11,7 +11,7 @@ import {
   type CloudVersionRecord,
 } from './model/protocol'
 import { branchRecord, versionRecord } from './model/records'
-import { readSnapshot, writeSnapshot } from './model/snapshots'
+import { copyLatestCheckpointToBranch, readSnapshot, writeSnapshot } from './model/snapshots'
 import { snapshotUpload } from './model/validators'
 
 /**
@@ -104,7 +104,7 @@ export const list = query({
       .query('versions')
       .withIndex('by_project_created', (q) => q.eq('projectId', authorised.value.project._id))
       .order('desc')
-      .collect()
+      .take(200)
     return { ok: true, value: rows.map(versionRecord) }
   },
 })
@@ -193,6 +193,25 @@ export const createBranch = mutation({
     })
     const row = await ctx.db.get(branchId)
     if (!row) return cloudFailure('NOT_FOUND', 'The branch vanished during creation.', 'Retry.')
+    const seeded = await copyLatestCheckpointToBranch(ctx, {
+      projectId: project._id,
+      fromBranchId: parent._id,
+      toBranchId: branchId,
+      atRevision: at,
+      createdBySubject: identity.subject,
+    })
+    if (!seeded.ok) {
+      await ctx.db.delete(branchId)
+      return seeded
+    }
+    if (seeded.value === null && (args.kind ?? 'named') !== 'conflict') {
+      await ctx.db.delete(branchId)
+      return cloudFailure(
+        'NOT_FOUND',
+        'The source branch has no checkpoint to copy, so the new branch would not open.',
+        'Save the source branch once, then create the named branch.',
+      )
+    }
     return { ok: true, value: branchRecord(row) }
   },
 })

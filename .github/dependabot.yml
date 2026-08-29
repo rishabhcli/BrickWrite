@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 10
+    groups:
+      hexclave:
+        patterns: ["@hexclave/*"]
+      test-and-build:
+        dependency-type: development
+    commit-message:
+      prefix: deps
+    labels: [dependencies]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:15"
+      timezone: America/Chicago
+    commit-message:
+      prefix: ci
+    labels: [dependencies]

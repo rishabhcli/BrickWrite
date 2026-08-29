@@ -2,17 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { planEnclosure } from './assembly'
 import { catalog, STUD_LDU } from './catalog'
 import { CadEngine } from './engine'
-import { IDENTITY_BASIS } from './math'
+import { IDENTITY_BASIS, transformPoint } from './math'
 import { createBlankDocument } from './sample'
 import {
   ABS_GRAMS_PER_LDU3,
   analyseStatics,
+  centroidOf,
   computeMass,
+  computeOverloads,
   computeSupport,
   convexHull,
   distanceInsidePolygon,
+  horizontalDistance,
+  maxPairwiseDistance,
+  overhangPenaltyGrams,
+  hangingArmIssues,
+  MIN_RESISTING_ARM_LDU,
+  clutchCapacityWeight,
   partMassGrams,
 } from './statics'
+import { findSnapCandidates } from './snapping'
 import type { CadOperation, ModelDocument, PartInstance } from './types'
 
 /**
@@ -165,7 +174,10 @@ describe('what the studs are carrying', () => {
   it('carries the assumption it judged against, rather than hiding it', () => {
     const report = analyseStatics(doc(part('a', '3001', [0, 0, 0])), 250)
     expect(report.assumptions.clutchGramsPerStud).toBe(250)
+    expect(report.assumptions.minResistingArmLdu).toBe(MIN_RESISTING_ARM_LDU)
     expect(report.assumptions.massBasis).toMatch(/idealized/)
+    expect(report.assumptions.clutchFamilyWeights.stud).toBe(1)
+    expect(report.assumptions.clutchFamilyWeights.clip).toBeLessThan(report.assumptions.clutchFamilyWeights.pin)
   })
 
   it('gets stricter, never looser, as the clutch assumption tightens', () => {
@@ -173,5 +185,161 @@ describe('what the studs are carrying', () => {
     for (let index = 0; index < 6; index += 1) parts.push(part(`s${index}`, '3001', [0, -index * 24, 0]))
     const model = doc(...parts)
     expect(analyseStatics(model, 1).overloaded.length).toBeGreaterThanOrEqual(analyseStatics(model, 5000).overloaded.length)
+  })
+})
+
+const snap = (moving: PartInstance, ...supports: PartInstance[]): PartInstance => {
+  const solved = findSnapCandidates(moving, doc(...supports, moving), moving.transform, { radiusLdu: 14 })[0]
+  if (!solved) throw new Error(`No snap for ${moving.id}`)
+  return { ...moving, transform: solved.transform }
+}
+
+/**
+ * A side-stud 1×1 on a short column, with a 1×4 mated only to that stud.
+ *
+ * The column keeps the hanging brick off the ground plane (otherwise the walk
+ * treats it as compression). The hang is snapped against the bracket alone so
+ * the 2×4's top studs cannot steal the snap.
+ */
+function cantilever() {
+  const ground = part('g', '3001', [0, 0, 0])
+  const column: PartInstance[] = [ground]
+  for (let index = 1; index <= 4; index += 1) {
+    column.push(snap(part(`c${index}`, '3001', [0, -index * 24 - 1, 0]), ...column))
+  }
+  const top = column[column.length - 1]!
+  const bracket = snap(part('br', '87087', [0, top.transform.position[1] - 25, 0]), ...column)
+  const hang = snap(part('h', '3005', transformPoint(bracket.transform, [0, 10, -32])), bracket)
+  return doc(...column, bracket, hang)
+}
+
+/** Clutch just above a sub-gram hang so force stays inside capacity while rotation does not. */
+const LIGHT_CLUTCH = 1
+
+describe('cantilever moment', () => {
+  it('a load directly beneath its anchor has no leverage', () => {
+    expect(horizontalDistance([10, 40, 3], [10, 0, 3])).toBe(0)
+    const stack = analyseStatics(doc(part('a', '3001', [0, 0, 0]), part('b', '3001', [0, -24, 0])))
+    expect(stack.overloaded.every((issue) => !issue.leverage)).toBe(true)
+  })
+
+  it('the same mass further out reports a larger moment', () => {
+    const near = horizontalDistance([0, 0, 0], [40, 0, 0])
+    const far = horizontalDistance([0, 0, 0], [400, 0, 0])
+    expect(far).toBeGreaterThan(near)
+    expect(far / near).toBeCloseTo(10, 6)
+  })
+
+  it('widening the anchor span raises the moment capacity', () => {
+    const tight = maxPairwiseDistance([[0, 0, 0], [4, 0, 0]])
+    const wide = maxPairwiseDistance([[0, 0, 0], [40, 0, 0]])
+    const clutch = 100
+    const studs = 2
+    const tightCap = studs * clutch * Math.max(tight, MIN_RESISTING_ARM_LDU) / 2
+    const wideCap = studs * clutch * Math.max(wide, MIN_RESISTING_ARM_LDU) / 2
+    expect(wideCap).toBeGreaterThan(tightCap)
+  })
+
+  it('a cluster within force capacity but over moment capacity is reported as leverage', () => {
+    const model = cantilever()
+    expect(model.parts.h).toBeDefined()
+    expect(model.parts.br).toBeDefined()
+    const { overloaded } = computeOverloads(model, LIGHT_CLUTCH)
+    const issue = overloaded.find((entry) => entry.partIds.includes('h') && entry.leverage)
+    expect(issue?.leverage).toBeDefined()
+    expect(issue!.grams).toBeLessThanOrEqual(issue!.capacityGrams)
+    expect(issue!.leverage!.momentGramLdu).toBeGreaterThan(issue!.leverage!.capacityGramLdu)
+    expect(issue!.message).toMatch(/leverage/)
+  })
+
+  it('a single anchor uses the minimum resisting arm', () => {
+    const model = cantilever()
+    const issue = computeOverloads(model, LIGHT_CLUTCH).overloaded.find((entry) => entry.leverage)
+    expect(issue?.leverage).toBeDefined()
+    expect(issue!.leverage!.spanLdu).toBeLessThan(MIN_RESISTING_ARM_LDU)
+    expect(issue!.leverage!.capacityGramLdu).toBe(
+      Math.round((issue!.studs * LIGHT_CLUTCH * MIN_RESISTING_ARM_LDU) / 2),
+    )
+  })
+
+  it('leverage is absent on pure compression', () => {
+    const parts: PartInstance[] = []
+    for (let index = 0; index < 8; index += 1) parts.push(part(`s${index}`, '3001', [0, -index * 24, 0]))
+    const { overloaded } = computeOverloads(doc(...parts), 1)
+    expect(overloaded).toEqual([])
+  })
+
+  it('overhangPenaltyGrams adds equivalent mass from moment excess', () => {
+    const forceOnly = overhangPenaltyGrams({
+      partIds: ['a'],
+      hangingPartIds: ['a'],
+      grams: 120,
+      studs: 1,
+      capacityGrams: 100,
+      severity: 'over-capacity',
+      message: 'force',
+    })
+    expect(forceOnly).toBe(20)
+    const withLeverage = overhangPenaltyGrams({
+      partIds: ['a'],
+      hangingPartIds: ['a'],
+      grams: 50,
+      studs: 1,
+      capacityGrams: 100,
+      severity: 'marginal',
+      message: 'moment',
+      leverage: {
+        armLdu: 40,
+        spanLdu: 12,
+        momentGramLdu: 2000,
+        capacityGramLdu: 600,
+        severity: 'over-capacity',
+      },
+    })
+    expect(withLeverage).toBeCloseTo(1400 / 40)
+  })
+
+  it('hangingArmIssues counts only moment-over clusters, not every leverage object', () => {
+    const forceOnly = {
+      partIds: ['a'],
+      hangingPartIds: ['a'],
+      grams: 120,
+      studs: 1,
+      capacityGrams: 100,
+      severity: 'over-capacity' as const,
+      message: 'force',
+      leverage: {
+        armLdu: 8,
+        spanLdu: 12,
+        momentGramLdu: 400,
+        capacityGramLdu: 600,
+        severity: 'marginal' as const,
+      },
+    }
+    const momentOver = {
+      ...forceOnly,
+      partIds: ['b'],
+      hangingPartIds: ['b'],
+      leverage: {
+        armLdu: 40,
+        spanLdu: 12,
+        momentGramLdu: 2000,
+        capacityGramLdu: 600,
+        severity: 'over-capacity' as const,
+      },
+    }
+    expect(hangingArmIssues([forceOnly, momentOver]).map((item) => item.partIds[0])).toEqual(['b'])
+  })
+
+  it('weights a pin clutch above a clip, and a stud at 1', () => {
+    expect(clutchCapacityWeight('stud', 'anti-stud')).toBe(1)
+    expect(clutchCapacityWeight('pin', 'pin-hole')).toBeGreaterThan(clutchCapacityWeight('clip', 'bar'))
+  })
+
+
+  it('centroidOf sits between equal parts', () => {
+    const model = doc(part('a', '3001', [0, 0, 0]), part('b', '3001', [200, 0, 0]))
+    const centre = centroidOf(['a', 'b'], model)
+    expect(centre[0]).toBeCloseTo(100, 0)
   })
 })

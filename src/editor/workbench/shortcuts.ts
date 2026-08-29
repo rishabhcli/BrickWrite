@@ -39,8 +39,8 @@ export const RESERVED_CHORDS: readonly string[] = ['escape', 'enter', 'tab', 'sh
 export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   // Tools ------------------------------------------------------------------
   { id: 'tool.select', title: 'Select tool', group: 'tools', detail: 'Pick parts, shift-drag to box select.', defaultChord: 'v', keywords: 'pointer arrow pick' },
-  { id: 'tool.move', title: 'Move tool', group: 'tools', detail: 'Drag the translate gizmo on the selection.', defaultChord: 'g', keywords: 'translate grab gizmo' },
-  { id: 'tool.rotate', title: 'Rotate tool', group: 'tools', detail: 'Drag the rotate rings on the selection.', defaultChord: 'r', keywords: 'turn spin gizmo' },
+  { id: 'tool.move', title: 'Move tool', group: 'tools', detail: 'Drag the translate gizmo on the selection. Several parts move as one rigid body.', defaultChord: 'g', keywords: 'translate grab gizmo' },
+  { id: 'tool.rotate', title: 'Rotate tool', group: 'tools', detail: 'Drag the rotate rings on the selection. Several parts turn about their centre.', defaultChord: 'r', keywords: 'turn spin gizmo' },
   { id: 'tool.connect', title: 'Connect tool', group: 'tools', detail: 'Mate two parts through their real connectors.', defaultChord: 'c', keywords: 'mate snap join hinge' },
 
   // Edit -------------------------------------------------------------------
@@ -48,7 +48,7 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   { id: 'edit.redo', title: 'Redo', group: 'edit', detail: 'Reapply the last undone transaction.', defaultChord: 'shift+mod+z' },
   { id: 'edit.clone', title: 'Clone selection', group: 'edit', detail: 'Duplicate the selection one part-width along X.', defaultChord: 'mod+d', keywords: 'duplicate copy' },
   { id: 'edit.delete', title: 'Delete selection', group: 'edit', detail: 'Remove every selected part in one transaction.', defaultChord: 'delete', keywords: 'remove erase' },
-  { id: 'edit.quarter-turn', title: 'Quarter turn', group: 'edit', detail: 'Turn the selection 90° about its own vertical axis.', defaultChord: 'shift+r', keywords: 'rotate 90' },
+  { id: 'edit.quarter-turn', title: 'Quarter turn', group: 'edit', detail: 'Turn the selection 90°. One part turns about its own origin; several parts turn together about their centre so clutch is kept.', defaultChord: 'shift+r', keywords: 'rotate 90' },
   { id: 'edit.mirror', title: 'Mirror across X', group: 'edit', detail: 'Reflect the selection through an exact X plane.', defaultChord: 'shift+m' },
   { id: 'edit.array', title: 'Linear array…', group: 'edit', detail: 'Repeat the selection along an exact vector.', defaultChord: 'shift+a', keywords: 'repeat pattern' },
   { id: 'edit.protect', title: 'Protect / unlock selection', group: 'edit', detail: 'Toggle the kernel-enforced agent lock.', defaultChord: 'l', keywords: 'lock' },

@@ -99,7 +99,7 @@ const [
 const { catalog, getColor, originForSurface, surfaceAbove, STUD_LDU, PLATE_LDU, BRICK_LDU } = catalogModule
 const { planWall, planEnclosure, planBrickField, planHingedFlap } = assemblyModule
 const { findCollisions, geometryFromArrays } = collisionModule
-const { getDocumentBounds, getPartBounds } = geometryModule
+const { getPartBounds } = geometryModule
 const { computeBuildOrder, verifyBuildOrder } = instructionsModule
 const { basisFromEulerDegrees, cleanBasis } = mathModule
 const { decodeMesh } = meshModule

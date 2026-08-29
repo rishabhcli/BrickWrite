@@ -1,10 +1,11 @@
 import { AlertTriangle, Check, ChevronDown, Copy, FilePlus2, GitBranch, PencilLine, Save, Scale, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { planSharedMutation, SharedCapabilityError } from '../cad/capabilities'
 import { catalog } from '../cad/catalog'
 import { cadEngine } from '../cad/engine'
 import { session, type SessionStatus } from '../cad/session'
 import type { ProjectSummary } from '../cad/persistence'
+import { useFocusTrap } from '../platform/a11y'
 
 /**
  * Project and legal surface.
@@ -55,6 +56,13 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
   const [forkName, setForkName] = useState('')
   const [renameValue, setRenameValue] = useState(documentName)
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => {
+    setOpen('none')
+    setConfirmDelete(null)
+  }, [])
+  const panel = useFocusTrap(open !== 'none', { onEscape: close, restoreTo: trigger })
 
   // The field tracks the document, so an agent rename or an undo is reflected
   // rather than leaving a stale value the operator might re-commit.
@@ -73,15 +81,6 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
         .catch(() => setLicences(null))
     }
   }, [open, licences, refresh])
-
-  useEffect(() => {
-    if (open === 'none') return
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen('none')
-    }
-    window.addEventListener('keydown', dismiss)
-    return () => window.removeEventListener('keydown', dismiss)
-  }, [open])
 
   /**
    * Runs a session action, reporting its refusal rather than swallowing it.
@@ -143,6 +142,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
   return (
     <div className="project-menu">
       <button
+        ref={trigger}
         className="project-identity"
         onClick={() => setOpen(open === 'none' ? 'projects' : 'none')}
         aria-expanded={open !== 'none'}
@@ -159,7 +159,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
       </button>
 
       {open === 'projects' && (
-        <div className="project-panel" role="dialog" aria-label="Projects">
+        <div ref={panel as RefObject<HTMLDivElement>} className="project-panel" role="dialog" aria-modal="true" aria-label="Projects">
           <header>
             <span className="eyebrow">PROJECTS</span>
             <button onClick={() => setOpen('none')} aria-label="Close projects"><X size={12} /></button>
@@ -259,10 +259,18 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
                     className="project-delete"
                     disabled={busy || current}
                     title={current ? 'Switch away before deleting this project' : `Delete ${project.name}`}
-                    aria-label={`Delete ${project.name}`}
-                    onClick={() => void run('Delete project', () => session.deleteProject(project.projectId), `"${project.name}" and its log are gone.`)}
+                    aria-label={confirmDelete === project.projectId ? `Confirm delete ${project.name}` : `Delete ${project.name}`}
+                    onClick={() => {
+                      if (confirmDelete !== project.projectId) {
+                        setConfirmDelete(project.projectId)
+                        return
+                      }
+                      setConfirmDelete(null)
+                      void run('Delete project', () => session.deleteProject(project.projectId), `"${project.name}" and its log are gone.`)
+                    }}
                   >
                     <Trash2 size={12} />
+                    {confirmDelete === project.projectId ? ' Confirm' : null}
                   </button>
                 </li>
               )
@@ -273,7 +281,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
       )}
 
       {open === 'legal' && (
-        <div className="project-panel legal" role="dialog" aria-label="Data and licences">
+        <div ref={panel as RefObject<HTMLDivElement>} className="project-panel legal" role="dialog" aria-modal="true" aria-label="Data and licences">
           <header>
             <span className="eyebrow">DATA &amp; LICENCES</span>
             <button onClick={() => setOpen('projects')} aria-label="Back to projects"><X size={12} /></button>

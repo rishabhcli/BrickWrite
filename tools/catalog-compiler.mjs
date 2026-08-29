@@ -27,12 +27,18 @@ import { createReadStream } from 'node:fs'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { compileMesh } from './ldraw-mesh.mjs'
 import { compileThumbnail } from './thumbnail.mjs'
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1]
 const DEFAULT_PACK_SIZE = 420
+function toolsDir() {
+  const url = import.meta.url
+  if (typeof url === 'string' && url.startsWith('file:')) return path.dirname(fileURLToPath(url))
+  return path.resolve('tools')
+}
+const DEFAULT_BRICKLINK_ROOT = path.join(toolsDir(), 'data', 'bricklink')
 
 function parseArgs(argv) {
   const result = {}
@@ -162,6 +168,52 @@ function crosswalkColours(ldrawColours, rebrickableColours) {
 }
 
 // ---------------------------------------------------------------------------
+// BrickLink Studio crosswalk
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads the checked-in projection of BrickLink Studio's own catalog crosswalk.
+ *
+ * Missing rows stay missing. In particular, this never assumes that an LDraw
+ * number is also a BrickLink number: Studio documents many cases where it is
+ * not. Multiple item ids are retained so downstream exports can report the
+ * ambiguity rather than silently collapsing it.
+ */
+async function loadBrickLink(root = DEFAULT_BRICKLINK_ROOT) {
+  const empty = {
+    parts: new Map(),
+    colors: new Map(),
+    source: null,
+    available: false,
+  }
+  if (!root) return empty
+
+  try {
+    const [partSource, colorSource, source] = await Promise.all([
+      readFile(path.join(root, 'parts.tsv'), 'utf8'),
+      readFile(path.join(root, 'colors.tsv'), 'utf8'),
+      readFile(path.join(root, 'source.json'), 'utf8').then(JSON.parse),
+    ])
+    const parts = new Map()
+    for (const line of partSource.split(/\r?\n/).slice(1)) {
+      if (!line) continue
+      const [ldrawId, values = ''] = line.split('\t')
+      const ids = values.split(',').map((value) => value.trim()).filter(Boolean)
+      if (ldrawId && ids.length) parts.set(normalize(ldrawId), Array.from(new Set(ids)))
+    }
+    const colors = new Map()
+    for (const line of colorSource.split(/\r?\n/).slice(1)) {
+      if (!line) continue
+      const [ldrawCode, bricklinkId] = line.split('\t').map(Number)
+      if (Number.isInteger(ldrawCode) && Number.isInteger(bricklinkId)) colors.set(ldrawCode, bricklinkId)
+    }
+    return { parts, colors, source, available: true }
+  } catch {
+    return empty
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LDCad Shadow Library connection metadata
 // ---------------------------------------------------------------------------
 
@@ -246,6 +298,24 @@ function parseSections(value = '') {
 }
 
 /**
+ * Measured axial extent of an LDCad connector profile.
+ *
+ * `secs` already carries the length of every consecutive profile section; the
+ * old compiler parsed those values for classification and then threw them away.
+ * Summing their absolute finite lengths yields the actual insertion envelope.
+ * A literal `[length=…]` remains authoritative when present.
+ */
+function axialExtent(options) {
+  const explicit = Number(options.length)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  const measured = parseSections(options.secs)
+    .map((section) => Math.abs(section.length))
+    .filter((length) => Number.isFinite(length) && length > 0)
+    .reduce((sum, length) => sum + length, 0)
+  return measured > 0 ? measured : undefined
+}
+
+/**
  * Maps an LDCad snap meta onto Brickwright's normalized connector families.
  *
  * The rules below follow conventions measured across the Shadow Library rather
@@ -326,7 +396,7 @@ function directSnapFeatures(source, sourceName) {
         },
         profile: options.secs ?? options.bounding ?? `${options.radius ?? ''} ${options.length ?? ''}`.trim(),
         group: classified.group || options.group || undefined,
-        axialRange: options.length ? Number(options.length) : undefined,
+        axialRange: axialExtent(options),
         allowsSlide: options.slide === 'true',
         allowsRotation:
           classified.family === 'pin' ||
@@ -649,6 +719,7 @@ export async function compileCatalog(options) {
     ldraw,
     shadow,
     rebrickable,
+    bricklink = DEFAULT_BRICKLINK_ROOT,
     out,
     version = 'local',
     packSize = DEFAULT_PACK_SIZE,
@@ -674,8 +745,14 @@ export async function compileCatalog(options) {
   const resolveConnections = createConnectionResolver(ldrawSources, shadowSources, readText)
 
   const colourSource = allFiles.find((file) => path.basename(file).toLowerCase() === 'ldconfig.ldr')
-  const ldrawColours = colourSource ? parseColourTable(await readFile(colourSource, 'utf8')) : []
+  const baseLdrawColours = colourSource ? parseColourTable(await readFile(colourSource, 'utf8')) : []
+  const bl = await loadBrickLink(bricklink ? path.resolve(bricklink) : null)
+  const ldrawColours = baseLdrawColours.map((colour) => {
+    const bricklinkId = bl.colors.get(colour.code)
+    return bricklinkId === undefined ? colour : { ...colour, bricklinkId }
+  })
   log(`colours: ${ldrawColours.length} LDraw definitions`)
+  log(`bricklink: ${bl.available ? `${bl.parts.size} part mappings, ${bl.colors.size} colour mappings` : 'not supplied'}`)
 
   const rb = await loadRebrickable(rebrickable ? path.resolve(rebrickable) : null, ldrawColours)
   log(`rebrickable: ${rb.available ? `${rb.parts.size} identities, ${rb.colourCrosswalk.size} colour mappings` : 'not supplied'}`)
@@ -723,7 +800,7 @@ export async function compileCatalog(options) {
         identityConfidence: identity.confidence,
         legoDesignIds: Array.from(new Set(elements.map((entry) => entry.designId).filter(Boolean))).slice(0, 8),
         legoElementIds: Array.from(new Set(elements.map((entry) => entry.elementId).filter(Boolean))).slice(0, 12),
-        bricklinkIds: [],
+        bricklinkIds: bl.parts.get(ldrawId) ?? [],
       },
       availableColors: Array.from(rb.coloursByPart.get(canonicalId) ?? []).sort((a, b) => a - b),
       frequency: rb.frequency.get(canonicalId) ?? 0,
@@ -794,10 +871,27 @@ export async function compileCatalog(options) {
   const ranked = records
     .filter((record) => !forced.has(record.canonicalId) && !record.helper && record.connectionStatus === 'ldcad-authoritative')
     .sort((a, b) => b.frequency - a.frequency || a.canonicalId.localeCompare(b.canonicalId))
-  const pack = [
-    ...Array.from(forced).map((id) => byId.get(id)).filter(Boolean),
-    ...ranked.slice(0, Math.max(0, packSize - forced.size)),
-  ]
+  const pack = Array.from(forced).map((id) => byId.get(id)).filter(Boolean)
+  const selected = new Set(pack.map((record) => record.canonicalId))
+  const take = (record) => {
+    if (!record || selected.has(record.canonicalId) || pack.length >= packSize) return false
+    selected.add(record.canonicalId)
+    pack.push(record)
+    return true
+  }
+
+  // Popularity remains the ordering within every floor. The guarantees only
+  // reserve one slot for each buildable category and connector family before
+  // the ordinary ranking fills the rest, so an uncommon structural family can
+  // no longer silently fall out of the pack after a source refresh.
+  const eligibleCategories = Array.from(new Set(ranked.map((record) => record.category))).sort()
+  for (const category of eligibleCategories) take(ranked.find((record) => record.category === category))
+  const eligibleFamilies = Array.from(new Set(ranked.flatMap((record) => record.connectors.map((feature) => feature.family)))).sort()
+  for (const family of eligibleFamilies) {
+    if (pack.some((record) => record.connectors.some((feature) => feature.family === family))) continue
+    take(ranked.find((record) => record.connectors.some((feature) => feature.family === family)))
+  }
+  for (const record of ranked) take(record)
   log(`geometry pass: compiling ${pack.length} parts`)
 
   const outputRoot = path.resolve(out)
@@ -926,6 +1020,10 @@ export async function compileCatalog(options) {
     withHeuristicIdentity: records.filter((record) => record.identity.identityConfidence === 'heuristic').length,
     withCategory: records.filter((record) => record.category !== 'Unclassified').length,
     withColorEvidence: records.filter((record) => record.availableColors.length).length,
+    withBricklinkIdentity: records.filter((record) => record.identity.bricklinkIds.length).length,
+    withAmbiguousBricklinkIdentity: records.filter((record) => record.identity.bricklinkIds.length > 1).length,
+    packWithBricklinkIdentity: packRecords.filter((record) => record.identity.bricklinkIds.length).length,
+    packWithAmbiguousBricklinkIdentity: packRecords.filter((record) => record.identity.bricklinkIds.length > 1).length,
     withAuthoritativeConnections: records.filter((record) => record.connectionStatus === 'ldcad-authoritative').length,
     connectorTotal: records.reduce((sum, record) => sum + record.connectors.length, 0),
     geometryCompiled: packRecords.length,
@@ -933,6 +1031,14 @@ export async function compileCatalog(options) {
     geometryUncompiled: records.length - pack.length,
     unresolvedReferences: Array.from(missingReferences).slice(0, 50),
     unmatchedRebrickableColors: rb.unmatchedColours.length,
+    mappedBricklinkColors: ldrawColours.filter((colour) => colour.bricklinkId !== undefined).length,
+    unmappedBricklinkColors: ldrawColours.filter((colour) => colour.bricklinkId === undefined).length,
+    packSelection: {
+      categoriesEligible: eligibleCategories.length,
+      categoriesCovered: new Set(packRecords.map((record) => record.category)).size,
+      connectorFamiliesEligible: eligibleFamilies.length,
+      connectorFamiliesCovered: new Set(packRecords.flatMap((record) => record.connectors.map((feature) => feature.family))).size,
+    },
     renamedAliases: Object.keys(resolvedAliases).length,
     identityAdoptedFromRename: adoptedFromRenames,
     triangleTotal,
@@ -971,6 +1077,14 @@ export async function compileCatalog(options) {
       ldraw: { root: path.basename(ldrawRoot), partFiles: partFiles.length, colorDefinitions: ldrawColours.length },
       ldcadShadow: shadowRoot ? { root: path.basename(shadowRoot), files: shadowFiles.length } : null,
       rebrickable: rb.available ? { identities: rb.parts.size, colorMappings: rb.colourCrosswalk.size } : null,
+      bricklinkStudio: bl.available
+        ? {
+            version: bl.source?.version ?? 'unknown',
+            packageSha256: bl.source?.packageSha256 ?? null,
+            partMappings: bl.parts.size,
+            colorMappings: bl.colors.size,
+          }
+        : null,
     },
     files: {
       parts: { path: `catalog/${version}/parts.json`, hash: `sha256:${sha256(partsPayload)}`, bytes: Buffer.byteLength(partsPayload) },
@@ -1041,6 +1155,14 @@ export async function compileCatalog(options) {
                   use: 'part names, categories, colour production evidence, usage frequency',
                   redistributionReviewRequired: true,
                   note: 'Redistribution rights for compiled derivatives are unspecified and must be reviewed against current Rebrickable terms before public deployment.',
+                }]
+              : []),
+            ...(bl.available
+              ? [{
+                  dataset: `BrickLink Studio ${bl.source?.version ?? ''}`.trim(),
+                  use: 'BrickLink item-number and colour-id crosswalks',
+                  sourcePackageSha256: bl.source?.packageSha256 ?? null,
+                  note: 'Only first-party crosswalk cells are projected; absent and one-to-many mappings remain explicit in compiler coverage.',
                 }]
               : []),
           ],

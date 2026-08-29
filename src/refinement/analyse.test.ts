@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { catalog } from '../cad/catalog'
-import { basisFromAxisAngle } from '../cad/math'
+import { basisFromAxisAngle, IDENTITY_BASIS } from '../cad/math'
+import { createEmptyDocument } from '../cad/sample'
 import { analysePalette, analyseRegion, createScope, mutablePartIds, rarityOf } from './analyse'
 import { canMirror, mirrorTransform } from './mirror'
 import { MAX_WEIGHT, defaultWeights, improvementOf, measureAll, objectiveList, resolveWeights } from './objectives'
 import { captureSilhouette, silhouetteArea, silhouetteFrame, silhouetteIou } from './silhouette'
-import { extractRows, findFreeStuds, findStackedSeams, findStepEdges, matedLocalFeatures } from './topology'
+import { extractRows, findFreeStuds, findStackedSeams, findStepEdges, matedLocalFeatures, maxOneStudColumnHeight, oneStudStackCount } from './topology'
 import { OBJECTIVE_IDS } from './types'
 import { refinementFixture } from './__fixtures__'
 import { getDocumentBounds } from '../cad/geometry'
@@ -209,6 +210,28 @@ describe('topology', () => {
       expect(row.toLdu - row.fromLdu).toBeCloseTo(160, 6)
     }
     expect(findStackedSeams(rows).length).toBeGreaterThan(0)
+  })
+
+  it('measures the tallest 1×1 column from stacked 1×1 bricks', () => {
+    const slim = (id: string, y: number) => ({
+      id,
+      definitionId: '3005',
+      color: 15,
+      transform: { position: [0, y, 0] as [number, number, number], basis: IDENTITY_BASIS },
+      subassemblyId: 'hull',
+      stepId: 'step_1',
+      provenance: 'human' as const,
+      protected: false,
+    })
+    const base = createEmptyDocument()
+    const stacked = [slim('a', 0), slim('b', -24), slim('c', -48), slim('d', -72)]
+    const document = {
+      ...base,
+      parts: Object.fromEntries(stacked.map((item) => [item.id, item])),
+      subassemblies: { ...base.subassemblies, hull: { ...base.subassemblies.hull, partIds: stacked.map((item) => item.id) } },
+    }
+    expect(oneStudStackCount(document)).toBe(3)
+    expect(maxOneStudColumnHeight(document)).toBe(4)
   })
 
   it('reports the local connectors an instance is actually mated through', () => {

@@ -1,5 +1,6 @@
 import {
   basisFromAxisAngle,
+  clamp,
   degreesToRadians,
   dotVec,
   IDENTITY_BASIS,
@@ -80,7 +81,7 @@ export function connectorsCompatible(a: CompatKey, b: CompatKey): boolean {
  * is not: it only enters an underside, so allowing the flip would happily place
  * bricks upside down.
  */
-function allowsAxialFlip(a: ConnectionFamily, b: ConnectionFamily): boolean {
+export function allowsAxialFlip(a: ConnectionFamily, b: ConnectionFamily): boolean {
   const pair = [a, b].sort().join(':')
   return pair === 'axle:axle-hole' || pair === 'bar:clip' || pair === 'pin:pin-hole'
 }
@@ -174,8 +175,6 @@ export interface MatingHint {
   /** Desired axial offset in LDU along the connector axis. */
   readonly desiredOffsetLdu?: number
 }
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
 function matingTransform(angleRad: number, offsetLdu: number, flipped: boolean): RigidTransform {
   let basis = basisFromAxisAngle(CONNECTOR_AXIS, angleRad)

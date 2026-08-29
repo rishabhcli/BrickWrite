@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { enumerateMatings, jointFor } from './connections'
 import { applyMat3, basisFromAxisAngle, basisFromEulerDegrees, IDENTITY_BASIS, type Vec3 } from './math'
 import { createEmptyDocument } from './sample'
-import { bestSnapTransform, computeOccupancy, findSnapCandidates } from './snapping'
+import { bestSnapTransform, computeOccupancy, connectorAvailability, approachOccupancy, findSnapCandidates, nearestPlaceableNeighbour, placeableAnchors } from './snapping'
 import { catalog } from './catalog'
 import type { ConnectionFamily, ConnectionFeature, ModelDocument, PartInstance, Transform } from './types'
 
@@ -99,6 +99,26 @@ describe('snap solver', () => {
     expect(solved?.basis).toEqual(IDENTITY_BASIS)
   })
 
+  it('reports free studs on a brick and none on a tile top', () => {
+    const brick = withParts(part('base', '3001'))
+    const brickAvail = connectorAvailability(brick, ['base'])
+    expect(brickAvail.freeByFamily.stud).toBeGreaterThan(0)
+    expect(brickAvail.approaches['on-top']).toBe(true)
+
+    const tileId = catalog.get('3070b')
+      ? '3070b'
+      : catalog.placeable().find((item) => {
+          if (item.connectors.some((feature) => feature.family === 'stud')) return false
+          const bounds = item.dimensions?.bounds
+          return Boolean(bounds) && bounds!.max[1] - bounds!.min[1] <= 10
+        })?.canonicalId
+    expect(tileId).toBeTruthy()
+    const tile = withParts(part('tile', tileId!))
+    const tileAvail = connectorAvailability(tile, ['tile'])
+    expect(tileAvail.freeByFamily.stud ?? 0).toBe(0)
+    expect(tileAvail.approaches['on-top']).toBe(false)
+  })
+
   it('will not reuse a stud that already carries a part', () => {
     const moving = part('moving', '3001', { position: [0, -26, 0] })
     const document = withParts(part('base', '3001'), part('stacked', '3001', { position: [0, -24, 0] }), moving)
@@ -176,5 +196,34 @@ describe('joint freedoms', () => {
       feature('generic', 'male', { group: 'craneArmW20' }),
       feature('generic', 'female', { group: 'craneArmW20' }),
     )[0].certainty).toBe('unknown')
+  })
+})
+
+describe('connector occupancy', () => {
+  it('names a full stud plane occupied and a tile absent', () => {
+    const stacked = withParts(part('base', '3001'), part('upper', '3001', { position: [0, -24, 0] }))
+    expect(approachOccupancy(stacked, 'base', 'on-top')).toBe('occupied')
+    expect(connectorAvailability(stacked, ['base']).approaches['on-top']).toBe(false)
+
+    const tileId = catalog.get('3070b')?.canonicalId
+    if (!tileId) return
+    const tiled = withParts(part('tile', tileId))
+    expect(approachOccupancy(tiled, 'tile', 'on-top')).toBe('absent')
+    expect(connectorAvailability(tiled, ['tile']).approaches['on-top']).toBe(false)
+  })
+
+  it('lists unlocked parts whose tops can still receive a brick', () => {
+    const document = withParts(part('base', '3001'), part('upper', '3001', { position: [0, -24, 0] }))
+    const anchors = placeableAnchors(document)
+    expect(anchors.some((entry) => entry.id === 'upper' && entry.freeStuds > 0)).toBe(true)
+    expect(anchors.some((entry) => entry.id === 'base')).toBe(false)
+  })
+
+  it('names the nearest placeable neighbour of a hovering brick', () => {
+    const document = withParts(
+      part('anchor', '3001'),
+      part('ghost', '3001', { position: [0, -200, 0] }),
+    )
+    expect(nearestPlaceableNeighbour(document, 'ghost')?.id).toBe('anchor')
   })
 })

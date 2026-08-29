@@ -37,7 +37,9 @@ export const SceneQueryInput = z.strictObject({
   includeNeighbours: z
     .boolean()
     .optional()
-    .describe('Include the parts each result is physically connected to. Use this to plan attachments.'),
+    .describe(
+      'Include graph neighbours (connectedTo) and spatially nearby parts (nearby: id, distanceLdu, approaches). A hovering brick has empty connectedTo — read nearby instead.',
+    ),
   limit: z.number().int().min(1).max(200).optional(),
 })
 
@@ -114,21 +116,21 @@ export const ASSISTANT_TOOLS: readonly AssistantToolDeclaration[] = [
     name: 'scene_overview',
     kind: 'read',
     description:
-      'Read the current document: exact revision, autonomy mode, part count, measured bounds, subassemblies and their locks, design constraints, module library and a validation summary. Call this first; every later call depends on the revision it returns.',
+      'Read the current document: exact revision, autonomy mode, part count, measured bounds, statics (tipping, overloaded joints), subassemblies and their locks, design constraints, module library, a validation summary, and nextAction / nextTool / nextArgs — the kernel\'s instruction for the next tool call. Call this first. If partCount is 0, do not call preflight_placement.',
     schema: SceneOverviewInput,
   },
   {
     name: 'scene_query',
     kind: 'read',
     description:
-      'List placed parts with their identity, colour, assembly, protection flag and — with includeNeighbours — the parts they are physically connected to. Filter rather than dumping the scene.',
+      'List placed parts with their identity, colour, assembly, protection flag, which faces can still receive a brick (approaches), and — with includeNeighbours — graph neighbours plus spatially nearby parts. A hovering brick has no connectedTo; use nearby ids whose approaches.on-top is true, then preflight_capability connect_parts. Filter rather than dumping the scene.',
     schema: SceneQueryInput,
   },
   {
     name: 'selection_geometry',
     kind: 'read',
     description:
-      'Measure a reference scope: world bounds in LDraw units and studs, the top mating plane, which parts sit at that plane, protection and lock status, and the neighbouring parts. Use this instead of guessing coordinates.',
+      'Measure a reference scope: world bounds in LDraw units and studs, the top mating plane, which parts sit at that plane, protection and lock status, graph neighbours, spatially nearby parts (even with no clutch), and connectors — freeByFamily plus approaches (on-top, underneath, beside). on-top is false when there are no free studs. Use nearby ids whose approaches.on-top is true with connect_parts instead of guessing coordinates.',
     schema: SelectionGeometryInput,
   },
   {
@@ -162,28 +164,28 @@ export const ASSISTANT_TOOLS: readonly AssistantToolDeclaration[] = [
     name: 'validate_model',
     kind: 'read',
     description:
-      'Run deterministic collision, connectivity, colour-evidence and constraint validation on the current document.',
+      'Run deterministic collision, connectivity, colour-evidence, constraint and statics validation. Returns floatingPartIds (hovering, unclutched) and nextAction for the next tool call.',
     schema: ValidateModelInput,
   },
   {
     name: 'preflight_capability',
     kind: 'preflight',
     description:
-      'Dry-run one shared capability. Validates arguments against its schema, resolves every referenced id against the live document, and produces a reviewable ghost wave. This never mutates the document — a human accepts or rejects the wave.',
+      'Dry-run one shared capability. Validates arguments against its schema, resolves every referenced id against the live document, and produces a reviewable ghost wave. For walls, floors and stamps prefer anchorPartId from scene_query. For copies prefer along (x, z, on-top) over invented offsetLdu. This never mutates the document — a human accepts or rejects the wave.',
     schema: PreflightCapabilityInput,
   },
   {
     name: 'preflight_placement',
     kind: 'preflight',
     description:
-      'Dry-run placing one catalog part against an existing anchor part. You choose the identity, the anchor and the face; the kernel’s connector solver computes the pose. Produces a reviewable ghost wave and never mutates the document.',
+      'Dry-run placing one catalog part against an existing anchor part. The document must already contain that anchor — on an empty plate use capability_search for build_field / build_enclosure instead. You choose the identity, the anchor and the face; the kernel’s connector solver computes the pose. A pose that does not mate is refused as NO_COMPATIBLE_CONNECTOR (tile / wrong family) or CONNECTOR_OCCUPIED (that face had studs and they are all taken). Produces a reviewable ghost wave and never mutates the document.',
     schema: PreflightPlacementInput,
   },
   {
     name: 'repair_suggest',
     kind: 'read',
     description:
-      'Ask the kernel what to do about a refusal: measured collision overlaps and the offset that would clear them, which region is protected and who owns it, weak attachments, and whether a stale revision needs a replan.',
+      'Ask the kernel what to do about a refusal. Returns measured collision overlaps, floating part ids, protected regions, weak attachments, and `next` — the exact tool and args to call next. Pass the failureCode you just received. Call next.tool with next.args unchanged. Never invent XYZ or a transform.',
     schema: RepairSuggestInput,
   },
 ]

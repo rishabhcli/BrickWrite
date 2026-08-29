@@ -220,6 +220,73 @@ const footprintOverlap = (a: PartBounds, b: PartBounds): number => {
   return x > EPS && z > EPS ? x * z : 0
 }
 
+const SLIM_FOOTPRINT_LDU = STUD_LDU * 1.25
+
+/**
+ * 1×1 bricks stacked on 1×1 bricks.
+ *
+ * Ranked, never hard-gated: a sculpture of 1×1s is legal, a wall that could
+ * have been running bond with 2×4s should lose to one that is.
+ */
+export function oneStudStackCount(document: ModelDocument): number {
+  const parts = placedParts(document)
+  const slim = parts.filter(
+    (entry) => entry.bounds.size[0] <= SLIM_FOOTPRINT_LDU && entry.bounds.size[2] <= SLIM_FOOTPRINT_LDU,
+  )
+  let count = 0
+  for (const upper of slim) {
+    const stacked = slim.some(
+      (lower) =>
+        lower.part.id !== upper.part.id &&
+        Math.abs(upper.bounds.max[1] - lower.bounds.min[1]) <= 8 &&
+        footprintOverlap(upper.bounds, lower.bounds) > 0,
+    )
+    if (stacked) count += 1
+  }
+  return count
+}
+
+/**
+ * Longest run of slim-on-slim stacking.
+ *
+ * Ranked after `oneStudStackCount`, never hard-gated: a 1×1 mosaic is legal, a
+ * tower of 1×1s that could have been a 2×4 column should lose to one that is.
+ */
+export function maxOneStudColumnHeight(document: ModelDocument): number {
+  const parts = placedParts(document)
+  const slim = parts.filter(
+    (entry) => entry.bounds.size[0] <= SLIM_FOOTPRINT_LDU && entry.bounds.size[2] <= SLIM_FOOTPRINT_LDU,
+  )
+  if (!slim.length) return 0
+  const below = new Map<string, string[]>()
+  for (const upper of slim) {
+    const lowers: string[] = []
+    for (const lower of slim) {
+      if (lower.part.id === upper.part.id) continue
+      if (Math.abs(upper.bounds.max[1] - lower.bounds.min[1]) <= 8 && footprintOverlap(upper.bounds, lower.bounds) > 0) {
+        lowers.push(lower.part.id)
+      }
+    }
+    below.set(upper.part.id, lowers)
+  }
+  const memo = new Map<string, number>()
+  const visiting = new Set<string>()
+  const heightOf = (id: string): number => {
+    const cached = memo.get(id)
+    if (cached !== undefined) return cached
+    if (visiting.has(id)) return 1
+    visiting.add(id)
+    let best = 1
+    for (const child of below.get(id) ?? []) best = Math.max(best, 1 + heightOf(child))
+    visiting.delete(id)
+    memo.set(id, best)
+    return best
+  }
+  let max = 0
+  for (const entry of slim) max = Math.max(max, heightOf(entry.part.id))
+  return max
+}
+
 /**
  * The exposed stud plane on top of a part, or null when nothing can stack on it.
  *

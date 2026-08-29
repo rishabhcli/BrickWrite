@@ -1,7 +1,10 @@
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 import { roleAllows, type Capability, type CloudRole } from './capabilities'
+import { identityFromClaims, type CloudIdentity } from './identity'
 import { cloudFailure, type CloudErrorShape, type CloudResult } from './protocol'
+
+export type { CloudIdentity } from './identity'
 
 /**
  * Server-side identity and authorisation.
@@ -19,12 +22,6 @@ import { cloudFailure, type CloudErrorShape, type CloudResult } from './protocol
  *      project is not a secret.
  */
 
-export interface CloudIdentity {
-  /** The `sub` claim: the Hexclave user id. Never an email. */
-  subject: string
-  displayName?: string
-}
-
 /**
  * Reads the caller's identity.
  *
@@ -35,12 +32,9 @@ export interface CloudIdentity {
 export async function readIdentity(ctx: QueryCtx | MutationCtx): Promise<CloudIdentity | null> {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) return null
-  const subject = identity.tokenIdentifier || identity.subject
-  if (!subject) return null
-  const displayName = identity.name ?? identity.nickname ?? undefined
   // `email` is deliberately not read here. Nothing downstream stores it, and a
   // value that is never loaded cannot be leaked by a later careless spread.
-  return { subject, displayName: displayName || undefined }
+  return identityFromClaims(identity)
 }
 
 export const UNAUTHENTICATED: CloudErrorShape = {

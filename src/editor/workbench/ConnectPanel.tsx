@@ -1,8 +1,9 @@
 import { ArrowLeft, Check, CircleDot, Link2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { cadEngine } from '../../cad/engine'
 import { catalog } from '../../cad/catalog'
-import { findSnapCandidates, getWorldConnectors } from '../../cad/snapping'
+import { getWorldConnectors } from '../../cad/snapping'
+import { legalConnectCandidates } from '../../cad/placement'
 import { canonicalisePose } from './transform'
 import { IDLE_CONNECT, type Workbench } from './useWorkbench'
 
@@ -29,12 +30,11 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
    */
   const candidates = useMemo(() => {
     if (!source || !target) return []
-    return findSnapCandidates(source, state.document, source.transform, {
+    return legalConnectCandidates(source, target, state.document, {
       radiusLdu: 400,
-      targetPartIds: [target.id],
       maxCandidates: 12,
-      ...(connect.sourceFeatureId ? { movingFeatureId: connect.sourceFeatureId } : {}),
-      ...(connect.targetFeatureId ? { targetFeatureId: connect.targetFeatureId } : {}),
+      sourceFeatureId: connect.sourceFeatureId,
+      targetFeatureId: connect.targetFeatureId,
     })
   }, [connect.sourceFeatureId, connect.targetFeatureId, source, state.document, target])
 
@@ -68,10 +68,38 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
     setConnect({ ...connect, candidateIndex: (connect.candidateIndex + 1) % candidates.length })
   }, [candidates.length, connect, setConnect])
 
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (connect.stage === 'review') panelRef.current?.focus()
+  }, [connect.stage])
+
+  const onPanelKey = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (connect.stage !== 'review') return
+      if (event.key === 'Tab' && !event.shiftKey && candidates.length > 1) {
+        event.preventDefault()
+        cycle()
+        return
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        commit()
+      }
+    },
+    [candidates.length, commit, connect.stage, cycle],
+  )
+
   const stageIndex = connect.stage === 'source' ? 0 : connect.stage === 'target' ? 1 : 2
 
   return (
-    <div className="connect-panel" data-stage={connect.stage}>
+    <div
+      ref={panelRef}
+      className="connect-panel"
+      data-stage={connect.stage}
+      tabIndex={connect.stage === 'review' ? 0 : undefined}
+      onKeyDown={onPanelKey}
+      aria-label={connect.stage === 'review' ? 'Connect review. Tab cycles solutions, Shift+Tab leaves, Enter commits.' : undefined}
+    >
       <ol className="connect-stages" aria-label="Connect progress">
         {['Pick the part that moves', 'Pick what it mates onto', 'Review and commit'].map((label, index) => (
           <li key={label} className={index === stageIndex ? 'current' : index < stageIndex ? 'done' : ''} aria-current={index === stageIndex}>

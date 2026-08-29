@@ -4,7 +4,8 @@ import { AuthPage } from '@hexclave/react'
 import { PLATFORM_PATHS, PLATFORM_URL_DESTINATIONS } from '../config'
 import { usePlatformAnalytics } from '../analytics'
 import { MisconfiguredState, StatePanel } from '../states'
-import { useAccountAvailability, useAccountSession } from './account'
+import { useAccountAvailability } from './account'
+import { useAccountSession } from './accountSession'
 import { RestrictedState } from './guards'
 
 /**

@@ -50,11 +50,11 @@ export {
   PLATFORM_URL_DESTINATIONS,
   PROJECT_ID_ENV_VARS,
   ambientEnvironment,
-  hexclaveUrlOptions,
   resolvePlatformConfig,
   type PlatformConfig,
   type PlatformUrlDestinations,
 } from './config'
+export { hexclaveUrlOptions } from '../hexclave/urls'
 
 export {
   CAD_CONTENT_ATTRIBUTE,
@@ -89,11 +89,11 @@ export {
   markDeliberateSignOut,
   resetSessionMemory,
   useAccountAvailability,
-  useAccountSession,
   type AccountAvailability,
   type AccountSession,
   type RestrictionKind,
 } from './auth/account'
+export { useAccountSession } from './auth/accountSession'
 export { AccountMenu } from './auth/AccountMenu'
 /*
  * `AccountPage` is deliberately NOT re-exported.
@@ -129,6 +129,10 @@ export {
 
 export { focusableWithin, useFocusTrap } from './a11y'
 export { isOnline, useOnlineStatus } from './connectivity'
+export {
+  hexclaveAuthorizationHeader,
+  type AuthorizationHeaderSource,
+} from '../hexclave/authorization'
 
 export {
   SERVER_EMAIL_MODULE,
@@ -143,4 +147,10 @@ export {
   type RenderedEmail,
 } from './emails'
 
-export type { PartIntentMatch, PartIntentResult, RouteId, RouteModule } from './contracts'
+export {
+  readNdjsonLines,
+  type PartIntentMatch,
+  type PartIntentResult,
+  type RouteId,
+  type RouteModule,
+} from './contracts'

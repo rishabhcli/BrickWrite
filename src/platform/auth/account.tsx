@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react'
-import { useUser, type CurrentUser } from '@hexclave/react'
+import { createContext, useContext, type ReactNode } from 'react'
+import type { CurrentUser } from '@hexclave/react'
 
 /**
  * The account layer's two facts: whether it exists, and who is signed in.
@@ -10,10 +10,15 @@ import { useUser, type CurrentUser } from '@hexclave/react'
  * at all?" is a rendered state rather than an assumption — and every component
  * that wants a user reads availability first, then calls `useUser` in a child
  * that only mounts when the provider is really there.
+ *
+ * This file is Hexclave-value-import free on purpose: the landing entry reads
+ * availability, and a value import of `@hexclave/react` here would put the
+ * account SDK on `/` again.
  */
 
 export type AccountAvailability =
   | { status: 'ready' }
+  | { status: 'pending' }
   | { status: 'unavailable'; reason: string; checked: readonly string[] }
 
 const AvailabilityContext = createContext<AccountAvailability>({
@@ -72,7 +77,18 @@ export function resetSessionMemory(): void {
   signedOutDeliberately = false
 }
 
-function restrictionKind(user: CurrentUser): RestrictionKind {
+/** Called when a real user is observed, so a later `null` can mean expiry. */
+export function noteSignedIn(userId: string): void {
+  lastKnownUserId = userId
+  signedOutDeliberately = false
+}
+
+export function sessionWhenSignedOut(): 'expired' | 'signed-out' {
+  if (lastKnownUserId !== null && !signedOutDeliberately) return 'expired'
+  return 'signed-out'
+}
+
+export function restrictionKind(user: CurrentUser): RestrictionKind {
   const reason: unknown = user.restrictedReason
   const type =
     reason !== null && typeof reason === 'object' && 'type' in reason
@@ -82,34 +98,6 @@ function restrictionKind(user: CurrentUser): RestrictionKind {
     return type
   }
   return 'unknown'
-}
-
-/**
- * The current session.
- *
- * Only call this below an {@link AccountAvailabilityProvider} reporting
- * `ready`; `useUser` requires the Hexclave provider and suspends while it
- * resolves, so the caller also needs a Suspense boundary above it.
- *
- * `includeRestricted` is on because a restricted user is someone Brickwright
- * has to *talk to* — "verify your email to publish" — not someone to silently
- * treat as signed out, which is what the SDK's default filtering would do.
- */
-export function useAccountSession(): AccountSession {
-  const user = useUser({ includeRestricted: true })
-
-  useEffect(() => {
-    if (!user) return
-    lastKnownUserId = user.id
-    signedOutDeliberately = false
-  }, [user])
-
-  if (!user) {
-    if (lastKnownUserId !== null && !signedOutDeliberately) return { status: 'expired' }
-    return { status: 'signed-out' }
-  }
-  if (user.isRestricted) return { status: 'restricted', restriction: restrictionKind(user), user }
-  return { status: 'signed-in', user }
 }
 
 /** How the operator's account is labelled, without inventing a display name. */

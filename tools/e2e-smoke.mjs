@@ -105,6 +105,11 @@ async function sampleContrast(page, samples) {
   }, samples)
 }
 
+/** Same detector as `tools/e2e/renderer.mjs` — widen waits, never drop assertions. */
+const SOFTWARE_RASTERISER = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i
+let onCpu = false
+const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, onCpu ? Math.max(ms, 400) : ms))
+
 try {
   if (!(await available())) {
     server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], { stdio: 'ignore' })
@@ -147,6 +152,16 @@ try {
   // The catalog must load before the editor mounts at all.
   await page.locator('canvas').waitFor({ timeout: 30_000 })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  onCpu = await page.evaluate((source) => {
+    const canvas = document.querySelector('canvas')
+    if (!canvas) return false
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    if (!gl) return false
+    const info = gl.getExtension('WEBGL_debug_renderer_info')
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
+    return new RegExp(source, 'i').test(renderer)
+  }, SOFTWARE_RASTERISER.source)
+  if (onCpu) process.stdout.write('  software rasteriser detected — widening interaction waits, keeping every assertion\n')
   await page.locator('[data-section="agent.workbench"]').waitFor({ timeout: 15_000 })
   assert(await page.locator('[data-section="generation.panel"]').count() === 1, 'The Generate contribution is not mounted in the editor')
   assert(await page.locator('[data-section="refinement.panel"]').count() === 1, 'The Refine contribution is not mounted in the editor')
@@ -1530,7 +1545,7 @@ try {
   // Tab from the very top of the document and record what it can reach.
   await page.locator('.brand-lockup').click({ position: { x: 4, y: 4 } })
   const reached = []
-  for (let step = 0; step < 60; step += 1) {
+  for (let step = 0; step < 90; step += 1) {
     await page.keyboard.press('Tab')
     const id = await page.evaluate(() => {
       const node = document.activeElement
@@ -1545,10 +1560,64 @@ try {
     'The tool rail is not reachable by keyboard',
   )
   assert(
+    reached.some((entry) => entry.startsWith('canvas')),
+    'The CAD viewport canvas is not reachable by Tab',
+  )
+  assert(
     reached.some((entry) => entry.startsWith('input')),
     'No text field is reachable by keyboard',
   )
   quality.keyboardReachable = reached.length
+
+  const canvas = page.locator('canvas[aria-label="CAD viewport"]')
+  await canvas.focus()
+  const poseBefore = await page.evaluate(() => window.__brickwrightRenderer?.cameraPose?.() ?? null)
+  await page.keyboard.press('ArrowLeft')
+  await waitMs(80)
+  const poseAfter = await page.evaluate(() => window.__brickwrightRenderer?.cameraPose?.() ?? null)
+  assert(poseBefore && poseAfter && poseAfter.yawDeg !== poseBefore.yawDeg, 'Arrow keys did not orbit the camera')
+  const fineDelta = Math.abs(poseAfter.yawDeg - poseBefore.yawDeg)
+  await page.keyboard.press('Shift+ArrowLeft')
+  await waitMs(80)
+  const poseCoarse = await page.evaluate(() => window.__brickwrightRenderer?.cameraPose?.() ?? null)
+  assert(
+    poseCoarse && Math.abs(poseCoarse.yawDeg - poseAfter.yawDeg) > fineDelta,
+    'Shift+arrow did not take a coarser orbit step',
+  )
+  const announced = await page.locator('#viewport-live').textContent()
+  assert(announced && /orbit/i.test(announced), `Viewport live region did not announce the orbit (${announced})`)
+  const distanceBefore = poseAfter.distance
+  await page.keyboard.press('=')
+  await page.waitForFunction(
+    (before) => {
+      const pose = window.__brickwrightRenderer?.cameraPose?.()
+      const announced = document.getElementById('viewport-live')?.textContent ?? ''
+      return Boolean(pose && pose.distance < before && /zoom/i.test(announced))
+    },
+    distanceBefore,
+    { timeout: onCpu ? 4000 : 1500 },
+  )
+  await page.keyboard.press('Tab')
+  const leftCanvas = await page.evaluate(() => document.activeElement?.tagName !== 'CANVAS')
+  assert(leftCanvas, 'Tab could not leave the CAD viewport canvas')
+  await canvas.focus()
+  await page.keyboard.press('Shift+Tab')
+  await canvas.focus()
+  const ring = await page.evaluate(() => {
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule.selectorText && /\[tabindex\]:focus-visible/.test(rule.selectorText)) {
+            return { selector: rule.selectorText, outline: rule.style.outline || rule.style.outlineColor }
+          }
+        }
+      } catch {
+        /* cross-origin sheets */
+      }
+    }
+    return null
+  })
+  assert(ring && ring.outline, `No [tabindex]:focus-visible rule (${JSON.stringify(ring)})`)
 
   // Resizing a dock has to be possible without a pointer. The splitter is a
   // focusable separator, and the arrow keys move it.

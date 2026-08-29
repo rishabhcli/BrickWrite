@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react'
 import { REPORT_REASONS, type Collection, type GalleryEntry, type ReportReason } from '../share/types'
 import { GALLERY_SORTS, forkAncestry, resolveCollection, searchGallery, type GallerySort } from './curation'
+import { PlateAtmosphere } from '../landing/plate'
+import { usePointerField } from '../landing/reveal'
 import './gallery.css'
+import { useFocusTrap } from '../../platform/a11y'
 
 /**
  * The public gallery.
@@ -53,6 +56,7 @@ export default function GalleryPage({
   const [sort, setSort] = useState<GallerySort>('newest')
   const [healthyOnly, setHealthyOnly] = useState(false)
   const [reporting, setReporting] = useState<GalleryEntry | null>(null)
+  const pointer = usePointerField<HTMLDivElement>()
 
   useEffect(() => {
     let cancelled = false
@@ -110,7 +114,13 @@ export default function GalleryPage({
   const collectionState = activeCollection ? resolveCollection(activeCollection, entries) : null
 
   return (
-    <div className="bw-surface bw-gallery" data-testid="gallery">
+    <div
+      ref={pointer.ref}
+      className="bw-surface bw-gallery"
+      data-testid="gallery"
+      data-pointer={pointer.live ? 'live' : 'off'}
+    >
+      <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div className="bw-gallery-head">
         <span className="bw-eyebrow accent">Published</span>
@@ -345,9 +355,10 @@ function ReportDialog({
   const [detail, setDetail] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const dialog = useFocusTrap(true, { onEscape: onClose })
 
   return (
-    <div className="bw-gallery-dialog" role="dialog" aria-modal="true" aria-label={`Report ${entry.title}`}>
+    <div ref={dialog as RefObject<HTMLDivElement>} className="bw-gallery-dialog" role="dialog" aria-modal="true" aria-label={`Report ${entry.title}`}>
       <div className="bw-gallery-dialog-panel">
         <h2>Report “{entry.title}”</h2>
         {state === 'sent' ? (

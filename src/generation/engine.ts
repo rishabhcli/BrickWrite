@@ -8,7 +8,7 @@ import {
 import { computeBuildOrder } from '../cad/instructions'
 import type { CadOperation, CommandResult, ModelDocument, Transaction } from '../cad/types'
 import type { GeometryProvider } from '../cad/collision'
-import { evaluateHardGates, metricDistance, type MetricVector } from './score'
+import { evaluateHardGates, compareBuildQuality, metricDistance, type MetricVector } from './score'
 import {
   runPipeline,
   STRATEGIES,
@@ -155,11 +155,8 @@ export class GenerationEngine {
     const hashes = new Set<string>()
     const notes: string[] = []
 
-    for (let index = 0; index < settings.candidates; index += 1) {
+    const jobs = Array.from({ length: settings.candidates }, (_, index) => {
       const strategy = settings.strategies[index % settings.strategies.length]
-      // Seeds are derived rather than incremented so two candidates of the same
-      // strategy in different runs do not accidentally coincide, and so the
-      // sequence does not depend on how many candidates were asked for.
       const seed = hash32(`${promptHash}|${strategy}|${rootSeed}|${index}`) >>> 0
       const pipelineOptions: PipelineOptions = {
         seed,
@@ -174,14 +171,32 @@ export class GenerationEngine {
         ...(settings.constraints ? { constraints: settings.constraints } : {}),
         ...(options.onPhase ? { onPhase: (event: PhaseEvent) => options.onPhase!(event, index) } : {}),
       }
+      return { index, run: () => runPipeline(brief, pipelineOptions) }
+    })
 
-      const candidate = await runPipeline(brief, pipelineOptions)
-      hashes.add(candidate.structuralHash)
-      options.onCandidate?.(candidate, index)
+    const produced: Array<{ index: number; candidate: Candidate }> = []
+    const concurrency = Math.min(3, jobs.length)
+    let cursor = 0
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (true) {
+          const current = cursor
+          cursor += 1
+          if (current >= jobs.length) return
+          const candidate = await jobs[current]!.run()
+          produced.push({ index: jobs[current]!.index, candidate })
+        }
+      }),
+    )
+    produced.sort((a, b) => a.index - b.index)
 
-      const gates = evaluateHardGates(candidate.metrics, brief)
-      if (gates.passed) accepted.push(candidate)
-      else rejected.push({ candidate, failures: gates.failures })
+    for (const item of produced) {
+      hashes.add(item.candidate.structuralHash)
+      options.onCandidate?.(item.candidate, item.index)
+
+      const gates = evaluateHardGates(item.candidate.metrics, brief)
+      if (gates.passed) accepted.push(item.candidate)
+      else rejected.push({ candidate: item.candidate, failures: gates.failures })
     }
 
     if (hashes.size < settings.candidates) {
@@ -208,10 +223,7 @@ export class GenerationEngine {
       // caller that cares about something else re-sorts on the axis it cares
       // about.
       candidates: accepted.sort(
-        (a, b) =>
-          (b.metrics.supportMarginLdu ?? -Infinity) - (a.metrics.supportMarginLdu ?? -Infinity) ||
-          a.metrics.partCount - b.metrics.partCount ||
-          a.structuralHash.localeCompare(b.structuralHash),
+        (a, b) => compareBuildQuality(a.metrics, b.metrics) || a.structuralHash.localeCompare(b.structuralHash),
       ),
       rejected,
       distinctHashes: hashes.size,

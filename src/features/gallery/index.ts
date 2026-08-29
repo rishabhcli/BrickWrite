@@ -27,10 +27,3 @@ export {
 } from './moderation'
 export { galleryEntryFrom } from '../share/gallery-projection'
 export { REPORT_REASONS, type Collection, type GalleryEntry, type Report, type ReportReason } from '../share/types'
-
-/** Registers the gallery with the platform route table. */
-export function registerGalleryRoute(
-  registerRoute: (id: 'gallery', loader: () => Promise<{ default: React.ComponentType }>) => () => void,
-) {
-  return registerRoute('gallery', async () => ({ default: (await import('./GalleryPage')).default }))
-}

@@ -1,7 +1,7 @@
 import { catalog, STUD_LDU } from './catalog'
 import { getPartBounds } from './geometry'
 import { deriveConnections } from './snapping'
-import type { ModelDocument, PartInstance, Vec3 } from './types'
+import type { ConnectionFamily, ModelDocument, PartInstance, Vec3 } from './types'
 
 /**
  * Static physics: will the thing stand up, and what is holding it together?
@@ -57,6 +57,43 @@ export const MASS_BASIS =
  */
 export const DEFAULT_CLUTCH_GRAMS = 100
 
+/**
+ * Relative clutch of each connector family, in stud-equivalents.
+ *
+ * LEGO does not publish pull-apart figures per family. These weights are
+ * assumptions, reported on the statics report, scaled so a stud is 1. A pin in
+ * a pin-hole holds more than a stud; a clip on a bar and a ball joint hold
+ * less. The absolute grams still come from `clutchGramsPerStud`.
+ */
+export const CLUTCH_FAMILY_WEIGHT: Record<ConnectionFamily, number> = {
+  stud: 1,
+  'anti-stud': 1,
+  pin: 1.4,
+  'pin-hole': 1.4,
+  axle: 0.5,
+  'axle-hole': 0.5,
+  bar: 0.7,
+  clip: 0.7,
+  hinge: 0.8,
+  ball: 0.45,
+  socket: 0.45,
+  generic: 0.7,
+}
+
+/** Stud-equivalent capacity of one mated pair. */
+export function clutchCapacityWeight(a: ConnectionFamily, b: ConnectionFamily): number {
+  return Math.min(CLUTCH_FAMILY_WEIGHT[a], CLUTCH_FAMILY_WEIGHT[b])
+}
+
+/**
+ * Assumed resisting arm of even a single stud, in LDU.
+ *
+ * A stud is 12 LDU across. A one-connector attachment has no pairwise span, so
+ * without a floor the moment capacity would be zero and every hanging part
+ * would fail in rotation. This is an assumption, reported as one.
+ */
+export const MIN_RESISTING_ARM_LDU = 12
+
 export interface MassReport {
   /** Total measured mass in grams, over parts with compiled geometry. */
   readonly grams: number
@@ -92,6 +129,16 @@ export interface OverhangIssue {
   readonly capacityGrams: number
   readonly severity: 'over-capacity' | 'marginal'
   readonly message: string
+  /** Cluster whose weight is hanging — excludes the supporting anchors. */
+  readonly hangingPartIds: string[]
+  /** Present only when the cluster's weight acts away from its anchors. */
+  readonly leverage?: {
+    readonly armLdu: number
+    readonly spanLdu: number
+    readonly momentGramLdu: number
+    readonly capacityGramLdu: number
+    readonly severity: 'over-capacity' | 'marginal'
+  }
 }
 
 export interface StaticsReport {
@@ -101,7 +148,14 @@ export interface StaticsReport {
   readonly overloaded: OverhangIssue[]
   /** Parts the load path from the ground never reaches: hanging or floating. */
   readonly unsupportedPartIds: string[]
-  readonly assumptions: { clutchGramsPerStud: number; densityGramsPerLdu3: number; massBasis: string }
+  readonly assumptions: {
+    clutchGramsPerStud: number
+    densityGramsPerLdu3: number
+    massBasis: string
+    /** Assumed resisting arm of a single stud, in LDU. A stud is 12 LDU across. */
+    minResistingArmLdu: number
+    clutchFamilyWeights: Record<ConnectionFamily, number>
+  }
   /** Fraction of the model, by part count, whose mass could be measured. */
   readonly coverage: number
 }
@@ -121,6 +175,77 @@ function partCentre(part: PartInstance): Vec3 {
     (bounds.min[1] + bounds.max[1]) / 2,
     (bounds.min[2] + bounds.max[2]) / 2,
   ]
+}
+
+/** Mass-weighted centroid of named parts, falling back to geometric centres. */
+export function centroidOf(partIds: readonly string[], document: ModelDocument): Vec3 {
+  let mass = 0
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const id of partIds) {
+    const part = document.parts[id]
+    if (!part) continue
+    const grams = partMassGrams(part) ?? 0
+    const centre = partCentre(part)
+    const weight = grams > 0 ? grams : 1
+    mass += weight
+    x += centre[0] * weight
+    y += centre[1] * weight
+    z += centre[2] * weight
+  }
+  if (mass <= 0) return [0, 0, 0]
+  return [x / mass, y / mass, z / mass]
+}
+
+export function centroidOfPoints(points: readonly Vec3[]): Vec3 {
+  if (!points.length) return [0, 0, 0]
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const point of points) {
+    x += point[0]
+    y += point[1]
+    z += point[2]
+  }
+  return [x / points.length, y / points.length, z / points.length]
+}
+
+/** Horizontal throw. Gravity is −Y in LDraw, so only XZ produces a bending moment. */
+export function horizontalDistance(a: Vec3, b: Vec3): number {
+  return Math.hypot(a[0] - b[0], a[2] - b[2])
+}
+
+export function maxPairwiseDistance(points: readonly Vec3[]): number {
+  let span = 0
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      span = Math.max(span, horizontalDistance(points[i]!, points[j]!))
+    }
+  }
+  return span
+}
+
+/**
+ * Grams the optimiser should treat as excess on this cluster.
+ *
+ * Force excess is already in grams. Moment excess is gram·LDU; dividing by the
+ * arm converts it back into an equivalent hanging mass so a far load and a
+ * heavy load can share one objective without inventing a second unit.
+ */
+/** Issues whose weight acts past the assumed resisting arm of their studs. */
+export function hangingArmIssues(overloaded: readonly OverhangIssue[]): OverhangIssue[] {
+  return overloaded.filter(
+    (item) => item.leverage !== undefined && item.leverage.momentGramLdu > item.leverage.capacityGramLdu,
+  )
+}
+
+export function overhangPenaltyGrams(overhang: OverhangIssue): number {
+  const force = Math.max(0, overhang.grams - overhang.capacityGrams)
+  const leverage = overhang.leverage
+  if (!leverage || leverage.armLdu < 1e-6) return force
+  const momentExcess = Math.max(0, leverage.momentGramLdu - leverage.capacityGramLdu)
+  return force + momentExcess / leverage.armLdu
 }
 
 export function computeMass(document: ModelDocument): MassReport {
@@ -264,8 +389,9 @@ export function computeOverloads(
   for (const pair of derived.pairs) {
     const a = neighbours.get(pair.a.partId)
     const b = neighbours.get(pair.b.partId)
-    if (a) a.set(pair.b.partId, (a.get(pair.b.partId) ?? 0) + 1)
-    if (b) b.set(pair.a.partId, (b.get(pair.a.partId) ?? 0) + 1)
+    const weight = clutchCapacityWeight(pair.a.family, pair.b.family)
+    if (a) a.set(pair.b.partId, (a.get(pair.b.partId) ?? 0) + weight)
+    if (b) b.set(pair.a.partId, (b.get(pair.a.partId) ?? 0) + weight)
   }
 
   const boxes = new Map(parts.map((part) => [part.id, getPartBounds(part)]))
@@ -336,19 +462,59 @@ export function computeOverloads(
 
     const grams = cluster.reduce((sum, id) => sum + (partMassGrams(document.parts[id]) ?? 0), 0)
     const capacity = studs * clutchGrams
-    if (grams > capacity) {
-      overloaded.push({
-        partIds: [...cluster, ...anchors],
-        grams: Math.round(grams * 10) / 10,
-        studs,
-        capacityGrams: capacity,
-        severity: grams > capacity * 2 ? 'over-capacity' : 'marginal',
-        message:
-          `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang from `
-          + `${studs} stud${studs === 1 ? '' : 's'}, assumed to hold ${capacity} g. `
-          + 'Add another attachment point, or bring the load back over a support.',
-      })
+    const loadCentre = centroidOf(cluster, document)
+    const anchorPoints: Vec3[] = []
+    for (const pair of derived.pairs) {
+      const clusterHasA = cluster.includes(pair.a.partId)
+      const clusterHasB = cluster.includes(pair.b.partId)
+      const anchorHasA = anchors.has(pair.a.partId)
+      const anchorHasB = anchors.has(pair.b.partId)
+      if (clusterHasA && anchorHasB) anchorPoints.push(pair.b.frame.position)
+      else if (clusterHasB && anchorHasA) anchorPoints.push(pair.a.frame.position)
     }
+    const armLdu = horizontalDistance(loadCentre, centroidOfPoints(anchorPoints))
+    const spanLdu = maxPairwiseDistance(anchorPoints)
+    const momentGramLdu = grams * armLdu
+    const momentCapacity =
+      studs * clutchGrams * Math.max(spanLdu, MIN_RESISTING_ARM_LDU) / 2
+    const forceOver = grams > capacity
+    const leverageOver = armLdu > 1 && momentGramLdu > momentCapacity
+    if (!forceOver && !leverageOver) continue
+
+    const leverage =
+      armLdu > 1
+        ? {
+            armLdu: Math.round(armLdu * 10) / 10,
+            spanLdu: Math.round(spanLdu * 10) / 10,
+            momentGramLdu: Math.round(momentGramLdu),
+            capacityGramLdu: Math.round(momentCapacity),
+            severity: (momentGramLdu > momentCapacity * 2 ? 'over-capacity' : 'marginal') as
+              | 'over-capacity'
+              | 'marginal',
+          }
+        : undefined
+
+    const message =
+      leverage && leverageOver && !forceOver
+        ? `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang ${Math.round(armLdu)} LDU out from ${studs} stud${studs === 1 ? '' : 's'} spanning ${Math.round(spanLdu)} LDU. The weight is within what those studs can hold, but the leverage is not — bring the load back over a support, or widen the attachment.`
+        : `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang from `
+          + `${studs} stud${studs === 1 ? '' : 's'}, assumed to hold ${capacity} g. `
+          + 'Add another attachment point, or bring the load back over a support.'
+
+    overloaded.push({
+      partIds: [...cluster, ...anchors],
+      hangingPartIds: [...cluster],
+      grams: Math.round(grams * 10) / 10,
+      studs,
+      capacityGrams: capacity,
+      severity: forceOver
+        ? grams > capacity * 2
+          ? 'over-capacity'
+          : 'marginal'
+        : leverage?.severity ?? 'marginal',
+      message,
+      leverage,
+    })
   }
 
   return { overloaded: overloaded.sort((a, b) => b.grams - a.grams).slice(0, 24), unsupportedPartIds }
@@ -364,7 +530,13 @@ export function analyseStatics(document: ModelDocument, clutchGrams = DEFAULT_CL
     support,
     overloaded,
     unsupportedPartIds,
-    assumptions: { clutchGramsPerStud: clutchGrams, densityGramsPerLdu3: ABS_GRAMS_PER_LDU3, massBasis: MASS_BASIS },
+    assumptions: {
+      clutchGramsPerStud: clutchGrams,
+      densityGramsPerLdu3: ABS_GRAMS_PER_LDU3,
+      massBasis: MASS_BASIS,
+      minResistingArmLdu: MIN_RESISTING_ARM_LDU,
+      clutchFamilyWeights: CLUTCH_FAMILY_WEIGHT,
+    },
     coverage: total ? mass.measuredParts / total : 1,
   }
 }

@@ -19,6 +19,9 @@ jobs:
           cache: npm
       - run: npm ci
 
+      - name: Audit production dependencies for high-severity advisories
+        run: npm run audit:runtime
+
       # Committed catalog integrity: byte lengths and SHA-256 over every asset
       # the runtime will later verify again before using it as CAD input.
       - name: Verify committed catalog assets
@@ -149,12 +152,10 @@ jobs:
   # edge proxy's BRICKWRIGHT_PROXY_SECRET is a Pages project secret — neither is
   # set from here. See docs/deployment.md.
   #
-  # Today this ships a 76MB committed asset pack inside dist/: 1,904 files, the
-  # largest of them catalog/2026-07/search-external.json at 7.4MB. That is still
-  # inside Pages' limits (25MB per file, 20,000 files), but every figure in the
-  # previous version of this comment was stale — it predated search-external.json
-  # and the semantic index, and understated the pack by 19MB. Measure before
-  # trusting it again; better still, assert it (see docs/improvements/10-devex-operations.md).
+  # `npm run build` measures and gates dist/ against explicit total, file-count,
+  # and single-file budgets. Cloudflare's current hard limits remain documented
+  # in docs/deployment.md; unlike the old prose-only figures, the gate cannot go
+  # stale unnoticed after a catalogue rebuild.
   deploy:
     needs: [verify, acceptance]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

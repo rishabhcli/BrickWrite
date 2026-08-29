@@ -66,7 +66,7 @@ const { registerRoute, resetRouteRegistry } = await import('../routes')
 const { resetBoot } = await import('../boot')
 const { resetSessionMemory } = await import('./account')
 const { safeReturnTo } = await import('./AuthRoutes')
-const { resetPlatformAnalytics, drainPlatformAnalytics } = await import('../analytics')
+const { resetPlatformAnalytics, drainPlatformAnalytics, peekPlatformAnalytics } = await import('../analytics')
 
 function signedIn(overrides: Partial<MockUser> = {}): MockUser {
   return {
@@ -265,9 +265,11 @@ describe('a restricted user', () => {
     expect(heading.closest('section')?.getAttribute('role')).toBe('status')
     expect(screen.getByRole('link', { name: /open account settings/i }).getAttribute('href')).toBe('/account')
     expect(screen.queryByText('Your projects')).toBeNull()
-    expect(drainPlatformAnalytics().map((entry) => entry.event)).toContainEqual({
-      name: 'auth.restricted',
-      restriction: 'email_not_verified',
+    await waitFor(() => {
+      expect(peekPlatformAnalytics().map((entry) => entry.event)).toContainEqual({
+        name: 'auth.restricted',
+        restriction: 'email_not_verified',
+      })
     })
   })
 

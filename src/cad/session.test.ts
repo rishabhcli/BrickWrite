@@ -3,6 +3,8 @@ import { cadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
 import { createBlankDocument, createShowcaseDocument } from './sample'
 import { session } from './session'
+import { bestSnapTransform } from './snapping'
+import { getDocumentBounds } from './geometry'
 import type { PartInstance } from './types'
 
 /**
@@ -16,11 +18,11 @@ import type { PartInstance } from './types'
  * IndexedDB itself.
  */
 
-const makePart = (id: string, x: number): PartInstance => ({
+const makePart = (id: string): PartInstance => ({
   id,
-  definitionId: '3001',
+  definitionId: '3024',
   color: 72,
-  transform: { position: [x, 0, 0], basis: IDENTITY_BASIS },
+  transform: { position: [0, 0, 0], basis: IDENTITY_BASIS },
   subassemblyId: 'hull',
   stepId: 'step_1',
   provenance: 'human',
@@ -28,17 +30,28 @@ const makePart = (id: string, x: number): PartInstance => ({
 })
 
 /**
- * Commits one part, and asserts it committed.
+ * Commits one 1 × 1 plate onto a free stud of the live document.
  *
- * These tests only need *a* successful transaction to move a revision forward;
- * the position is incidental. It still has to land inside the showcase's hard
- * `Envelope ≤ 10 × 14 studs` constraint, which the kernel enforces on every
- * commit — the rover already spans 8 × 12 studs across x ∈ [-80, 80] LDU, so an
- * offset outside that footprint is refused as `CONSTRAINT_VIOLATION` and the
- * failure reads as a session bug when it is nothing of the sort.
+ * These tests only need *a* successful transaction to move a revision forward.
+ * Invented XYZ on the showcase rover either collides, sits on a tile, or
+ * leaves the hard envelope; the snap solver is the same path a real placement
+ * takes.
  */
-const place = (id: string, x: number) => {
-  const result = cadEngine.execute('Place', [{ type: 'part.add', part: makePart(id, x) }], 'human')
+const place = (id: string) => {
+  const document = cadEngine.getSnapshot().document
+  const bounds = getDocumentBounds(document)
+  const candidate = makePart(id)
+  const cursor = {
+    position: [
+      (bounds.min[0] + bounds.max[0]) / 2,
+      bounds.min[1] - 8,
+      (bounds.min[2] + bounds.max[2]) / 2,
+    ] as [number, number, number],
+    basis: IDENTITY_BASIS,
+  }
+  const snapped = bestSnapTransform({ ...candidate, transform: cursor }, document, cursor, { radiusLdu: 48 })
+  expect(snapped, `no free stud to place ${id}`).toBeTruthy()
+  const result = cadEngine.execute('Place', [{ type: 'part.add', part: { ...candidate, transform: snapped! } }], 'human')
   expect(result.ok).toBe(true)
 }
 
@@ -72,7 +85,7 @@ describe('session projects', () => {
     expect(session.currentProjectId).not.toBe(originId)
     expect(cadEngine.getSnapshot().document.name).toBe('Wing study')
 
-    place('fork_part', 0)
+    place('fork_part')
 
     const projects = await session.listProjects()
     const origin = projects.find((project) => project.projectId === originId)
@@ -106,7 +119,7 @@ describe('session projects', () => {
 
     // No `settled()` here on purpose: the append is still queued when the switch
     // begins, which is exactly the race the flush exists to close.
-    place('late_part', 40)
+    place('late_part')
     const switched = await session.openProject(originId)
     expect(switched.ok).toBe(true)
 
@@ -117,8 +130,8 @@ describe('session projects', () => {
 
   it('checkpoints on the way out, so a reopened project needs no replay', async () => {
     const originId = session.currentProjectId
-    place('a', 0)
-    place('b', 40)
+    place('a')
+    place('b')
     const revision = cadEngine.getSnapshot().document.revision
     await session.forkProject('Elsewhere')
 
@@ -133,8 +146,8 @@ describe('session projects', () => {
   })
 
   it('replays the log on boot for commits made after the last checkpoint', async () => {
-    place('a', 0)
-    place('b', 40)
+    place('a')
+    place('b')
     const revision = cadEngine.getSnapshot().document.revision
     await session.settled()
 
@@ -165,6 +178,13 @@ describe('session projects', () => {
     const missing = await session.openProject(disposableId)
     expect(missing.ok).toBe(false)
     expect(missing.code).toBe('NOT_FOUND')
+  })
+
+  it('exports an archive of the live revision after checkpointing', async () => {
+    place('archive_part')
+    const json = await session.exportArchive()
+    expect(json).toContain('"brickwrightArchive": 1')
+    expect(json).toContain(`"revision": ${cadEngine.getSnapshot().document.revision}`)
   })
 
   it('imports a document as a new stored project without touching the origin', async () => {

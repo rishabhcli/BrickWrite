@@ -74,10 +74,23 @@ export async function readSnapshot(
   groupId: string,
   projectId: Id<'projects'>,
 ): Promise<CloudResult<CloudSnapshotRecord>> {
+  const peek = await ctx.db
+    .query('snapshots')
+    .withIndex('by_group', (q) => q.eq('groupId', groupId))
+    .take(1)
+
+  if (peek.length === 0) {
+    return cloudFailure(
+      'NOT_FOUND',
+      'That checkpoint is not stored in this deployment.',
+      'Pick another version, or re-upload a checkpoint from the open document.',
+    )
+  }
+  const expected = peek[0].chunkCount
   const chunks = await ctx.db
     .query('snapshots')
     .withIndex('by_group', (q) => q.eq('groupId', groupId))
-    .collect()
+    .take(expected + 1)
 
   if (chunks.length === 0) {
     return cloudFailure(
@@ -138,4 +151,67 @@ export async function readSnapshot(
       document,
     },
   }
+}
+
+/**
+ * Copies the newest parent-branch checkpoint at or below `atRevision` onto a
+ * newly created branch. Named branches created from the UI used to have no
+ * checkpoint, so `loadProject` could not open them.
+ */
+export async function copyLatestCheckpointToBranch(
+  ctx: MutationCtx,
+  args: {
+    projectId: Id<'projects'>
+    fromBranchId: Id<'branches'>
+    toBranchId: Id<'branches'>
+    atRevision: number
+    createdBySubject: string
+  },
+): Promise<CloudResult<string | null>> {
+  const rows = await ctx.db
+    .query('snapshots')
+    .withIndex('by_project_kind_revision', (q) =>
+      q.eq('projectId', args.projectId).eq('kind', 'checkpoint').lte('revision', args.atRevision),
+    )
+    .order('desc')
+    .take(256)
+  const newest = rows.find((row) => row.chunkIndex === 0 && row.branchId === args.fromBranchId)
+  // Named-branch create treats a missing checkpoint as failure so the branch
+  // cannot be opened as an empty shell. Conflict forks are allowed to continue
+  // unseeded: they write their own checkpoint immediately after create.
+  if (!newest) return { ok: true, value: null }
+
+  const source = await ctx.db
+    .query('snapshots')
+    .withIndex('by_group', (q) => q.eq('groupId', newest.groupId))
+    .take(newest.chunkCount + 1)
+  if (source.length !== newest.chunkCount) {
+    return cloudFailure(
+      'INCOMPLETE_SNAPSHOT',
+      'The parent branch checkpoint cannot be copied because it is incomplete.',
+      'Save a checkpoint on the source branch and create the branch again.',
+    )
+  }
+
+  const groupId = crypto.randomUUID()
+  const createdAt = Date.now()
+  for (const chunk of source) {
+    await ctx.db.insert('snapshots', {
+      projectId: args.projectId,
+      branchId: args.toBranchId,
+      groupId,
+      kind: 'checkpoint',
+      revision: newest.revision,
+      chunkIndex: chunk.chunkIndex,
+      chunkCount: newest.chunkCount,
+      data: chunk.data,
+      checksum: chunk.checksum,
+      bytes: chunk.bytes,
+      schemaVersion: chunk.schemaVersion,
+      catalogVersion: chunk.catalogVersion,
+      createdBySubject: args.createdBySubject,
+      createdAt,
+    })
+  }
+  return { ok: true, value: groupId }
 }

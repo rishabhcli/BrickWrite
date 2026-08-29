@@ -464,6 +464,7 @@ export async function refineBriefWithModel(
     schema: z.toJSONSchema(BriefRefinementSchema, { io: 'output' }) as Record<string, unknown>,
     parse: (raw) => BriefRefinementSchema.parse(raw),
     maxTokens: 1024,
+    signal,
   })
 
   const refined = result.value

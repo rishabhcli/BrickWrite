@@ -31,6 +31,11 @@ const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const scale = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k]
 
+/** Moves a plane along its own normal by a known LDU amount. Keyboard offset uses this. */
+export function offsetPlaneAlongNormal(plane: SectionPlane, ldu: number): SectionPlane {
+  return { ...plane, origin: add(plane.origin, scale(normalize(plane.normal), ldu)) }
+}
+
 export function normalize(a: Vec3): Vec3 {
   const length = Math.hypot(a[0], a[1], a[2])
   return length < 1e-9 ? [0, 1, 0] : [a[0] / length, a[1] / length, a[2] / length]

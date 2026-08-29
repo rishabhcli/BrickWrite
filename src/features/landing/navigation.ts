@@ -21,7 +21,7 @@ import { useEffect, useState } from 'react'
 export type LandingTarget =
   | { kind: 'landing' }
   | { kind: 'explore'; demoId?: string; step?: number }
-  | { kind: 'editor' }
+  | { kind: 'editor'; blank?: boolean }
   | { kind: 'editor-project'; projectId: string }
   | { kind: 'describe' }
   | { kind: 'gallery' }
@@ -53,11 +53,11 @@ export function hrefFor(target: LandingTarget): string {
       return `/explore?${query.toString()}`
     }
     case 'editor':
-      return '/editor'
+      return target.blank ? '/editor?doc=blank' : '/editor'
     case 'editor-project':
       return `/editor?project=${encodeURIComponent(target.projectId)}`
     case 'describe':
-      return '/editor?intent=describe'
+      return '/editor?doc=blank&intent=describe'
     case 'gallery':
       return '/gallery'
   }

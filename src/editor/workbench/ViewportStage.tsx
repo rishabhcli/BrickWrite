@@ -89,12 +89,24 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
         onSelectMany={workbench.handleSelectMany}
         onClearSelection={() => cadEngine.setSelection([])}
         onTransform={workbench.handleTransform}
+        onCommitTransforms={(operations) => workbench.commitTransforms(
+          workbench.tool === 'rotate'
+            ? (operations.length > 1 ? 'Turn selection' : 'Turn part')
+            : (operations.length > 1 ? `Move ${operations.length} parts` : 'Transform part'),
+          operations,
+        )}
+        onNudgeSelection={workbench.nudgeSelection}
         onPlace={workbench.placeArmed}
+        onJointNudge={workbench.driveJoint}
         onCanvasReady={(canvas) => {
           workbench.canvasRef.current = canvas
           window.__brickwrightCanvas = canvas
         }}
       />
+      <p id="viewport-keys" className="viewport-keys-hint">
+        Arrow keys orbit · Shift for a coarser step · Page Up/Down or +/- zoom · Home or 0 frames · [ ] walk parts · , . joints · ; ' section · \ occlusion
+      </p>
+      <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
       <div className="viewport-corners" aria-hidden="true"><i /><i /><i /><i /></div>
       <div className="viewport-title-block">
         <p>{workbench.selectionLabel}</p>

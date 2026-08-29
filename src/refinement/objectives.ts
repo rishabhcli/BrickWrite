@@ -1,5 +1,6 @@
 import { catalog, STUD_LDU } from '../cad/catalog'
 import { computeBuildOrder } from '../cad/instructions'
+import { overhangPenaltyGrams } from '../cad/statics'
 import type { ModelDocument } from '../cad/types'
 import { analysePalette, analyseSymmetry, rarityOf } from './analyse'
 import { freeStudsOf, silhouetteOf, stackedSeamsOf, staticsOf, stepEdgesOf, weakAttachmentsOf } from './cache'
@@ -223,14 +224,15 @@ export const OBJECTIVES: Record<ObjectiveId, ObjectiveDefinition> = {
     scale: 50,
     defaultWeight: 1,
     description:
-      'Mass hanging beyond the assumed clutch capacity holding it, summed over the region, from '
-      + '`computeOverloads`. 0 means nothing is asking a stud to hold more than it is credited with.',
+      'Mass hanging beyond the assumed clutch capacity holding it, plus the equivalent mass of any '
+      + 'cantilever moment excess (moment over capacity, divided by the lever arm), from `computeOverloads`. '
+      + '0 means nothing is asking a stud to hold more than it is credited with, in force or in rotation.',
     measure: (document, scope) => {
       const region = new Set(regionPartIds(document, scope))
       let excess = 0
       for (const overhang of staticsOf(document).overloaded) {
         if (!overhang.partIds.some((id) => region.has(id))) continue
-        excess += Math.max(0, overhang.grams - overhang.capacityGrams)
+        excess += overhangPenaltyGrams(overhang)
       }
       return excess
     },

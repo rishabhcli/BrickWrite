@@ -6,6 +6,8 @@ import {
   canonicalisePose,
   gizmoPose,
   numericPose,
+  planRotateSelection,
+  planTranslateSelection,
   poseKey,
   posesEqual,
   readNumericPose,
@@ -145,5 +147,76 @@ describe('reference frames', () => {
     // disagree — if they did not, the control would be decorative.
     expect(local.position[0]).toBeCloseTo(0, 6)
     expect(Math.abs(local.position[2])).toBeCloseTo(20, 6)
+  })
+})
+
+describe('planRotateSelection', () => {
+  const brick = (id: string, position: [number, number, number]) => ({
+    id,
+    definitionId: '3001',
+    color: 72,
+    transform: { position, basis: IDENTITY_BASIS },
+    subassemblyId: 'hull',
+    stepId: 'step_1',
+    provenance: 'human' as const,
+    protected: false,
+  })
+
+  it('turns one part about its own origin', () => {
+    const part = brick('a', [40, 0, 10])
+    const operations = planRotateSelection([part], 90)
+    expect(operations).toHaveLength(1)
+    expect(operations[0]).toMatchObject({ type: 'part.transform', partId: 'a' })
+    const next = operations[0]!.type === 'part.transform' ? operations[0].transform : identity
+    expect(next.position).toEqual([40, 0, 10])
+    expect(poseKey(next)).toBe(poseKey(rotatePose(part.transform, [0, 1, 0], 90, 'local')))
+  })
+
+  it('turns several parts about the selection centre so relative clutch is kept', () => {
+    const parts = [brick('a', [0, 0, 0]), brick('b', [0, -24, 0])]
+    const before = Math.hypot(
+      parts[1]!.transform.position[0] - parts[0]!.transform.position[0],
+      parts[1]!.transform.position[1] - parts[0]!.transform.position[1],
+      parts[1]!.transform.position[2] - parts[0]!.transform.position[2],
+    )
+    const operations = planRotateSelection(parts, 90)
+    expect(operations).toHaveLength(2)
+    const after = Object.fromEntries(
+      operations.flatMap((operation) => (operation.type === 'part.transform' ? [[operation.partId, operation.transform]] : [])),
+    ) as Record<string, Transform>
+    expect(after.a).toBeDefined()
+    expect(after.b).toBeDefined()
+    const kept = Math.hypot(
+      after.b.position[0] - after.a.position[0],
+      after.b.position[1] - after.a.position[1],
+      after.b.position[2] - after.a.position[2],
+    )
+    expect(kept).toBeCloseTo(before, 6)
+    expect(after.a.position[1]).toBeCloseTo(0, 6)
+    expect(after.b.position[1]).toBeCloseTo(-24, 6)
+  })
+})
+
+describe('planTranslateSelection', () => {
+  const brick = (id: string, position: [number, number, number]) => ({
+    id,
+    definitionId: '3001',
+    color: 72,
+    transform: { position, basis: IDENTITY_BASIS },
+    subassemblyId: 'hull',
+    stepId: 'step_1',
+    provenance: 'human' as const,
+    protected: false,
+  })
+
+  it('moves several parts by one world delta so relative clutch is kept', () => {
+    const parts = [brick('a', [0, 0, 0]), brick('b', [0, -24, 0])]
+    const operations = planTranslateSelection(parts, [40, 0, 20])
+    expect(operations).toHaveLength(2)
+    const after = Object.fromEntries(
+      operations.flatMap((operation) => (operation.type === 'part.transform' ? [[operation.partId, operation.transform.position]] : [])),
+    ) as Record<string, [number, number, number]>
+    expect(after.a).toEqual([40, 0, 20])
+    expect(after.b).toEqual([40, -24, 20])
   })
 })

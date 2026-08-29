@@ -192,16 +192,3 @@ export {
   type ViewerAction,
   type ViewerState,
 } from './viewer/state'
-
-/**
- * Registers the read-only viewer at `/share/:slug`.
- *
- * The Cloudflare Function at `functions/share/[slug].ts` already answers that
- * address for a cold navigation; this registration is what upgrades an in-app
- * navigation to the interactive viewer. Both read the same publication.
- */
-export function registerShareRoute(
-  registerRoute: (id: 'share', loader: () => Promise<{ default: React.ComponentType }>) => () => void,
-) {
-  return registerRoute('share', async () => ({ default: (await import('./viewer/SharePage')).default }))
-}

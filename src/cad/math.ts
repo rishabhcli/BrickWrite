@@ -350,6 +350,8 @@ export const scaleVec = (a: Vec3, factor: number): Vec3 => [a[0] * factor, a[1] 
 
 export const dotVec = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
+export const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
 export function normalizeVec(a: Vec3): Vec3 {
   const length = Math.hypot(a[0], a[1], a[2])
   return length < EPSILON ? [0, 0, 0] : [a[0] / length, a[1] / length, a[2] / length]

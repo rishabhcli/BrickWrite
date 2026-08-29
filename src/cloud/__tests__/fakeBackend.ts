@@ -1112,6 +1112,24 @@ class FakeConvexBackend implements CloudBackend {
       )
     }
     const now = this.db.stamp()
+    const kind = args.kind ?? 'named'
+    const parentCheckpoint = this.db.snapshots
+      .filter(
+        (row) =>
+          row.projectId === project._id &&
+          row.kind === 'checkpoint' &&
+          row.chunkIndex === 0 &&
+          row.branchId === parent.value._id &&
+          row.revision <= at,
+      )
+      .sort((a, b) => b.revision - a.revision)[0]
+    if (!parentCheckpoint && kind !== 'conflict') {
+      return fail(
+        'NOT_FOUND',
+        'The source branch has no checkpoint to copy, so the new branch would not open.',
+        'Save the source branch once, then create the named branch.',
+      )
+    }
     const branch: BranchRow = {
       _id: this.db.nextId('branches'),
       projectId: project._id,
@@ -1119,12 +1137,35 @@ class FakeConvexBackend implements CloudBackend {
       headRevision: at,
       baseRevision: at,
       forkedFromBranchId: parent.value._id,
-      kind: args.kind ?? 'named',
+      kind,
       createdBySubject: identity.subject,
       createdAt: now,
       updatedAt: now,
     }
     this.db.branches.push(branch)
+    if (parentCheckpoint) {
+      const chunks = this.db.snapshots.filter((row) => row.groupId === parentCheckpoint.groupId)
+      if (chunks.length !== parentCheckpoint.chunkCount) {
+        this.db.branches.pop()
+        return fail(
+          'INCOMPLETE_SNAPSHOT',
+          'The parent branch checkpoint cannot be copied because it is incomplete.',
+          'Save a checkpoint on the source branch and create the branch again.',
+        )
+      }
+      const groupId = this.db.nextId('snapgroup')
+      const createdAt = this.db.stamp()
+      for (const chunk of chunks) {
+        this.db.snapshots.push({
+          ...chunk,
+          _id: this.db.nextId('snapshots'),
+          branchId: branch._id,
+          groupId,
+          createdBySubject: identity.subject,
+          createdAt,
+        })
+      }
+    }
     this.db.audit(project._id, identity.subject, 'branch.create', {
       branch: name,
       from: parent.value.name,
@@ -1341,7 +1382,7 @@ class FakeConvexBackend implements CloudBackend {
       return fail(
         'FORBIDDEN',
         "The owner's role cannot be changed.",
-        'Transfer ownership first if the owner should step back.',
+        'The owner role stays with the account that created the project.',
       )
     }
     const membership = this.db.membership(project._id, args.subject)
@@ -1378,7 +1419,7 @@ class FakeConvexBackend implements CloudBackend {
       return fail(
         'FORBIDDEN',
         'The owner cannot be removed from their own project.',
-        'Transfer ownership first, or delete the project.',
+        'The owner cannot leave this project. Delete it instead, or keep the owner account signed in.',
       )
     }
     const index = this.db.members.findIndex(
@@ -1499,6 +1540,14 @@ class FakeConvexBackend implements CloudBackend {
       return fail(
         'NOT_FOUND',
         'That invitation link is not valid any more.',
+        'Ask the project owner to send a fresh invitation.',
+      )
+    }
+    if (invitation.expiresAt < this.db.stamp()) {
+      invitation.status = 'expired'
+      return fail(
+        'NOT_FOUND',
+        'That invitation has expired.',
         'Ask the project owner to send a fresh invitation.',
       )
     }
@@ -1710,7 +1759,7 @@ class FakeConvexBackend implements CloudBackend {
   }): Promise<CloudResult<CloudPresenceRecord[]>> {
     const offline = this.guard<CloudPresenceRecord[]>()
     if (offline) return offline
-    const authorised = this.authorise(args.projectId, 'project.read')
+    const authorised = this.authorise(args.projectId, 'presence.publish')
     if (!authorised.ok) return authorised
     const at = this.db.stamp()
     const rows = this.db.presence.filter(

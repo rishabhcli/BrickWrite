@@ -12,6 +12,8 @@ import {
   type CloudBackend,
   type CloudBranchRecord,
   type CloudCommentRecord,
+  type CloudErrorShape,
+  type CloudInvitationRecord,
   type CloudMemberRecord,
   type CloudProjectSummary,
   type CloudResult,
@@ -79,10 +81,14 @@ export interface AppendOutcome {
   /** False when the append matched an existing client transaction id. */
   applied: boolean
   transactionId?: string
+  /** Local durability succeeded even when the replica queue refused the entry. */
+  syncError?: CloudErrorShape
 }
 
 export interface CheckpointOutcome {
   revision: number
+  /** Local durability succeeded even when the replica queue refused the entry. */
+  syncError?: CloudErrorShape
 }
 
 export interface ProjectStore {
@@ -131,6 +137,21 @@ export interface ProjectStore {
     role: Exclude<CloudRole, 'owner'>,
   ): Promise<CloudResult<CloudMemberRecord>>
   removeMember(projectId: string, subject: string): Promise<CloudResult<{ removed: boolean }>>
+  myRole(projectId: string): Promise<CloudResult<CloudRole | null>>
+  setVisibility(
+    projectId: string,
+    visibility: ProjectVisibility,
+  ): Promise<CloudResult<StoredProjectSummary>>
+  listInvitations(projectId: string): Promise<CloudResult<CloudInvitationRecord[]>>
+  createInvitation(
+    projectId: string,
+    email: string,
+    role: Exclude<CloudRole, 'owner'>,
+  ): Promise<CloudResult<CloudInvitationRecord>>
+  revokeInvitation(
+    projectId: string,
+    invitationId: string,
+  ): Promise<CloudResult<{ revoked: boolean }>>
 
   listComments(projectId: string): Promise<CloudResult<CloudCommentRecord[]>>
   addComment(
@@ -338,6 +359,21 @@ export class LocalProjectStore implements ProjectStore {
   async removeMember(): Promise<CloudResult<{ removed: boolean }>> {
     return localOnly('Collaborators')
   }
+  async myRole(): Promise<CloudResult<CloudRole | null>> {
+    return localOnly('Collaborators')
+  }
+  async setVisibility(): Promise<CloudResult<StoredProjectSummary>> {
+    return localOnly('Sharing')
+  }
+  async listInvitations(): Promise<CloudResult<CloudInvitationRecord[]>> {
+    return localOnly('Invitations')
+  }
+  async createInvitation(): Promise<CloudResult<CloudInvitationRecord>> {
+    return localOnly('Invitations')
+  }
+  async revokeInvitation(): Promise<CloudResult<{ revoked: boolean }>> {
+    return localOnly('Invitations')
+  }
   async listComments(): Promise<CloudResult<CloudCommentRecord[]>> {
     return localOnly('Comments')
   }
@@ -377,6 +413,20 @@ export class CloudProjectStore implements ProjectStore {
     }
   }
 
+  private storedSummary(summary: CloudProjectSummary): StoredProjectSummary {
+    return {
+      projectId: summary.projectId,
+      localProjectId: summary.localProjectId,
+      name: summary.name,
+      revision: summary.headRevision,
+      savedAt: summary.updatedAt,
+      partCount: null,
+      origin: 'cloud',
+      role: summary.role,
+      visibility: summary.visibility,
+    }
+  }
+
   /**
    * The project's stored schema and catalogue versions.
    *
@@ -404,17 +454,7 @@ export class CloudProjectStore implements ProjectStore {
     this.remember(result.value)
     return {
       ok: true,
-      value: result.value.map((summary) => ({
-        projectId: summary.projectId,
-        localProjectId: summary.localProjectId,
-        name: summary.name,
-        revision: summary.headRevision,
-        savedAt: summary.updatedAt,
-        partCount: null,
-        origin: 'cloud' as const,
-        role: summary.role,
-        visibility: summary.visibility,
-      })),
+      value: result.value.map((summary) => this.storedSummary(summary)),
     }
   }
 
@@ -516,20 +556,7 @@ export class CloudProjectStore implements ProjectStore {
     })
     if (!result.ok) return result
     this.remember([result.value])
-    return {
-      ok: true,
-      value: {
-        projectId: result.value.projectId,
-        localProjectId: result.value.localProjectId,
-        name: result.value.name,
-        revision: result.value.headRevision,
-        savedAt: result.value.updatedAt,
-        partCount: null,
-        origin: 'cloud',
-        role: result.value.role,
-        visibility: result.value.visibility,
-      },
-    }
+    return { ok: true, value: this.storedSummary(result.value) }
   }
 
   listBranches(projectId: string): Promise<CloudResult<CloudBranchRecord[]>> {
@@ -546,6 +573,7 @@ export class CloudProjectStore implements ProjectStore {
       name,
       kind: options?.kind,
       fromBranchId: options?.fromBranchId,
+      atRevision: options?.atRevision,
     })
   }
 
@@ -594,6 +622,39 @@ export class CloudProjectStore implements ProjectStore {
 
   removeMember(projectId: string, subject: string): Promise<CloudResult<{ removed: boolean }>> {
     return this.backend.removeMember({ projectId: this.resolveId(projectId), subject })
+  }
+
+  myRole(projectId: string): Promise<CloudResult<CloudRole | null>> {
+    return this.backend.myRole({ projectId: this.resolveId(projectId) })
+  }
+
+  async setVisibility(
+    projectId: string,
+    visibility: ProjectVisibility,
+  ): Promise<CloudResult<StoredProjectSummary>> {
+    const result = await this.backend.setVisibility({ projectId: this.resolveId(projectId), visibility })
+    if (!result.ok) return result
+    this.remember([result.value])
+    return { ok: true, value: this.storedSummary(result.value) }
+  }
+
+  listInvitations(projectId: string): Promise<CloudResult<CloudInvitationRecord[]>> {
+    return this.backend.listInvitations({ projectId: this.resolveId(projectId) })
+  }
+
+  createInvitation(
+    projectId: string,
+    email: string,
+    role: Exclude<CloudRole, 'owner'>,
+  ): Promise<CloudResult<CloudInvitationRecord>> {
+    return this.backend.createInvitation({ projectId: this.resolveId(projectId), email, role })
+  }
+
+  revokeInvitation(
+    projectId: string,
+    invitationId: string,
+  ): Promise<CloudResult<{ revoked: boolean }>> {
+    return this.backend.revokeInvitation({ projectId: this.resolveId(projectId), invitationId })
   }
 
   listComments(projectId: string): Promise<CloudResult<CloudCommentRecord[]>> {
@@ -765,7 +826,14 @@ export class MirroredProjectStore implements ProjectStore {
     if (link && local.value.applied) {
       const checkpoint = await this.local.readCheckpoint(projectId)
       if (checkpoint) {
-        await this.outbox.queueTransaction(link.cloudProjectId, checkpoint.document, transaction)
+        const queued = await this.outbox.queueTransaction(
+          link.cloudProjectId,
+          checkpoint.document,
+          transaction,
+        )
+        if (!queued.ok) {
+          return { ok: true, value: { ...local.value, syncError: queued.error } }
+        }
       }
     }
     return local
@@ -775,7 +843,10 @@ export class MirroredProjectStore implements ProjectStore {
     const local = await this.local.saveCheckpoint(document)
     if (!local.ok) return local
     const link = await this.links.get(document.id)
-    if (link) await this.outbox.queueCheckpoint(link.cloudProjectId, document)
+    if (link) {
+      const queued = await this.outbox.queueCheckpoint(link.cloudProjectId, document)
+      if (!queued.ok) return { ok: true, value: { ...local.value, syncError: queued.error } }
+    }
     return local
   }
 
@@ -913,6 +984,7 @@ export class MirroredProjectStore implements ProjectStore {
     if (plan.kind === 'up-to-date') return { ok: true, value: { kind: 'up-to-date' } }
 
     if (plan.kind === 'fast-forward') {
+      await this.outbox.clearProject(link.value.cloudProjectId)
       await this.local.replaceHistory(checkpoint.document, plan.adopted)
       await this.links.put({ ...link.value, syncedRevision: plan.headRevision })
       return { ok: true, value: { kind: 'fast-forward', document: plan.document } }
@@ -942,6 +1014,10 @@ export class MirroredProjectStore implements ProjectStore {
       plan,
     })
     if (!fork.ok) return fork
+    // The parked pre-fork tail has already been materialised on the conflict
+    // branch. Leaving it queued would resend it to main and recreate the same
+    // stale-document conflict immediately.
+    await this.outbox.clearProject(link.value.cloudProjectId)
     // Both histories now exist. The local copy adopts the cloud's main branch,
     // because that is the one everybody else is on; the operator's own tail is
     // not lost, it is on the conflict branch and one click away.
@@ -1013,6 +1089,36 @@ export class MirroredProjectStore implements ProjectStore {
 
   removeMember(projectId: string, subject: string): Promise<CloudResult<{ removed: boolean }>> {
     return this.cloudDelegate(projectId, (id) => this.cloud.removeMember(id, subject))
+  }
+
+  myRole(projectId: string): Promise<CloudResult<CloudRole | null>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.myRole(id))
+  }
+
+  setVisibility(
+    projectId: string,
+    visibility: ProjectVisibility,
+  ): Promise<CloudResult<StoredProjectSummary>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.setVisibility(id, visibility))
+  }
+
+  listInvitations(projectId: string): Promise<CloudResult<CloudInvitationRecord[]>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.listInvitations(id))
+  }
+
+  createInvitation(
+    projectId: string,
+    email: string,
+    role: Exclude<CloudRole, 'owner'>,
+  ): Promise<CloudResult<CloudInvitationRecord>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.createInvitation(id, email, role))
+  }
+
+  revokeInvitation(
+    projectId: string,
+    invitationId: string,
+  ): Promise<CloudResult<{ revoked: boolean }>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.revokeInvitation(id, invitationId))
   }
 
   listComments(projectId: string): Promise<CloudResult<CloudCommentRecord[]>> {

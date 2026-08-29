@@ -148,6 +148,40 @@ export class ModelProviderUnavailableError extends Error {
   }
 }
 
+/**
+ * Consume a byte stream as newline-delimited text without corrupting UTF-8
+ * characters split across chunks.
+ *
+ * Framing belongs to the shared HTTP contract; interpreting a line belongs to
+ * each protocol.  In particular, callers deliberately retain their different
+ * malformed-frame policies (assistant streams report an event, generation
+ * streams reject the request).
+ */
+export async function readNdjsonLines(
+  stream: ReadableStream<Uint8Array>,
+  onLine: (line: string) => void | Promise<void>,
+): Promise<void> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let newline = buffer.indexOf('\n')
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline)
+      buffer = buffer.slice(newline + 1)
+      await onLine(line)
+      newline = buffer.indexOf('\n')
+    }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.length > 0) await onLine(buffer)
+}
+
 /** Stable, sorted JSON so a prompt hash is reproducible across processes. */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'

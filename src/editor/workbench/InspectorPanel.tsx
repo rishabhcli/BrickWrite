@@ -16,10 +16,13 @@ import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../../cad/math'
 import {
   ABS_GRAMS_PER_LDU3,
   analyseStatics,
+  CLUTCH_FAMILY_WEIGHT,
   DEFAULT_CLUTCH_GRAMS,
   describeMass,
   describeSupport,
   MASS_BASIS,
+  hangingArmIssues,
+  MIN_RESISTING_ARM_LDU,
   type StaticsReport,
 } from '../../cad/statics'
 import type {
@@ -39,7 +42,13 @@ const EMPTY_STATICS: StaticsReport = {
   support: null,
   overloaded: [],
   unsupportedPartIds: [],
-  assumptions: { clutchGramsPerStud: DEFAULT_CLUTCH_GRAMS, densityGramsPerLdu3: ABS_GRAMS_PER_LDU3, massBasis: MASS_BASIS },
+  assumptions: {
+    clutchGramsPerStud: DEFAULT_CLUTCH_GRAMS,
+    densityGramsPerLdu3: ABS_GRAMS_PER_LDU3,
+    massBasis: MASS_BASIS,
+    minResistingArmLdu: MIN_RESISTING_ARM_LDU,
+    clutchFamilyWeights: CLUTCH_FAMILY_WEIGHT,
+  },
   coverage: 1,
 }
 
@@ -112,6 +121,7 @@ export function InspectorPanel({
     () => (showStatics ? analyseStatics(state.document) : EMPTY_STATICS),
     [showStatics, state.document],
   )
+  const arms = hangingArmIssues(statics.overloaded)
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
       <div className="inspector-tabs" role="tablist">
@@ -396,6 +406,12 @@ export function InspectorPanel({
               value={statics.overloaded.length ? `${statics.overloaded.length} over ${statics.assumptions.clutchGramsPerStud} g/stud` : 'within assumption'}
               status={statics.overloaded.length ? 'fail' : 'pass'}
               onClick={statics.overloaded.length ? () => onSelectIds(statics.overloaded.flatMap((item) => item.partIds)) : undefined}
+            />
+            <ValidationRow
+              label="Leverage"
+              value={arms.length ? `${arms.length} hanging arm(s)` : 'no bending moment past the attachment'}
+              status={arms.length ? 'fail' : 'pass'}
+              onClick={arms.length ? () => onSelectIds(arms.flatMap((item) => item.hangingPartIds)) : undefined}
             />
             {statics.coverage < 0.999 && (
               <p className="statics-note">

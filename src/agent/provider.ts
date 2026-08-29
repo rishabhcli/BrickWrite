@@ -1,5 +1,9 @@
+import {
+  hexclaveAuthorizationHeader,
+  readNdjsonLines,
+  type AuthorizationHeaderSource,
+} from '../platform'
 import { ModelProviderUnavailableError, hash32, type ModelProvider, type ModelRequest, type ModelResult } from '../platform/contracts'
-import { hexclaveAuthorizationHeader, type AuthorizationHeaderSource } from '../hexclave/authorization'
 import {
   ASSISTANT_ENDPOINT,
   ASSISTANT_PROTOCOL,
@@ -56,41 +60,19 @@ export interface AgentModelTransport {
 
 /** Reads an NDJSON body, dispatching each complete line as an event. */
 async function readNdjson(body: ReadableStream<Uint8Array>, onEvent: (event: AssistantEvent) => void): Promise<void> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let newline = buffer.indexOf('\n')
-    while (newline >= 0) {
-      const line = buffer.slice(0, newline).trim()
-      buffer = buffer.slice(newline + 1)
-      newline = buffer.indexOf('\n')
-      if (!line) continue
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(line)
-      } catch {
-        // A malformed line is a transport defect. Reporting it is better than
-        // dropping it, because silently skipping frames looks like the model
-        // simply said less than it did.
-        onEvent({ type: 'error', code: 'INTERNAL_ERROR', message: 'The assistant stream produced a malformed frame.', retryable: true })
-        continue
-      }
-      if (isAssistantEvent(parsed)) onEvent(parsed)
-    }
-  }
-  const tail = buffer.trim()
-  if (tail) {
+  await readNdjsonLines(body, (rawLine) => {
+    const line = rawLine.trim()
+    if (!line) return
     try {
-      const parsed: unknown = JSON.parse(tail)
+      const parsed: unknown = JSON.parse(line)
       if (isAssistantEvent(parsed)) onEvent(parsed)
     } catch {
-      onEvent({ type: 'error', code: 'INTERNAL_ERROR', message: 'The assistant stream ended mid-frame.', retryable: true })
+      // A malformed line is a transport defect. Reporting it is better than
+      // dropping it, because silently skipping frames looks like the model
+      // simply said less than it did.
+      onEvent({ type: 'error', code: 'INTERNAL_ERROR', message: 'The assistant stream produced a malformed frame.', retryable: true })
     }
-  }
+  })
 }
 
 async function readErrorBody(response: Response): Promise<{ code: AssistantErrorCode; message: string; retryable: boolean }> {

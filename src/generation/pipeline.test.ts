@@ -264,7 +264,41 @@ describe('an attachment that cannot be built is repaired or refused, never kept'
     const result = realizeGraph(graph, base(), { seed: 5, repairBudget: 3 })
     const node = result.nodes.find((entry) => entry.nodeId === 'floater')!
     expect(node.status).toBe('rejected')
-    expect(node.reason).toMatch(/clear of its host|mate/)
+    expect(node.reason).toMatch(/clear of its host|mate|hover|float/)
+  })
+
+  it('rejects a region that would hover beside an already-grounded building', () => {
+    const occupied = base()
+    occupied.parts.ground = {
+      id: 'ground',
+      definitionId: '3001',
+      color: 72,
+      transform: { position: [0, 0, 0], basis: IDENTITY_BASIS },
+      subassemblyId: Object.keys(occupied.subassemblies)[0] ?? 'main',
+      stepId: occupied.steps[0]?.id ?? 'step_1',
+      provenance: 'human',
+      protected: false,
+    }
+    const graph: BuildGraph = {
+      version: 1,
+      strategy: 'test',
+      nodes: [
+        {
+          id: 'ghost',
+          kind: 'region',
+          colour: 71,
+          role: 'base',
+          anchorLdu: [400, -200, 0],
+          region: { shape: 'field', widthStuds: 4, depthStuds: 2, courses: 1, family: 'plate' },
+        },
+      ],
+      edges: [],
+    }
+    const result = realizeGraph(graph, occupied, { seed: 1, repairBudget: 2 })
+    const node = result.nodes.find((entry) => entry.nodeId === 'ghost')!
+    expect(node.status).toBe('rejected')
+    expect(node.reason).toMatch(/hover|float/i)
+    expect(node.partIds).toEqual([])
   })
 })
 
@@ -359,7 +393,7 @@ describe('protected regions are inputs, not material', () => {
       id: `keep_${index}`,
       definitionId: '3001',
       color: 14,
-      transform: { position: [index * 2 * STUD_LDU, 0, -6 * STUD_LDU], basis: IDENTITY_BASIS },
+      transform: { position: [index * 4 * STUD_LDU, 0, -8 * STUD_LDU], basis: IDENTITY_BASIS },
       subassemblyId: 'main',
       stepId: 'step_1',
       provenance: 'human',

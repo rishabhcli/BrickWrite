@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
-import { MemoryDriver, ProjectAutosave, ProjectRepository } from './persistence'
+import { MemoryDriver, ProjectAutosave, ProjectRepository, type StoredCheckpoint } from './persistence'
 import { captureModule } from './modules'
 import { createEmptyDocument } from './sample'
 import type { ModelDocument, PartInstance, Transaction } from './types'
@@ -143,6 +143,28 @@ describe('project repository', () => {
     await repository.deleteProject(document.id)
     expect(await repository.listProjects()).toEqual([])
     expect(await repository.loadProject(document.id)).toBeNull()
+  })
+
+  it('lists from summaries so boot does not deserialize every saved document', async () => {
+    const driver = new MemoryDriver()
+    const repository = new ProjectRepository(driver)
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Place', [{ type: 'part.add', part: part('a') }], 'human', 0)
+    const document = engine.getSnapshot().document
+    await repository.saveCheckpoint(document)
+
+    const stored = await driver.get<StoredCheckpoint>('checkpoints', document.id)
+    expect(stored).toBeTruthy()
+    if (!stored) return
+    await driver.put('checkpoints', document.id, {
+      ...stored,
+      document: { ...stored.document, name: 'should not be listed' },
+    })
+
+    const projects = await repository.listProjects()
+    expect(projects).toEqual([
+      expect.objectContaining({ projectId: document.id, name: document.name, partCount: 1 }),
+    ])
   })
 
   it('returns null for a project that was never saved', async () => {

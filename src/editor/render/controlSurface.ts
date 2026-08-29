@@ -138,6 +138,8 @@ export interface RendererControlSurface {
   projectPoint(pointLdu: readonly [number, number, number]): { x: number; y: number; behindCamera: boolean }
   /** Frames the camera on a set of parts and settles synchronously. */
   frameParts(partIds: readonly string[]): boolean
+  /** Spherical pose relative to the orbit target, for keyboard e2e. */
+  cameraPose(): { yawDeg: number; pitchDeg: number; distance: number }
 
   setVisibility(patch: VisibilityPatch): Promise<VisibilityReport>
   getVisibility(): VisibilityReport

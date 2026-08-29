@@ -1,5 +1,6 @@
 import { Boxes, MousePointerClick, ShieldCheck, Sparkles, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import type { RefObject } from 'react'
+import { useFocusTrap } from '../platform/a11y'
 
 /**
  * First-run orientation.
@@ -68,34 +69,12 @@ interface WelcomeGuideProps {
 }
 
 export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
-  const dismiss = useRef<HTMLButtonElement>(null)
-  const returnFocus = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dismiss.current?.focus()
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    // Capture, so the editor's own Escape handling does not also fire behind
-    // a modal the operator is only trying to close.
-    window.addEventListener('keydown', onKey, true)
-    return () => {
-      window.removeEventListener('keydown', onKey, true)
-      returnFocus.current?.focus()
-      returnFocus.current = null
-    }
-  }, [onClose, open])
+  const guide = useFocusTrap(open, { onEscape: onClose })
 
   if (!open) return null
   return (
     <div className="welcome-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="welcome-guide" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <section ref={guide as RefObject<HTMLElement>} className="welcome-guide" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
         <header>
           <div>
             <span className="eyebrow">AGENT-NATIVE BRICK CAD</span>
@@ -120,7 +99,7 @@ export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
         </ol>
         <footer>
           <span>Press <kbd>?</kbd> at any time for the full command map.</span>
-          <button ref={dismiss} className="welcome-start" onClick={onClose}>Start building</button>
+          <button className="welcome-start" onClick={onClose}>Start building</button>
         </footer>
       </section>
     </div>

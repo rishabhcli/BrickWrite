@@ -6,7 +6,11 @@ import {
   type ModelResult,
   type Provenance,
 } from '../platform/contracts'
-import { hexclaveAuthorizationHeader, type AuthorizationHeaderSource } from '../hexclave/authorization'
+import {
+  hexclaveAuthorizationHeader,
+  readNdjsonLines,
+  type AuthorizationHeaderSource,
+} from '../platform'
 
 /**
  * The browser side of the model seam.
@@ -239,22 +243,7 @@ async function readNdjson(
     return events
   }
 
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let newline = buffer.indexOf('\n')
-    while (newline >= 0) {
-      consume(buffer.slice(0, newline))
-      buffer = buffer.slice(newline + 1)
-      newline = buffer.indexOf('\n')
-    }
-  }
-  buffer += decoder.decode()
-  for (const line of buffer.split('\n')) consume(line)
+  await readNdjsonLines(body, consume)
   return events
 }
 

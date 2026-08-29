@@ -65,7 +65,7 @@ export const list = query({
     const memberships = await ctx.db
       .query('members')
       .withIndex('by_subject', (q) => q.eq('subject', identity.subject))
-      .collect()
+      .take(200)
 
     const summaries: CloudProjectSummary[] = []
     for (const membership of memberships) {
@@ -95,7 +95,7 @@ export const branches = query({
     const rows = await ctx.db
       .query('branches')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
-      .collect()
+      .take(64)
     return { ok: true, value: rows.map(branchRecord) }
   },
 })

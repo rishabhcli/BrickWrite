@@ -18,6 +18,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { getColor, STUD_LDU } from '../../cad/catalog'
 import { findSnapCandidates } from '../../cad/snapping'
 import type { CadOperation } from '../../cad/types'
+import { poseRefusal } from '../../cad/validation'
 import {
   AXIS_INDEX,
   canonicalisePose,
@@ -89,7 +90,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
    */
   const candidates = useMemo(() => {
     if (!single) return []
-    return findSnapCandidates(single, state.document, single.transform, { radiusLdu: STUD_LDU * 1.5, maxCandidates: 8 })
+    return findSnapCandidates(single, state.document, single.transform, { radiusLdu: STUD_LDU * 1.5, maxCandidates: 8 }).filter(
+      (candidate) => !poseRefusal(state.document, single.id, candidate.transform),
+    )
   }, [single, state.document])
 
   const commit = useCallback((label: string, operations: CadOperation[]) => {

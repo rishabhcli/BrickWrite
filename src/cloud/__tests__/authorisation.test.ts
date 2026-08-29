@@ -303,6 +303,14 @@ describe('cross-account authorisation', () => {
     const invitations = await bob.listInvitations({ projectId: seed.projectId })
     expect(invitations.ok).toBe(false)
     if (!invitations.ok) expect(invitations.error.code).toBe('FORBIDDEN')
+
+    const members = await bob.listMembers({ projectId: seed.projectId })
+    expect(members.ok).toBe(false)
+    if (!members.ok) expect(members.error.code).toBe('FORBIDDEN')
+
+    const presence = await bob.listPresence({ projectId: seed.projectId })
+    expect(presence.ok).toBe(false)
+    if (!presence.ok) expect(presence.error.code).toBe('FORBIDDEN')
   })
 })
 
@@ -392,6 +400,10 @@ describe('capability matrix', () => {
     // out. Both sides read the same table, and this pins that they do.
     expect(CAPABILITY_MATRIX.commenter).not.toContain('transaction.write')
     expect(CAPABILITY_MATRIX.viewer).not.toContain('comment.create')
+    expect(CAPABILITY_MATRIX.viewer).not.toContain('member.list')
+    expect(CAPABILITY_MATRIX.viewer).not.toContain('presence.publish')
+    expect(CAPABILITY_MATRIX.commenter).not.toContain('member.list')
+    expect(CAPABILITY_MATRIX.commenter).toContain('presence.publish')
     expect(CAPABILITY_MATRIX.editor).not.toContain('branch.merge')
     expect(CAPABILITY_MATRIX.editor).not.toContain('member.setRole')
     expect(CAPABILITY_MATRIX.editor).not.toContain('audit.read')

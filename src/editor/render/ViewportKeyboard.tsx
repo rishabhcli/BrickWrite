@@ -1,0 +1,195 @@
+import { useThree } from '@react-three/fiber'
+import { useEffect, useLayoutEffect } from 'react'
+import * as THREE from 'three'
+import { findArticulatedJoints } from '../../cad/articulation'
+import type { ModelDocument, Transform } from '../../cad/types'
+import type { EditorTool } from '../CadViewport'
+import { resolveVisibility, type VisibilityState } from './visibility'
+import { createSectionPlane, offsetPlaneAlongNormal, type SectionPlane } from './sectionPlanes'
+import {
+  commandFromViewportKey,
+  describeViewportCommand,
+  nextInOrder,
+  VIEWPORT_PITCH_LIMIT_DEG,
+  viewportMode,
+  walkPartOrder,
+} from './viewportKeys'
+
+interface ViewportKeyboardProps {
+  document: ModelDocument
+  selection: string[]
+  tool: EditorTool
+  gridLdu: number
+  visibility: VisibilityState
+  sectionPlanes: readonly SectionPlane[]
+  placementPreview: Transform | null
+  placing: boolean
+  onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
+  onTransform: (partId: string, transform: Transform) => void
+  onNudgeSelection?: (dx: number, dz: number) => void
+  onPlace?: (transform: Transform) => void
+  onJointNudge?: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
+  onSectionPlanesChange: (next: readonly SectionPlane[]) => void
+}
+
+function orbitAround(camera: THREE.Camera, target: THREE.Vector3, yawDeg: number, pitchDeg: number) {
+  const offset = camera.position.clone().sub(target)
+  const spherical = new THREE.Spherical().setFromVector3(offset)
+  spherical.theta += THREE.MathUtils.degToRad(yawDeg)
+  const horizon = Math.PI / 2
+  const limit = THREE.MathUtils.degToRad(VIEWPORT_PITCH_LIMIT_DEG)
+  spherical.phi = THREE.MathUtils.clamp(spherical.phi - THREE.MathUtils.degToRad(pitchDeg), horizon - limit, horizon + limit)
+  offset.setFromSpherical(spherical)
+  camera.position.copy(target).add(offset)
+  camera.lookAt(target)
+}
+
+function dollyToward(camera: THREE.Camera, target: THREE.Vector3, factor: number) {
+  const offset = camera.position.clone().sub(target)
+  const next = Math.min(400, Math.max(3, offset.length() * factor))
+  offset.setLength(next)
+  camera.position.copy(target).add(offset)
+}
+
+function announce(command: ReturnType<typeof commandFromViewportKey>, mode: ReturnType<typeof viewportMode>) {
+  if (!command) return
+  const live = document.getElementById('viewport-live')
+  if (live) live.textContent = describeViewportCommand(command, mode)
+}
+
+/**
+ * Focusable-canvas keyboard: orbit, dolly, frame, selection walking, nudge,
+ * joints, section offset, occlusion cycling and keyboard placement.
+ *
+ * Lives inside the R3F tree so it can reach the live camera and OrbitControls
+ * without a third window-level listener.
+ */
+export function ViewportKeyboard({
+  document: model,
+  selection,
+  tool,
+  gridLdu,
+  visibility,
+  sectionPlanes,
+  placementPreview,
+  placing,
+  onSelect,
+  onTransform,
+  onNudgeSelection,
+  onPlace,
+  onJointNudge,
+  onSectionPlanesChange,
+}: ViewportKeyboardProps) {
+  const { camera, gl, controls, size } = useThree()
+
+  useLayoutEffect(() => {
+    const canvas = gl.domElement
+    canvas.tabIndex = 0
+    canvas.setAttribute('role', 'application')
+    canvas.setAttribute('aria-label', 'CAD viewport')
+    canvas.setAttribute('aria-describedby', 'viewport-keys')
+    canvas.setAttribute(
+      'aria-keyshortcuts',
+      'ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown Home Equal Minus Digit0',
+    )
+  }, [gl])
+
+  useEffect(() => {
+    const canvas = gl.domElement
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.metaKey || event.ctrlKey) return
+      const mode = viewportMode(tool, selection.length)
+      const command = commandFromViewportKey(event.key, {
+        shift: event.shiftKey,
+        mode,
+        gridLdu,
+        placing,
+      })
+      if (!command) return
+      event.preventDefault()
+      event.stopPropagation()
+      const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
+      const target = orbit?.target ?? new THREE.Vector3()
+
+      if (command.kind === 'orbit') {
+        orbitAround(camera, target, command.yawDeg, command.pitchDeg)
+        orbit?.update?.()
+      } else if (command.kind === 'dolly') {
+        dollyToward(camera, target, command.factor)
+        orbit?.update?.()
+      } else if (command.kind === 'frame') {
+        const ids = Object.keys(model.parts)
+        window.__brickwrightRenderer?.frameParts(ids.length ? ids : [])
+      } else if (command.kind === 'walk') {
+        const resolved = resolveVisibility(model, visibility)
+        const order = walkPartOrder(
+          model.steps.map((step) => step.partIds),
+          Object.keys(model.parts),
+          resolved.solid,
+        )
+        const next = nextInOrder(order, selection[selection.length - 1], command.direction)
+        if (next) onSelect(next, command.extend, false)
+      } else if (command.kind === 'nudge') {
+        if (selection.length > 1 && onNudgeSelection) {
+          onNudgeSelection(command.dx, command.dz)
+        } else {
+          for (const partId of selection) {
+            const part = model.parts[partId]
+            if (!part) continue
+            const [x, y, z] = part.transform.position
+            onTransform(partId, { ...part.transform, position: [x + command.dx, y, z + command.dz] })
+          }
+        }
+      } else if (command.kind === 'joint') {
+        const joint = findArticulatedJoints(model, selection)[0]
+        if (joint) {
+          onJointNudge?.(joint.edgeId, {
+            rotateDegrees: command.rotateDegrees || undefined,
+            slideLdu: command.slideLdu || undefined,
+          })
+        }
+      } else if (command.kind === 'section') {
+        const existing = sectionPlanes[0]
+        const plane = existing ?? createSectionPlane('y', [0, 0, 0])
+        const next = offsetPlaneAlongNormal(plane, command.offsetLdu)
+        onSectionPlanesChange(existing ? sectionPlanes.map((candidate) => (candidate.id === plane.id ? next : candidate)) : [next])
+      } else if (command.kind === 'occlude') {
+        const surface = window.__brickwrightRenderer
+        if (surface) {
+          const report = surface.pick(size.width / 2, size.height / 2, { cycle: true })
+          if (report.partId) onSelect(report.partId, false, false)
+        }
+      } else if (command.kind === 'place') {
+        if (placementPreview && onPlace) onPlace(placementPreview)
+      } else if (command.kind === 'act') {
+        const focused = selection[selection.length - 1]
+        if (focused) onSelect(focused, false, false)
+      }
+      announce(command, mode)
+    }
+    canvas.addEventListener('keydown', onKeyDown)
+    return () => canvas.removeEventListener('keydown', onKeyDown)
+  }, [
+    camera,
+    controls,
+    model,
+    gl,
+    gridLdu,
+    onJointNudge,
+    onPlace,
+    onSectionPlanesChange,
+    onSelect,
+    onTransform,
+    onNudgeSelection,
+    placementPreview,
+    placing,
+    sectionPlanes,
+    selection,
+    size.height,
+    size.width,
+    tool,
+    visibility,
+  ])
+
+  return null
+}

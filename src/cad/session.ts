@@ -12,6 +12,12 @@ import {
 import { createBlankDocument } from './sample'
 import { loadLocalDocument, clearLocalDocument } from './storage'
 import type { ModelDocument } from './types'
+import {
+  exportProjectArchive,
+  parseArchive,
+  persistArchive,
+  type ArchiveImportReport,
+} from './archive'
 
 /**
  * Session wiring: ties the CAD kernel to durable local storage.
@@ -294,6 +300,34 @@ class Session {
     const restore = this.adopt(imported, 0)
     await this.repository.saveCheckpoint(cadEngine.getSnapshot().document)
     return { ok: true, restore }
+  }
+
+  async exportArchive(): Promise<string> {
+    await this.autosave.settled()
+    const snapshot = cadEngine.getSnapshot()
+    await this.autosave.checkpointNow(snapshot.document)
+    await this.autosave.settled()
+    if (this.autosave.error) {
+      throw new Error(
+        `The project could not be checkpointed (${this.autosave.error}), so the archive was not written.`,
+      )
+    }
+    return exportProjectArchive(this.repository, snapshot.document, snapshot.validation)
+  }
+
+  async importArchive(json: string): Promise<{ ok: true; report: ArchiveImportReport } | { ok: false; message: string }> {
+    const parsed = parseArchive(json)
+    if (!parsed.ok) return parsed
+    await this.partWithCurrent()
+    const id = await this.uniqueProjectId(parsed.archive.checkpoint.document.name)
+    const report = await persistArchive(this.repository, parsed.archive, id)
+    const loaded = await this.repository.loadProject(id)
+    if (!loaded) {
+      await this.repository.deleteProject(id)
+      return { ok: false, message: 'The archive was stored but could not be reopened, so the copy was removed.' }
+    }
+    this.adopt(loaded.document, loaded.replayed.length)
+    return { ok: true, report }
   }
 
   /**

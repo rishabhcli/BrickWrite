@@ -13,20 +13,13 @@
  * ships without the assistant — or without generation — still starts and
  * reports the missing route honestly instead of failing to boot.
  */
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer } from 'node:http'
 import { stat } from 'node:fs/promises'
+import { createRequestListener, type RouteModule } from './dispatch.ts'
+import { logProcessEvent } from './log.ts'
 
-/**
- * The contract a route module exports.
- *
- * `handle` returns true when it has taken responsibility for the response, and
- * false when the request was not its concern. That is what lets several modules
- * share one prefix without a router dependency.
- */
-export interface RouteModule {
-  readonly prefix: string
-  handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean>
-}
+export type { RouteModule } from './dispatch.ts'
+export { createRequestListener } from './dispatch.ts'
 
 const CANDIDATES = ['./assistant/index.ts', './generation/index.ts'] as const
 
@@ -42,54 +35,27 @@ async function loadRoutes(): Promise<RouteModule[]> {
     const module = (await import(specifier)) as { route?: RouteModule; default?: RouteModule }
     const route = module.route ?? module.default
     if (route && typeof route.handle === 'function') loaded.push(route)
-    else process.stderr.write(`[api] ${specifier} exports no route module; skipping\n`)
+    else logProcessEvent({ level: 'error', service: 'api', message: `${specifier} exports no route module; skipping` })
   }
   return loaded
 }
 
-function notFound(response: ServerResponse, detail: string) {
-  response.writeHead(404, { 'content-type': 'application/json' })
-  response.end(JSON.stringify({ error: 'not_found', detail }))
+export const routes = await loadRoutes()
+
+const shouldListen =
+  process.env.BRICKWRIGHT_API_LISTEN === '1' ||
+  (process.env.BRICKWRIGHT_API_LISTEN !== '0' && !process.env.VITEST)
+
+if (shouldListen) {
+  const server = createServer(createRequestListener(routes))
+  const port = Number(process.env.BRICKWRIGHT_API_PORT ?? 8787)
+  server.listen(port, '127.0.0.1', () => {
+    logProcessEvent({
+      level: 'info',
+      service: 'api',
+      message: `listening on http://127.0.0.1:${port} with ${routes.length} route module(s): ${
+        routes.map((route) => route.prefix).join(', ') || 'none'
+      }`,
+    })
+  })
 }
-
-const routes = await loadRoutes()
-
-const server = createServer((request, response) => {
-  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
-
-  if (url.pathname === '/api/health') {
-    response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ ok: true, routes: routes.map((route) => route.prefix) }))
-    return
-  }
-
-  void (async () => {
-    for (const route of routes) {
-      if (!url.pathname.startsWith(route.prefix)) continue
-      try {
-        if (await route.handle(request, response, url)) return
-      } catch (cause) {
-        // Never surface a stack or a key to the client; the process log keeps
-        // the detail an operator needs.
-        process.stderr.write(`[api] ${route.prefix} failed: ${String(cause)}\n`)
-        if (!response.headersSent) {
-          response.writeHead(500, { 'content-type': 'application/json' })
-          response.end(JSON.stringify({ error: 'internal_error' }))
-        } else {
-          response.end()
-        }
-        return
-      }
-    }
-    notFound(response, `No route module claimed ${url.pathname}`)
-  })()
-})
-
-const port = Number(process.env.BRICKWRIGHT_API_PORT ?? 8787)
-server.listen(port, '127.0.0.1', () => {
-  process.stdout.write(
-    `[api] listening on http://127.0.0.1:${port} with ${routes.length} route module(s): ${
-      routes.map((route) => route.prefix).join(', ') || 'none'
-    }\n`,
-  )
-})

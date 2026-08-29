@@ -126,12 +126,6 @@ const BENCH_HTML = `<!doctype html>
 </script>
 </body></html>`
 
-const percentile = (values, fraction) => {
-  if (!values.length) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * fraction)))]
-}
-
 try {
   if (!(await available())) {
     if (!OWNS_SERVER) throw new Error(`BRICKWRIGHT_E2E_URL points at ${url}, which is not reachable`)

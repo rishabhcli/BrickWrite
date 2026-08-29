@@ -67,11 +67,14 @@ export const ROLES: readonly CloudRole[] = ['owner', 'editor', 'commenter', 'vie
  *
  *   - A commenter may publish presence and write comments but not one document
  *     mutation, because a review seat that can silently edit the model is not a
- *     review seat.
+ *     review seat. They do not see the member roster: publishing a model must
+ *     not also publish who is on the team.
  *   - An editor may open a branch and propose a merge but not land it. Landing
  *     someone else's work into `main` is an owner decision.
  *   - Only an owner reads the audit log or changes roles, because both of those
  *     are how a compromised editor seat would escalate.
+ *   - Implicit `viewer` on a public project is not membership. It can read the
+ *     document and comments, not the roster and not live presence.
  */
 export const CAPABILITY_MATRIX: Readonly<Record<CloudRole, readonly Capability[]>> = {
   owner: CAPABILITIES,
@@ -90,8 +93,8 @@ export const CAPABILITY_MATRIX: Readonly<Record<CloudRole, readonly Capability[]
     'comment.resolve',
     'presence.publish',
   ],
-  commenter: ['project.read', 'member.list', 'comment.read', 'comment.create', 'presence.publish'],
-  viewer: ['project.read', 'member.list', 'comment.read', 'presence.publish'],
+  commenter: ['project.read', 'comment.read', 'comment.create', 'presence.publish'],
+  viewer: ['project.read', 'comment.read'],
 }
 
 const INDEXED: Readonly<Record<CloudRole, ReadonlySet<Capability>>> = {

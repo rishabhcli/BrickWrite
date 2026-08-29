@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { catalog, originForSurface } from './catalog'
 import { CadEngine } from './engine'
+import { getPartBounds } from './geometry'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import { IDENTITY_BASIS } from './math'
 import type { CadOperation, PartInstance } from './types'
@@ -150,7 +152,11 @@ describe('hard design constraints', () => {
       },
     ], 'human')
 
-    const followUp = engine.execute('Keep building', [{ type: 'part.add', part: makePart('inside', [0, -100, 0]) }], 'human')
+    const followUp = engine.execute(
+      'Keep building',
+      [{ type: 'part.recolor', partId: Object.keys(engine.getSnapshot().document.parts)[0]!, color: 4 }],
+      'human',
+    )
     expect(followUp.ok).toBe(true)
   })
 
@@ -160,5 +166,116 @@ describe('hard design constraints', () => {
 
     expect(engine.execute('Drop envelope', [{ type: 'constraint.remove', constraintId: 'c_size' }], 'human').ok).toBe(true)
     expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(true)
+  })
+})
+
+describe('physical placement', () => {
+  it('refuses a human commit that newly interpenetrates two parts', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    const result = engine.execute('Overlap', [{ type: 'part.add', part: makePart('b') }], 'human', 1)
+    expect(result).toMatchObject({ ok: false, error: { code: 'COLLISION' } })
+    expect(engine.getSnapshot().document.parts.b).toBeUndefined()
+    expect(engine.getSnapshot().document.revision).toBe(1)
+  })
+
+  it('refuses dragging an unconnected brick into another brick', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    engine.execute('Beside', [{ type: 'part.add', part: makePart('b', [400, 0, 0]) }], 'human', 1)
+    const result = engine.execute(
+      'Overlap',
+      [{ type: 'part.transform', partId: 'b', transform: { position: [0, 0, 0], basis: IDENTITY_BASIS } }],
+      'human',
+      2,
+    )
+    expect(result).toMatchObject({ ok: false, error: { code: 'COLLISION' } })
+    expect(engine.getSnapshot().document.parts.b.transform.position).toEqual([400, 0, 0])
+  })
+
+  it('allows a second brick on the table that does not clutch to the first', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    const result = engine.execute('Beside', [{ type: 'part.add', part: makePart('b', [400, 0, 0]) }], 'human', 1)
+    expect(result.ok).toBe(true)
+    expect(engine.getSnapshot().document.parts.b).toBeDefined()
+  })
+
+  it('refuses a brick hovering with no clutch and no ground under it', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    const result = engine.execute('Hover', [{ type: 'part.add', part: makePart('ghost', [0, -200, 0]) }], 'human', 1)
+    expect(result).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } })
+    expect(engine.getSnapshot().document.parts.ghost).toBeUndefined()
+    expect(engine.getSnapshot().document.revision).toBe(1)
+  })
+
+  it('allows the first brick on an empty plate', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    const result = engine.execute('First', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    expect(result.ok).toBe(true)
+  })
+
+  it('allows a stacked brick that clutches to the one below', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    const result = engine.execute('Stack', [{ type: 'part.add', part: makePart('b', [0, -24, 0]) }], 'human', 1)
+    expect(result.ok).toBe(true)
+    expect(engine.getSnapshot().validation.connectionCount).toBeGreaterThan(0)
+  })
+
+  it('refuses a brick sitting on a tile with no clutch', () => {
+    const tileId = catalog.get('3070b')
+      ? '3070b'
+      : catalog.placeable().find((item) => {
+          if (item.connectors.some((feature) => feature.family === 'stud')) return false
+          const bounds = item.dimensions?.bounds
+          return Boolean(bounds) && bounds!.max[1] - bounds!.min[1] <= 10
+        })?.canonicalId
+    expect(tileId).toBeTruthy()
+    const engine = new CadEngine(createEmptyDocument())
+    const tile: PartInstance = { ...makePart('tile'), definitionId: tileId! }
+    engine.execute('Tile', [{ type: 'part.add', part: tile }], 'human', 0)
+    const brickY = originForSurface(catalog.get('3001'), getPartBounds(engine.getSnapshot().document.parts.tile).min[1])
+    const result = engine.execute('Rest', [{ type: 'part.add', part: makePart('loose', [0, brickY, 0]) }], 'human', 1)
+    expect(result).toMatchObject({ ok: false, error: { code: 'NO_COMPATIBLE_CONNECTOR' } })
+    expect(engine.getSnapshot().document.parts.loose).toBeUndefined()
+  })
+
+  it('nudges a clutched stack as one transaction without leaving a brick hovering', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    engine.execute('Stack', [{ type: 'part.add', part: makePart('b', [0, -24, 0]) }], 'human', 1)
+    const result = engine.execute(
+      'Nudge stack',
+      [
+        { type: 'part.transform', partId: 'a', transform: { position: [40, 0, 0], basis: IDENTITY_BASIS } },
+        { type: 'part.transform', partId: 'b', transform: { position: [40, -24, 0], basis: IDENTITY_BASIS } },
+      ],
+      'human',
+      2,
+    )
+    expect(result.ok).toBe(true)
+    expect(engine.getSnapshot().document.parts.a.transform.position[0]).toBe(40)
+    expect(engine.getSnapshot().document.parts.b.transform.position[0]).toBe(40)
+  })
+
+  it('refuses lifting unconnected bricks off a remaining ground brick as one transaction', () => {
+    const engine = new CadEngine(createEmptyDocument())
+    engine.execute('Foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
+    engine.execute('Beside', [{ type: 'part.add', part: makePart('b', [400, 0, 0]) }], 'human', 1)
+    engine.execute('Stay', [{ type: 'part.add', part: makePart('c', [800, 0, 0]) }], 'human', 2)
+    const result = engine.execute(
+      'Lift both',
+      [
+        { type: 'part.transform', partId: 'a', transform: { position: [0, -200, 0], basis: IDENTITY_BASIS } },
+        { type: 'part.transform', partId: 'b', transform: { position: [400, -200, 0], basis: IDENTITY_BASIS } },
+      ],
+      'human',
+      3,
+    )
+    expect(result).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } })
+    expect(engine.getSnapshot().document.parts.a.transform.position).toEqual([0, 0, 0])
+    expect(engine.getSnapshot().document.parts.c.transform.position).toEqual([800, 0, 0])
   })
 })

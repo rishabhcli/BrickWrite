@@ -4,6 +4,8 @@ import { useFocusTrap } from '../platform'
 import type { ModelDocument } from '../cad/types'
 import { useCloudSync } from './CloudSyncProvider'
 import type { CloudBranchRecord, CloudErrorShape, CloudVersionRecord } from './protocol'
+import type { CloudRole } from './protocol'
+import { refusalReason } from './permissions'
 import type { ProjectLink } from './projectStore'
 import { canReachCloud } from './runtime'
 import { compareToVersion, restorePlan, summariseDiff, type DocumentDiff } from './versions'
@@ -139,12 +141,14 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
 
   const [branches, setBranches] = useState<CloudBranchRecord[] | null>(null)
   const [versions, setVersions] = useState<CloudVersionRecord[] | null>(null)
+  const [role, setRole] = useState<CloudRole | null | undefined>(undefined)
   const [error, setError] = useState<CloudErrorShape | null>(null)
   const [nonce, refresh] = useReducer((count: number) => count + 1, 0)
   const [notice, setNotice] = useState<SurfaceNotice | null>(null)
   const [busy, setBusy] = useState(false)
   const [label, setLabel] = useState('')
   const [branchName, setBranchName] = useState('')
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [selected, setSelected] = useState<{
     version: CloudVersionRecord
     document: ModelDocument
@@ -156,8 +160,12 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
   useEffect(() => {
     let live = true
     setError(null)
-    void Promise.all([store.listBranches(documentId), store.listVersions(documentId)]).then(
-      ([branchResult, versionResult]) => {
+    void Promise.all([
+      store.listBranches(documentId),
+      store.listVersions(documentId),
+      store.myRole(documentId),
+    ]).then(
+      ([branchResult, versionResult, roleResult]) => {
         if (!live) return
         if (!branchResult.ok) {
           setError(branchResult.error)
@@ -170,6 +178,12 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
           setVersions([])
         } else {
           setVersions(versionResult.value)
+        }
+        if (!roleResult.ok) {
+          setError((existing) => existing ?? roleResult.error)
+          setRole(null)
+        } else {
+          setRole(roleResult.value)
         }
       },
     )
@@ -312,7 +326,95 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
           }
     })
 
-  if (branches === null || versions === null) {
+  const recoverAfterClear = useCallback(async () => {
+    const filled = await store.backfill(documentId)
+    if (!filled.ok) return filled
+    await snapshot.handle?.outbox.drain()
+    return filled
+  }, [documentId, snapshot.handle, store])
+
+  const reconcile = () =>
+    run(async () => {
+      const resolved = await store.resolveDivergence(documentId)
+      if (!resolved.ok) {
+        return {
+          tone: 'error',
+          title: 'Conflict not reconciled',
+          detail: `${resolved.error.message} ${resolved.error.repair}`,
+        }
+      }
+      await snapshot.handle?.outbox.drain()
+      if (resolved.value.document) await kernel.openProject(documentId)
+      return {
+        tone: 'neutral',
+        title:
+          resolved.value.kind === 'conflict-fork'
+            ? 'Both histories preserved'
+            : 'Divergence reconciled',
+        detail:
+          resolved.value.kind === 'conflict-fork'
+            ? 'Main now follows the cloud head and the local tail is preserved on a conflict branch.'
+            : `Recovery completed as ${resolved.value.kind.replace('-', ' ')}.`,
+      }
+    })
+
+  const retryAuthenticated = () =>
+    run(async () => {
+      const state = await snapshot.handle?.retryHead()
+      if (!state || state.status === 'error' || state.status === 'conflict') {
+        return {
+          tone: 'error',
+          title: 'Retry still refused',
+          detail: state?.reason ?? 'The sync runtime is not available.',
+        }
+      }
+      const filled = await recoverAfterClear()
+      return filled.ok
+        ? {
+            tone: 'neutral',
+            title: 'Sync resumed',
+            detail: `The parked change was accepted and ${filled.value.queued} local change(s) were backfilled.`,
+          }
+        : {
+            tone: 'warn',
+            title: 'The head cleared, but backfill did not complete',
+            detail: `${filled.error.message} ${filled.error.repair}`,
+          }
+    })
+
+  const discard = () =>
+    run(async () => {
+      const discarded = await snapshot.handle?.outbox.discardHead()
+      setConfirmDiscard(false)
+      if (!discarded || !discarded.ok || !discarded.value) {
+        return {
+          tone: 'error',
+          title: 'Nothing was discarded',
+          detail: !discarded
+            ? 'The sync runtime is not available.'
+            : discarded.ok
+              ? 'The queue no longer has a head entry.'
+              : `${discarded.error.message} ${discarded.error.repair}`,
+        }
+      }
+      // `discardHead` reports idle optimistically. Drain immediately, then
+      // recover anything that could not enter a full queue from the local log.
+      await snapshot.handle?.outbox.drain()
+      const filled = await recoverAfterClear()
+      return filled.ok
+        ? {
+            tone: 'warn',
+            title: 'Queued copy discarded; local work kept',
+            detail: `The refused queue entry was removed. ${filled.value.queued} later local change(s) were queued again.`,
+          }
+        : {
+            tone: 'warn',
+            title: 'Queued copy discarded; local work kept',
+            detail: `Backfill did not complete: ${filled.error.message} ${filled.error.repair}`,
+          }
+    })
+
+  if (branches === null || versions === null || role === undefined) {
     return (
       <p className="bw-cloud-empty" role="status">
         Reading versions and branches from the deployment…
@@ -330,6 +432,16 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
   for (const bucket of byBranch.values()) {
     bucket.sort((a, b) => b.revision - a.revision)
   }
+
+  const sync = snapshot.sync
+  const blockedHere = sync.blocked?.localProjectId === documentId
+  const versionRefusal = refusalReason(role, 'version.create')
+  const restoreRefusal = refusalReason(role, 'version.restore')
+  const branchRefusal = refusalReason(role, 'branch.create')
+  const discardable =
+    blockedHere &&
+    sync.status === 'error' &&
+    (sync.lastError?.code === 'FORBIDDEN' || sync.lastError?.code === 'PAYLOAD_TOO_LARGE')
 
   return (
     <>
@@ -367,6 +479,67 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
         </div>
       )}
 
+      {blockedHere && sync.status === 'conflict' && (
+        <div className="bw-cloud-notice" data-tone="warn" role="status">
+          <strong>
+            <GitBranch size={11} aria-hidden="true" /> The queued local tail needs reconciliation
+          </strong>
+          <p>
+            The cloud moved past the revision this browser edited. Reconciliation rebases disjoint
+            work and creates a conflict branch when both histories touched the same entities.
+          </p>
+          <div className="bw-cloud-actions">
+            <button type="button" className="bw-cloud-btn" data-variant="primary" disabled={busy} onClick={() => void reconcile()}>
+              Reconcile
+            </button>
+          </div>
+        </div>
+      )}
+
+      {blockedHere && sync.status === 'error' && (
+        <div className="bw-cloud-notice" data-tone="error" role="alert">
+          <strong>Queued change refused{sync.lastError?.code ? ` · ${sync.lastError.code}` : ''}</strong>
+          <p>{sync.lastError?.message ?? sync.reason}</p>
+          {sync.lastError?.code === 'PAYLOAD_TOO_LARGE' && (
+            <p>Discarding only unblocks the queue. The same edit will return unless it is split into smaller commits.</p>
+          )}
+          {sync.lastError?.code === 'SCHEMA_MISMATCH' && (
+            <p>Reload the application so the client and stored project agree on a document schema. No queue entry will be removed.</p>
+          )}
+          <div className="bw-cloud-actions">
+            {sync.lastError?.code === 'UNAUTHENTICATED' && (
+              <button type="button" className="bw-cloud-btn" data-variant="primary" disabled={busy} onClick={() => void retryAuthenticated()}>
+                Retry signed-in send
+              </button>
+            )}
+            {sync.lastError?.code === 'SCHEMA_MISMATCH' && (
+              <button type="button" className="bw-cloud-btn" onClick={() => window.location.reload()}>
+                Reload application
+              </button>
+            )}
+            {discardable && !confirmDiscard && (
+              <button type="button" className="bw-cloud-btn" data-variant="danger" disabled={busy} onClick={() => setConfirmDiscard(true)}>
+                Discard this queued change
+              </button>
+            )}
+          </div>
+          {confirmDiscard && discardable && (
+            <div className="bw-cloud-confirm" role="alertdialog" aria-label="Confirm queued change discard">
+              <strong>Keep the edit only in this browser?</strong>
+              <p>The local transaction log is not deleted. The cloud replica will omit this queued copy.</p>
+              <div className="bw-cloud-actions">
+                <button type="button" className="bw-cloud-btn" data-variant="danger" disabled={busy} onClick={() => void discard()}>
+                  Confirm discard
+                </button>
+                <button type="button" className="bw-cloud-btn" disabled={busy} onClick={() => setConfirmDiscard(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {notice && (
         <div className="bw-cloud-notice" data-tone={notice.tone} role="status">
           <strong>{notice.title}</strong>
@@ -389,7 +562,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
           type="button"
           className="bw-cloud-btn"
           data-variant="primary"
-          disabled={busy || !label.trim()}
+          disabled={busy || !label.trim() || Boolean(versionRefusal)}
+          title={versionRefusal ?? undefined}
           onClick={() => void saveVersion()}
         >
           <Save size={11} aria-hidden="true" /> Save version
@@ -410,7 +584,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
         <button
           type="button"
           className="bw-cloud-btn"
-          disabled={busy || !branchName.trim()}
+          disabled={busy || !branchName.trim() || Boolean(branchRefusal)}
+          title={branchRefusal ?? undefined}
           onClick={() => void makeBranch()}
         >
           <GitBranch size={11} aria-hidden="true" /> Branch
@@ -505,7 +680,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               type="button"
               className="bw-cloud-btn"
               data-variant="primary"
-              disabled={busy || selected.identical}
+              disabled={busy || selected.identical || Boolean(restoreRefusal)}
+              title={restoreRefusal ?? undefined}
               onClick={() => void restore()}
             >
               <RotateCcw size={11} aria-hidden="true" /> Restore as a new revision

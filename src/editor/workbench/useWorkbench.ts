@@ -3,12 +3,12 @@ import { findArticulatedJoints } from '../../cad/articulation'
 import { planSharedMutation, SharedCapabilityError, type SharedMutationId } from '../../cad/capabilities'
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
-import { getDocumentBounds, getPartBounds } from '../../cad/geometry'
+import { getPartBounds } from '../../cad/geometry'
 import { createId } from '../../cad/ids'
-import { parseLDraw } from '../../cad/ldraw'
-import { IDENTITY_BASIS, rotateLocal } from '../../cad/math'
+import { parseLDraw, describeLDrawImport } from '../../cad/ldraw'
+import { IDENTITY_BASIS } from '../../cad/math'
 import { session, type SessionStatus } from '../../cad/session'
-import { bestSnapTransform } from '../../cad/snapping'
+import { firstLegalSnap, resolveQuickAdd } from '../../cad/placement'
 import type {
   CadOperation,
   CatalogSearchRecord,
@@ -20,7 +20,6 @@ import type {
   Vec3,
 } from '../../cad/types'
 import type { CameraView, EditorTool, RenderMode } from '../CadViewport'
-import type { PlacementRequest } from '../../cad/placement'
 import { useCad } from '../useCad'
 import { webMcpAdapter } from '../../webmcp/adapter'
 import type { WorkbenchNotice } from './ExtensionRegistry'
@@ -33,7 +32,15 @@ import {
   type SelectionMode,
   type VisibilityState,
 } from './selection'
-import { canonicalisePose, NO_LOCKS, type AxisLocks, type PivotMode, type ReferenceFrame } from './transform'
+import { poseRefusal } from '../../cad/validation'
+import {
+  canonicalisePose,
+  planRotateSelection,
+  NO_LOCKS,
+  type AxisLocks,
+  type PivotMode,
+  type ReferenceFrame,
+} from './transform'
 
 /**
  * The workbench controller.
@@ -139,12 +146,6 @@ export function useWorkbench() {
   // -- notices --------------------------------------------------------------
   const notify = useCallback((notice: WorkbenchNotice) => setToast(notice), [])
 
-  useEffect(() => {
-    if (!toast) return
-    const timeout = window.setTimeout(() => setToast(null), 3600)
-    return () => window.clearTimeout(timeout)
-  }, [toast])
-
   // -- WebMCP surface -------------------------------------------------------
   useEffect(() => {
     webMcpAdapter.start()
@@ -195,7 +196,11 @@ export function useWorkbench() {
   const dispatch = useCallback((label: string, operations: CadOperation[]) => {
     const result = cadEngine.execute(label, operations, 'human', cadEngine.getSnapshot().document.revision)
     if (!result.ok) {
-      setToast({ kind: 'error', title: `[${result.error.code}]`, detail: result.error.message })
+      setToast({
+        kind: 'error',
+        title: `[${result.error.code}]`,
+        detail: result.error.repair ? `${result.error.message} ${result.error.repair}` : result.error.message,
+      })
       return false
     }
     setToast({ kind: 'success', title: label, detail: `Committed atomically · revision ${result.value.resultRevision}` })
@@ -307,9 +312,25 @@ export function useWorkbench() {
     const part = snapshot.document.parts[partId]
     const canonical = canonicalisePose(transform)
     const snapped = part && transformPrefs.connectorSnap
-      ? bestSnapTransform(part, snapshot.document, canonical, { radiusLdu: Math.max(4, gridLdu * 0.7) })
+      ? firstLegalSnap(part, snapshot.document, canonical, { radiusLdu: Math.max(4, gridLdu * 0.7) })
       : null
     const committed = canonicalisePose(snapped ?? canonical)
+    const refused = poseRefusal(snapshot.document, partId, committed)
+    if (refused) {
+      setToast({
+        kind: 'error',
+        title: `[${refused}]`,
+        detail:
+          refused === 'COLLISION'
+            ? 'That pose would interpenetrate another part. Snap to a free face, or move clear of the overlap.'
+            : refused === 'DISCONNECTED'
+              ? 'That pose would leave the part hovering with no clutch. Mate it, or rest it on the ground.'
+              : refused === 'CONNECTOR_OCCUPIED'
+                ? 'Every stud on that face is taken. Place on the ground, or on a part with free studs.'
+                : 'That surface cannot clutch this part. Place on the ground, or on a face with free studs.',
+      })
+      return
+    }
     lastCommittedPose.current = { partId, pose: committed }
     dispatch(snapped ? 'Snap part to connectors' : 'Transform part', [{ type: 'part.transform', partId, transform: committed }])
   }, [dispatch, gridLdu, transformPrefs.connectorSnap])
@@ -317,8 +338,47 @@ export function useWorkbench() {
   /** Commits several poses as one transaction — align, distribute, nudge. */
   const commitTransforms = useCallback((label: string, operations: CadOperation[]) => {
     if (!operations.length) return false
+    const snapshot = cadEngine.getSnapshot()
+    const transforms = operations.filter((operation): operation is Extract<CadOperation, { type: 'part.transform' }> => operation.type === 'part.transform')
+    if (transforms.length === 1) {
+      const operation = transforms[0]
+      const refused = poseRefusal(snapshot.document, operation.partId, operation.transform)
+      if (refused) {
+        setToast({
+          kind: 'error',
+          title: `[${refused}]`,
+          detail:
+            refused === 'COLLISION'
+              ? 'That pose would interpenetrate another part. Snap to a free face, or move clear of the overlap.'
+              : refused === 'DISCONNECTED'
+                ? 'That pose would leave the part hovering with no clutch. Mate it, or rest it on the ground.'
+                : refused === 'CONNECTOR_OCCUPIED'
+                  ? 'Every stud on that face is taken. Place on the ground, or on a part with free studs.'
+                  : 'That surface cannot clutch this part. Place on the ground, or on a face with free studs.',
+        })
+        return false
+      }
+    }
     return dispatch(label, operations)
   }, [dispatch])
+
+  /** Keyboard nudge of a multi-part selection as one transaction, so clutch is kept. */
+  const nudgeSelection = useCallback((dx: number, dz: number) => {
+    const snapshot = cadEngine.getSnapshot()
+    const operations: CadOperation[] = []
+    for (const partId of snapshot.selection) {
+      const part = snapshot.document.parts[partId]
+      if (!part) continue
+      const [x, y, z] = part.transform.position
+      operations.push({
+        type: 'part.transform',
+        partId,
+        transform: { ...part.transform, position: [x + dx, y, z + dz] },
+      })
+    }
+    if (!operations.length) return false
+    return commitTransforms(`Nudge ${operations.length} part${operations.length === 1 ? '' : 's'}`, operations)
+  }, [commitTransforms])
 
   // -- placement ------------------------------------------------------------
   /**
@@ -374,8 +434,27 @@ export function useWorkbench() {
     return true
   }, [activeColor])
 
-  const placeArmed = useCallback((transform: Transform) => {
+  const placeArmed = useCallback((transform: Transform, legal = true, reason?: string) => {
     if (!placement) return
+    if (!legal) {
+      const title =
+        reason === 'occupied'
+          ? '[CONNECTOR_OCCUPIED]'
+          : reason === 'collision'
+            ? '[COLLISION]'
+            : '[NO_COMPATIBLE_CONNECTOR]'
+      setToast({
+        kind: 'error',
+        title,
+        detail:
+          reason === 'occupied'
+            ? 'Every stud on that face is taken. Place on the ground, or on a part with free studs.'
+            : reason === 'collision'
+              ? 'That pose would interpenetrate another part. Place on remaining free studs, or on the ground.'
+              : 'That surface cannot clutch this part. Place on the ground, or on a face with free studs.',
+      })
+      return
+    }
     const definition = catalog.get(placement.definitionId)
     if (!definition) return
     const part = buildPartAt(definition, canonicalisePose(transform))
@@ -404,37 +483,47 @@ export function useWorkbench() {
       return false
     }
     const snapshot = cadEngine.getSnapshot()
-    const selected = snapshot.selection[0] ? snapshot.document.parts[snapshot.selection[0]] : undefined
-    const documentBounds = getDocumentBounds(snapshot.document)
-    const size = definition.dimensions?.ldu ?? [STUD_LDU, 0, STUD_LDU]
-    let position: Vec3
-    if (selected) {
-      // Land on the selection's own exposed stud plane where it has one, so the
-      // brick sits on top rather than merely above.
-      const selectedDefinitionForAdd = catalog.get(selected.definitionId)
-      const studs = surfaceAbove(selectedDefinitionForAdd, selected.transform.position[1])
-      const bounds = getPartBounds(selected)
-      position = [
-        selected.transform.position[0],
-        originForSurface(definition, studs ?? bounds.min[1]),
-        selected.transform.position[2],
-      ]
-    } else if (snapshot.validation.partCount) {
-      position = [documentBounds.max[0] + size[0] / 2 + STUD_LDU, originForSurface(definition, 0), 0]
-    } else {
-      position = [0, originForSurface(definition, 0), 0]
+    const selectedId = snapshot.selection[0] ?? null
+    const resolved = resolveQuickAdd(
+      { definitionId: definition.canonicalId, color: definition.availableColors.includes(activeColor) ? activeColor : (definition.availableColors[0] ?? activeColor), quarterTurns: 0 },
+      snapshot.document,
+      selectedId,
+      gridLdu,
+    )
+    if (!resolved) {
+      setToast({
+        kind: 'error',
+        title: 'Part cannot be placed',
+        detail: `${record.name} is a real catalog identity, but this build has no compiled geometry for it.`,
+      })
+      return false
     }
-    const cursor: Transform = { position, basis: IDENTITY_BASIS }
-    const part = buildPartAt(definition, cursor)
-    const snapped = bestSnapTransform(part, snapshot.document, cursor, { radiusLdu: STUD_LDU })
-    const placed = snapped ? { ...part, transform: canonicalisePose(snapped) } : part
-    if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part: placed }])) {
-      cadEngine.setSelection([placed.id])
+    if (selectedId && !resolved.legal) {
+      setToast({
+        kind: 'error',
+        title:
+          resolved.reason === 'occupied'
+            ? '[CONNECTOR_OCCUPIED]'
+            : resolved.reason === 'collision'
+              ? '[COLLISION]'
+              : '[NO_COMPATIBLE_CONNECTOR]',
+        detail:
+          resolved.reason === 'occupied'
+            ? 'Every exclusive connector on the selected part is taken. Pick a different anchor.'
+            : resolved.reason === 'collision'
+              ? 'That pose would interpenetrate another part. Pick a different anchor, or place on the ground.'
+              : `${definition.name} does not clutch to the selected part. Rotate it, pick a different identity, or click a stud the part can actually mate with.`,
+      })
+      return false
+    }
+    const part = buildPartAt(definition, canonicalisePose(resolved.transform))
+    if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
+      cadEngine.setSelection([part.id])
       setToolRaw('move')
       return true
     }
     return false
-  }, [buildPartAt, dispatch])
+  }, [activeColor, buildPartAt, dispatch, gridLdu])
 
   /**
    * Drag-and-drop from the palette.
@@ -484,19 +573,11 @@ export function useWorkbench() {
 
   const rotateSelection = useCallback((degrees = 90) => {
     const snapshot = cadEngine.getSnapshot()
-    const operations: CadOperation[] = snapshot.selection.map((partId) => {
-      const part = snapshot.document.parts[partId]
-      // Quarter turn about the part's own vertical axis, composed on the basis
-      // so repeated turns cannot drift through Euler round-tripping.
-      return {
-        type: 'part.transform',
-        partId,
-        transform: canonicalisePose(rotateLocal(part.transform, [0, 1, 0], (degrees * Math.PI) / 180)),
-      }
-    })
+    const parts = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
+    const operations = planRotateSelection(parts, degrees)
     if (!operations.length) return false
-    return dispatch(degrees === 90 ? 'Quarter-turn selection' : `Turn selection ${degrees}°`, operations)
-  }, [dispatch])
+    return commitTransforms(degrees === 90 ? 'Quarter-turn selection' : `Turn selection ${degrees}°`, operations)
+  }, [commitTransforms])
 
   const recolorSelection = useCallback((color: number) => {
     const snapshot = cadEngine.getSnapshot()
@@ -565,7 +646,7 @@ export function useWorkbench() {
   const rejectProposal = useCallback((id: string) => { cadEngine.rejectProposal(id) }, [])
 
   /**
-   * Stands in for a Codex `build_preflight` call so the collaboration loop can
+   * Stands in for a native `build_preflight` call so the collaboration loop can
    * be exercised without the agent attached. It goes through the exact same
    * command bus, revision guard and validation the agent uses.
    */
@@ -615,13 +696,11 @@ export function useWorkbench() {
     const imported = parseLDraw(await file.text(), cadEngine.getDocument())
     cadEngine.replaceDocument(imported.document)
     setVisibility({ hidden: new Set(), isolated: null, ghosted: new Set() })
-    const skipped = imported.report.unknownParts.length + imported.report.withoutGeometry.length
+    const copy = describeLDrawImport(imported.report)
     setToast({
-      kind: skipped ? 'info' : 'success',
-      title: 'LDraw imported',
-      detail: skipped
-        ? `${imported.report.placed} parts placed across ${imported.report.submodels} submodels. ${skipped} references had no compiled geometry and were reported, not dropped silently.`
-        : `${imported.report.placed} parts across ${imported.report.submodels} submodels are now an editable revisioned CAD document.`,
+      kind: imported.report.unknownParts.length + imported.report.withoutGeometry.length ? 'info' : 'success',
+      title: copy.title,
+      detail: copy.detail,
     })
   }, [])
 
@@ -803,10 +882,10 @@ export function useWorkbench() {
     if (tool === 'connect') {
       if (connect.stage === 'source') return 'Pick the part to move'
       if (connect.stage === 'target') return 'Pick the part to mate onto · Esc to go back'
-      return 'Review the mate · Tab cycles · Enter commits'
+      return 'Review the mate · Tab cycles solutions · Shift+Tab leaves · Enter commits · Esc backs out'
     }
-    if (tool === 'move') return state.selection.length === 1 ? `Drag the arrows · ${gridLdu} LDU snap` : 'Select one part to move it'
-    if (tool === 'rotate') return state.selection.length === 1 ? 'Drag a ring to turn' : 'Select one part to turn it'
+    if (tool === 'move') return state.selection.length ? `Drag the arrows · ${gridLdu} LDU snap` : 'Select parts to move them'
+    if (tool === 'rotate') return state.selection.length ? 'Drag a ring to turn' : 'Select parts to turn them'
     return state.selection.length ? `${state.selection.length} selected · double-click for the module` : 'Click a part · shift-drag to box select'
   }, [connect.stage, gridLdu, placement, state.selection.length, tool])
 
@@ -875,6 +954,7 @@ export function useWorkbench() {
     dispatch,
     runSharedMutation,
     commitTransforms,
+    nudgeSelection,
     handleSelect,
     handleSelectMany,
     handleTransform,

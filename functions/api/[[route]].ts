@@ -1,3 +1,5 @@
+import { logEdgeFailure } from '../_lib/log'
+
 interface RateLimitKv {
   get(key: string, type: 'text'): Promise<string | null>
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>
@@ -39,9 +41,12 @@ async function withinRateLimit(request: Request, kv: RateLimitKv): Promise<boole
   // Hash the credential before it becomes a KV key. A dashboard listing must
   // never turn into a list of live session headers.
   const key = `api-rate:${window}:${await digest(`${ip}\n${identity}`)}`
-  const used = Number.parseInt((await kv.get(key, 'text')) ?? '0', 10)
-  if (Number.isFinite(used) && used >= REQUESTS_PER_WINDOW) return false
-  await kv.put(key, String((Number.isFinite(used) ? used : 0) + 1), { expirationTtl: WINDOW_SECONDS * 2 })
+  const stored = await kv.get(key, 'text')
+  const used = stored === null ? 0 : Number.parseInt(stored, 10)
+  // Unreadable counters used to fail open. An unparseable value is treated as
+  // already over-limit so a corrupt row cannot bypass the spend control.
+  if (!Number.isFinite(used) || used >= REQUESTS_PER_WINDOW) return false
+  await kv.put(key, String(used + 1), { expirationTtl: WINDOW_SECONDS * 2 })
   return true
 }
 
@@ -65,6 +70,7 @@ export const onRequest = async (context: { request: Request; env: ApiProxyEnv })
   try {
     origin = new URL(configuredOrigin)
   } catch {
+    logEdgeFailure({ path: incoming.pathname, detail: 'The production API origin is invalid.' })
     return json(503, { error: 'api_unavailable', detail: 'The production API origin is invalid.' })
   }
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/') {
@@ -104,7 +110,8 @@ export const onRequest = async (context: { request: Request; env: ApiProxyEnv })
       statusText: upstream.statusText,
       headers: responseHeaders,
     })
-  } catch {
+  } catch (cause) {
+    logEdgeFailure({ path: incoming.pathname, detail: 'The model API could not be reached.', cause })
     return json(502, { error: 'api_unreachable', detail: 'The model API could not be reached.' })
   }
 }

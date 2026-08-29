@@ -57,14 +57,40 @@ export function CloudSyncStatus({ api }: { api: CloudWorkbenchApi }) {
  * — an unclaimed project has an empty queue forever.
  */
 export function useSyncReadout(api: CloudWorkbenchApi): SyncReadout {
-  const { snapshot } = useCloudSync()
-  const linked = useProjectLinked(api.snapshot.document.id)
+  const { runtime, snapshot } = useCloudSync()
+  const documentId = api.snapshot.document.id
+  const linked = useProjectLinked(documentId)
+  const blockedLocalId = snapshot.sync.blocked?.localProjectId ?? null
+  const [blockedProjectName, setBlockedProjectName] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    if (!blockedLocalId || blockedLocalId === documentId) {
+      setBlockedProjectName(null)
+      return () => {
+        live = false
+      }
+    }
+    void runtime.listLocalProjects().then((projects) => {
+      if (live) {
+        setBlockedProjectName(
+          projects.find((project) => project.projectId === blockedLocalId)?.name ?? null,
+        )
+      }
+    })
+    return () => {
+      live = false
+    }
+  }, [blockedLocalId, documentId, runtime])
+
   return describeSync({
     configuration: snapshot.configuration,
     identity: snapshot.identity,
     sync: snapshot.sync,
     linked,
     online: snapshot.online && api.online,
+    activeProjectId: documentId,
+    blockedProjectName,
   })
 }
 

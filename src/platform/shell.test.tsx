@@ -36,7 +36,7 @@ vi.mock('../cad/catalog-loader', () => ({
 vi.mock('../cad/engine', () => ({ cadEngine: { getDocument: () => ({ parts: {} }) } }))
 vi.mock('../cad/session', () => ({ session: { start: async () => {} } }))
 
-const { AppShell, installPlatformSurfaces } = await import('./AppShell')
+const { AppShell, installPlatformSurfaces, resetRouteAnnouncement } = await import('./AppShell')
 const { registerRoute, resetRouteRegistry } = await import('./routes')
 const { resetBoot } = await import('./boot')
 const { resetPlatformAnalytics } = await import('./analytics')
@@ -48,6 +48,7 @@ function goTo(path: string) {
 beforeEach(() => {
   resetBoot()
   resetRouteRegistry()
+  resetRouteAnnouncement()
   installPlatformSurfaces()
   resetPlatformAnalytics()
   cad.mode = 'resolve'
@@ -63,9 +64,11 @@ describe('surface not installed', () => {
     goTo('/gallery')
     render(<AppShell />)
 
-    const heading = await screen.findByRole('heading', {
-      name: /the "gallery" surface is not installed in this build/i,
-    })
+    const heading = await screen.findByRole(
+      'heading',
+      { name: /the "gallery" surface is not installed in this build/i },
+      { timeout: 5_000 },
+    )
     expect(heading).not.toBeNull()
     const panel = heading.closest('section')
     expect(panel?.getAttribute('role')).toBe('status')

@@ -1,34 +1,39 @@
 import { X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import {
+  COMMAND_GROUP_LABEL,
+  WORKBENCH_COMMANDS,
+  defaultShortcutMap,
+  formatChord,
+  type ShortcutMap,
+} from './workbench/shortcuts'
 
 interface ShortcutGuideProps {
   open: boolean
   onClose: () => void
+  shortcuts?: ShortcutMap
   /** Reopens the first-run orientation, so dismissing it is reversible. */
   onReplayWelcome?: () => void
 }
 
-const groups = [
-  {
-    title: 'Create & edit',
-    items: [
-      ['V / 1', 'Select'], ['⇧ drag', 'Box select'], ['G', 'Move'], ['R', 'Rotate'], ['C', 'Connect'],
-      ['⌘ D', 'Duplicate'], ['Delete', 'Remove'], ['L', 'Lock or unlock'],
-    ],
-  },
-  {
-    title: 'Navigate',
-    items: [['F', 'Frame the model'], ['⌘ K', 'Search parts'], ['⌘ /', 'Command deck'], ['Esc', 'Cancel placement or preview'], ['?', 'This guide']],
-  },
-  {
-    title: 'History',
-    items: [['⌘ Z', 'Undo'], ['⇧ ⌘ Z', 'Redo'], ['Enter', 'Accept proposal'], ['R', 'Turn the part being placed']],
-  },
-] as const
-
-export function ShortcutGuide({ open, onClose, onReplayWelcome }: ShortcutGuideProps) {
+export function ShortcutGuide({
+  open,
+  onClose,
+  shortcuts = defaultShortcutMap(),
+  onReplayWelcome,
+}: ShortcutGuideProps) {
   const close = useRef<HTMLButtonElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, Array<{ title: string; chord: string }>>()
+    for (const command of WORKBENCH_COMMANDS) {
+      const label = COMMAND_GROUP_LABEL[command.group]
+      const list = byGroup.get(label) ?? []
+      list.push({ title: command.title, chord: formatChord(shortcuts[command.id] ?? command.defaultChord) })
+      byGroup.set(label, list)
+    }
+    return [...byGroup.entries()]
+  }, [shortcuts])
 
   useEffect(() => {
     if (!open) return
@@ -49,8 +54,6 @@ export function ShortcutGuide({ open, onClose, onReplayWelcome }: ShortcutGuideP
         aria-modal="true"
         aria-labelledby="shortcut-title"
         onKeyDown={(event) => {
-          // Focus stays inside the dialog. It now holds more than one control,
-          // so the trap cycles through them rather than pinning the close button.
           if (event.key !== 'Tab') return
           const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
           if (focusable.length === 0) return
@@ -71,12 +74,12 @@ export function ShortcutGuide({ open, onClose, onReplayWelcome }: ShortcutGuideP
           <button ref={close} onClick={onClose} aria-label="Close keyboard shortcuts"><X size={15} /></button>
         </header>
         <div className="shortcut-groups">
-          {groups.map((group) => (
-            <section key={group.title}>
-              <h3>{group.title}</h3>
+          {groups.map(([title, items]) => (
+            <section key={title}>
+              <h3>{title}</h3>
               <dl>
-                {group.items.map(([keys, label]) => (
-                  <div key={label}><dt>{label}</dt><dd>{keys.split(' ').map((key) => <kbd key={key}>{key}</kbd>)}</dd></div>
+                {items.map((item) => (
+                  <div key={item.title}><dt>{item.title}</dt><dd><kbd>{item.chord}</kbd></dd></div>
                 ))}
               </dl>
             </section>

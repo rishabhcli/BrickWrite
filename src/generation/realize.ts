@@ -23,7 +23,7 @@ import type {
   Subassembly,
   Vec3,
 } from '../cad/types'
-import { connectedComponent } from '../cad/validation'
+import { connectedComponent, floatingPartIds, unclutchedRestPartIds, airbornePartIds } from '../cad/validation'
 import {
   incomingEdge,
   topologicalOrder,
@@ -837,20 +837,26 @@ export class GraphRealizer {
       }
     }
 
-    const best = solved[0]
-    const placed: PartInstance = { ...candidate, transform: best.transform }
-    const next = withParts(this.document, [placed])
-    const rejection = this.rejectionFor(next, [placed.id])
-    if (rejection) return { ok: false, reason: rejection }
+    let lastRejection: string | null = null
+    for (const snap of solved) {
+      const placed: PartInstance = { ...candidate, transform: snap.transform }
+      const next = withParts(this.document, [placed])
+      const rejection = this.rejectionFor(next, [placed.id])
+      if (rejection) {
+        lastRejection = rejection
+        continue
+      }
+      this.commit(next, [placed])
+      this.placed.set(node.id, {
+        node,
+        partIds: [placed.id],
+        originLdu: getPartBounds(placed).min,
+        definitionId: definition.canonicalId,
+      })
+      return { ok: true, partId: placed.id, simultaneousMates: snap.simultaneousMatches }
+    }
 
-    this.commit(next, [placed])
-    this.placed.set(node.id, {
-      node,
-      partIds: [placed.id],
-      originLdu: getPartBounds(placed).min,
-      definitionId: definition.canonicalId,
-    })
-    return { ok: true, partId: placed.id, simultaneousMates: best.simultaneousMatches }
+    return { ok: false, reason: lastRejection ?? `the solver found no collision-free mating between ${attempt.parentFeatureId} and ${definition.canonicalId}/${attempt.childFeatureId}` }
   }
 
   // -------------------------------------------------------------------------
@@ -879,12 +885,29 @@ export class GraphRealizer {
       }
     }
 
+    const extraOffsetSteps: Array<readonly [number, number]> = []
+    if (hosts.length > 1) {
+      const primary = hosts[0]!.connector.frame.position
+      // Defaults already cover ±1/±2; extra slides are remaining host studs
+      // farther away. Cap so they cannot consume the shrink-footprint budget.
+      const seen = new Set(['0,0', '1,0', '-1,0', '0,1', '0,-1', '2,0', '-2,0', '0,2', '0,-2'])
+      for (const host of hosts.slice(1)) {
+        if (extraOffsetSteps.length >= 8) break
+        const du = Math.round((host.connector.frame.position[0] - primary[0]) / STUD_LDU)
+        const dv = Math.round((host.connector.frame.position[2] - primary[2]) / STUD_LDU)
+        const key = `${du},${dv}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        extraOffsetSteps.push([du, dv])
+      }
+    }
     const attempts = enumerateRegionAttempts({
       seed: this.seed,
       budget: this.repairBudget,
       region: node.region!,
       parentFeatureIds: hosts.map((entry) => entry.handle),
       alternateFamilies: SUBSTITUTE_FAMILIES,
+      extraOffsetSteps,
     })
 
     const byHandle = new Map(hosts.map((entry) => [entry.handle, entry.connector]))
@@ -1064,6 +1087,17 @@ export class GraphRealizer {
       const first = collisions[0]
       const other = introduced.has(first.partA) && !introduced.has(first.partB) ? first.partB : first.partA
       return `it collides with ${other} (${first.certainty} verdict, ${collisions.length} contact${collisions.length === 1 ? '' : 's'})`
+    }
+    const floating = new Set(floatingPartIds(next))
+    const airborne = new Set(airbornePartIds(next))
+    const hovering = newPartIds.filter((id) => floating.has(id) || airborne.has(id))
+    if (hovering.length) {
+      return `it would hover with no clutch and no ground under ${hovering[0]} (${hovering.length} floating part${hovering.length === 1 ? '' : 's'})`
+    }
+    const rest = new Set(unclutchedRestPartIds(next))
+    const sitting = newPartIds.filter((id) => rest.has(id))
+    if (sitting.length) {
+      return `it would rest ${sitting[0]} on another part without clutching`
     }
     const envelope = checkEnvelope(next, this.constraints.envelopeStuds)
     if (!envelope.ok) return envelope.detail!

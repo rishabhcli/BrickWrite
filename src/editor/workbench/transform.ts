@@ -282,6 +282,58 @@ export function planDistribute(parts: readonly PartInstance[], axis: 'x' | 'y' |
   return operations
 }
 
+/**
+ * Quarter-turn (or any yaw) of a selection as one rigid motion.
+ *
+ * One brick turns about its own origin — that is the builder's "rotate this
+ * piece". Two or more turn about the selection's measured centre, so a clutched
+ * stack stays clutched instead of each brick spinning in place and walking off
+ * its studs.
+ */
+export function planRotateSelection(parts: readonly PartInstance[], degrees: number): CadOperation[] {
+  if (!parts.length) return []
+  if (parts.length === 1) {
+    const part = parts[0]!
+    return [{ type: 'part.transform', partId: part.id, transform: rotatePose(part.transform, [0, 1, 0], degrees, 'local') }]
+  }
+  const pivot = resolvePivot(parts, 'centre')
+  return parts.map((part) => ({
+    type: 'part.transform' as const,
+    partId: part.id,
+    transform: rotatePose(part.transform, [0, 1, 0], degrees, 'world', pivot),
+  }))
+}
+
+/** Moves several parts by one world delta so a clutched stack stays clutched. */
+export function planTranslateSelection(parts: readonly PartInstance[], delta: Vec3): CadOperation[] {
+  if (!parts.length) return []
+  if (delta[0] === 0 && delta[1] === 0 && delta[2] === 0) return []
+  return parts.map((part) => ({
+    type: 'part.transform' as const,
+    partId: part.id,
+    transform: translatePose(part.transform, delta, 'world'),
+  }))
+}
+
+/** Preview poses for a rigid group drag (world delta and/or yaw about the selection centre). */
+export function applyRigidMotion(
+  parts: readonly PartInstance[],
+  delta: Vec3,
+  yawDegrees: number,
+): Map<string, Transform> {
+  const preview = new Map<string, Transform>()
+  const translated = parts.map((part) => ({ ...part, transform: translatePose(part.transform, delta, 'world') }))
+  if (!yawDegrees) {
+    for (const part of translated) preview.set(part.id, part.transform)
+    return preview
+  }
+  const pivot = resolvePivot(translated, 'centre')
+  for (const part of translated) {
+    preview.set(part.id, rotatePose(part.transform, [0, 1, 0], yawDegrees, 'world', pivot))
+  }
+  return preview
+}
+
 /** Measured extent of a selection, for the transform panel's readout. */
 export function selectionExtent(document: ModelDocument, partIds: readonly string[]) {
   const parts = partIds.map((id) => document.parts[id]).filter(Boolean)

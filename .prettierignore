@@ -1,0 +1,11 @@
+artifacts/
+dist/
+node_modules/
+public/catalog/
+public/demos/
+convex/_generated/
+.catalog-fixture/
+.share-dev/
+.scratch-probe/
+package-lock.json
+*.tsbuildinfo

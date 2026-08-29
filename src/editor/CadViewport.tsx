@@ -6,16 +6,17 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { ArticulatedJoint } from '../cad/articulation'
 import { catalog } from '../cad/catalog'
 import { getPartBounds, snapTransformPosition } from '../cad/geometry'
-import { canonicalTransform } from '../cad/math'
+import { canonicalTransform, eulerDegreesFromBasis, IDENTITY_BASIS } from '../cad/math'
 import { resolvePlacement, type PlacementRequest } from '../cad/placement'
-import { bestSnapTransform, getWorldConnectors } from '../cad/snapping'
-import type { Bounds, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
-import { validateDocument } from '../cad/validation'
+import { findSnapCandidates, getWorldConnectors } from '../cad/snapping'
+import type { Bounds, CadOperation, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
+import { poseRefusal, validateDocument } from '../cad/validation'
 import { EDGE_RENDER_BUDGET, INDIVIDUAL_SELECTION_LIMIT, PartBatch, planBatches, type BatchMember } from './PartBatch'
 import { createStudioEnvironment, type EnvironmentName } from './environment'
 import { PartVisual, setTransmissionEnabled, TRANSMISSION_DRAW_BUDGET, type PartAppearance } from './PartVisual'
 import { BlockingMarker, JointManipulators, SectionManipulators } from './render/Manipulators'
 import { canvasPointOf, ViewportControls, type OverlayState, type ViewportControlsHandle } from './render/ViewportControls'
+import { ViewportKeyboard } from './render/ViewportKeyboard'
 import type { RendererControlSurface } from './render/controlSurface'
 import {
   documentTransformOf,
@@ -34,6 +35,13 @@ import { QUALITY_TIERS, type QualityTier } from './render/quality'
 import type { SectionPlane } from './render/sectionPlanes'
 import type { SweepResult } from './render/sweep'
 import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
+import {
+  applyRigidMotion,
+  planRotateSelection,
+  planTranslateSelection,
+  resolvePivot,
+  snapPosition,
+} from './workbench/transform'
 
 export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
 export type CameraView = 'isometric' | 'front' | 'rear' | 'left' | 'right' | 'top'
@@ -117,47 +125,47 @@ function PartObject({ part, appearance, displayTransform, interactive, idBase, f
  * inherits its parent's scale like any other object. Inside a root scaled to
  * 1/20 that made the gizmo twenty times too small to see or hit, so direct
  * manipulation looked simply absent. Here it attaches to a proxy that carries
- * the selected part's pose in *scene* space, and every pose read back out is
+ * the selection's pose in *scene* space, and every pose read back out is
  * mapped through the root's inverse before it reaches the document.
+ *
+ * One part snaps to connectors. Two or more move as one rigid body about the
+ * selection centre — per-origin snaps would walk a clutched stack off its studs.
  */
 function SelectionManipulator({
-  part,
+  parts,
   tool,
   gridLdu,
   document: model,
   onPreview,
-  onCommit,
+  onCommitPart,
+  onCommitGroup,
 }: {
-  part: PartInstance
+  parts: readonly PartInstance[]
   tool: 'move' | 'rotate'
   gridLdu: number
   document: ModelDocument
-  onPreview: (transform: Transform | null) => void
-  onCommit: (transform: Transform) => void
+  onPreview: (preview: ReadonlyMap<string, Transform> | null) => void
+  onCommitPart: (partId: string, transform: Transform) => void
+  onCommitGroup: (operations: CadOperation[]) => void
 }) {
+  const part = parts[0]
+  const grouped = parts.length > 1
+  const startPose = useMemo(() => {
+    if (!grouped || !parts.length) return parts[0]!.transform
+    return { position: resolvePivot(parts, 'centre'), basis: IDENTITY_BASIS }
+  }, [grouped, parts])
   const [proxy, setProxy] = useState<THREE.Object3D | null>(null)
   const controls = useRef<{ getHelper?: () => THREE.Object3D } & THREE.Object3D | null>(null)
   const dragging = useRef(false)
-  const latest = useRef<Transform | null>(null)
+  const latestPart = useRef<Transform | null>(null)
+  const latestGroup = useRef<CadOperation[] | null>(null)
   const lastSnapKey = useRef('')
   const { camera, size } = useThree()
 
-  /**
-   * Reports how many screen pixels the gizmo actually spans.
-   *
-   * This is the property that was silently broken: the handles were rendered,
-   * but at a twentieth of their intended size, so "drag to move" was true in
-   * the code and false on the screen. Measuring the drawn object rather than
-   * asserting that a component mounted is what makes the browser acceptance run
-   * able to catch that class of regression.
-   */
   useEffect(() => {
     const probe = () => {
       const helper = controls.current?.getHelper?.() ?? controls.current
       if (!helper || !proxy) return { attached: false, screenPixels: 0 }
-      // Only the drawn handles count. `TransformControls` also carries invisible
-      // pickers and axis-length helper lines, and a bounding box over the whole
-      // helper is dominated by those rather than by anything the operator sees.
       const box = new THREE.Box3()
       helper.traverseVisible((node) => {
         const mesh = node as THREE.Mesh
@@ -178,8 +186,6 @@ function SelectionManipulator({
       return {
         attached: true,
         screenPixels: Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)),
-        // Canvas-relative centre, so an acceptance run can grab the handle
-        // rather than guess where it is.
         centre: [((origin.x + 1) / 2) * size.width, ((1 - origin.y) / 2) * size.height],
       }
     }
@@ -187,39 +193,60 @@ function SelectionManipulator({
     return () => { delete (window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo }
   }, [camera, proxy, size.height, size.width])
 
-  // Follow the document whenever the operator is not actively dragging, so an
-  // undo, an agent edit or a numeric entry moves the gizmo with the part.
   useEffect(() => {
     if (!proxy || dragging.current) return
-    ROOT_MATRIX.clone().multiply(sceneMatrix(part.transform)).decompose(proxy.position, proxy.quaternion, proxy.scale)
+    ROOT_MATRIX.clone().multiply(sceneMatrix(startPose)).decompose(proxy.position, proxy.quaternion, proxy.scale)
     proxy.updateMatrixWorld(true)
-  }, [part.transform, proxy, tool])
+  }, [proxy, startPose, tool])
 
   const readPose = useCallback((): Transform => {
     proxy!.updateMatrixWorld(true)
     return documentTransformOf(ROOT_MATRIX_INVERSE.clone().multiply(proxy!.matrixWorld))
   }, [proxy])
 
-  /**
-   * Resolves the dragged pose the way a drop would resolve it, so the ghost the
-   * operator sees during the drag is the pose they will actually get. The
-   * connector solver is only re-run when the quantized position changes, which
-   * keeps a dense model's snap query off the per-frame path.
-   */
-  const resolve = useCallback(
+  const resolvePart = useCallback(
     (raw: Transform): Transform => {
+      if (!part) return raw
       if (tool === 'rotate') return raw
       const quantized: Transform = { position: snapTransformPosition(raw.position, gridLdu), basis: raw.basis }
       const key = `${quantized.position.join(',')}|${canonicalTransform({ position: [0, 0, 0], basis: quantized.basis })}`
-      if (key === lastSnapKey.current && latest.current) return latest.current
+      if (key === lastSnapKey.current && latestPart.current) return latestPart.current
       lastSnapKey.current = key
-      const snapped = bestSnapTransform(part, model, quantized, { radiusLdu: Math.max(6, gridLdu * 0.8) })
-      return snapped ?? quantized
+      const candidates = findSnapCandidates(part, model, quantized, { radiusLdu: Math.max(6, gridLdu * 0.8) })
+      for (const candidate of candidates) {
+        if (!poseRefusal(model, part.id, candidate.transform)) return candidate.transform
+      }
+      return quantized
     },
     [gridLdu, model, part, tool],
   )
 
-  if (!proxy) return <object3D ref={setProxy} />
+  const resolveGroup = useCallback(
+    (raw: Transform): { preview: Map<string, Transform>; operations: CadOperation[] } => {
+      if (tool === 'rotate') {
+        const yaw = eulerDegreesFromBasis(raw.basis)[1]
+        return {
+          preview: applyRigidMotion(parts, [0, 0, 0], yaw),
+          operations: planRotateSelection(parts, yaw),
+        }
+      }
+      const delta = snapPosition(
+        [
+          raw.position[0] - startPose.position[0],
+          raw.position[1] - startPose.position[1],
+          raw.position[2] - startPose.position[2],
+        ],
+        gridLdu,
+      )
+      return {
+        preview: applyRigidMotion(parts, delta, 0),
+        operations: planTranslateSelection(parts, delta),
+      }
+    },
+    [gridLdu, parts, startPose.position, tool],
+  )
+
+  if (!proxy || !part) return <object3D ref={setProxy} />
 
   return (
     <>
@@ -228,7 +255,7 @@ function SelectionManipulator({
         ref={controls as never}
         object={proxy}
         mode={tool === 'rotate' ? 'rotate' : 'translate'}
-        space={tool === 'rotate' ? 'local' : 'world'}
+        space={grouped || tool !== 'rotate' ? 'world' : 'local'}
         rotationSnap={Math.PI / 12}
         size={1.05}
         onMouseDown={() => {
@@ -236,16 +263,29 @@ function SelectionManipulator({
           lastSnapKey.current = ''
         }}
         onObjectChange={() => {
-          const resolved = resolve(readPose())
-          latest.current = resolved
-          onPreview(resolved)
+          if (grouped) {
+            const next = resolveGroup(readPose())
+            latestGroup.current = next.operations
+            onPreview(next.preview)
+            return
+          }
+          const next = resolvePart(readPose())
+          latestPart.current = next
+          onPreview(poseRefusal(model, part.id, next) ? null : new Map([[part.id, next]]))
         }}
         onMouseUp={() => {
           dragging.current = false
-          const resolved = latest.current ?? resolve(readPose())
-          latest.current = null
+          if (grouped) {
+            const next = latestGroup.current ?? resolveGroup(readPose()).operations
+            latestGroup.current = null
+            onPreview(null)
+            if (next.length) onCommitGroup(next)
+            return
+          }
+          const next = latestPart.current ?? resolvePart(readPose())
+          latestPart.current = null
           onPreview(null)
-          onCommit(resolved)
+          if (!poseRefusal(model, part.id, next)) onCommitPart(part.id, next)
         }}
       />
     </>
@@ -273,10 +313,10 @@ function PlacementController({
   gridLdu: number
   root: React.RefObject<THREE.Group | null>
   onPreview: (transform: Transform | null) => void
-  onPlace: (transform: Transform) => void
+  onPlace: (transform: Transform, legal?: boolean, reason?: string) => void
 }) {
   const { camera, gl, raycaster, pointer } = useThree()
-  const resolved = useRef<Transform | null>(null)
+  const resolved = useRef<{ transform: Transform; legal: boolean; reason: string } | null>(null)
   const pressedAt = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -300,11 +340,19 @@ function PlacementController({
       if (!point) {
         resolved.current = null
         onPreview(null)
+        element.style.cursor = 'crosshair'
         return
       }
       const placement = resolvePlacement(request, model, { point, partId }, gridLdu)
-      resolved.current = placement?.transform ?? null
-      onPreview(resolved.current)
+      if (!placement) {
+        resolved.current = null
+        onPreview(null)
+        element.style.cursor = 'crosshair'
+        return
+      }
+      resolved.current = { transform: placement.transform, legal: placement.legal, reason: placement.reason }
+      onPreview(placement.legal ? placement.transform : null)
+      element.style.cursor = placement.legal ? 'crosshair' : 'not-allowed'
     }
 
     const onMove = (event: PointerEvent) => {
@@ -321,7 +369,7 @@ function PlacementController({
       // An orbit drag is not a placement. Only a click that stayed put commits.
       if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
       if (event.button !== 0) return
-      if (resolved.current) onPlace(resolved.current)
+      if (resolved.current) onPlace(resolved.current.transform, resolved.current.legal, resolved.current.reason)
     }
 
     element.addEventListener('pointermove', onMove)
@@ -662,7 +710,11 @@ interface CadViewportProps {
   onSelectMany?: (partIds: string[], additive: boolean) => void
   onClearSelection: () => void
   onTransform: (partId: string, transform: Transform) => void
-  onPlace?: (transform: Transform) => void
+  /** Multi-part gizmo commit — one rigid transaction. */
+  onCommitTransforms?: (operations: CadOperation[]) => void
+  onNudgeSelection?: (dx: number, dz: number) => void
+  onPlace?: (transform: Transform, legal?: boolean, reason?: string) => void
+  onJointNudge?: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
   onCanvasReady?: (canvas: HTMLCanvasElement) => void
 
   // -- optional renderer capabilities, all defaulting to the previous behaviour
@@ -700,7 +752,10 @@ export function CadViewport({
   onSelectMany,
   onClearSelection,
   onTransform,
+  onCommitTransforms,
+  onNudgeSelection,
   onPlace,
+  onJointNudge,
   onCanvasReady,
   visibility: visibilityProp,
   onVisibilityChange,
@@ -724,7 +779,7 @@ export function CadViewport({
   const root = useRef<THREE.Group>(null)
 
   /** Pose being dragged right now, shown live instead of waiting for the commit. */
-  const [dragPreview, setDragPreview] = useState<Transform | null>(null)
+  const [dragPreview, setDragPreview] = useState<ReadonlyMap<string, Transform> | null>(null)
   const [placementPreview, setPlacementPreview] = useState<Transform | null>(null)
   const [overlay, setOverlay] = useState<OverlayState>({ marquee: null, lasso: null, sweep: null })
   const [jointPreview, setJointPreview] = useState<Map<string, Transform> | null>(null)
@@ -928,16 +983,27 @@ export function CadViewport({
     setTransmissionEnabled(transmissionOverride === false ? false : withinBudget)
   }, [transmissionOverride, transparentBatches])
 
-  const manipulated =
-    selection.length === 1 && renderMode === 'beauty' && !placing && (tool === 'move' || tool === 'rotate')
-      ? document.parts[selection[0]]
-      : undefined
+  const manipulatedParts = useMemo(() => {
+    if (renderMode !== 'beauty' || placing || (tool !== 'move' && tool !== 'rotate')) return []
+    if (selection.length < 1 || selection.length > INDIVIDUAL_SELECTION_LIMIT) return []
+    return selection.map((id) => document.parts[id]).filter((part): part is PartInstance => Boolean(part))
+  }, [document.parts, placing, renderMode, selection, tool])
 
   const commitDrag = useCallback(
-    (transform: Transform) => {
-      if (manipulated) onTransform(manipulated.id, transform)
+    (partId: string, transform: Transform) => {
+      onTransform(partId, transform)
     },
-    [manipulated, onTransform],
+    [onTransform],
+  )
+
+  const commitGroupDrag = useCallback(
+    (operations: CadOperation[]) => {
+      if (onCommitTransforms) onCommitTransforms(operations)
+      else if (operations.length === 1 && operations[0]?.type === 'part.transform') {
+        onTransform(operations[0].partId, operations[0].transform)
+      }
+    },
+    [onCommitTransforms, onTransform],
   )
 
   const placementDefinition = placement ? catalog.get(placement.definitionId) : undefined
@@ -1002,7 +1068,16 @@ export function CadViewport({
         // prop changes and owns its disposal.
         scene.environment = createStudioEnvironment(gl)
         scene.environmentIntensity = 0.55
-        onCanvasReady?.(gl.domElement)
+        const canvas = gl.domElement
+        canvas.tabIndex = 0
+        canvas.setAttribute('role', 'application')
+        canvas.setAttribute('aria-label', 'CAD viewport')
+        canvas.setAttribute('aria-describedby', 'viewport-keys')
+        canvas.setAttribute(
+          'aria-keyshortcuts',
+          'ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown Home',
+        )
+        onCanvasReady?.(canvas)
         // Renderer counters are exposed so the browser acceptance run can assert
         // that draw calls track distinct part/colour combinations rather than
         // brick count.
@@ -1031,6 +1106,22 @@ export function CadViewport({
       {renderMode === 'orthographic'
         ? <OrthographicCamera makeDefault near={0.1} far={2000} zoom={28} />
         : <PerspectiveCamera makeDefault fov={34} near={0.1} far={2000} />}
+      <ViewportKeyboard
+        document={document}
+        selection={selection}
+        tool={tool}
+        gridLdu={gridLdu}
+        visibility={visibility}
+        sectionPlanes={sectionPlanes}
+        placementPreview={placementPreview}
+        placing={Boolean(placement)}
+        onSelect={onSelect}
+        onTransform={onTransform}
+        onNudgeSelection={onNudgeSelection}
+        onPlace={onPlace}
+        onJointNudge={onJointNudge}
+        onSectionPlanesChange={setSectionPlanes}
+      />
 
       {/* The environment carries the ambient term, so the lights here only
           shape: a key that casts, a cool fill opposite it, and a rim that
@@ -1089,9 +1180,7 @@ export function CadViewport({
             key={member.part.id}
             part={member.part}
             appearance={appearanceFor(member.part.id)}
-            displayTransform={
-              dragPreview && manipulated?.id === member.part.id ? dragPreview : member.transform
-            }
+            displayTransform={dragPreview?.get(member.part.id) ?? member.transform}
             interactive={false}
             idBase={idBases.get(`solo:${member.part.id}`)}
             onSelect={onSelect}
@@ -1165,15 +1254,16 @@ export function CadViewport({
       <JointHandles joints={joints} activeEdgeId={activeJointEdge} sweep={sweep} controls={controlsHandle} />
       <BlockingMarker pointLdu={sweep?.blocking?.pointLdu ?? null} />
 
-      {manipulated && !activeJointEdge && (
+      {manipulatedParts.length > 0 && !activeJointEdge && (
         <SelectionManipulator
-          key={manipulated.id}
-          part={manipulated}
+          key={manipulatedParts.map((part) => part.id).join('|')}
+          parts={manipulatedParts}
           tool={tool === 'rotate' ? 'rotate' : 'move'}
           gridLdu={gridLdu}
           document={document}
           onPreview={setDragPreview}
-          onCommit={commitDrag}
+          onCommitPart={commitDrag}
+          onCommitGroup={commitGroupDrag}
         />
       )}
 

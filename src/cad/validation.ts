@@ -1,8 +1,12 @@
 import { catalog, STUD_LDU } from './catalog'
 import { findCollisions, residentGeometryProvider, type GeometryProvider } from './collision'
-import { getDocumentBounds } from './geometry'
-import { computeOccupancy, deriveConnections } from './snapping'
-import type { Bounds, CollisionIssue, ModelDocument, PartInstance, ValidationReport, Vec3 } from './types'
+import { introducedCollisions } from './collisionGate'
+import { getDocumentBounds, getPartBounds } from './geometry'
+import { computeOccupancy, deriveConnections, approachOccupancy } from './snapping'
+import type { Bounds, CollisionIssue, ModelDocument, PartInstance, Transform, ValidationReport, Vec3 } from './types'
+
+/** One plate of slop: a part sitting a hair off the table is still on it. */
+const GROUND_TOLERANCE_LDU = 8
 
 /**
  * Adjacency and per-pair mating data for the current document.
@@ -213,6 +217,136 @@ export function validateDocument(document: ModelDocument, options: ValidationOpt
     // turning colour choice into a failure.
     healthy: collisions.length === 0 && constraints.every((item) => item.status !== 'fail'),
   }
+}
+
+/**
+ * Parts hovering with no clutch and no ground under them.
+ *
+ * Two buildings on the table are legal LEGO — they share a ground plane and
+ * need not clutch to each other. A brick in mid-air with nothing mated to it
+ * is not. That is the placement an agent produces when it invents XYZ, and the
+ * one a free transform produces when it pulls a part off the model into space.
+ */
+export function floatingPartIds(document: ModelDocument): string[] {
+  const parts = Object.values(document.parts)
+  if (!parts.length) return []
+  const { edges } = buildConnectionGraph(document)
+  const boxes = parts.map((part) => ({ part, box: getPartBounds(part) })).filter((entry) => entry.box.measured)
+  if (!boxes.length) return []
+  // LDraw is Y-down: the ground is the greatest Y anything reaches.
+  const groundY = Math.max(...boxes.map((entry) => entry.box.max[1]))
+  return parts.filter((part) => {
+    if ((edges.get(part.id)?.size ?? 0) > 0) return false
+    const box = getPartBounds(part)
+    if (!box.measured) return false
+    return Math.abs(box.max[1] - groundY) > GROUND_TOLERANCE_LDU
+  }).map((part) => part.id)
+}
+
+/**
+ * Parts whose connected island never reaches the ground plane.
+ *
+ * `floatingPartIds` only names unclutched hoverers. A wall that clutches to
+ * itself in mid-air is still not a building — it is a flying assembly beside
+ * something that actually sits on the table. Two buildings on the table each
+ * include a grounded brick, so they are not airborne.
+ */
+export function airbornePartIds(document: ModelDocument): string[] {
+  const parts = Object.values(document.parts)
+  if (!parts.length) return []
+  const boxes = parts.map((part) => ({ part, box: getPartBounds(part) })).filter((entry) => entry.box.measured)
+  if (!boxes.length) return []
+  const groundY = Math.max(...boxes.map((entry) => entry.box.max[1]))
+  const grounded = new Set(
+    boxes.filter((entry) => Math.abs(entry.box.max[1] - groundY) <= GROUND_TOLERANCE_LDU).map((entry) => entry.part.id),
+  )
+  const hovering: string[] = []
+  const seen = new Set<string>()
+  for (const part of parts) {
+    if (seen.has(part.id)) continue
+    const component = connectedComponent(document, [part.id])
+    for (const id of component) seen.add(id)
+    if (component.some((id) => grounded.has(id))) continue
+    hovering.push(...component)
+  }
+  return hovering
+}
+
+function overlapsHorizontal(a: { min: Vec3; max: Vec3 }, b: { min: Vec3; max: Vec3 }): boolean {
+  const overlapX = Math.min(a.max[0], b.max[0]) - Math.max(a.min[0], b.min[0])
+  const overlapZ = Math.min(a.max[2], b.max[2]) - Math.max(a.min[2], b.min[2])
+  return overlapX > 1 && overlapZ > 1
+}
+
+/**
+ * Unclutched parts whose underside is sitting on another part.
+ *
+ * A second building on the table is legal LEGO. A brick sitting on a tile is
+ * not — tiles have no studs, so nothing clutches, and the brick will slide.
+ * Hovering in empty air is `floatingPartIds`; this is the case that looks
+ * grounded because a plate is underneath it.
+ */
+export function unclutchedRestPartIds(document: ModelDocument): string[] {
+  return unclutchedRests(document).map((entry) => entry.partId)
+}
+
+/** The part an unclutched rest is sitting on, if any. */
+export function unclutchedRestSupport(document: ModelDocument, partId: string): string | null {
+  return unclutchedRests(document).find((entry) => entry.partId === partId)?.supportId ?? null
+}
+
+function unclutchedRests(document: ModelDocument): Array<{ partId: string; supportId: string }> {
+  const parts = Object.values(document.parts)
+  if (parts.length < 2) return []
+  const { edges } = buildConnectionGraph(document)
+  const boxes = parts.map((part) => ({ part, box: getPartBounds(part) })).filter((entry) => entry.box.measured)
+  const rests: Array<{ partId: string; supportId: string }> = []
+  for (const { part, box } of boxes) {
+    if ((edges.get(part.id)?.size ?? 0) > 0) continue
+    const support = boxes.find((other) => {
+      if (other.part.id === part.id) return false
+      if (!overlapsHorizontal(box, other.box)) return false
+      return Math.abs(box.max[1] - other.box.min[1]) <= GROUND_TOLERANCE_LDU
+    })
+    if (support) rests.push({ partId: part.id, supportId: support.part.id })
+  }
+  return rests
+}
+
+export function unclutchedRestCode(
+  document: ModelDocument,
+  partId: string,
+): 'CONNECTOR_OCCUPIED' | 'NO_COMPATIBLE_CONNECTOR' {
+  const support = unclutchedRestSupport(document, partId)
+  if (support && approachOccupancy(document, support, 'on-top') === 'occupied') return 'CONNECTOR_OCCUPIED'
+  return 'NO_COMPATIBLE_CONNECTOR'
+}
+
+/**
+ * Whether committing this pose for an existing part would be refused.
+ *
+ * Used by the viewport so a drag ghost is not drawn for a pose the kernel
+ * would reject — the same contract click-to-place already has.
+ */
+export function poseRefusal(
+  document: ModelDocument,
+  partId: string,
+  transform: Transform,
+): 'DISCONNECTED' | 'NO_COMPATIBLE_CONNECTOR' | 'CONNECTOR_OCCUPIED' | 'COLLISION' | null {
+  const part = document.parts[partId]
+  if (!part) return null
+  const preview: ModelDocument = {
+    ...document,
+    parts: { ...document.parts, [partId]: { ...part, transform } },
+  }
+  const wasFloating = new Set(floatingPartIds(document))
+  if (!wasFloating.has(partId) && floatingPartIds(preview).includes(partId)) return 'DISCONNECTED'
+  const wasRest = new Set(unclutchedRestPartIds(document))
+  if (!wasRest.has(partId) && unclutchedRestPartIds(preview).includes(partId)) {
+    return unclutchedRestCode(preview, partId)
+  }
+  if (introducedCollisions(document, preview, [partId], { placing: false }).length) return 'COLLISION'
+  return null
 }
 
 /** Parts held by exactly one connector: the classic "will fall off" warning. */

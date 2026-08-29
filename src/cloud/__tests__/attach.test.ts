@@ -106,7 +106,7 @@ describe('attaching the cloud layer to a live editor', () => {
     expect((await scene.handle.claim('doc_attached')).ok).toBe(true)
     scene.handle.detach()
 
-    scene.engine.execute('After detach', [{ type: 'part.add', part: part('p9') }], 'human', 0)
+    scene.engine.execute('After detach', [{ type: 'part.add', part: part('p9', [400, 0, 0]) }], 'human', 0)
     await settled(scene.handle)
     expect(scene.handle.outbox.pending).toHaveLength(0)
     scene.detachAutosave()

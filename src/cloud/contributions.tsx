@@ -1,8 +1,9 @@
+import { Cloud, Users } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
-import { Cloud } from 'lucide-react'
 import { useRegisterContribution, type WorkbenchApi } from '../editor/workbench'
 import { browserCloudRuntime } from './browserRuntime'
 import { CloudSyncProvider } from './CloudSyncProvider'
+import { CloudMembersPanel } from './MembersPanel'
 import { CloudProjectsPanel } from './ProjectsPanel'
 import type { CloudRuntime } from './runtime'
 import { CloudSyncStatus } from './SyncStatus'
@@ -13,8 +14,8 @@ import { VERSION_HISTORY_MODAL_ID, type CloudWorkbenchApi } from './surface'
  * The cloud layer's surfaces, mounted into the editor shell.
  *
  * One zero-prop component for the composition root to list. It resolves the
- * runtime once and hands the same instance to all three registrations, so the
- * status line, the panel and the dialog can never disagree about whether there
+ * runtime once and hands the same instance to all four registrations, so the
+ * status line, the panels and the dialog can never disagree about whether there
  * is a deployment or who is signed in.
  *
  * Each `render` re-provides that runtime around its own subtree, because the
@@ -33,6 +34,7 @@ export function CloudProjectsContribution({ runtime }: { runtime?: CloudRuntime 
     <CloudSyncProvider runtime={resolved}>
       <CloudSyncStatusContribution runtime={resolved} />
       <CloudProjectsPanelContribution runtime={resolved} />
+      <CloudMembersPanelContribution runtime={resolved} />
       <CloudVersionHistoryContribution runtime={resolved} />
     </CloudSyncProvider>
   )
@@ -65,6 +67,23 @@ export function CloudProjectsPanelContribution({ runtime }: { runtime?: CloudRun
     render: (api: WorkbenchApi) => (
       <CloudSyncProvider runtime={resolved} lifecycle={false}>
         <CloudProjectsPanel api={api satisfies CloudWorkbenchApi} />
+      </CloudSyncProvider>
+    ),
+  })
+  return null
+}
+
+export function CloudMembersPanelContribution({ runtime }: { runtime?: CloudRuntime } = {}) {
+  const resolved = useCloudRuntimeInstance(runtime)
+  useRegisterContribution({
+    id: 'cloud.members',
+    slot: 'panel-left',
+    priority: 121,
+    title: 'Share',
+    icon: <Users size={11} />,
+    render: (api: WorkbenchApi) => (
+      <CloudSyncProvider runtime={resolved} lifecycle={false}>
+        <CloudMembersPanel api={api satisfies CloudWorkbenchApi} />
       </CloudSyncProvider>
     ),
   })

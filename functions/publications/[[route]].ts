@@ -64,7 +64,7 @@ export const onRequest = async (context: {
       // verification ever needs it, and a management UI that received it would
       // put it in a DOM.
       return json({
-        tokens: tokens.map(({ secretHash, ...rest }) => ({ ...rest, secretHash: undefined })),
+        tokens: tokens.map(({ secretHash: _secretHash, ...rest }) => ({ ...rest, secretHash: undefined })),
       })
     }
 

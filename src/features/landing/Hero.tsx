@@ -3,6 +3,7 @@ import type { DemoEntry, DemoPreview } from '../../demos'
 import { loadPreview } from '../../demos'
 import { useOnScreen, useReducedMotion } from '../explore/motion'
 import { trackLanding } from './analytics'
+import { StageHud } from './plate'
 
 const EnvelopeView = lazy(() => import('../explore/EnvelopeView'))
 
@@ -42,9 +43,14 @@ export interface HeroProps {
   autoPlay?: boolean
   /** Hide the brief quote; the landing film already tells that story in type. */
   hideBrief?: boolean
+  /**
+   * 0–1 position through the landing film. When set, scroll owns the camera,
+   * the explode, and the refinement sweep instead of the dwell timer.
+   */
+  scrub?: number
 }
 
-export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, hideBrief = false }: HeroProps) {
+export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, hideBrief = false, scrub }: HeroProps) {
   const reduced = useReducedMotion()
   const stageRef = useRef<HTMLDivElement | null>(null)
   const visible = useOnScreen(stageRef, '120px')
@@ -55,6 +61,7 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
   const [loadError, setLoadError] = useState<string | null>(null)
   const [camera, setCamera] = useState(demo.camera)
   const [auto, setAuto] = useState(autoPlay)
+  const [orbitLocked, setOrbitLocked] = useState(false)
 
   // Preview geometry is fetched only once the stage is on screen. Two files,
   // together a few tens of kilobytes; the compiled catalog is never touched.
@@ -90,9 +97,13 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
     return () => window.clearTimeout(timer)
   }, [reduced, auto, autoPlay, visible, previews, stage])
 
-  // The refinement sweep. Reduced motion gets a fixed mid-sweep frame, which
-  // still shows both states at once — resolved behind it, candidate ahead.
+  // The refinement sweep. Scroll owns it on the landing film; elsewhere a
+  // timer still plays it once per visit. Reduced motion gets a fixed mid-sweep.
   useEffect(() => {
+    if (typeof scrub === 'number' && !reduced) {
+      setWave(waveFromScrub(scrub))
+      return
+    }
     if (stage !== 'refinement') {
       setWave(stage === 'brief' ? 0 : 1)
       return
@@ -110,7 +121,7 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [stage, reduced])
+  }, [stage, reduced, scrub])
 
   useEffect(() => {
     trackLanding({ name: 'landing.hero_stage_advanced', stage })
@@ -144,23 +155,43 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
 
   const activePreview = previews ? (stage === 'brief' || stage === 'candidate' ? previews.rough : previews.published) : null
   const stageWave = stage === 'validated' ? undefined : wave
+  const explode = reduced || typeof scrub !== 'number' ? 0 : explodeFromScrub(scrub)
+  const displayCamera = orbitLocked || reduced || typeof scrub !== 'number'
+    ? camera
+    : {
+        yaw: demo.camera.yaw + scrub * 52,
+        pitch: demo.camera.pitch + Math.sin(scrub * Math.PI) * 10,
+        zoom: demo.camera.zoom * (1 - scrub * 0.08),
+      }
+  const telemetry = stage === 'brief' || stage === 'candidate' ? demo.roughValidation : demo.validation
   const dotClass = stage === 'validated' ? 'dot done' : stage === 'refinement' ? 'dot settling' : 'dot'
 
   const takeOver = () => {
     if (auto) setAuto(false)
+    if (!orbitLocked) setOrbitLocked(true)
   }
 
   return (
     <div className="bw-hero-stage">
       <div className="bw-stage bw-corners" ref={stageRef} onPointerDown={takeOver}>
         <i /><i /><i /><i />
+        <StageHud
+          yaw={displayCamera.yaw}
+          pitch={displayCamera.pitch}
+          zoom={displayCamera.zoom}
+          explode={explode}
+          parts={telemetry.partCount}
+          mates={telemetry.connectionCount}
+          bodies={telemetry.componentCount}
+        />
         {activePreview ? (
           <Suspense fallback={null}>
             <EnvelopeView
               preview={activePreview}
-              camera={camera}
+              camera={displayCamera}
               onCameraChange={(next) => { takeOver(); setCamera(next) }}
               wave={stageWave}
+              explode={explode}
               label={describeStage(demo, stage)}
             />
           </Suspense>
@@ -176,6 +207,8 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
         <span className={dotClass} aria-hidden="true" />
         <span>{demo.title} · {copy[stage].label}</span>
         <span className="spacer" />
+        <span className="bw-stage-hint">Drag to orbit</span>
+        {typeof scrub === 'number' ? <span className="bw-stage-keys" aria-hidden="true">1–4</span> : null}
         <span>Envelope view · catalog {demo.catalogVersion}</span>
       </p>
 
@@ -232,6 +265,19 @@ function describeStage(demo: DemoEntry, stage: HeroStage): string {
     return `${demo.title}: the refinement pass resolving candidate parts into validated geometry.`
   }
   return `${demo.title}: the published model, ${good.partCount} parts, ${good.connectionCount} mated connectors, ${good.steps} build steps.`
+}
+
+/** Refinement sweep occupies the third quarter of the film. */
+function waveFromScrub(t: number) {
+  if (t <= 0.5) return 0
+  if (t >= 0.78) return 1
+  return (t - 0.5) / 0.28
+}
+
+/** Candidate band pulls the assemblies apart, then seats them again. */
+function explodeFromScrub(t: number) {
+  if (t <= 0.2 || t >= 0.52) return 0
+  return Math.sin(((t - 0.2) / 0.32) * Math.PI) * 0.45
 }
 
 export default Hero

@@ -8,7 +8,8 @@ import {
   Suspense,
   type ReactNode,
 } from 'react'
-import { accountLabel, useAccountAvailability, useAccountSession } from '../platform'
+import { accountLabel, useAccountAvailability } from '../platform'
+import { useAccountSession } from '../platform/auth/accountSession'
 import { browserCloudRuntime } from './browserRuntime'
 import type { CloudRuntime, CloudRuntimeSnapshot, CloudIdentity } from './runtime'
 
@@ -116,6 +117,7 @@ export function useOptionalCloudSync(): CloudSyncContextValue | null {
  */
 function CloudIdentityBridge({ runtime }: { runtime: CloudRuntime }) {
   const availability = useAccountAvailability()
+  if (availability.status === 'pending') return null
   if (availability.status !== 'ready') {
     return (
       <ReportIdentity

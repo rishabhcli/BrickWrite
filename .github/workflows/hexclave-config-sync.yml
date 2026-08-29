@@ -54,4 +54,7 @@ jobs:
           HEXCLAVE_CONFIG_PATH: "hexclave.config.ts"
           HEXCLAVE_SOURCE_REPO: ${{ github.repository }}
           HEXCLAVE_SOURCE_WORKFLOW_PATH: ".github/workflows/hexclave-config-sync.yml"
-        run: npx --yes @hexclave/cli@latest config push --config-file "$HEXCLAVE_CONFIG_PATH" --source github --source-repo "$HEXCLAVE_SOURCE_REPO" --source-path "$HEXCLAVE_CONFIG_PATH" --source-workflow-path "$HEXCLAVE_SOURCE_WORKFLOW_PATH"
+        # Pinned to the local `@hexclave/cli` from package.json (`1.0.106`).
+        # `@latest` is forbidden here: this workflow pushes production identity
+        # configuration, and a floating CLI can change what gets applied.
+        run: npx --no-install hexclave config push --config-file "$HEXCLAVE_CONFIG_PATH" --source github --source-repo "$HEXCLAVE_SOURCE_REPO" --source-path "$HEXCLAVE_CONFIG_PATH" --source-workflow-path "$HEXCLAVE_SOURCE_WORKFLOW_PATH"

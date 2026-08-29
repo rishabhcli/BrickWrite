@@ -1,10 +1,11 @@
-import { Suspense, type ReactNode } from 'react'
+import { Suspense, lazy, type ReactNode } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { PRIMARY_NAV, isRouteRegistered, routeById } from './routes'
 import { useOnlineStatus } from './connectivity'
 import { OfflineNotice } from './states'
-import { AccountMenu } from './auth/AccountMenu'
 import './platform.css'
+
+const AccountMenu = lazy(() => import('./auth/AccountMenu').then((mod) => ({ default: mod.AccountMenu })))
 
 /**
  * The persistent application frame.

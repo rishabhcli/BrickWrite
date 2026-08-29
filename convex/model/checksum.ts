@@ -84,26 +84,30 @@ export function utf8Bytes(text: string): number {
 }
 
 /**
- * Splits a serialized document into storage chunks.
+ * Splits a serialized document into storage chunks by **UTF-8 byte** length.
  *
- * Chunk boundaries respect surrogate pairs: splitting an emoji in half would
- * produce two chunks that reassemble into different text than went in, and the
- * checksum would then report corruption that the writer caused.
+ * The server validates actual UTF-8 bytes against `MAX_CHUNK_BYTES`. Slicing by
+ * UTF-16 code units would let a CJK or emoji-heavy document overshoot that cap
+ * while looking well under `SNAPSHOT_CHUNK_BYTES` characters. Boundaries still
+ * respect surrogate pairs so a reassembly is the original string.
  */
-export function chunkText(text: string, chunkSize: number): string[] {
-  if (chunkSize <= 0) throw new Error('A chunk size must be positive.')
+export function chunkText(text: string, maxBytes: number): string[] {
+  if (maxBytes <= 0) throw new Error('A chunk size must be positive.')
+  if (!text) return ['']
   const chunks: string[] = []
-  let cursor = 0
-  while (cursor < text.length) {
-    let end = Math.min(cursor + chunkSize, text.length)
-    if (end < text.length) {
-      const code = text.charCodeAt(end - 1)
-      if (code >= 0xd800 && code <= 0xdbff) end -= 1
+  let start = 0
+  let bytes = 0
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.codePointAt(index) as number
+    const charBytes = code > 0xffff ? 4 : code > 0x7ff ? 3 : code > 0x7f ? 2 : 1
+    if (bytes + charBytes > maxBytes && index > start) {
+      chunks.push(text.slice(start, index))
+      start = index
+      bytes = 0
     }
-    chunks.push(text.slice(cursor, end))
-    cursor = end
+    bytes += charBytes
+    if (code > 0xffff) index += 1
   }
-  // An empty input still has to produce one chunk, or `chunkCount` is zero and
-  // a reader cannot tell "empty" from "nothing was written".
-  return chunks.length > 0 ? chunks : ['']
+  chunks.push(text.slice(start))
+  return chunks
 }

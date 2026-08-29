@@ -19,7 +19,7 @@
  * no editor chunk. `src/features/landing/imports.test.ts` proves the same
  * property from the inside, against the import graph, in milliseconds.
  */
-import { spawn } from 'node:child_process'
+import { gzipSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
@@ -86,6 +86,8 @@ const CPU_BENCHMARK = (iterations) => {
  * the renderer or the kernel to this route would clear it by a mile.
  */
 const CRITICAL_PATH_BUDGET_BYTES = 450 * 1024
+/** Gzip of assets referenced from the *shipped* `dist/index.html` head. Hexclave must not be among them. */
+const SHIPPED_HEAD_BUDGET_BYTES = 220 * 1024
 
 /**
  * The LCP ceiling.
@@ -170,16 +172,6 @@ function serveStatic(root) {
   })
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }))
-  })
-}
-
-function run(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: ROOT, stdio: 'pipe', ...options })
-    let output = ''
-    child.stdout?.on('data', (chunk) => { output += chunk })
-    child.stderr?.on('data', (chunk) => { output += chunk })
-    child.on('exit', (code) => (code === 0 ? resolve(output) : reject(new Error(`${command} exited ${code}:\n${output.slice(-4000)}`))))
   })
 }
 
@@ -597,12 +589,10 @@ try {
     const seen = []
     page.on('response', async (response) => {
       const request = response.request()
-      let bytes = 0
-      try {
-        bytes = Number((await response.headerValue('content-length')) ?? 0)
-      } catch {
-        bytes = 0
-      }
+      const bytes = await response
+        .headerValue('content-length')
+        .then((value) => Number(value ?? 0))
+        .catch(() => 0)
       seen.push({
         url: new URL(response.url()).pathname,
         type: request.resourceType(),
@@ -713,8 +703,6 @@ try {
     }
   }
   const forbidden = requests.filter((entry) => /\/catalog\//.test(entry.url) || /\.bwmesh$/.test(entry.url))
-  const editorChunks = carried
-
   const lcpSamples = samples.map((sample) => sample.vitals.lcp.toFixed(0)).join(', ')
   process.stdout.write(
     `\n  throttling: ${median.cpu.slowdown}x CPU — calibrated, host ran the benchmark in `
@@ -771,6 +759,39 @@ try {
     requests,
   }
   pass('delivery gate')
+
+  // -- the artifact that actually ships -------------------------------------
+  // The throwaway standalone build above is the right way to time the surfaces'
+  // own code. It cannot see whether the production `dist/index.html` still
+  // modulepreloads Hexclave onto `/`. This second gate reads that file.
+  const shippedHtmlPath = path.join(ROOT, 'dist', 'index.html')
+  if (!existsSync(shippedHtmlPath)) {
+    check(
+      !process.env.CI,
+      'dist/index.html exists so the shipped-shell Hexclave gate can run (npm run build first)',
+    )
+  } else {
+    const shippedHtml = await readFile(shippedHtmlPath, 'utf8')
+    const hrefs = [
+      ...shippedHtml.matchAll(/\b(?:href|src)="(\/assets\/[^"]+)"/g),
+    ].map((match) => match[1])
+    const hexclaveInHead = hrefs.filter((href) => /hexclave/i.test(href))
+    check(
+      hexclaveInHead.length === 0,
+      `the shipped shell does not modulepreload Hexclave (${hexclaveInHead.join(', ') || 'none'})`,
+    )
+    let shippedGzip = 0
+    for (const href of new Set(hrefs)) {
+      const file = path.join(ROOT, 'dist', href.replace(/^\//, ''))
+      if (!existsSync(file)) continue
+      shippedGzip += gzipSync(await readFile(file)).length
+    }
+    check(
+      shippedGzip > 0 && shippedGzip <= SHIPPED_HEAD_BUDGET_BYTES,
+      `the shipped index.html head is ${(shippedGzip / 1024).toFixed(0)} KiB gzip, within ${(SHIPPED_HEAD_BUDGET_BYTES / 1024).toFixed(0)} KiB`,
+    )
+    report.shippedShell = { hrefs, gzipBytes: shippedGzip, hexclaveInHead }
+  }
 
   // -- the surfaces on their own, at every viewport ------------------------
   // The shell's frame is wider than a phone (see the notes above), which makes

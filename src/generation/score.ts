@@ -3,9 +3,12 @@ import { getPartDefinition, STUD_LDU } from '../cad/catalog'
 import { findCollisions, residentGeometryProvider, type GeometryProvider } from '../cad/collision'
 import { computeBuildOrder, verifyBuildOrder } from '../cad/instructions'
 import { analyseStatics, type StaticsReport } from '../cad/statics'
-import { connectedComponent, findWeakAttachments } from '../cad/validation'
+import { isExclusiveFamily } from '../cad/connections'
+import { deriveConnections } from '../cad/snapping'
+import { connectedComponent, findWeakAttachments, floatingPartIds, unclutchedRestPartIds } from '../cad/validation'
 import { getDocumentBounds } from '../cad/geometry'
 import type { BuildStep, ModelDocument } from '../cad/types'
+import { extractRows, findStackedSeams, maxOneStudColumnHeight, oneStudStackCount } from '../refinement/topology'
 import { silhouetteScore, type SilhouetteReference } from './silhouette'
 
 /**
@@ -56,6 +59,40 @@ export interface MetricVector {
   readonly supportMarginLdu: number | null
   readonly overloadedJointCount: number
   readonly unsupportedPartCount: number
+  /** Parts sitting on another part with no clutch — a brick on a tile. */
+  readonly unclutchedRestCount: number
+  /**
+   * Parts hovering with no clutch and no ground under them.
+   *
+   * Hard-gated: two buildings on the table are not floating. A brick in mid-air is.
+   */
+  readonly floatingPartCount: number
+  /**
+   * Vertical joints that line up across adjacent courses.
+   *
+   * Ranked, never hard-gated: a stepped sculpture is allowed to stack seams,
+   * a wall that could have been a running bond should lose to one that is.
+   */
+  readonly stackedSeamCount: number
+  /**
+   * Exclusive mates per part (studs, clips, balls). Ranked, never hard-gated:
+   * a sculpture may balance on few studs, a wall that clutches more should win.
+   */
+  readonly meanExclusiveMates: number
+  /**
+   * 1×1 parts stacked on other 1×1 parts.
+   *
+   * Ranked, never hard-gated: a mosaic of 1×1s is allowed, a column that could
+   * have been a 2×4 stack should lose to one that is.
+   */
+  readonly oneStudStackCount: number
+  /**
+   * Tallest column of 1×1 parts stacked on 1×1 parts.
+   *
+   * Ranked, never hard-gated: a mosaic of short 1×1 stacks is allowed, a slim
+   * tower that could have been a 2×4 stack should lose to one that is.
+   */
+  readonly maxOneStudColumnHeight: number
   readonly buildOrderValid: boolean
   readonly buildOrderViolations: number
   readonly buildStepCount: number
@@ -168,6 +205,14 @@ export function scoreDocument(
     supportMarginLdu: statics.support ? statics.support.marginLdu : null,
     overloadedJointCount: statics.overloaded.length,
     unsupportedPartCount: statics.unsupportedPartIds.length,
+    unclutchedRestCount: unclutchedRestPartIds(document).length,
+    floatingPartCount: floatingPartIds(document).length,
+    stackedSeamCount: findStackedSeams(extractRows(document)).length,
+    meanExclusiveMates: parts.length
+      ? deriveConnections(document).pairs.filter((pair) => isExclusiveFamily(pair.a.family)).length / parts.length
+      : 0,
+    oneStudStackCount: oneStudStackCount(document),
+    maxOneStudColumnHeight: maxOneStudColumnHeight(document),
     buildOrderValid: order.valid,
     buildOrderViolations: order.violations.length,
     buildStepCount: steps.length,
@@ -214,6 +259,32 @@ export function evaluateHardGates(metrics: MetricVector, brief: DesignBrief): Ha
   if (brief.palette.length && metrics.paletteConformance < 1) {
     failures.push(`${Math.round((1 - metrics.paletteConformance) * 100)}% of parts fall outside the requested palette`)
   }
+  if (metrics.supportMarginLdu === null && metrics.partCount > 0) {
+    failures.push('nothing rests on the ground — the model is floating')
+  }
+  if (metrics.supportMarginLdu !== null && metrics.supportMarginLdu < 0) {
+    failures.push(
+      `the model tips: centre of mass sits ${Math.abs(metrics.supportMarginLdu).toFixed(1)} LDU outside the support polygon`,
+    )
+  }
+  if (metrics.partCount > 1 && metrics.componentCount > 1) {
+    const largest = Math.round(metrics.largestComponentFraction * metrics.partCount)
+    const remainder = metrics.partCount - largest
+    const otherComponents = metrics.componentCount - 1
+    if (remainder < 2 * otherComponents) {
+      failures.push('loose brick(s) are not clutched to anything — every part has to mate or rest as its own buildable island')
+    }
+  }
+  if (metrics.unclutchedRestCount > 0) {
+    failures.push(
+      `${metrics.unclutchedRestCount} part(s) rest on another part without a clutch — every stack has to mate`,
+    )
+  }
+  if (metrics.floatingPartCount > 0) {
+    failures.push(
+      `${metrics.floatingPartCount} part(s) hover with no clutch and no ground under them — every brick has to mate or rest on the table`,
+    )
+  }
   return { passed: failures.length === 0, failures }
 }
 
@@ -241,6 +312,12 @@ export function diffMetrics(a: MetricVector, b: MetricVector): Array<{ axis: str
     'massCoverage',
     'overloadedJointCount',
     'unsupportedPartCount',
+    'unclutchedRestCount',
+    'floatingPartCount',
+    'stackedSeamCount',
+    'meanExclusiveMates',
+    'oneStudStackCount',
+    'maxOneStudColumnHeight',
     'buildOrderViolations',
     'buildStepCount',
     'buildOrderIslands',
@@ -265,3 +342,24 @@ export function diffMetrics(a: MetricVector, b: MetricVector): Array<{ axis: str
 
 /** How many axes separate two candidates. Used to assert diversity is material. */
 export const metricDistance = (a: MetricVector, b: MetricVector): number => diffMetrics(a, b).length
+
+/**
+ * Default ranking for generated candidates: more support, then fewer structural
+ * weaknesses. Callers that care about another axis re-sort.
+ */
+export function compareBuildQuality(a: MetricVector, b: MetricVector): number {
+  return (
+    (b.supportMarginLdu ?? Number.NEGATIVE_INFINITY) - (a.supportMarginLdu ?? Number.NEGATIVE_INFINITY) ||
+    a.overloadedJointCount - b.overloadedJointCount ||
+    a.stackedSeamCount - b.stackedSeamCount ||
+    b.meanExclusiveMates - a.meanExclusiveMates ||
+    a.oneStudStackCount - b.oneStudStackCount ||
+    a.maxOneStudColumnHeight - b.maxOneStudColumnHeight ||
+    a.unsupportedPartCount - b.unsupportedPartCount ||
+    a.weakAttachmentCount - b.weakAttachmentCount ||
+    a.unclutchedRestCount - b.unclutchedRestCount ||
+    a.floatingPartCount - b.floatingPartCount ||
+    a.componentCount - b.componentCount ||
+    a.partCount - b.partCount
+  )
+}

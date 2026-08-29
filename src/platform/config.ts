@@ -1,5 +1,3 @@
-import { getPagePrompt, type HandlerUrlOptions } from '@hexclave/react'
-
 /**
  * Where the account layer lives, and whether it can exist at all.
  *
@@ -130,43 +128,5 @@ export function resolvePlatformConfig(env: PlatformEnvironmentSource = ambientEn
       '`npm run dev`, which wraps Vite in `hexclave dev` and injects the ID.',
     checked: PROJECT_ID_ENV_VARS,
     urls: PLATFORM_URL_DESTINATIONS,
-  }
-}
-
-/**
- * Look up the page-component version Hexclave currently expects for a custom
- * auth page.
- *
- * The `version` field on `{ type: 'custom' }` tells Hexclave which generation of
- * its page contract our route implements, so it can warn when the SDK moves
- * ahead of us. Reading it from `getPagePrompt` rather than hardcoding a number
- * means an SDK upgrade does not silently leave a stale claim behind.
- */
-function pageVersion(page: 'signIn' | 'signUp' | 'accountSettings'): number {
-  return getPagePrompt(page)?.latestVersion ?? 1
-}
-
-/**
- * The `urls` option for `HexclaveClientApp`.
- *
- * Sign-in, sign-up and account settings are Brickwright routes rendered with
- * Hexclave's own components, so they keep the application's chrome, its fonts
- * and its offline banner. Everything else — email verification, password reset,
- * the OAuth and magic-link callbacks, MFA, onboarding, team invitations — stays
- * on `{ type: 'hosted' }`, because those pages are security-sensitive, change
- * with the platform, and have no Brickwright-specific content. Verified with
- * Hexclave: the OAuth callback always terminates on Hexclave's API host, so a
- * custom sign-in page does not require a custom callback route.
- */
-export function hexclaveUrlOptions(urls: PlatformUrlDestinations = PLATFORM_URL_DESTINATIONS): HandlerUrlOptions {
-  return {
-    default: { type: 'hosted' },
-    signIn: { type: 'custom', url: urls.signIn, version: pageVersion('signIn') },
-    signUp: { type: 'custom', url: urls.signUp, version: pageVersion('signUp') },
-    accountSettings: { type: 'custom', url: urls.accountSettings, version: pageVersion('accountSettings') },
-    home: urls.home,
-    afterSignIn: urls.afterSignIn,
-    afterSignUp: urls.afterSignUp,
-    afterSignOut: urls.afterSignOut,
   }
 }

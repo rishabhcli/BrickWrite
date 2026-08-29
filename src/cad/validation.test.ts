@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { basisFromEulerDegrees, composeTransform, IDENTITY_BASIS, type Mat3 } from './math'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
-import { findWeakAttachments, validateDocument } from './validation'
+import { catalog, originForSurface } from './catalog'
+import { getPartBounds } from './geometry'
+import { findWeakAttachments, floatingPartIds, airbornePartIds, poseRefusal, unclutchedRestPartIds, validateDocument } from './validation'
 import type { ModelDocument, PartInstance } from './types'
 
 const part = (id: string, definitionId: string, position: [number, number, number], basis: Mat3 = IDENTITY_BASIS): PartInstance => ({
@@ -26,6 +28,17 @@ const withParts = (...parts: PartInstance[]): ModelDocument => {
       hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
     },
   }
+}
+
+function plateTileId(): string {
+  if (catalog.get('3070b')) return '3070b'
+  const found = catalog.placeable().find((item) => {
+    if (item.connectors.some((feature) => feature.family === 'stud')) return false
+    const bounds = item.dimensions?.bounds
+    return Boolean(bounds) && bounds!.max[1] - bounds!.min[1] <= 10
+  })
+  if (!found) throw new Error('compiled catalog has no plate-height tile')
+  return found.canonicalId
 }
 
 describe('validation', () => {
@@ -60,6 +73,51 @@ describe('validation', () => {
     const report = validateDocument(document, { provideGeometry: () => null })
     expect(report.componentCount).toBe(2)
     expect(report.disconnectedPartIds).toHaveLength(1)
+  })
+
+  it('treats two bricks on the table as grounded, not floating', () => {
+    expect(floatingPartIds(withParts(part('a', '3001', [0, 0, 0]), part('b', '3001', [400, 0, 0])))).toEqual([])
+  })
+
+  it('flags a hovering brick that clutches to nothing', () => {
+    expect(floatingPartIds(withParts(part('a', '3001', [0, 0, 0]), part('ghost', '3001', [0, -200, 0])))).toEqual(['ghost'])
+  })
+
+  it('does not flag a clutched stack as floating', () => {
+    expect(floatingPartIds(withParts(part('base', '3001', [0, 0, 0]), part('upper', '3001', [0, -24, 0])))).toEqual([])
+  })
+
+  it('flags a clutched stack that never reaches the ground beside a real building', () => {
+    expect(
+      airbornePartIds(
+        withParts(
+          part('ground', '3001', [0, 0, 0]),
+          part('a', '3001', [400, -200, 0]),
+          part('b', '3001', [400, -224, 0]),
+        ),
+      ).sort(),
+    ).toEqual(['a', 'b'])
+  })
+
+  it('does not flag two buildings on the table as airborne', () => {
+    expect(airbornePartIds(withParts(part('a', '3001', [0, 0, 0]), part('b', '3001', [400, 0, 0])))).toEqual([])
+  })
+
+  it('flags a brick resting on a tile with no clutch', () => {
+    const tileId = plateTileId()
+    const tile = part('tile', tileId, [0, 0, 0])
+    const brickY = originForSurface(catalog.get('3001'), getPartBounds(tile).min[1])
+    const stacked = withParts(tile, part('loose', '3001', [0, brickY, 0]))
+    expect(floatingPartIds(stacked)).toEqual([])
+    expect(unclutchedRestPartIds(stacked)).toEqual(['loose'])
+  })
+
+  it('does not flag a clutched stack as an unclutched rest', () => {
+    expect(unclutchedRestPartIds(withParts(part('base', '3001', [0, 0, 0]), part('upper', '3001', [0, -24, 0])))).toEqual([])
+  })
+
+  it('does not flag two buildings on the table as resting on each other', () => {
+    expect(unclutchedRestPartIds(withParts(part('a', '3001', [0, 0, 0]), part('b', '3001', [400, 0, 0])))).toEqual([])
   })
 
   it('flags a part held by a single connector', () => {
@@ -107,5 +165,31 @@ describe('validation', () => {
     expect(b.componentCount).toBe(a.componentCount)
     expect(b.collisions.length).toBe(a.collisions.length)
     expect(b.disconnectedPartIds.length).toBe(a.disconnectedPartIds.length)
+  })
+})
+
+describe('poseRefusal', () => {
+  it('refuses a hover that used to be clutched', () => {
+    const document = withParts(part('base', '3001', [0, 0, 0]), part('upper', '3001', [0, -24, 0]))
+    expect(poseRefusal(document, 'upper', { position: [0, -200, 0], basis: IDENTITY_BASIS })).toBe('DISCONNECTED')
+  })
+
+  it('allows a clutched stack to stay put', () => {
+    const document = withParts(part('base', '3001', [0, 0, 0]), part('upper', '3001', [0, -24, 0]))
+    expect(poseRefusal(document, 'upper', document.parts.upper.transform)).toBeNull()
+  })
+
+  it('refuses sliding a brick onto a tile', () => {
+    const tileId = plateTileId()
+    const tile = part('tile', tileId, [0, 0, 0])
+    const brickY = originForSurface(catalog.get('3001'), 0)
+    const document = withParts(tile, part('loose', '3001', [400, brickY, 0]))
+    const restY = originForSurface(catalog.get('3001'), getPartBounds(tile).min[1])
+    expect(poseRefusal(document, 'loose', { position: [0, restY, 0], basis: IDENTITY_BASIS })).toBe('NO_COMPATIBLE_CONNECTOR')
+  })
+
+  it('refuses sliding an unconnected brick into another brick', () => {
+    const document = withParts(part('a', '3001', [0, 0, 0]), part('b', '3001', [400, 0, 0]))
+    expect(poseRefusal(document, 'b', { position: [0, 0, 0], basis: IDENTITY_BASIS })).toBe('COLLISION')
   })
 })

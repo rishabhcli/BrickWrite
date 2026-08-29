@@ -236,6 +236,72 @@ describe('offline durability', () => {
     // Both entries are still queued: nothing was discarded to make progress.
     expect(harness.outbox.pending).toHaveLength(2)
   })
+
+  it('does not resend a parked entry on the next tick', async () => {
+    const harness = makeHarness()
+    const seeded = await claimedProject(harness)
+    const history = placements(seeded.document, ['p1'])
+    harness.deployment.setOffline(true)
+    await harness.store.appendTransaction(seeded.document.id, history.transactions[0])
+    harness.deployment.setOffline(false)
+    const branch = harness.deployment.branches.find((row) => row._id === seeded.branchId)
+    if (branch) branch.headRevision = 7
+
+    const first = await harness.outbox.drain()
+    expect(first.status).toBe('conflict')
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+    expect(harness.outbox.pending[0]?.attempts).toBe(1)
+
+    harness.clock.now += 30_000
+    await harness.outbox.drain()
+    await harness.outbox.drain()
+    expect(harness.outbox.pending[0]?.attempts).toBe(1)
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+  })
+
+  it('clears the park on reconnect', async () => {
+    const harness = makeHarness()
+    const seeded = await claimedProject(harness)
+    const history = placements(seeded.document, ['p1'])
+    harness.deployment.setOffline(true)
+    await harness.store.appendTransaction(seeded.document.id, history.transactions[0])
+    harness.deployment.setOffline(false)
+    const branch = harness.deployment.branches.find((row) => row._id === seeded.branchId)
+    if (branch) branch.headRevision = 7
+
+    await harness.outbox.drain()
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+    expect(harness.outbox.pending[0]?.attempts).toBe(1)
+
+    const again = await harness.outbox.reconnected()
+    expect(again.status).toBe('conflict')
+    expect(harness.outbox.pending[0]?.attempts).toBe(2)
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+  })
+
+  it('does not unpark a permanent refusal on reconnect', async () => {
+    const harness = makeHarness()
+    const seeded = await claimedProject(harness)
+    const history = placements(seeded.document, ['p1'])
+    harness.backend.appendTransaction = async () => ({
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'This identity cannot write that project.',
+        repair: 'Ask an owner to raise your role.',
+      },
+    })
+    await harness.store.appendTransaction(seeded.document.id, history.transactions[0])
+    const first = await harness.outbox.drain()
+    expect(first.status).toBe('error')
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+    expect(harness.outbox.pending[0]?.attempts).toBe(1)
+
+    const again = await harness.outbox.reconnected()
+    expect(again.status).toBe('error')
+    expect(harness.outbox.pending[0]?.attempts).toBe(1)
+    expect(harness.outbox.pending[0]?.parked).toBe(true)
+  })
 })
 
 describe('the unconfigured, local-only path', () => {

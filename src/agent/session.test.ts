@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { IDENTITY_BASIS } from '../cad/math'
+import { createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import type { PartInstance } from '../cad/types'
 import { scriptedTransport, toolValue, type ScriptedLeg } from './__fixtures__/scriptedTransport'
 import { compileBrief } from './brief'
 import { AgentSession } from './session'
@@ -62,9 +64,18 @@ describe('agent workflows', () => {
     const results = lastToolResults(transport)
     expect(results.map((result) => result.name)).toEqual(['scene_overview', 'validate_model'])
     expect(results.every((result) => result.ok)).toBe(true)
-    const overview = toolValue<{ partCount: number; documentRevision: number }>(results[0].content)
+    const overview = toolValue<{
+      partCount: number
+      documentRevision: number
+      nextAction: string
+      nextTool: string
+      nextArgs: Record<string, unknown>
+    }>(results[0].content)
     expect(overview.partCount).toBe(33)
     expect(overview.documentRevision).toBe(1)
+    expect(overview.nextAction.length).toBeGreaterThan(20)
+    expect(typeof overview.nextTool).toBe('string')
+    expect(overview.nextArgs).toEqual(expect.any(Object))
 
     expect(cadEngine.getSnapshot().document.revision).toBe(1)
     expect(session.getState().waves).toEqual([])
@@ -336,13 +347,26 @@ describe('agent workflows', () => {
 
   // 10 -------------------------------------------------------------------
   it('workflow 10 — a colliding wave is refused, repaired from measured overlap, then lands', async () => {
-    cadEngine.setSelection(['part_0001'])
+    const base: PartInstance = {
+      id: 'base',
+      definitionId: '3001',
+      color: 72,
+      transform: { position: [0, 0, 0], basis: IDENTITY_BASIS },
+      subassemblyId: 'hull',
+      stepId: 'step_1',
+      provenance: 'human',
+      protected: false,
+    }
+    cadEngine.replaceDocument(createEmptyDocument())
+    cadEngine.execute('Foundation', [{ type: 'part.add', part: base }], 'human', 0)
+    cadEngine.setSelection(['base'])
+    cadEngine.setAutonomy('propose')
     const { session, transport } = makeSession([
       {
         toolCalls: [
           {
             name: 'preflight_capability',
-            input: { capability: 'duplicate_selection', args: { partIds: ['part_0001'], offsetLdu: [0, 0, 0] } },
+            input: { capability: 'duplicate_selection', args: { partIds: ['base'], offsetLdu: [0, 0, 0] } },
           },
         ],
       },
@@ -352,12 +376,12 @@ describe('agent workflows', () => {
       {
         toolCalls: [
           {
-            name: 'preflight_capability',
-            input: { capability: 'duplicate_selection', args: { partIds: ['part_0001'], offsetLdu: [0, -400, 0] } },
+            name: 'preflight_placement',
+            input: { definitionId: '3001', anchorPartId: 'base', approach: 'on-top' },
           },
         ],
       },
-      { text: ['The first copy landed on top of the original; the second sits 400 LDU above the model.'] },
+      { text: ['The first copy landed on top of the original; the second is clutched to its free studs.'] },
     ])
 
     await session.send('Duplicate the front plate.')
@@ -374,7 +398,7 @@ describe('agent workflows', () => {
     const repairCall = lastToolResults(transport).find((result) => result.name === 'repair_suggest')
     expect(repairCall).toBeDefined()
 
-    const clean = session.getState().waves.find((wave) => wave.status === 'pending')
+    const clean = session.getState().waves.find((wave) => wave.status === 'pending' && wave.id !== colliding.id)
     expect(clean).toBeDefined()
     expect(clean!.validation?.collisions.length).toBe(0)
     expect(session.acceptWave(clean!.id).ok).toBe(true)
@@ -401,8 +425,14 @@ describe('agent workflows', () => {
     session.acceptWave(waveId)
 
     const repair = lastToolResults(transport).find((result) => result.name === 'repair_suggest')
-    const value = toolValue<{ protectedRegions: Array<{ subassemblyId: string }>; staleWaves: unknown[] }>(repair!.content)
+    const value = toolValue<{
+      protectedRegions: Array<{ subassemblyId: string }>
+      staleWaves: unknown[]
+      next: { tool: string; action: string }
+    }>(repair!.content)
     expect(value.protectedRegions.map((region) => region.subassemblyId)).toContain('cockpit')
+    expect(value.next.tool).toBeTruthy()
+    expect(value.next.action.length).toBeGreaterThan(20)
     session.dispose()
   })
 

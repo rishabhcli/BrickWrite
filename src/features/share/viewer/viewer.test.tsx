@@ -147,6 +147,9 @@ describe('read-only viewer', () => {
     fireEvent.keyDown(canvas, { key: '0' })
     expect(canvas).toHaveAttribute('data-yaw', '0')
     expect(canvas).toHaveAttribute('data-pitch', '0')
+    fireEvent.keyDown(canvas, { key: 'ArrowRight' })
+    fireEvent.keyDown(canvas, { key: 'Home' })
+    expect(canvas).toHaveAttribute('data-yaw', '0')
   })
 
   it('explodes without touching the snapshot', async () => {

@@ -13,10 +13,10 @@ import { ALICE, BOB, addMember, blankProject, commitAll, makeHarness, part } fro
  * Gate 10 — a comment anchored at revision N reports correctly at N+1.
  */
 
-const MOVE = (partId: string, y: number): CadOperation => ({
+const SLIDE = (partId: string, x: number): CadOperation => ({
   type: 'part.transform',
   partId,
-  transform: { position: [0, y, 0], basis: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
+  transform: { position: [x, 0, 0], basis: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
 })
 
 function twoPartBase(projectId = 'doc_collab') {
@@ -57,7 +57,7 @@ describe('versions are immutable', () => {
     const pinned = canonicalJson(first.value.document)
 
     // Now change everything a later edit could plausibly touch.
-    const after = commitAll(scene.base.final, [[MOVE('p1', -24)], [MOVE('p2', -48)]])
+    const after = commitAll(scene.base.final, [[SLIDE('p1', 40)], [SLIDE('p2', 180)]])
     for (const transaction of after.transactions) {
       expect((await scene.alice.store.appendTransaction(scene.base.final.id, transaction)).ok).toBe(
         true,
@@ -117,7 +117,7 @@ describe('versions are immutable', () => {
   it('plans a restore as new work, and says what it cannot express', async () => {
     const base = twoPartBase('doc_restore')
     const later = commitAll(base.final, [
-      [MOVE('p1', -24)],
+      [SLIDE('p1', 40)],
       [{ type: 'part.add', part: part('p3', [200, 0, 0]) }],
     ])
 
@@ -192,12 +192,53 @@ describe('versions are immutable', () => {
       expect(actions).toContain('branch.merged')
     }
   })
+
+  it('seeds a named branch with the parent checkpoint so the fork can be opened', async () => {
+    const scene = await claimedBase('doc_named_branch')
+    const branch = await scene.alice.backend.createBranch({
+      projectId: scene.claimed.projectId,
+      name: 'alice/experiment',
+    })
+    expect(branch.ok).toBe(true)
+    if (!branch.ok) return
+
+    const checkpoint = await scene.alice.backend.latestCheckpoint({
+      projectId: scene.claimed.projectId,
+      branchId: branch.value.branchId,
+    })
+    expect(checkpoint.ok).toBe(true)
+    if (!checkpoint.ok) return
+    expect(checkpoint.value).not.toBeNull()
+    expect(checkpoint.value?.revision).toBe(scene.claimed.headRevision)
+  })
+
+  it('refuses a named branch when the parent has no checkpoint', async () => {
+    const deployment = new FakeConvexDeployment()
+    const alice = makeHarness(ALICE, deployment)
+    const created = await alice.backend.createProject({
+      localProjectId: 'doc_no_checkpoint',
+      name: 'Empty cloud',
+      schemaVersion: 2,
+      catalogVersion: 'fixture-1',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const branch = await alice.backend.createBranch({
+      projectId: created.value.projectId,
+      name: 'alice/experiment',
+    })
+    expect(branch.ok).toBe(false)
+    if (!branch.ok) expect(branch.error.code).toBe('NOT_FOUND')
+    const listed = await alice.backend.listBranches({ projectId: created.value.projectId })
+    expect(listed.ok).toBe(true)
+    if (listed.ok) expect(listed.value.map((row) => row.name)).toEqual(['main'])
+  })
 })
 
 describe('presence is ephemeral', () => {
   it('never alters the document, its revision, or the audit trail', async () => {
     const scene = await claimedBase('doc_presence')
-    await addMember(scene.deployment, scene.alice.backend, scene.claimed.projectId, BOB, 'viewer')
+    await addMember(scene.deployment, scene.alice.backend, scene.claimed.projectId, BOB, 'commenter')
 
     const before = await scene.alice.cloud.loadProject(scene.claimed.projectId)
     const beforeProject = await scene.alice.backend.getProject({
@@ -372,7 +413,7 @@ describe('comments are anchored to a revision', () => {
     expect(resolveAnchor(scene.base.final, created.value).state).toBe('intact')
 
     // Revision 3 moves the very part the note was about.
-    const moved = commitAll(scene.base.final, [[MOVE('p1', -24)]])
+    const moved = commitAll(scene.base.final, [[SLIDE('p1', 40)]])
     expect(moved.final.revision).toBe(3)
 
     const stored = await scene.alice.backend.listComments({ projectId: scene.claimed.projectId })

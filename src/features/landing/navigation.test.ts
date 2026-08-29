@@ -10,6 +10,8 @@ describe('landing and explore navigation', () => {
   it('uses shell-owned paths and keeps demo selection in the query', () => {
     expect(hrefFor({ kind: 'landing' })).toBe('/')
     expect(hrefFor({ kind: 'editor' })).toBe('/editor')
+    expect(hrefFor({ kind: 'editor', blank: true })).toBe('/editor?doc=blank')
+    expect(hrefFor({ kind: 'describe' })).toBe('/editor?doc=blank&intent=describe')
     expect(hrefFor({ kind: 'explore', demoId: 'shutter bay', step: 7 })).toBe('/explore?demo=shutter+bay&step=7')
   })
 

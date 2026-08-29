@@ -14,7 +14,7 @@ import { CompareDialog } from './CompareDialog'
 import { GenerationEngine, type GenerationRun } from './engine'
 import { GeneratePanel } from './GeneratePanel'
 import { GenerationStatus } from './GenerationStatus'
-import type { Candidate, PhaseEvent } from './phases'
+import type { PhaseEvent } from './phases'
 import { CANDIDATE_METRICS, GenerationSession, generationBusFor, type GenerationRunner } from './session'
 import { createTestModelProvider } from './testing'
 

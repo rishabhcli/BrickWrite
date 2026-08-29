@@ -19,6 +19,7 @@ export function anthropicTools(mode: 'inspect' | 'propose' | 'build'): Anthropic
     name: tool.name,
     description: tool.description,
     input_schema: toolJsonSchema(tool) as Anthropic.Tool['input_schema'],
+    strict: true,
   }))
 }
 

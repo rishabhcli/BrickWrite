@@ -157,6 +157,20 @@ export function ViewportControls(props: ViewportControlsProps) {
     derived.dispose()
   }, [derived, idPass])
 
+  useEffect(() => {
+    // First-click pick used to pay shader compile and target allocation. A
+    // throwaway sample after the beauty pass is up moves that cost off the
+    // operator's first selection.
+    const warm = () => {
+      idPass.pick(camera, -1, -1, { radius: 0 })
+    }
+    const idle = 'requestIdleCallback' in window ? window.requestIdleCallback(warm) : window.setTimeout(warm, 0)
+    return () => {
+      if (typeof idle === 'number' && 'cancelIdleCallback' in window) window.cancelIdleCallback(idle)
+      else window.clearTimeout(idle)
+    }
+  }, [camera, idPass])
+
   // Props read from callbacks that outlive a render. Refs rather than
   // dependencies, because rebuilding the pointer listeners on every document
   // revision would drop an in-flight drag.
@@ -422,10 +436,10 @@ export function ViewportControls(props: ViewportControlsProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (jointDrag.current) {
-        event.preventDefault()
-        endJoint(false)
-      }
+      if (!jointDrag.current && !sectionDrag.current) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (jointDrag.current) endJoint(false)
       if (sectionDrag.current) {
         const start = sectionDrag.current.start
         sectionDrag.current = null
@@ -433,8 +447,8 @@ export function ViewportControls(props: ViewportControlsProps) {
         onSectionPlanesChange(latest.current.sectionPlanes.map((plane) => (plane.id === start.id ? start : plane)))
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [endJoint, onSectionPlanesChange])
 
   // -- section plane drags -------------------------------------------------
@@ -851,6 +865,18 @@ export function ViewportControls(props: ViewportControlsProps) {
         active.updateProjectionMatrix()
         active.updateMatrixWorld(true)
         return true
+      },
+      cameraPose: () => {
+        const active = latest.current.camera
+        const orbit = controls as { target?: THREE.Vector3 } | null
+        const aim = orbit?.target ?? new THREE.Vector3()
+        const offset = active.position.clone().sub(aim)
+        const spherical = new THREE.Spherical().setFromVector3(offset)
+        return {
+          yawDeg: THREE.MathUtils.radToDeg(spherical.theta),
+          pitchDeg: 90 - THREE.MathUtils.radToDeg(spherical.phi),
+          distance: spherical.radius,
+        }
       },
 
       setVisibility: async (patch: VisibilityPatch) => {

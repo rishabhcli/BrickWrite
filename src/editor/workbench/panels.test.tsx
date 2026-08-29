@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
-import { createShowcaseDocument } from '../../cad/sample'
+import { IDENTITY_BASIS } from '../../cad/math'
+import { createEmptyDocument, createShowcaseDocument } from '../../cad/sample'
 import { CommandPalette } from './CommandPalette'
 import { PalettePanel } from './PalettePanel'
 import { SelectionPanel } from './SelectionPanel'
@@ -240,6 +241,45 @@ describe('transform controls', () => {
     ids.forEach((id, index) => {
       expect(cadEngine.getDocument().parts[id].transform.position[0]).toBeCloseTo(positions[index] + 20, 4)
     })
+  })
+
+  it('nudges a keyboard multi-selection as one transaction', () => {
+    let api: Workbench | null = null
+    render(<Harness>{(w) => { api = w; return null }}</Harness>)
+    const ids = showcasePartIds().slice(0, 3)
+    select(ids)
+    const before = revision()
+    const positions = ids.map((id) => cadEngine.getDocument().parts[id].transform.position[0])
+    act(() => { api!.nudgeSelection(20, 0) })
+    expect(revision()).toBe(before + 1)
+    ids.forEach((id, index) => {
+      expect(cadEngine.getDocument().parts[id].transform.position[0]).toBeCloseTo(positions[index] + 20, 4)
+    })
+  })
+
+  it('quarter-turns a clutched stack as one rigid transaction', () => {
+    cadEngine.replaceDocument(createEmptyDocument())
+    const brick = (id: string, position: [number, number, number]) => ({
+      id,
+      definitionId: '3001',
+      color: 72,
+      transform: { position, basis: IDENTITY_BASIS },
+      subassemblyId: 'hull',
+      stepId: 'step_1',
+      provenance: 'human' as const,
+      protected: false,
+    })
+    cadEngine.execute('Foundation', [{ type: 'part.add', part: brick('a', [0, 0, 0]) }], 'human', 0)
+    cadEngine.execute('Stack', [{ type: 'part.add', part: brick('b', [0, -24, 0]) }], 'human', 1)
+    let api: Workbench | null = null
+    render(<Harness>{(w) => { api = w; return null }}</Harness>)
+    select(['a', 'b'])
+    const before = revision()
+    const dy = cadEngine.getDocument().parts.b.transform.position[1] - cadEngine.getDocument().parts.a.transform.position[1]
+    act(() => { api!.rotateSelection(90) })
+    expect(revision()).toBe(before + 1)
+    const after = cadEngine.getDocument().parts
+    expect(after.b.transform.position[1] - after.a.transform.position[1]).toBeCloseTo(dy, 4)
   })
 
   it('needs two parts to align and three to distribute', () => {

@@ -106,7 +106,7 @@ export const heartbeat = mutation({
 export const list = query({
   args: { projectId: v.string() },
   handler: async (ctx, args): Promise<CloudResult<CloudPresenceRecord[]>> => {
-    const authorised = await authoriseProject(ctx, args.projectId, 'project.read')
+    const authorised = await authoriseProject(ctx, args.projectId, 'presence.publish')
     if (!authorised.ok) return authorised
     // Bounded by the expiry rather than filtered afterwards, so a project that
     // has accumulated stale rows still answers in constant work.
@@ -115,7 +115,7 @@ export const list = query({
       .withIndex('by_project_expiry', (q) =>
         q.eq('projectId', authorised.value.project._id).gt('expiresAt', Date.now()),
       )
-      .collect()
+      .take(64)
     return { ok: true, value: rows.map(presenceRecord) }
   },
 })

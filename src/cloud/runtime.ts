@@ -220,7 +220,7 @@ export class CloudRuntime {
         this.publish({ online: true })
         // A reconnect is new information, so the queue stops sitting out its
         // backoff window. `reconnected()` republishes through the subscription.
-        void this.handle?.reconnected()
+        void this.recoverAfterSignal('reconnect')
       }
       const goOffline = () => this.publish({ online: false })
       window.addEventListener('online', goOnline)
@@ -269,6 +269,25 @@ export class CloudRuntime {
       this.cloud.setIdentity(this.options.tokenSourceFor(identity))
     }
     this.publish({})
+    if (identity.status === 'signed-in') void this.recoverAfterSignal('identity')
+  }
+
+  /**
+   * A reconnect or fresh identity is new information for a parked head. Once it
+   * clears, re-derive any tail that could not enter a full queue. Backfill is
+   * deliberately skipped while a head remains parked: adding behind a blocker
+   * cannot repair it and only consumes queue capacity.
+   */
+  private async recoverAfterSignal(signal: 'reconnect' | 'identity'): Promise<void> {
+    if (!this.handle) return
+    const state =
+      signal === 'reconnect' ? await this.handle.reconnected() : await this.handle.retryHead()
+    if (state.status !== 'idle') return
+    for (const link of await this.links.all()) {
+      const result = await this.handle.store.backfill(link.localProjectId)
+      if (!result.ok) return
+    }
+    await this.handle.outbox.drain()
   }
 
   /** Every project this browser holds, tagged with its cloud replica. */

@@ -4,8 +4,9 @@ import { useHexclaveApp } from '@hexclave/react'
 import type { RouteId } from '../contracts'
 import { PLATFORM_PATHS } from '../config'
 import { usePlatformAnalytics } from '../analytics'
-import { MisconfiguredState, StatePanel } from '../states'
-import { accountLabel, markDeliberateSignOut, useAccountAvailability, useAccountSession } from './account'
+import { LoadingState, MisconfiguredState, StatePanel } from '../states'
+import { accountLabel, markDeliberateSignOut, useAccountAvailability } from './account'
+import { useAccountSession } from './accountSession'
 
 /**
  * `requiresAuth`, made into UI.
@@ -215,6 +216,9 @@ function SessionGate({ route, children }: { route: RouteId; children: ReactNode 
 /** Wrap a surface whose route declares `requiresAuth`. */
 export function RouteAuthGuard({ route, children }: { route: RouteId; children: ReactNode }) {
   const availability = useAccountAvailability()
+  if (availability.status === 'pending') {
+    return <LoadingState headline="Checking your account" />
+  }
   if (availability.status === 'unavailable') {
     return <MisconfiguredState reason={availability.reason} checked={availability.checked} />
   }

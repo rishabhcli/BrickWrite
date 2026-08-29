@@ -78,4 +78,22 @@ describe('production API proxy', () => {
     expect(refused.status).toBe(429)
     expect(refused.headers.get('retry-after')).toMatch(/^\d+$/)
   })
+
+  it('refuses paid traffic when the limiter row is unreadable', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const kv = new MemoryRateLimit()
+    kv.values.set('poison', 'not-a-number')
+    kv.get = async () => 'not-a-number'
+    const refused = await onRequest({
+      request: new Request('https://brickwrite.tech/api/brief', {
+        method: 'POST', headers: { authorization: 'Bearer same-user' }, body: '{}',
+      }),
+      env: {
+        BRICKWRIGHT_API_ORIGIN: 'https://brickwrite-api.vercel.app',
+        BRICKWRIGHT_PROXY_SECRET: 'proxy-proof',
+        RATE_LIMIT_KV: kv,
+      },
+    })
+    expect(refused.status).toBe(429)
+  })
 })

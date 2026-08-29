@@ -197,6 +197,7 @@ export {
 // docs/integration/cloud-projects.md.
 
 export {
+  CloudMembersPanelContribution,
   CloudProjectsContribution,
   CloudProjectsPanelContribution,
   CloudSyncStatusContribution,

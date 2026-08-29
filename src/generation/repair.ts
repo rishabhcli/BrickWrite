@@ -184,6 +184,8 @@ export interface RegionRepairInput {
   readonly alternateFamilies: readonly BrickFamily[]
   /** Whole-stud shifts of the region's own origin, nearest first. */
   readonly offsetSteps?: readonly (readonly [number, number])[]
+  /** Extra whole-stud slides from remaining free host connectors. */
+  readonly extraOffsetSteps?: readonly (readonly [number, number])[]
 }
 
 /** Whole-stud shifts tried when a region will not fit where it was asked for. */
@@ -241,7 +243,15 @@ export function enumerateRegionAttempts(input: RegionRepairInput): RegionAttempt
   }
 
   const base = input.region.offsetStuds ?? [0, 0]
-  for (const step of input.offsetSteps ?? DEFAULT_OFFSET_STEPS) {
+  const seen = new Set<string>()
+  const mark = (step: readonly [number, number]) => {
+    const key = `${step[0]},${step[1]}`
+    if (seen.has(key) || (step[0] === 0 && step[1] === 0)) return false
+    seen.add(key)
+    return true
+  }
+  for (const step of [...(input.offsetSteps ?? DEFAULT_OFFSET_STEPS), ...(input.extraOffsetSteps ?? [])]) {
+    if (!mark(step)) continue
     push({
       kind: 'lattice-offset',
       description: `shifted ${step[0]} × ${step[1]} studs on the lattice`,

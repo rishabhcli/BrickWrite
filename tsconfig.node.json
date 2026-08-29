@@ -26,7 +26,6 @@
     "api",
     "tools",
     "server",
-    "src",
     "convex/model/capabilities.ts",
     "convex/model/checksum.ts",
     "convex/model/limits.ts",

@@ -135,7 +135,7 @@ export function computeDerived(request: DerivedRequest): DerivedResponse {
  */
 export class DerivedRunner {
   private worker: Worker | null = null
-  private pending = new Map<number, (response: DerivedResponse) => void>()
+  private pending = new Map<number, { request: DerivedRequest; resolve: (response: DerivedResponse) => void }>()
   private nextId = 1
   private failed = false
 
@@ -159,17 +159,17 @@ export class DerivedRunner {
       // viewport bundle.
       const worker = new Worker(new URL('./derivedWorker.ts', import.meta.url), { type: 'module' })
       worker.onmessage = (event: MessageEvent<DerivedResponse>) => {
-        const resolve = this.pending.get(event.data.id)
-        if (!resolve) return
+        const pending = this.pending.get(event.data.id)
+        if (!pending) return
         this.pending.delete(event.data.id)
-        resolve(event.data)
+        pending.resolve(event.data)
       }
       worker.onerror = () => {
         // One failure is enough: a worker that cannot start will not start on
         // the next call either, and retrying per request would add a rejected
         // module fetch to every interaction.
         this.failed = true
-        for (const [, resolve] of this.pending) resolve
+        for (const { request, resolve } of this.pending.values()) resolve(computeDerived(request))
         this.pending.clear()
       }
       this.worker = worker
@@ -187,7 +187,7 @@ export class DerivedRunner {
     const worker = this.ensureWorker()
     if (!worker) return computeDerived(request)
     return new Promise<DerivedResponse>((resolve) => {
-      this.pending.set(id, resolve)
+      this.pending.set(id, { request, resolve })
       try {
         worker.postMessage(request)
       } catch {

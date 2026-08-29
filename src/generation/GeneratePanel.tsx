@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { Ban, Check, CircleAlert, Columns3, Eye, Play, Sparkles, Wand2, X } from 'lucide-react'
+import { Ban, Check, CircleAlert, Columns3, Eye, Play, Wand2, X } from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
+import { maskedContentProps } from '../platform/analytics'
 import { BriefEditor } from './BriefEditor'
 import { PHASES, type Candidate } from './phases'
 import {
@@ -58,6 +59,7 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
           placeholder="A 16 × 10 stud lighthouse in white and red, under 200 parts, with a lamp room that lifts off."
           disabled={state.briefPhase === 'compiling' || state.runPhase === 'running'}
           onChange={(event) => session.setPrompt(event.target.value)}
+          {...maskedContentProps('design-prompt')}
         />
       </label>
       <div className="bw-gen__actions">

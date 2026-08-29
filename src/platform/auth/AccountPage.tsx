@@ -1,6 +1,7 @@
 import { AccountSettings } from '@hexclave/react'
 import { MisconfiguredState } from '../states'
-import { useAccountAvailability, useAccountSession } from './account'
+import { useAccountAvailability } from './account'
+import { useAccountSession } from './accountSession'
 import { AuthRequiredState, RestrictedState, SessionExpiredState, useReturnTo } from './guards'
 
 /**

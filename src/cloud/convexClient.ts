@@ -153,7 +153,7 @@ function compact<T extends Record<string, unknown>>(args: T): T {
   return result as T
 }
 
-const transportFailure = (cause: unknown): CloudErrorShape => {
+export const classifyTransportFailure = (cause: unknown): CloudErrorShape => {
   const message = cause instanceof Error ? cause.message : String(cause)
   // Convex's client surfaces connectivity problems as thrown errors. The outbox
   // branches on the code, so an offline failure has to arrive as `OFFLINE` and
@@ -191,7 +191,7 @@ export class ConvexCloudBackend implements CloudBackend {
     try {
       return await this.client.query(reference, compact(args))
     } catch (cause: unknown) {
-      return { ok: false, error: transportFailure(cause) }
+      return { ok: false, error: classifyTransportFailure(cause) }
     }
   }
 
@@ -202,7 +202,7 @@ export class ConvexCloudBackend implements CloudBackend {
     try {
       return await this.client.mutation(reference, compact(args))
     } catch (cause: unknown) {
-      return { ok: false, error: transportFailure(cause) }
+      return { ok: false, error: classifyTransportFailure(cause) }
     }
   }
 

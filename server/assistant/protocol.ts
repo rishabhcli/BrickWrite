@@ -78,6 +78,9 @@ export const GroundingSchema = z.object({
     components: z.number().int().min(0),
     boundsStuds: z.tuple([z.number(), z.number(), z.number()]).optional(),
   }),
+  nextAction: z.string().max(800).optional(),
+  nextTool: z.string().max(80).optional(),
+  nextArgs: z.record(z.string(), z.unknown()).optional(),
   /** Resolved reference chips the operator attached to this message. */
   references: z
     .array(

@@ -22,6 +22,7 @@ interface TimelineProps {
   onSelectIds: (ids: string[]) => void
   onSequence: () => void
   onPlayStep: (index: number | null) => void
+  onOpenNote?: (noteId: string | null) => void
 }
 
 const transactionIcon = (transaction: Transaction) => transaction.author === 'agent' ? <Sparkles size={13} /> : <Box size={13} />
@@ -35,10 +36,13 @@ const transactionIcon = (transaction: Transaction) => transaction.author === 'ag
  * which meant the build steps disappeared exactly when a builder started using
  * the tool.
  */
-export function TimelinePanel({ state, playbackStep, onAccept, onReject, onSelectIds, onSequence, onPlayStep }: TimelineProps) {
+export function TimelinePanel({ state, playbackStep, onAccept, onReject, onSelectIds, onSequence, onPlayStep, onOpenNote }: TimelineProps) {
   const [view, setView] = useState<'history' | 'steps'>('steps')
   const latestTransactions = state.transactions.slice(-8).reverse()
   const showing = state.proposals.length ? 'history' : view
+  const openNotes = state.document.notes.filter((note) => note.status === 'open')
+  const openNote = openNotes[0]
+  const openCount = openNotes.length
 
   return (
     <section className="timeline" aria-label="Build history and sequence">
@@ -135,10 +139,18 @@ export function TimelinePanel({ state, playbackStep, onAccept, onReject, onSelec
           </>
         )}
       </div>
-      <div className="timeline-note">
+      <button
+        type="button"
+        className="timeline-note"
+        disabled={!openNote}
+        onClick={() => onOpenNote?.(openNote?.id ?? null)}
+      >
         <MessageSquareText size={14} />
-        <div><span>OPEN NOTE</span><strong>{state.document.notes.find((note) => note.status === 'open')?.text ?? 'No unresolved builder notes'}</strong></div>
-      </div>
+        <div>
+          <span>OPEN NOTE{openCount > 1 ? ` · ${openCount}` : ''}</span>
+          <strong>{openNote?.text ?? 'No unresolved builder notes'}</strong>
+        </div>
+      </button>
     </section>
   )
 }

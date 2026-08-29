@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { LocalProjectStore, type MirroredProjectStore } from '../projectStore'
 import { SIGNED_OUT_IDENTITY } from '../runtime'
 import { CloudVersionHistory } from '../VersionHistory'
-import { part } from './harness'
+import type { AppendTransactionArgs } from '../protocol'
+import { transactionChecksum } from '../serialize'
+import { part, placements } from './harness'
 import {
   fakeWorkbenchApi,
   makeUiHarness,
@@ -313,5 +315,95 @@ describe('Version history — accessibility', () => {
       expect(screen.getByText(/This browser is offline/)).toBeInTheDocument(),
     )
     expect(screen.getByText(/whatever was read before the connection dropped/)).toBeInTheDocument()
+  })
+})
+
+describe('Version history — sync recovery', () => {
+  async function parkConflict(harness: UiHarness) {
+    const store = await claimOpenProject(harness)
+    const document = harness.engine.getSnapshot().document
+    const link = await harness.runtime.getSnapshot().links.get(OPEN)
+    if (!link) throw new Error('missing link')
+    const foreign = placements(document, ['other_part']).transactions[0]
+    const args: AppendTransactionArgs = {
+      projectId: link.cloudProjectId,
+      clientTransactionId: foreign.id,
+      baseRevision: foreign.baseRevision,
+      resultRevision: foreign.resultRevision,
+      transaction: foreign,
+      checksum: transactionChecksum(foreign),
+      schemaVersion: document.schemaVersion,
+      catalogVersion: document.catalogVersion,
+    }
+    const landed = await harness.backend.appendTransaction(args)
+    expect(landed.ok).toBe(true)
+    commit(harness, 'p1')
+    await act(async () => {
+      await harness.runtime.getSnapshot().handle!.flush()
+      await harness.runtime.getSnapshot().handle!.outbox.drain()
+    })
+    return store
+  }
+
+  it('resolves a conflict from the version history dialog', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    await parkConflict(harness)
+    await mount(harness)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /backfill/i })).toBeNull()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Reconcile' }))
+    })
+    await waitFor(() => expect(screen.getByText(/Divergence reconciled|Both histories preserved/)).toBeInTheDocument())
+    expect(harness.runtime.getSnapshot().handle!.outbox.pending.filter((entry) => entry.parked)).toHaveLength(0)
+  })
+
+  it('refuses to offer backfill while the head is still parked', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    await parkConflict(harness)
+    await mount(harness)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /backfill/i })).toBeNull()
+  })
+
+  it('re-drains after discardHead rather than reporting idle optimistically', async () => {
+    let calls = 0
+    const harness = makeUiHarness({
+      configured: true,
+      identity: SIGNED_IN,
+      wrapBackend: (backend) =>
+        overrideBackend(backend, {
+          appendTransaction: async (args) => {
+            calls += 1
+            if (calls === 1) {
+              return {
+                ok: false as const,
+                error: {
+                  code: 'PAYLOAD_TOO_LARGE' as const,
+                  message: 'That change is larger than the deployment accepts.',
+                  repair: 'Split the edit.',
+                },
+              }
+            }
+            return backend.appendTransaction(args)
+          },
+        }),
+    })
+    await claimOpenProject(harness)
+    await mount(harness)
+    commit(harness, 'p1')
+    commit(harness, 'p2')
+    await act(async () => {
+      await harness.runtime.getSnapshot().handle!.flush()
+      await harness.runtime.getSnapshot().handle!.outbox.drain()
+    })
+    expect(harness.runtime.getSnapshot().handle!.outbox.pending).toHaveLength(2)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Discard this queued change' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Discard this queued change' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard' }))
+    await waitFor(() => {
+      const remaining = harness.runtime.getSnapshot().handle!.outbox.pending[0]
+      expect(remaining?.attempts ?? 0).toBeGreaterThan(0)
+    })
   })
 })

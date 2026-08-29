@@ -192,7 +192,7 @@ export class AnthropicModelProvider implements ModelProvider {
           {
             model: this.model,
             max_tokens: request.maxTokens ?? 4096,
-            system: request.system,
+            system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' as const } }],
             messages,
             output_config: {
               effort: this.effort,

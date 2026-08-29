@@ -1,7 +1,10 @@
 import { Blocks, Boxes, Check, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { exportLDraw, downloadText } from '../../cad/ldraw'
 import { cadEngine } from '../../cad/engine'
+import type { SharedMutationId } from '../../cad/capabilities'
+import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
 import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
 import { markWelcomeSeen, WelcomeGuide, welcomeUnseen } from '../WelcomeGuide'
@@ -13,6 +16,7 @@ import {
   Slot,
   useOnlineStatus,
   type WorkbenchApi,
+  type WorkbenchNotice,
 } from './ExtensionRegistry'
 import { CommandPalette } from './CommandPalette'
 import { ConnectPanel } from './ConnectPanel'
@@ -43,7 +47,7 @@ import {
   type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
-import { applyChromeReveal, applyDockFocus, applyExclusiveDock, CHROME_SURFACE_TARGETS, publishChrome, setChromeRevealHandler } from '../../webmcp/chrome'
+import { applyChromeReveal, applyDockFocus, applyExclusiveDock, CHROME_SURFACE_TARGETS, publishChrome, revealChrome, setChromeRevealHandler } from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
   chordFromEvent,
@@ -76,6 +80,8 @@ export interface WorkbenchProps {
 
 export function Workbench({ contributions = [] }: WorkbenchProps) {
   const workbench = useWorkbench()
+  const location = useLocation()
+  const navigate = useNavigate()
   const online = useOnlineStatus()
   const registry = useMemo(() => createExtensionRegistry(), [])
   const viewport = useViewportSize()
@@ -143,6 +149,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   useEffect(() => () => publishChrome(null), [])
 
+  const notifyRef = useRef(workbench.notify)
+  notifyRef.current = workbench.notify
+
   useEffect(() => {
     setChromeRevealHandler((surface) => {
       const next = applyChromeReveal(layoutRef.current, surface)
@@ -158,14 +167,44 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         ...chromeViewRef.current,
       })
     })
+    const search = typeof window === 'undefined' ? location.search : window.location.search
+    const query = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+    const syncAddressBar = () => {
+      if (typeof window === 'undefined') return
+      const live = `${window.location.pathname}${window.location.search}${window.location.hash}`
+      const routed = `${location.pathname}${location.search}${location.hash}`
+      if (live !== routed) navigate(live, { replace: true })
+    }
+    const run = async () => {
+      if (query.get('doc') === 'blank' || query.get('project')) {
+        const sessionMod = await import('../../cad/session')
+        const result = await applyEditorQuery(sessionMod, typeof window === 'undefined' ? search : window.location.search)
+        if (result.applied !== 'none' && !result.ok) {
+          notifyRef.current({
+            kind: 'error',
+            title: result.applied === 'project' ? 'Project not opened' : 'Blank project not created',
+            detail: result.message,
+          })
+        }
+      }
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('intent') === 'describe') {
+        revealChrome('generation')
+        consumeSearchParams(['intent'])
+      }
+      syncAddressBar()
+    }
+    void run()
     return () => setChromeRevealHandler(null)
-  }, [updateLayout])
+  }, [location.hash, location.pathname, location.search, navigate, updateLayout])
 
   useEffect(() => {
     const section = pendingReveal.current
     if (!section) return
     pendingReveal.current = null
     document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: 'nearest' })
+    if (section === 'generation.panel') {
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.bw-gen textarea')?.focus())
+    }
   }, [layout])
 
   const focusSearch = useCallback(() => {
@@ -254,10 +293,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       }
 
       if (event.key === 'Escape') {
+        if (isTypingTarget(event.target)) return
+        const origin = event.target instanceof Element ? event.target : null
+        if (origin?.closest('[role=dialog][aria-modal=true], .export-panel, .project-panel, .bw-cloud-members')) {
+          return
+        }
         event.preventDefault()
         // Menus and dialogs own their own Escape lifecycle. Returning here
         // prevents closing an export panel from also rejecting a CAD proposal.
-        if (document.querySelector('.export-panel, .project-panel')) return
         if (workbench.placement) workbench.cancelPlacement()
         else if (workbench.tool === 'connect' && workbench.connect.stage !== 'source') {
           workbench.setConnect(
@@ -356,7 +399,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         {layout.left.collapsed ? (
           <CollapsedRail dock="left" label="Palette" onExpand={() => toggleDock('left')} />
         ) : (
-          <div className="dock dock-left" aria-label="Palette dock">
+          <div className="dock dock-left" role="region" aria-label="Palette dock">
             <div className="dock-head">
               <span className="eyebrow">LIBRARY</span>
               <DockCollapseButton dock="left" onCollapse={() => toggleDock('left')} />
@@ -405,9 +448,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         {layout.right.collapsed ? (
           <CollapsedRail dock="right" label="Inspector" onExpand={() => toggleDock('right')} />
         ) : (
-          <div className="dock dock-right" aria-label="Inspector dock">
+          <div className="dock dock-right" role="region" aria-label="Inspector dock">
             <div className="dock-head">
               <span className="eyebrow">INSPECT</span>
+              <nav className="dock-jump" aria-label="Jump to inspector section">
+                <button type="button" onClick={() => revealChrome('agent')}>Partner</button>
+                <button type="button" onClick={() => revealChrome('generation')}>Generate</button>
+                <button type="button" onClick={() => revealChrome('refinement')}>Refine</button>
+              </nav>
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
             </div>
             <div className="dock-scroll">
@@ -496,6 +544,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             onAccept={workbench.acceptProposal}
             onReject={workbench.rejectProposal}
             onSelectIds={(ids) => cadEngine.setSelection(ids)}
+            onOpenNote={(noteId) =>
+              workbench.setModal(noteId ? 'core:command-deck:respond_to_note' : 'core:command-deck:add_builder_note')
+            }
           />
         )}
 
@@ -510,11 +561,17 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         <CommandDeck
           open={deckOpen}
           state={state}
+          initialCapability={
+            modal?.startsWith('core:command-deck:')
+              ? (modal.slice('core:command-deck:'.length) as SharedMutationId)
+              : undefined
+          }
           onClose={() => workbench.setModal(null)}
           onRun={workbench.runSharedMutation}
         />
         <ShortcutGuide
           open={shortcutsOpen}
+          shortcuts={shortcuts}
           onClose={() => workbench.setModal(null)}
           onReplayWelcome={() => workbench.setModal('core:welcome')}
         />
@@ -565,18 +622,49 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
         {!online && !offlineDismissed && <OfflineState onDismiss={() => setOfflineDismissed(true)} />}
 
-        {workbench.toast && (
-          <div className={`toast ${workbench.toast.kind}`} role="status">
-            <span>
-              {workbench.toast.kind === 'success' ? <Check size={15} /> : workbench.toast.kind === 'error' ? <X size={15} /> : <CircleDot size={15} />}
-            </span>
-            <div><strong>{workbench.toast.title}</strong><p>{workbench.toast.detail}</p></div>
-            <button onClick={() => workbench.setToast(null)} aria-label="Dismiss"><X size={13} /></button>
-          </div>
-        )}
+        <ToastStatus toast={workbench.toast} onDismiss={() => workbench.setToast(null)} />
       </main>
     </ExtensionRegistryProvider>
   )
 }
 
 export { LAYOUT_PRESETS }
+
+/**
+ * A live region that exists before its message does, and a timeout that stops
+ * while somebody is reading or operating the notice.
+ */
+function ToastStatus({ toast, onDismiss }: { toast: WorkbenchNotice | null; onDismiss: () => void }) {
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    if (!toast || paused) return
+    const timeout = window.setTimeout(onDismiss, 3600)
+    return () => window.clearTimeout(timeout)
+  }, [onDismiss, paused, toast])
+
+  return (
+    <div
+      className="toast-region"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      onPointerEnter={() => setPaused(true)}
+      onPointerLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false)
+      }}
+    >
+      {toast && (
+        <div className={`toast ${toast.kind}`}>
+          <span>
+            {toast.kind === 'success' ? <Check size={15} /> : toast.kind === 'error' ? <X size={15} /> : <CircleDot size={15} />}
+          </span>
+          <div><strong>{toast.title}</strong><p>{toast.detail}</p></div>
+          <button onClick={onDismiss} aria-label="Dismiss"><X size={13} /></button>
+        </div>
+      )}
+    </div>
+  )
+}

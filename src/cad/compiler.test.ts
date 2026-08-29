@@ -14,7 +14,7 @@ describe('catalog compiler', () => {
   let out: string
   let manifest: CompiledCatalogManifest
   let parts: PartDefinition[]
-  let colors: Array<{ code: number; name: string; alpha: number }>
+  let colors: Array<{ code: number; name: string; alpha: number; bricklinkId?: number }>
 
   beforeAll(async () => {
     out = await mkdtemp(path.join(tmpdir(), 'brickwright-compile-'))
@@ -79,6 +79,12 @@ describe('catalog compiler', () => {
     expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
     expect(bytes.length).toBe(brick.thumbnail!.bytes)
     expect(manifest.counts.thumbnails).toBe(1)
+  })
+
+  it('attaches BrickLink ids from the checked-in tables', () => {
+    const brick = parts.find((part) => part.canonicalId === '3001')!
+    expect(brick.identity.bricklinkIds).toContain('3001')
+    expect(colors.find((color) => color.code === 0)?.bricklinkId).toBe(11)
   })
 
   it('publishes hashed files and measured coverage', () => {

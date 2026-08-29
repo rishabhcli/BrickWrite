@@ -1,6 +1,6 @@
 import { HexclaveClientApp } from '@hexclave/react'
 import { buildAnalyticsOptions } from '../platform/analytics'
-import { hexclaveUrlOptions } from '../platform/config'
+import { hexclaveUrlOptions } from './urls'
 
 /**
  * The Hexclave client app.

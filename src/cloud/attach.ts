@@ -44,6 +44,8 @@ export interface CloudSyncHandle {
   listProjects(): Promise<CloudResult<StoredProjectSummary[]>>
   /** Call when the browser reports the network is back. */
   reconnected(): Promise<SyncState>
+  /** Explicit retry after re-authentication or an out-of-band permission repair. */
+  retryHead(): Promise<SyncState>
   /**
    * Awaits every commit announced so far reaching the queue.
    *
@@ -89,10 +91,12 @@ export function attachCloudSync(options: AttachCloudSyncOptions): CloudSyncHandl
       .then(async () => {
         const link = await store.links.get(document.id)
         if (!link) return
-        await outbox.queueTransaction(link.cloudProjectId, document, transaction)
+        const queued = await outbox.queueTransaction(link.cloudProjectId, document, transaction)
+        if (!queued.ok) return
         const pending = (sinceCheckpoint.get(document.id) ?? 0) + 1
         if (pending >= interval) {
-          await outbox.queueCheckpoint(link.cloudProjectId, document)
+          const checkpoint = await outbox.queueCheckpoint(link.cloudProjectId, document)
+          if (!checkpoint.ok) return
           sinceCheckpoint.set(document.id, 0)
         } else {
           sinceCheckpoint.set(document.id, pending)
@@ -116,6 +120,7 @@ export function attachCloudSync(options: AttachCloudSyncOptions): CloudSyncHandl
     claim: (localProjectId, claimOptions) => store.claim(localProjectId, claimOptions),
     listProjects: () => store.listProjects(),
     reconnected: () => outbox.reconnected(),
+    retryHead: () => outbox.retryHead(),
     flush: () => queue,
     detach() {
       detachCommit()

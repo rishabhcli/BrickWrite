@@ -15,6 +15,10 @@ const RefinePanelContribution = lazy(() =>
   import('./refinement').then((module) => ({ default: module.RefinePanelContribution })),
 )
 
+const CloudProjectsContribution = lazy(() =>
+  import('./cloud').then((module) => ({ default: module.CloudProjectsContribution })),
+)
+
 /**
  * Composition root.
  *
@@ -28,7 +32,12 @@ const RefinePanelContribution = lazy(() =>
  * calls `useRegisterContribution`, and listing it below. Nothing else in this
  * file changes when the editor grows a panel.
  */
-const CONTRIBUTIONS = [AgentWorkbenchContribution, GeneratePanelContribution, RefinePanelContribution]
+const CONTRIBUTIONS = [
+  AgentWorkbenchContribution,
+  GeneratePanelContribution,
+  RefinePanelContribution,
+  CloudProjectsContribution,
+]
 
 export default function App() {
   return <Workbench contributions={CONTRIBUTIONS} />

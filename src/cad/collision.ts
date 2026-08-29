@@ -367,16 +367,25 @@ const INSERTED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamil
   'generic',
 ])
 
+function pairClearance(pair: MatedPair): number {
+  const inserted = INSERTED_FAMILIES.has(pair.a.family) || INSERTED_FAMILIES.has(pair.b.family)
+  const fallback = inserted ? INSERTED_CLEARANCE_LDU : STUD_CLEARANCE_LDU
+  const measured = [pair.a.feature.axial, pair.b.feature.axial].filter(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0,
+  )
+  if (!measured.length) return fallback
+  // Mutual insertion is limited by the shorter engagement. Never thinner than
+  // a stud, so a declared axial of 1 LDU cannot hide a real intersection.
+  return Math.max(STUD_CLEARANCE_LDU, Math.min(...measured))
+}
+
 /**
  * Overlap depth a pair's mated connectors legitimately explain, or null when the
  * pair has no connection and therefore no allowance at all.
  */
 function matingAllowance(mated: readonly MatedPair[]): number | null {
   if (!mated.length) return null
-  const inserted = mated.some(
-    (pair) => INSERTED_FAMILIES.has(pair.a.family) || INSERTED_FAMILIES.has(pair.b.family),
-  )
-  return inserted ? INSERTED_CLEARANCE_LDU : STUD_CLEARANCE_LDU
+  return Math.max(...mated.map(pairClearance))
 }
 
 /**

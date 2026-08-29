@@ -11,19 +11,15 @@ import {
   type ReactNode,
 } from 'react'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
-import { HexclaveProvider, HexclaveTheme } from '@hexclave/react'
-import { getHexclaveClientApp } from '../hexclave/client'
 import type { RouteModule } from './contracts'
 import { BootCancelledError, bootForRoute, resetBoot, type BootStage } from './boot'
 import { BootStageProvider } from './boot-context'
 import { PLATFORM_ROUTES, isRouteRegistered, registerRoute, routeById, routeHasAppFrame } from './routes'
-import { resolvePlatformConfig } from './config'
 import { trackPlatformEvent, usePlatformAnalytics } from './analytics'
 import { BootFailureState, LoadingState, ShellErrorState, StatePanel } from './states'
+import { createNotInstalledSurface } from './not-installed'
 import { FramedLayout } from './AppFrame'
-import { AccountAvailabilityProvider, type AccountAvailability } from './auth/account'
-import { AuthRoutes } from './auth/AuthRoutes'
-import { RouteAuthGuard } from './auth/guards'
+import { AccountAvailabilityProvider } from './auth/account'
 import './platform.css'
 
 /**
@@ -58,6 +54,9 @@ export function installPlatformSurfaces(): void {
 }
 
 installPlatformSurfaces()
+
+const AuthRoutes = lazy(() => import('./auth/AuthRoutes').then((mod) => ({ default: mod.AuthRoutes })))
+const RouteAuthGuard = lazy(() => import('./auth/guards').then((mod) => ({ default: mod.RouteAuthGuard })))
 
 /* --- Error boundary ------------------------------------------------------ */
 
@@ -113,42 +112,30 @@ class PlatformErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
 /* --- Account layer ------------------------------------------------------- */
 
 /**
- * Decide once whether there is an account layer, and say why when there is not.
+ * Mount Hexclave after first paint.
  *
- * The Hexclave client app is constructed from an injected project ID. When that
- * ID is absent the constructor throws — a supported situation, not a bug — so
- * the shell renders unwrapped and every account control switches to its
- * local-only state.
+ * A static import of the provider puts ~480 KB gzip on `/`. `import()` inside
+ * an effect is not in the landing modulepreload set; until it resolves the
+ * tree renders with `pending` availability so AccountMenu shows "Checking…"
+ * rather than flashing "Local only".
  */
-function accountAvailability(): AccountAvailability {
-  const app = getHexclaveClientApp()
-  if (app.status === 'ok') return { status: 'ready' }
-  const config = resolvePlatformConfig()
-  if (config.status === 'misconfigured') {
-    return { status: 'unavailable', reason: config.reason, checked: config.checked }
-  }
-  return {
-    status: 'unavailable',
-    reason: `Hexclave could not be initialised in this environment: ${app.error.message}`,
-    checked: [],
-  }
-}
+function AccountGate({ children }: { children: ReactNode }) {
+  const [Layer, setLayer] = useState<ComponentType<{ children: ReactNode }> | null>(null)
 
-function AccountLayer({ children }: { children: ReactNode }) {
-  const app = getHexclaveClientApp()
-  const availability = useMemo(accountAvailability, [])
+  useEffect(() => {
+    let cancelled = false
+    void import('./auth/HexclaveLayer').then((mod) => {
+      if (!cancelled) setLayer(() => mod.HexclaveLayer)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  if (app.status === 'error') {
-    return <AccountAvailabilityProvider availability={availability}>{children}</AccountAvailabilityProvider>
+  if (!Layer) {
+    return <AccountAvailabilityProvider availability={{ status: 'pending' }}>{children}</AccountAvailabilityProvider>
   }
-
-  return (
-    <AccountAvailabilityProvider availability={availability}>
-      <HexclaveProvider app={app.data}>
-        <HexclaveTheme>{children}</HexclaveTheme>
-      </HexclaveProvider>
-    </AccountAvailabilityProvider>
-  )
+  return <Layer>{children}</Layer>
 }
 
 /* --- Route host ---------------------------------------------------------- */
@@ -192,6 +179,17 @@ export function RouteHost({ route }: { route: RouteModule }) {
   }, [route.boot, route.id, track])
 
   useEffect(() => {
+    document.title = ROUTE_TITLES[route.id] ?? 'Brickwright'
+    if (route.id === 'editor') {
+      announcedRouteId = route.id
+      return
+    }
+    const moved = announcedRouteId !== null && announcedRouteId !== route.id
+    announcedRouteId = route.id
+    if (moved) document.getElementById('pf-main')?.focus()
+  }, [route.id])
+
+  useEffect(() => {
     if (route.boot === 'none') {
       setState({ kind: 'ready', stage: { level: 'none' } })
       return
@@ -217,7 +215,10 @@ export function RouteHost({ route }: { route: RouteModule }) {
 
   // A new lazy component per attempt, because React caches a rejected lazy
   // forever and "try again" has to mean it.
-  const Surface = useMemo<ComponentType>(() => lazy(() => route.load()), [attempt, route])
+  const Surface = useMemo<ComponentType>(() => {
+    if (!isRouteRegistered(route.id)) return createNotInstalledSurface(route.id)
+    return lazy(() => route.load())
+  }, [attempt, route])
 
   if (state.kind === 'booting') {
     const { headline, detail } = bootHeadline(route)
@@ -245,7 +246,13 @@ export function RouteHost({ route }: { route: RouteModule }) {
 
   return (
     <BootStageProvider stage={state.stage}>
-      {route.requiresAuth ? <RouteAuthGuard route={route.id}>{surface}</RouteAuthGuard> : surface}
+      {route.requiresAuth ? (
+        <Suspense fallback={<LoadingState headline="Checking your account" />}>
+          <RouteAuthGuard route={route.id}>{surface}</RouteAuthGuard>
+        </Suspense>
+      ) : (
+        surface
+      )}
     </BootStageProvider>
   )
 }
@@ -271,6 +278,23 @@ function UnknownRoute() {
 
 const EDITOR_ROUTE = routeById('editor')
 
+const ROUTE_TITLES: Record<string, string> = {
+  landing: 'Brickwright',
+  explore: 'Explore / Brickwright',
+  editor: 'Editor / Brickwright',
+  projects: 'Projects / Brickwright',
+  account: 'Account / Brickwright',
+  share: 'Share / Brickwright',
+  gallery: 'Gallery / Brickwright',
+}
+
+/** Last route whose title was announced. Skips focus on first paint and on AccountGate remounts. */
+let announcedRouteId: string | null = null
+
+export function resetRouteAnnouncement(): void {
+  announcedRouteId = null
+}
+
 /**
  * Two layout groups, deliberately.
  *
@@ -285,7 +309,14 @@ export function ShellRoutes() {
         {PLATFORM_ROUTES.filter((route) => routeHasAppFrame(route.id)).map((route) => (
           <Route key={route.id} path={route.path} element={<RouteHost route={route} />} />
         ))}
-        <Route path="/auth/*" element={<AuthRoutes />} />
+        <Route
+          path="/auth/*"
+          element={
+            <Suspense fallback={<LoadingState headline="Loading sign-in" />}>
+              <AuthRoutes />
+            </Suspense>
+          }
+        />
         <Route path="*" element={<UnknownRoute />} />
       </Route>
       <Route path={EDITOR_ROUTE.path} element={<RouteHost route={EDITOR_ROUTE} />} />
@@ -305,11 +336,11 @@ export function PlatformShell() {
 
   return (
     <PlatformErrorBoundary key={generation} onRecover={recover}>
-      <AccountLayer>
+      <AccountGate>
         <Suspense fallback={<LoadingState headline="Starting Brickwright" />}>
           <ShellRoutes />
         </Suspense>
-      </AccountLayer>
+      </AccountGate>
     </PlatformErrorBoundary>
   )
 }

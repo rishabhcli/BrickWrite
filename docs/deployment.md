@@ -10,6 +10,11 @@ collaboration database.
 | Vercel, project `brickwrite` | `api/[...route].ts` — the assistant and generation routes, which carry model keys | Vercel's own Git integration |
 | Convex, deployment `tangible-toucan-87` | `convex/**` — projects, versions, comments, presence | `npx convex deploy` |
 
+The Convex URL is baked into production builds and a signed-in Hexclave session
+has been verified against that deployment. A signed-in Convex **write** (claim,
+append, checkpoint) is still unrecorded in this repo — see
+`docs/integration/cloud-projects.md`.
+
 Hexclave (project `e997643f-407a-48f8-beb5-9ba042d28b00`) is the identity plane
 for all three.
 
@@ -162,3 +167,30 @@ curl -s  https://brickwrite.tech/assets/<entry>.js | grep -c convex.cloud   # en
 
 and one real sign-in, because it is the only thing that exercises the trusted
 domain list.
+
+## Distribution budgets
+
+`npm run build` ends with `tools/check-dist-budget.mjs`. It fails before deploy
+when `dist/` exceeds 100 MiB total, 16,000 files, or 20 MiB for one file. The
+file-count and single-file budgets deliberately retain headroom below
+Cloudflare Pages' current Free-plan limits of 20,000 files and 25 MiB per file;
+the total-size ceiling is Brickwright's own delivery/operability budget because
+Pages publishes no aggregate-byte limit. Override values only for a deliberate,
+reviewed migration using the `DIST_*` variables documented in `.env.example`.
+
+## Rollback
+
+1. Identify the last known-good Git tag and its exact commit. Never roll back
+   Convex data by deleting rows or redeploying an older schema blindly.
+2. In Cloudflare Pages, promote the previous successful `main` deployment (or
+   redeploy the known-good tag) so static bytes and Pages Functions move
+   together. Verify `/`, `/editor`, `/api/health`, and response headers.
+3. In Vercel, promote the matching previous production deployment for the Node
+   API. The Pages proxy and Vercel origin must continue to share the same
+   `BRICKWRIGHT_PROXY_SECRET`.
+4. Convex code may be redeployed from the known-good tag only when its schema is
+   backward-compatible with current stored data. For a data/schema incident,
+   stop writes first, export a backup, and apply a forward repair migration.
+5. Record the incident and deployed commit in `CHANGELOG.md`, then run the
+   post-deploy verification above. A UI rollback is not complete while API or
+   data-plane versions remain incompatible.

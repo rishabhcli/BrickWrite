@@ -4,9 +4,9 @@ import {
   PLATFORM_URL_DESTINATIONS,
   PROJECT_ID_ENV_VARS,
   ambientEnvironment,
-  hexclaveUrlOptions,
   resolvePlatformConfig,
 } from './config'
+import { hexclaveUrlOptions } from '../hexclave/urls'
 
 describe('platform configuration', () => {
   it('reports "misconfigured" honestly when no project id is present anywhere', () => {

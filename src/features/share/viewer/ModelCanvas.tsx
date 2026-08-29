@@ -144,8 +144,14 @@ export function ModelCanvas({
         ArrowDown: { type: 'orbit', deltaYaw: 0, deltaPitch: -step },
         '+': { type: 'zoom', delta: 0.12 },
         '=': { type: 'zoom', delta: 0.12 },
+        Add: { type: 'zoom', delta: 0.12 },
+        PageUp: { type: 'zoom', delta: 0.12 },
         '-': { type: 'zoom', delta: -0.12 },
+        _: { type: 'zoom', delta: -0.12 },
+        Subtract: { type: 'zoom', delta: -0.12 },
+        PageDown: { type: 'zoom', delta: -0.12 },
         '0': { type: 'reset' },
+        Home: { type: 'reset' },
       }
       const action = actions[event.key]
       if (!action) return
@@ -177,7 +183,7 @@ export function ModelCanvas({
         onKeyDown={onKeyDown}
       />
       <p className="bw-share-canvas-hint">
-        Drag or use the arrow keys to orbit · scroll or +/− to zoom · 0 to reset
+        Drag or use the arrow keys to orbit · scroll, Page Up/Down, or +/− to zoom · 0 or Home to reset
         {renderMs === null ? '' : ` · ${renderMs.toFixed(0)} ms/frame`}
       </p>
     </div>

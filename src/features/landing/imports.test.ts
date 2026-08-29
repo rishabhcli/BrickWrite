@@ -18,8 +18,6 @@ import { describe, expect, it } from 'vitest'
  */
 
 const ROOT = path.resolve(__dirname, '..', '..', '..')
-const SRC = path.join(ROOT, 'src')
-
 /** Modules a pre-catalog surface may not pull into its first chunk. */
 const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /^three($|\/)/, why: 'the Three.js renderer' },

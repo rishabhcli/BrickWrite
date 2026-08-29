@@ -47,7 +47,8 @@ const brickFamily = z.enum(['brick', 'plate', 'tile'])
 /** Shared by the four parametric generators. */
 const generatorBase = {
   color: colorCode.optional(),
-  originLdu: vec3.optional().describe('Lower corner. Defaults to the top of the current selection.'),
+  originLdu: vec3.optional().describe('Lower corner. Defaults to the stud plane of the current selection. Prefer anchorPartId.'),
+  anchorPartId: partId.optional().describe('Existing part id whose studs receive the assembly. Copy from scene_query instead of inventing XYZ.'),
 }
 
 const CAPABILITY_SCHEMAS = {
@@ -63,12 +64,21 @@ const CAPABILITY_SCHEMAS = {
   compute_build_order: z.strictObject({ maxPartsPerStep: z.number().int().min(1).max(100).optional() }),
 
   // ---- transforms -----------------------------------------------------
-  duplicate_selection: z.strictObject({ partIds: partIds.optional(), offsetLdu: vec3.optional() }),
-  mirror_selection: z.strictObject({ partIds: partIds.optional(), axisLdu: z.number().finite().optional() }),
+  duplicate_selection: z.strictObject({
+    partIds: partIds.optional(),
+    offsetLdu: vec3.optional(),
+    along: z.enum(['x', 'z', 'on-top']).optional().describe('Measured copy direction. Prefer this over inventing offsetLdu.'),
+  }),
+  mirror_selection: z.strictObject({
+    partIds: partIds.optional(),
+    axisLdu: z.number().finite().optional(),
+    about: z.enum(['world', 'selection']).optional().describe('world is x=axisLdu (default 0). selection is the measured centre X.'),
+  }),
   linear_array: z.strictObject({
     partIds: partIds.optional(),
     copies: z.number().int().min(1).max(24),
-    offsetLdu: vec3,
+    offsetLdu: vec3.optional().describe('Copy pitch in LDU. Omit this and pass along instead of inventing XYZ.'),
+    along: z.enum(['x', 'z', 'on-top']).optional(),
   }),
 
   // ---- parametric assemblies -----------------------------------------
@@ -113,6 +123,7 @@ const CAPABILITY_SCHEMAS = {
     glassColor: colorCode.optional(),
     deckLayers: z.number().int().min(1).max(2).optional(),
     originLdu: vec3.optional(),
+    anchorPartId: partId.optional().describe('Existing part id whose studs receive the building. Copy from scene_query.'),
   }),
   build_hinged_flap: z.strictObject({
     ...generatorBase,
@@ -124,7 +135,8 @@ const CAPABILITY_SCHEMAS = {
   capture_module: z.strictObject({ name: z.string().trim().min(1).max(80), partIds: partIds.optional() }),
   stamp_module: z.strictObject({
     module: z.string().trim().min(1).max(120).describe('Captured module id or name.'),
-    atLdu: vec3,
+    atLdu: vec3.optional().describe('Stamp corner in LDU. Omit this and pass anchorPartId instead of inventing XYZ.'),
+    anchorPartId: partId.optional().describe('Existing part id whose top receives the stamp. Copy from scene_query.'),
     quarterTurns: z.number().int().min(-64).max(64).optional(),
     copies: z.number().int().min(1).max(64).optional(),
     spacingLdu: vec3.optional(),

@@ -39,6 +39,7 @@ interface CommandDeckProps {
   state: EngineSnapshot
   onClose: () => void
   onRun: (capability: SharedMutationId, args?: Record<string, unknown>) => boolean
+  initialCapability?: SharedMutationId
 }
 
 const GROUP_ORDER = ['assemble', 'project', 'transform', 'mechanism', 'structure', 'constraints', 'collaborate', 'sequence'] as const
@@ -94,7 +95,7 @@ function jointCanSlide(joint: JointFreedom | undefined) {
  * It intentionally looks like an operator console, not an AI chat box: every
  * control is deterministic, unit-labelled and commits through CadEngine.
  */
-export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
+export function CommandDeck({ open, state, onClose, onRun, initialCapability }: CommandDeckProps) {
   const deck = useRef<HTMLElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
@@ -181,6 +182,7 @@ export function CommandDeck({ open, state, onClose, onRun }: CommandDeckProps) {
     const selectedPart = state.document.parts[selected[0] ?? '']
     setSubassemblyId(selectedPart?.subassemblyId ?? subassemblies[0]?.id ?? '')
     setNoteId(openNotes[0]?.id ?? '')
+    if (initialCapability) setActive(initialCapability)
     setJointId(joints[0]?.edgeId ?? '')
     const dimensions = state.document.constraints.find((constraint) => constraint.kind === 'dimensions')
     const envelope = dimensions?.value as { width?: number; depth?: number; height?: number } | undefined
