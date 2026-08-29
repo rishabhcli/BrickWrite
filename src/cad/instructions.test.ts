@@ -6,7 +6,12 @@ import { createEmptyDocument, createShowcaseDocument } from './sample'
 import { deriveConnectionEdges } from './snapping'
 import type { ModelDocument, PartInstance } from './types'
 
-const part = (id: string, definitionId: string, position: [number, number, number], subassemblyId = 'hull'): PartInstance => ({
+const part = (
+  id: string,
+  definitionId: string,
+  position: [number, number, number],
+  subassemblyId = 'hull',
+): PartInstance => ({
   id,
   definitionId,
   color: 71,
@@ -129,6 +134,54 @@ describe('build order', () => {
     const b = computeBuildOrder(document)
     expect(a.steps.map((step) => step.partIds.join(','))).toEqual(b.steps.map((step) => step.partIds.join(',')))
   })
+
+  it('sequences a five-digit-piece model without quadratic rescans', () => {
+    const count = 12_000
+    const base = createEmptyDocument()
+    const parts = Array.from({ length: count }, (_, index) =>
+      part(`scale_${String(index).padStart(5, '0')}`, '3024', [0, -index * 8, 0]),
+    )
+    const document: ModelDocument = {
+      ...base,
+      parts: Object.fromEntries(parts.map((item) => [item.id, item])),
+      connections: Object.fromEntries(
+        parts.slice(1).map((item, index) => {
+          const below = parts[index]
+          const id = `scale_edge_${String(index).padStart(5, '0')}`
+          return [
+            id,
+            {
+              id,
+              a: { partId: below.id, featureId: 'top' },
+              b: { partId: item.id, featureId: 'bottom' },
+              family: 'stud' as const,
+              joint: { kind: 'fixed' as const },
+              createdAtRevision: 1,
+              source: 'import-inferred' as const,
+            },
+          ]
+        }),
+      ),
+      subassemblies: {
+        ...base.subassemblies,
+        hull: { ...base.subassemblies.hull, partIds: parts.map((item) => item.id) },
+      },
+    }
+
+    const started = performance.now()
+    const result = computeBuildOrder(document, { maxPartsPerStep: 64 })
+    const elapsed = performance.now() - started
+    const assigned = result.steps.flatMap((step) => step.partIds)
+
+    expect(assigned).toHaveLength(count)
+    expect(new Set(assigned).size).toBe(count)
+    expect(result.unsupportedPartIds).toEqual([])
+    expect(verifyBuildOrder(document, result.steps).valid).toBe(true)
+    // The former remaining.filter/sort loop takes quadratic time at this size.
+    // This budget is intentionally generous for shared CI runners while still
+    // separating a frontier queue from fifty-million-plus repeated scans.
+    expect(elapsed).toBeLessThan(4_000)
+  }, 10_000)
 
   it('catches a hand-reordered sequence that breaks reachability', () => {
     const tower = withParts([

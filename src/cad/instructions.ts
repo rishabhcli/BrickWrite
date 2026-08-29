@@ -73,46 +73,80 @@ export function computeBuildOrder(document: ModelDocument, options: BuildOrderOp
   const ordered: Array<{ partId: string; subassemblyId: string; startsIsland: boolean }> = []
 
   /** Lowest, then most-connected, then id — fully deterministic. */
-  const pick = (candidates: string[], preferredSubassembly?: string): string => {
-    return candidates.sort((a, b) => {
-      if (groupBySubassembly && preferredSubassembly) {
-        const aPreferred = document.parts[a].subassemblyId === preferredSubassembly ? 0 : 1
-        const bPreferred = document.parts[b].subassemblyId === preferredSubassembly ? 0 : 1
-        if (aPreferred !== bPreferred) return aPreferred - bPreferred
-      }
-      const heightDelta = (bottomOf.get(b) ?? 0) - (bottomOf.get(a) ?? 0)
-      if (Math.abs(heightDelta) > 1e-6) return heightDelta
-      const degreeDelta = (neighbours.get(b)?.size ?? 0) - (neighbours.get(a)?.size ?? 0)
-      if (degreeDelta !== 0) return degreeDelta
-      return a.localeCompare(b)
-    })[0]
+  const compare = (a: string, b: string): number => {
+    const heightDelta = (bottomOf.get(b) ?? 0) - (bottomOf.get(a) ?? 0)
+    if (Math.abs(heightDelta) > 1e-6) return heightDelta
+    const degreeDelta = (neighbours.get(b)?.size ?? 0) - (neighbours.get(a)?.size ?? 0)
+    if (degreeDelta !== 0) return degreeDelta
+    return a.localeCompare(b)
+  }
+
+  /*
+   * Four lazy priority indexes replace the old repeated `remaining.filter`
+   * and `candidates.sort` loop. That loop was pleasantly small, but O(n^2): a
+   * ten-thousand-piece model inspected roughly fifty million remaining entries
+   * before it had even grouped a build step. The queues below preserve the
+   * exact ordering contract while making frontier growth O((n + e) log n).
+   *
+   * "Lazy" means removal only changes the authoritative Set. A stale heap head
+   * is discarded when read, avoiding an indexed-heap bookkeeping layer and
+   * keeping the implementation deterministic and easy to audit.
+   */
+  const remainingAll = new MinHeap(compare, remaining)
+  const remainingBySubassembly = heapsBySubassembly(Object.keys(document.parts), document, compare)
+  const frontier = new Set<string>()
+  const frontierAll = new MinHeap(compare)
+  const frontierBySubassembly = new Map<string, MinHeap>()
+
+  const addToFrontier = (id: string) => {
+    if (!remaining.has(id) || frontier.has(id)) return
+    frontier.add(id)
+    frontierAll.push(id)
+    const subassemblyId = document.parts[id].subassemblyId
+    let queue = frontierBySubassembly.get(subassemblyId)
+    if (!queue) {
+      queue = new MinHeap(compare)
+      frontierBySubassembly.set(subassemblyId, queue)
+    }
+    queue.push(id)
+  }
+
+  const take = (
+    all: MinHeap,
+    bySubassembly: Map<string, MinHeap>,
+    active: ReadonlySet<string>,
+    preferredSubassembly?: string,
+  ): string | undefined => {
+    const valid = (id: string) => remaining.has(id) && active.has(id)
+    if (groupBySubassembly && preferredSubassembly) {
+      const preferred = bySubassembly.get(preferredSubassembly)?.popValid(valid)
+      if (preferred !== undefined) return preferred
+    }
+    return all.popValid(valid)
   }
 
   let currentSubassembly: string | undefined
 
   while (remaining.size) {
-    const attachable = [...remaining].filter((id) =>
-      [...(neighbours.get(id) ?? [])].some((neighbour) => placed.has(neighbour)),
-    )
-
-    let next: string
+    let next = take(frontierAll, frontierBySubassembly, frontier, currentSubassembly)
     let startsIsland = false
-    if (attachable.length) {
-      next = pick(attachable, currentSubassembly)
-    } else {
+    if (next === undefined) {
       // Nothing touches what is already built, so this part begins a new
       // independent island. That is legitimate — a separately-built subassembly
       // does exactly this — but it is reported rather than passed off as
       // continuous construction.
-      next = pick([...remaining], currentSubassembly)
+      next = take(remainingAll, remainingBySubassembly, remaining, currentSubassembly)
+      if (next === undefined) break
       startsIsland = placed.size > 0
       if (startsIsland) unsupported.push(next)
     }
 
     remaining.delete(next)
+    frontier.delete(next)
     placed.add(next)
     currentSubassembly = document.parts[next].subassemblyId
     ordered.push({ partId: next, subassemblyId: currentSubassembly, startsIsland })
+    for (const neighbour of neighbours.get(next) ?? []) addToFrontier(neighbour)
   }
 
   if (unsupported.length) {
@@ -134,7 +168,79 @@ export function computeBuildOrder(document: ModelDocument, options: BuildOrderOp
     })
   }
 
-  return { steps: groupIntoSteps(ordered, maxPerStep, groupBySubassembly, document), warnings, unsupportedPartIds: unsupported }
+  return {
+    steps: groupIntoSteps(ordered, maxPerStep, groupBySubassembly, document),
+    warnings,
+    unsupportedPartIds: unsupported,
+  }
+}
+
+/** Small binary heap whose comparator follows `Array.sort` ordering. */
+class MinHeap {
+  private readonly values: string[] = []
+
+  constructor(
+    private readonly compare: (a: string, b: string) => number,
+    initial: Iterable<string> = [],
+  ) {
+    for (const value of initial) this.push(value)
+  }
+
+  push(value: string) {
+    this.values.push(value)
+    let index = this.values.length - 1
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2)
+      if (this.compare(this.values[parent], this.values[index]) <= 0) break
+      ;[this.values[parent], this.values[index]] = [this.values[index], this.values[parent]]
+      index = parent
+    }
+  }
+
+  popValid(valid: (value: string) => boolean): string | undefined {
+    let value = this.pop()
+    while (value !== undefined && !valid(value)) value = this.pop()
+    return value
+  }
+
+  private pop(): string | undefined {
+    if (!this.values.length) return undefined
+    const first = this.values[0]
+    const last = this.values.pop()!
+    if (this.values.length) {
+      this.values[0] = last
+      let index = 0
+      while (true) {
+        const left = index * 2 + 1
+        const right = left + 1
+        let smallest = index
+        if (left < this.values.length && this.compare(this.values[left], this.values[smallest]) < 0) smallest = left
+        if (right < this.values.length && this.compare(this.values[right], this.values[smallest]) < 0) smallest = right
+        if (smallest === index) break
+        ;[this.values[index], this.values[smallest]] = [this.values[smallest], this.values[index]]
+        index = smallest
+      }
+    }
+    return first
+  }
+}
+
+function heapsBySubassembly(
+  ids: readonly string[],
+  document: ModelDocument,
+  compare: (a: string, b: string) => number,
+): Map<string, MinHeap> {
+  const heaps = new Map<string, MinHeap>()
+  for (const id of ids) {
+    const subassemblyId = document.parts[id].subassemblyId
+    let heap = heaps.get(subassemblyId)
+    if (!heap) {
+      heap = new MinHeap(compare)
+      heaps.set(subassemblyId, heap)
+    }
+    heap.push(id)
+  }
+  return heaps
 }
 
 function groupIntoSteps(
@@ -150,13 +256,14 @@ function groupIntoSteps(
   const flush = () => {
     if (!bucket.length) return
     const index = steps.length + 1
-    const name = bucketSubassembly ? document.subassemblies[bucketSubassembly]?.name ?? bucketSubassembly : 'Assembly'
+    const name = bucketSubassembly ? (document.subassemblies[bucketSubassembly]?.name ?? bucketSubassembly) : 'Assembly'
     steps.push({ id: `step_${index}`, index, name: `${name} ${index}`, partIds: bucket })
     bucket = []
   }
 
   for (const entry of ordered) {
-    const subassemblyChanged = groupBySubassembly && bucketSubassembly !== undefined && entry.subassemblyId !== bucketSubassembly
+    const subassemblyChanged =
+      groupBySubassembly && bucketSubassembly !== undefined && entry.subassemblyId !== bucketSubassembly
     // A new island always starts a step: it is where the builder puts the
     // previous assembly down and picks up fresh parts.
     if (bucket.length >= maxPerStep || subassemblyChanged || entry.startsIsland) flush()
@@ -185,9 +292,7 @@ export function verifyBuildOrder(
   for (const step of [...steps].sort((a, b) => a.index - b.index)) {
     for (const partId of step.partIds) {
       const attaches = [...(neighbours.get(partId) ?? [])].some((neighbour) => placed.has(neighbour))
-      const withinStep = step.partIds.some(
-        (sibling) => sibling !== partId && neighbours.get(partId)?.has(sibling),
-      )
+      const withinStep = step.partIds.some((sibling) => sibling !== partId && neighbours.get(partId)?.has(sibling))
       if (placed.size > 0 && !attaches && !withinStep) violations.push({ stepIndex: step.index, partId })
     }
     for (const partId of step.partIds) placed.add(partId)
