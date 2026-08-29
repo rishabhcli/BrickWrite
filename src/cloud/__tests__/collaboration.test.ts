@@ -22,7 +22,7 @@ const SLIDE = (partId: string, x: number): CadOperation => ({
 function twoPartBase(projectId = 'doc_collab') {
   return commitAll(blankProject(projectId, 'Collaboration fixture'), [
     [{ type: 'part.add', part: part('p1', [0, 0, 0]) }],
-    [{ type: 'part.add', part: part('p2', [100, 0, 0]) }],
+    [{ type: 'part.add', part: part('p2', [500, 0, 0]) }],
   ])
 }
 

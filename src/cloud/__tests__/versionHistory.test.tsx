@@ -35,7 +35,7 @@ const commit = (harness: UiHarness, id: string) => {
   const revision = harness.engine.getSnapshot().document.revision
   const result = harness.engine.execute(
     `Place ${id}`,
-    [{ type: 'part.add', part: part(id, [Number(id.replace(/\D/g, '')) * 40, 0, 0]) }],
+    [{ type: 'part.add', part: part(id, [Number(id.replace(/\D/g, '')) * 100, 0, 0]) }],
     'human',
     revision,
   )
