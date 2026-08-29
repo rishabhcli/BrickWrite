@@ -17,6 +17,7 @@ export type {
   DemoPreviewSubassembly,
   DemoProvenance,
   DemoRefinementDelta,
+  DemoShowcase,
   DemoStaticsSummary,
   DemoValidationSummary,
 } from './types'
@@ -46,7 +47,11 @@ export const heroDemo = (): DemoEntry => DEMOS.find((demo) => demo.hero) ?? DEMO
  * plain HTTP on some origins, so a missing digest implementation degrades to an
  * unverified read and says so rather than failing the page.
  */
-async function fetchVerified(url: string, sha256: string, signal?: AbortSignal): Promise<{ text: string; verified: boolean }> {
+async function fetchVerified(
+  url: string,
+  sha256: string,
+  signal?: AbortSignal,
+): Promise<{ text: string; verified: boolean }> {
   const response = await fetch(url, { signal, cache: 'force-cache' })
   if (!response.ok) throw new Error(`${url} → ${response.status} ${response.statusText}`)
   const buffer = await response.arrayBuffer()
@@ -55,7 +60,9 @@ async function fetchVerified(url: string, sha256: string, signal?: AbortSignal):
   const digest = await subtle.digest('SHA-256', buffer)
   const actual = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
   if (actual !== sha256) {
-    throw new Error(`${url} does not match the manifest digest (expected ${sha256.slice(0, 12)}…, got ${actual.slice(0, 12)}…).`)
+    throw new Error(
+      `${url} does not match the manifest digest (expected ${sha256.slice(0, 12)}…, got ${actual.slice(0, 12)}…).`,
+    )
   }
   return { text: new TextDecoder().decode(buffer), verified: true }
 }
@@ -95,7 +102,11 @@ function waitForPreview(load: Promise<DemoPreview>, signal?: AbortSignal): Promi
 }
 
 /** Envelope geometry for a demo, or for the candidate that preceded it. */
-export function loadPreview(demo: DemoEntry, variant: 'published' | 'rough' = 'published', signal?: AbortSignal): Promise<DemoPreview> {
+export function loadPreview(
+  demo: DemoEntry,
+  variant: 'published' | 'rough' = 'published',
+  signal?: AbortSignal,
+): Promise<DemoPreview> {
   const asset = variant === 'rough' ? demo.assets.roughPreview : demo.assets.preview
   const key = asset.url
   const existing = previewCache.get(key)
@@ -117,7 +128,11 @@ export function loadPreview(demo: DemoEntry, variant: 'published' | 'rough' = 'p
  * to a fork never pays to materialise a 140-part object graph, and so the
  * verified bytes and the thing that gets forked are the same bytes.
  */
-export function loadDocumentText(demo: DemoEntry, variant: 'published' | 'rough' = 'published', signal?: AbortSignal): Promise<string> {
+export function loadDocumentText(
+  demo: DemoEntry,
+  variant: 'published' | 'rough' = 'published',
+  signal?: AbortSignal,
+): Promise<string> {
   const asset = variant === 'rough' ? demo.assets.rough : demo.assets.document
   return fetchVerified(asset.url, asset.sha256, signal).then(({ text }) => text)
 }

@@ -47,11 +47,19 @@ beforeAll(() => {
 const publicPath = (url: string) => path.join('public', url.replace(/^\//, ''))
 
 describe('the shipped demo manifest', () => {
-  it('publishes at least six demos across the disciplines the collection claims', () => {
-    expect(DEMOS.length).toBeGreaterThanOrEqual(6)
+  it('publishes at least seven demos across the disciplines the collection claims', () => {
+    expect(DEMOS.length).toBeGreaterThanOrEqual(7)
     const disciplines = new Set(DEMOS.map((demo) => demo.discipline))
     expect(disciplines).toEqual(
-      new Set(['Architecture', 'Vehicle', 'Creature', 'Mechanism', 'Furniture', 'Advanced technique']),
+      new Set([
+        'Architecture',
+        'Campus architecture',
+        'Vehicle',
+        'Creature',
+        'Mechanism',
+        'Furniture',
+        'Advanced technique',
+      ]),
     )
   })
 
@@ -59,6 +67,20 @@ describe('the shipped demo manifest', () => {
     const heroes = DEMOS.filter((demo) => demo.hero)
     expect(heroes).toHaveLength(1)
     expect(heroes[0].brief?.prompt.length ?? 0).toBeGreaterThan(20)
+  })
+
+  it('makes the hero a five-digit-piece campus with independently counted characters and site work', () => {
+    const hero = DEMOS.find((demo) => demo.hero)!
+    const document = readJson<ModelDocument>(publicPath(hero.assets.document.url))
+    const showcase = hero.showcase
+
+    expect(hero.id).toBe('illinois-main-quad')
+    expect(hero.validation.partCount).toBeGreaterThanOrEqual(10_000)
+    expect(showcase).toEqual({ landmarkCount: 7, characterCount: 21, siteFinishParts: 9_600 })
+    expect(Object.values(document.parts).filter((part) => part.definitionId === '90398')).toHaveLength(
+      showcase!.characterCount,
+    )
+    expect(document.subassemblies.finish.partIds).toHaveLength(showcase!.siteFinishParts)
   })
 
   it('is built against the catalog this build carries', () => {
@@ -153,10 +175,10 @@ describe.each(DEMOS.map((demo) => [demo.id, demo] as const))('%s', (_id, demo) =
   it('is measurably better than the candidate it replaced', () => {
     const delta = demo.delta
     const improved =
-      delta.componentsAfter < delta.componentsBefore
-      || delta.loosePartsAfter < delta.loosePartsBefore
-      || delta.unsupportedAfter < delta.unsupportedBefore
-      || delta.collisionsAfter < delta.collisionsBefore
+      delta.componentsAfter < delta.componentsBefore ||
+      delta.loosePartsAfter < delta.loosePartsBefore ||
+      delta.unsupportedAfter < delta.unsupportedBefore ||
+      delta.collisionsAfter < delta.collisionsBefore
     expect(improved, 'the first candidate must fail something the published model passes').toBe(true)
 
     const rough = readJson<ModelDocument>(publicPath(demo.assets.rough.url))
@@ -191,7 +213,10 @@ describe('the published envelope previews', () => {
     const document = readJson<ModelDocument>(publicPath(demo.assets.document.url))
 
     expect(preview.catalogVersion).toBe(catalog.version)
-    expect(preview.partIds).toEqual(Object.keys(document.parts))
+    // The stable JSON serializer sorts object keys, while the preview arrays
+    // deliberately retain build order so each id stays aligned with its box.
+    // Compare membership rather than imposing the object's serialized order.
+    expect([...preview.partIds].sort()).toEqual(Object.keys(document.parts).sort())
     expect(preview.parts).toHaveLength(demo.validation.partCount)
     expect(preview.steps).toHaveLength(demo.validation.steps)
     for (const definition of preview.definitions) expect(catalog.get(definition.id)).toBeTruthy()

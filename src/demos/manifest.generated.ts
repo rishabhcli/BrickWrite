@@ -25,6 +25,297 @@ export const DEMO_MANIFEST: DemoManifest = {
   ],
   "demos": [
     {
+      "id": "illinois-main-quad",
+      "title": "Illinois Main Quad campus",
+      "discipline": "Campus architecture",
+      "tagline": "A 120 × 80-stud university campus with seven landmarks, a tiled quad, trees, Morrow Plots and 21 LEGO characters.",
+      "summary": "A display-scale UIUC campus set anchored by the Illini Union and Foellinger Auditorium, with Altgeld Hall, Alma Mater, six flanking academic blocks, the Main Quad path geometry, Morrow Plots, mature trees and brick-built students. The site finish alone is 9,600 individually editable pieces over a cross-bonded base.",
+      "techniques": [
+        "10,000+ catalog-backed pieces",
+        "Cross-bonded 120 × 80-stud foundation",
+        "Seven named campus landmarks",
+        "Stepped copper dome and bell tower",
+        "18 campus figures",
+        "Three-figure Alma Mater group"
+      ],
+      "showcase": {
+        "landmarkCount": 7,
+        "characterCount": 21,
+        "siteFinishParts": 9600
+      },
+      "refinement": "The massing study established the Main Quad axis on a one-layer field, but its plate runs were disconnected. The published set cross-bonds the entire site, replaces the massing blocks with detailed landmark buildings, and adds the 9,600-piece landscape, characters and buildable campus life.",
+      "hero": true,
+      "tensionAllowance": 256,
+      "tensionReason": "Window panes are seated inside their frames rather than carried in vertical compression. The statics pass counts those glazed inserts as tension-carried, measures their mass, and still checks every attachment group against the conservative clutch assumption.",
+      "brief": {
+        "prompt": "Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.",
+        "envelopeStuds": [
+          120,
+          null,
+          80
+        ],
+        "palette": [
+          "Illinois orange and blue",
+          "Campus red brick",
+          "Copper green",
+          "Quad green",
+          "Limestone white"
+        ],
+        "functions": [
+          "10,000+ editable pieces",
+          "Recognisable campus landmarks",
+          "LEGO characters",
+          "Verified build sequence"
+        ]
+      },
+      "camera": {
+        "yaw": 34,
+        "pitch": 54,
+        "zoom": 0.96
+      },
+      "documentId": "demo_illinois_main_quad",
+      "roughDocumentId": "demo_illinois_main_quad_rough",
+      "schemaVersion": 2,
+      "catalogVersion": "2026-07",
+      "authoredAt": "2026-07-01T00:00:00.000Z",
+      "assets": {
+        "document": {
+          "url": "/demos/illinois-main-quad/document.json",
+          "bytes": 12537504,
+          "sha256": "1ef6175469b97ed3acfc8d685895c888b463c32f49cc709f3c9f6433ece06337",
+          "contentType": "application/json"
+        },
+        "rough": {
+          "url": "/demos/illinois-main-quad/rough.json",
+          "bytes": 464465,
+          "sha256": "cdb1e303750bb3f8846291be5a0f2cda6fdadb7e8ddabb158bf5e76c6eb74881",
+          "contentType": "application/json"
+        },
+        "preview": {
+          "url": "/demos/illinois-main-quad/preview.json",
+          "bytes": 614243,
+          "sha256": "ba73cba7acd2e084f80f6e48a4a50ca011edbec88cba1e4ebbb8c6c9b198502f",
+          "contentType": "application/json"
+        },
+        "roughPreview": {
+          "url": "/demos/illinois-main-quad/rough-preview.json",
+          "bytes": 37545,
+          "sha256": "c7ecdcb991e7c1f67edce80f371843bab9bffd81d6315ecd3d3644f13676d2e0",
+          "contentType": "application/json"
+        },
+        "thumbnail": {
+          "url": "/demos/illinois-main-quad/thumb.png",
+          "bytes": 51537,
+          "sha256": "708138ca19ab6e2fb91b5752148130a53f1c43ae2d86dafc5870efb530d58722",
+          "contentType": "image/png"
+        },
+        "social": {
+          "url": "/demos/illinois-main-quad/social.png",
+          "bytes": 97145,
+          "sha256": "011529a7cfe0225004272175e7cf4022a18cde4f844600680d6d038f5632fbe6",
+          "contentType": "image/png"
+        }
+      },
+      "validation": {
+        "revision": 1,
+        "partCount": 11473,
+        "connectionCount": 26496,
+        "collisionCount": 0,
+        "unverifiedCollisions": 0,
+        "componentCount": 1,
+        "disconnectedPartCount": 0,
+        "virtualColorCount": 63,
+        "weakAttachmentCount": 9069,
+        "healthy": true,
+        "boundsLdu": {
+          "min": [
+            0,
+            -356,
+            0
+          ],
+          "max": [
+            2400,
+            0,
+            1600
+          ],
+          "size": [
+            2400,
+            356,
+            1600
+          ]
+        },
+        "footprintStuds": [
+          120,
+          80
+        ],
+        "heightPlates": 44.5,
+        "steps": 185,
+        "buildOrderVerified": true,
+        "buildOrderWarnings": [],
+        "statics": {
+          "massGrams": 7884.3,
+          "massLabel": "7.88 kg",
+          "measuredParts": 11473,
+          "unmeasuredParts": 0,
+          "coverage": 1,
+          "supportLabel": "120.0 × 80.0 studs",
+          "tippingMarginLdu": 783.71,
+          "restingParts": 654,
+          "stable": true,
+          "overloadedGroups": 0,
+          "unsupportedParts": 56,
+          "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
+          "clutchGramsPerStud": 100
+        }
+      },
+      "roughValidation": {
+        "revision": 1,
+        "partCount": 422,
+        "connectionCount": 916,
+        "collisionCount": 0,
+        "unverifiedCollisions": 0,
+        "componentCount": 206,
+        "disconnectedPartCount": 350,
+        "virtualColorCount": 34,
+        "weakAttachmentCount": 85,
+        "healthy": true,
+        "boundsLdu": {
+          "min": [
+            0,
+            -84,
+            0
+          ],
+          "max": [
+            2400,
+            0,
+            1600
+          ],
+          "size": [
+            2400,
+            84,
+            1600
+          ]
+        },
+        "footprintStuds": [
+          120,
+          80
+        ],
+        "heightPlates": 10.5,
+        "steps": 214,
+        "buildOrderVerified": false,
+        "buildOrderWarnings": [
+          "205 parts begin a new independent island: they attach to nothing placed earlier, so each starts a separately-built subassembly.",
+          "202 parts have no connection at all and cannot be attached in any step."
+        ],
+        "statics": {
+          "massGrams": 2045.96,
+          "massLabel": "2.05 kg",
+          "measuredParts": 422,
+          "unmeasuredParts": 0,
+          "coverage": 1,
+          "supportLabel": "120.0 × 80.0 studs",
+          "tippingMarginLdu": 786.81,
+          "restingParts": 368,
+          "stable": true,
+          "overloadedGroups": 0,
+          "unsupportedParts": 0,
+          "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
+          "clutchGramsPerStud": 100
+        }
+      },
+      "delta": {
+        "partsAdded": 11051,
+        "connectionsAdded": 25580,
+        "componentsBefore": 206,
+        "componentsAfter": 1,
+        "loosePartsBefore": 350,
+        "loosePartsAfter": 0,
+        "collisionsBefore": 0,
+        "collisionsAfter": 0,
+        "unsupportedBefore": 0,
+        "unsupportedAfter": 56,
+        "stableBefore": true,
+        "stableAfter": true,
+        "massBeforeGrams": 2045.96,
+        "massAfterGrams": 7884.3,
+        "stepsBefore": 214,
+        "stepsAfter": 185
+      },
+      "bill": [
+        {
+          "definitionId": "3024",
+          "name": "Plate 1 x 1",
+          "count": 7996
+        },
+        {
+          "definitionId": "3070b",
+          "name": "Tile 1 x 1 with Groove",
+          "count": 1607
+        },
+        {
+          "definitionId": "4282",
+          "name": "Plate 2 x 16",
+          "count": 542
+        },
+        {
+          "definitionId": "3008",
+          "name": "Brick 1 x 8",
+          "count": 190
+        },
+        {
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 114
+        },
+        {
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 113
+        },
+        {
+          "definitionId": "3622",
+          "name": "Brick 1 x 3",
+          "count": 106
+        },
+        {
+          "definitionId": "3832",
+          "name": "Plate 2 x 10",
+          "count": 90
+        },
+        {
+          "definitionId": "91988",
+          "name": "Plate 2 x 14",
+          "count": 79
+        },
+        {
+          "definitionId": "3010",
+          "name": "Brick 1 x 4",
+          "count": 64
+        },
+        {
+          "definitionId": "3005",
+          "name": "Brick 1 x 1",
+          "count": 62
+        },
+        {
+          "definitionId": "3009",
+          "name": "Brick 1 x 6",
+          "count": 60
+        }
+      ],
+      "distinctParts": 35,
+      "planWarnings": [],
+      "provenance": {
+        "generator": "tools/build-demos.mjs",
+        "kernel": "src/cad — validation, collision, instructions, statics, snapping, assembly, raster",
+        "catalogVersion": "2026-07",
+        "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
+        "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
+        "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
+        "authoredAt": "2026-07-01T00:00:00.000Z"
+      }
+    },
+    {
       "id": "courtyard-terrace",
       "title": "Courtyard terrace",
       "discipline": "Architecture",
@@ -36,8 +327,9 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Seated window and door frames",
         "Cross-bonded slab"
       ],
+      "showcase": null,
       "refinement": "The first candidate laid a single-layer deck and cut bare holes where the openings are. Plates side by side in one plane do not clutch, so the deck came apart into loose strips.",
-      "hero": true,
+      "hero": false,
       "tensionAllowance": 0,
       "tensionReason": null,
       "brief": {
@@ -316,6 +608,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Wheel bricks as running gear",
         "Tiled load bed"
       ],
+      "showcase": null,
       "refinement": "The first candidate locked the chassis with two 4 x 4 plates that left the centreline seam unbridged, so the front and rear halves were separate components.",
       "hero": false,
       "tensionAllowance": 0,
@@ -569,6 +862,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Slope tail and wings",
         "Measured tipping margin"
       ],
+      "showcase": null,
       "refinement": "The first candidate placed the head by coordinate in front of the body. It rendered perfectly and the load path from the ground never reached it.",
       "hero": false,
       "tensionAllowance": 0,
@@ -821,6 +1115,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Revolute joint in the graph",
         "Seated window"
       ],
+      "showcase": null,
       "refinement": "The first candidate laid the shutter as free plates one course above the deck — a slab held by nothing, which the load-path walk never reaches.",
       "hero": false,
       "tensionAllowance": 5,
@@ -1084,6 +1379,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Braced underframe",
         "Tiled work surface"
       ],
+      "showcase": null,
       "refinement": "The first candidate laid the shelf and the desktop one plate deep. Single-layer plates in one plane do not clutch each other, so the middle of both surfaces was loose.",
       "hero": false,
       "tensionAllowance": 0,
@@ -1326,6 +1622,7 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Solved connector frames",
         "Cross-bonded cap"
       ],
+      "showcase": null,
       "refinement": "The first candidate stopped at the studs-on-side course: the sideways studs were exposed and the facade was never faced.",
       "hero": false,
       "tensionAllowance": 3,

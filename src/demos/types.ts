@@ -123,6 +123,16 @@ export interface DemoBillLine {
   count: number
 }
 
+/** Curated scale facts that the demo compiler independently checks. */
+export interface DemoShowcase {
+  /** Distinct campus buildings or landmarks represented by the model. */
+  landmarkCount: number
+  /** Selectable character elements in the canonical document. */
+  characterCount: number
+  /** Individually editable pieces used to draw the site plan. */
+  siteFinishParts: number
+}
+
 export interface DemoEntry {
   id: string
   title: string
@@ -130,6 +140,8 @@ export interface DemoEntry {
   tagline: string
   summary: string
   techniques: string[]
+  /** Optional scale facts for collection-defining builds. */
+  showcase: DemoShowcase | null
   /** What the earlier candidate got wrong, in one sentence. */
   refinement: string
   hero: boolean

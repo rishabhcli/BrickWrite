@@ -35,9 +35,12 @@ import { createServer } from 'vite'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CATALOG_ROOT = path.join(ROOT, 'public')
 const CHECK_MODE = process.argv.includes('--check')
-/** `--only=id,id` builds a subset, for iterating on one demo without waiting for six. */
-const ONLY = (process.argv.find((argument) => argument.startsWith('--only=')) ?? '').slice('--only='.length)
-  .split(',').map((id) => id.trim()).filter(Boolean)
+/** `--only=id,id` builds a subset, for iterating on one demo without waiting for the full collection. */
+const ONLY = (process.argv.find((argument) => argument.startsWith('--only=')) ?? '')
+  .slice('--only='.length)
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean)
 // --check writes outside the working tree, so a determinism run can never leave
 // an untracked directory behind for the integrator to find.
 const CHECK_ROOT = path.join(os.tmpdir(), 'brickwright-demos-check')
@@ -207,7 +210,8 @@ class Build {
   #definition(definitionId) {
     const definition = catalog.get(definitionId)
     if (!definition) throw new Error(`Demo references ${definitionId}, which is not in catalog ${catalog.version}.`)
-    if (!definition.geometryAsset) throw new Error(`Demo references ${definitionId}, which has no compiled geometry in this build.`)
+    if (!definition.geometryAsset)
+      throw new Error(`Demo references ${definitionId}, which has no compiled geometry in this build.`)
     return definition
   }
 
@@ -215,7 +219,8 @@ class Build {
     // Solved poses come from the connector kernel and are correct by
     // construction — a studs-not-on-top tile is deliberately off the vertical
     // grid, so checking it would reject the very technique it is there to show.
-    if (!options.solved && !options.offGrid) assertOnGrid(definition, position, basis, options.label ?? definition.canonicalId)
+    if (!options.solved && !options.offGrid)
+      assertOnGrid(definition, position, basis, options.label ?? definition.canonicalId)
     this.sequence += 1
     this.parts.push({
       id: `part_${String(this.sequence).padStart(4, '0')}`,
@@ -272,7 +277,9 @@ class Build {
       targetFeatureId: options.targetFeatureId,
     })
     if (!solved) {
-      throw new Error(`No connector on ${definitionId} mates anything within ${options.radiusLdu ?? 26} LDU of ${cursorPosition.join(', ')}.`)
+      throw new Error(
+        `No connector on ${definitionId} mates anything within ${options.radiusLdu ?? 26} LDU of ${cursorPosition.join(', ')}.`,
+      )
     }
     this.#push(definition, color, solved.position, solved.basis, { ...options, solved: true })
     return solved
@@ -318,7 +325,8 @@ class Build {
    */
   addPlan(plan, options = {}) {
     for (const operation of plan.operations) {
-      if (operation.type !== 'part.add') throw new Error(`Assembly plan emitted an unexpected ${operation.type} operation.`)
+      if (operation.type !== 'part.add')
+        throw new Error(`Assembly plan emitted an unexpected ${operation.type} operation.`)
       const part = operation.part
       this.sequence += 1
       this.parts.push({
@@ -375,29 +383,33 @@ function assertOnGrid(definition, position, basis, label) {
     // sits deliberately between the four studs — so those are judged in bulk.
     if (isStud && !good) {
       throw new Error(
-        `${label}: ${definition.canonicalId} sits off the stud grid — its stud ${connector.id} lands at `
-        + `x ${world[0].toFixed(1)}, z ${world[2].toFixed(1)}, and stud centres are odd multiples of 10 LDU. `
-        + 'A part centres on a multiple of 20 along an axis it spans an even number of studs on, '
-        + 'and on an odd multiple of 10 along an axis it spans an odd number.',
+        `${label}: ${definition.canonicalId} sits off the stud grid — its stud ${connector.id} lands at ` +
+          `x ${world[0].toFixed(1)}, z ${world[2].toFixed(1)}, and stud centres are odd multiples of 10 LDU. ` +
+          'A part centres on a multiple of 20 along an axis it spans an even number of studs on, ' +
+          'and on an odd multiple of 10 along an axis it spans an odd number.',
       )
     }
   }
   if (seats && !aligned) {
     throw new Error(
-      `${label}: ${definition.canonicalId} has ${seats} vertical connector(s) and not one of them lands on the `
-      + `stud grid at position ${position.map((value) => value.toFixed(1)).join(', ')}. It would rest on nothing.`,
+      `${label}: ${definition.canonicalId} has ${seats} vertical connector(s) and not one of them lands on the ` +
+        `stud grid at position ${position.map((value) => value.toFixed(1)).join(', ')}. It would rest on nothing.`,
     )
   }
 }
 
 /** A part's own underside plane, in its local frame. */
 const underPlaneOf = (definition) => {
-  const seats = definition.connectors.filter((connector) => connector.family === 'anti-stud' && connector.gender === 'female')
+  const seats = definition.connectors.filter(
+    (connector) => connector.family === 'anti-stud' && connector.gender === 'female',
+  )
   return seats.length ? Math.max(...seats.map((connector) => connector.pos[1])) : 0
 }
 
 const basisFor = (degrees) =>
-  degrees % 90 === 0 ? QUARTER_TURN_BASES[(((degrees / 90) % 4) + 4) % 4] : cleanBasis(basisFromEulerDegrees([0, degrees, 0]))
+  degrees % 90 === 0
+    ? QUARTER_TURN_BASES[(((degrees / 90) % 4) + 4) % 4]
+    : cleanBasis(basisFromEulerDegrees([0, degrees, 0]))
 
 /**
  * Assembles a finished `ModelDocument` from placed parts.
@@ -424,15 +436,15 @@ function assembleDocument(build, meta) {
       build.subassemblies
         .filter((entry) => build.parts.some((part) => part.subassemblyId === entry.id))
         .map((entry) => [
-        entry.id,
-        {
-          id: entry.id,
-          name: entry.name,
-          locked: entry.locked ?? false,
-          accent: entry.accent,
-          partIds: build.parts.filter((part) => part.subassemblyId === entry.id).map((part) => part.id),
-        },
-      ]),
+          entry.id,
+          {
+            id: entry.id,
+            name: entry.name,
+            locked: entry.locked ?? false,
+            accent: entry.accent,
+            partIds: build.parts.filter((part) => part.subassemblyId === entry.id).map((part) => part.id),
+          },
+        ]),
     ),
     steps: [],
     notes: meta.notes ?? [],
@@ -454,13 +466,18 @@ function assembleDocument(build, meta) {
 
 /** Part identity in a form a person can act on, for a rejection message. */
 function describeParts(document, ids) {
-  return ids.slice(0, 8).map((id) => {
-    const part = document.parts[id]
-    if (!part) return id
-    const box = getPartBounds(part)
-    return `${id}=${part.definitionId}@[${part.transform.position.map((value) => value.toFixed(0)).join(',')}] `
-      + `y ${box.min[1].toFixed(0)}..${box.max[1].toFixed(0)}`
-  }).join('; ')
+  return ids
+    .slice(0, 8)
+    .map((id) => {
+      const part = document.parts[id]
+      if (!part) return id
+      const box = getPartBounds(part)
+      return (
+        `${id}=${part.definitionId}@[${part.transform.position.map((value) => value.toFixed(0)).join(',')}] ` +
+        `y ${box.min[1].toFixed(0)}..${box.max[1].toFixed(0)}`
+      )
+    })
+    .join('; ')
 }
 
 class DemoRejected extends Error {
@@ -485,8 +502,10 @@ function gate(id, document, order, options = {}) {
   for (const part of Object.values(document.parts)) {
     const definition = catalog.get(part.definitionId)
     if (!definition) failures.push(`${part.id} references ${part.definitionId}, absent from catalog ${catalog.version}`)
-    else if (!definition.geometryAsset) failures.push(`${part.id} references ${part.definitionId}, which has no compiled geometry`)
-    else if (definition.canonicalId !== part.definitionId) failures.push(`${part.id} stores retired id ${part.definitionId}; use ${definition.canonicalId}`)
+    else if (!definition.geometryAsset)
+      failures.push(`${part.id} references ${part.definitionId}, which has no compiled geometry`)
+    else if (definition.canonicalId !== part.definitionId)
+      failures.push(`${part.id} stores retired id ${part.definitionId}; use ${definition.canonicalId}`)
   }
   if (document.catalogVersion !== catalog.version) {
     failures.push(`document declares catalog ${document.catalogVersion}, built against ${catalog.version}`)
@@ -496,11 +515,15 @@ function gate(id, document, order, options = {}) {
   const validation = validateDocument(document, { provideGeometry: geometryProvider })
   if (validation.collisions.length) {
     failures.push(
-      `${validation.collisions.length} collision(s): `
-      + validation.collisions.slice(0, 4).map((issue) => `${describeParts(document, [issue.partA, issue.partB])}`).join(' | '),
+      `${validation.collisions.length} collision(s): ` +
+        validation.collisions
+          .slice(0, 4)
+          .map((issue) => `${describeParts(document, [issue.partA, issue.partB])}`)
+          .join(' | '),
     )
   }
-  if (validation.unverifiedCollisions) failures.push(`${validation.unverifiedCollisions} collision verdict(s) reached from bounding boxes alone`)
+  if (validation.unverifiedCollisions)
+    failures.push(`${validation.unverifiedCollisions} collision verdict(s) reached from bounding boxes alone`)
   if (validation.componentCount !== 1) {
     failures.push(
       `model is in ${validation.componentCount} disconnected pieces: ${describeParts(document, validation.disconnectedPartIds)}`,
@@ -518,10 +541,17 @@ function gate(id, document, order, options = {}) {
   // -- build order -----------------------------------------------------------
   const verified = verifyBuildOrder(document, document.steps)
   if (!verified.valid) {
-    failures.push(`build order violates its own guarantee at ${verified.violations.slice(0, 3).map((v) => `step ${v.stepIndex}/${v.partId}`).join(', ')}`)
+    failures.push(
+      `build order violates its own guarantee at ${verified.violations
+        .slice(0, 3)
+        .map((v) => `step ${v.stepIndex}/${v.partId}`)
+        .join(', ')}`,
+    )
   }
   if (order.unsupportedPartIds.length) {
-    failures.push(`${order.unsupportedPartIds.length} part(s) begin an unsupported island: ${describeParts(document, order.unsupportedPartIds)}`)
+    failures.push(
+      `${order.unsupportedPartIds.length} part(s) begin an unsupported island: ${describeParts(document, order.unsupportedPartIds)}`,
+    )
   }
   const sequenced = new Set(document.steps.flatMap((step) => step.partIds))
   if (sequenced.size !== Object.keys(document.parts).length) {
@@ -531,15 +561,19 @@ function gate(id, document, order, options = {}) {
   // -- statics ---------------------------------------------------------------
   const statics = analyseStatics(document)
   if (!statics.support) failures.push('no support polygon could be measured, so stability is unknown')
-  else if (!statics.support.stable) failures.push(`centre of mass falls outside the support polygon (margin ${statics.support.marginLdu.toFixed(1)} LDU)`)
+  else if (!statics.support.stable)
+    failures.push(
+      `centre of mass falls outside the support polygon (margin ${statics.support.marginLdu.toFixed(1)} LDU)`,
+    )
   const tensionAllowance = options.tensionAllowance ?? 0
   if (statics.unsupportedPartIds.length > tensionAllowance) {
     failures.push(
-      `${statics.unsupportedPartIds.length} part(s) are never reached by the load path from the ground, `
-      + `and this demo allows ${tensionAllowance}: ${describeParts(document, statics.unsupportedPartIds)}`,
+      `${statics.unsupportedPartIds.length} part(s) are never reached by the load path from the ground, ` +
+        `and this demo allows ${tensionAllowance}: ${describeParts(document, statics.unsupportedPartIds)}`,
     )
   }
-  if (statics.coverage < 1) failures.push(`mass could only be measured for ${(statics.coverage * 100).toFixed(1)}% of the parts`)
+  if (statics.coverage < 1)
+    failures.push(`mass could only be measured for ${(statics.coverage * 100).toFixed(1)}% of the parts`)
   const overCapacity = statics.overloaded.filter((issue) => issue.severity === 'over-capacity')
   if (overCapacity.length) failures.push(`${overCapacity.length} group(s) hang from too few studs for their mass`)
 
@@ -671,7 +705,9 @@ function buildPreview(document, validation) {
   const boxes = []
   for (const part of Object.values(document.parts)) {
     if (!isAxisAligned(part.transform.basis)) {
-      throw new Error(`Part ${part.id} (${part.definitionId}) is not on an axis-aligned rotation, so its envelope box would be approximate rather than exact.`)
+      throw new Error(
+        `Part ${part.id} (${part.definitionId}) is not on an axis-aligned rotation, so its envelope box would be approximate rather than exact.`,
+      )
     }
     const bounds = getPartBounds(part)
     if (!bounds.measured) throw new Error(`Part ${part.id} (${part.definitionId}) has no measured envelope.`)
@@ -904,7 +940,11 @@ function stableJson(value) {
   const walk = (node) => {
     if (Array.isArray(node)) return node.map(walk)
     if (node && typeof node === 'object') {
-      return Object.fromEntries(Object.keys(node).sort().map((key) => [key, walk(node[key])]))
+      return Object.fromEntries(
+        Object.keys(node)
+          .sort()
+          .map((key) => [key, walk(node[key])]),
+      )
     }
     return node
   }
@@ -916,10 +956,13 @@ async function emit(file, contents) {
   await mkdir(path.dirname(file), { recursive: true })
   const buffer = Buffer.isBuffer(contents) ? contents : Buffer.from(contents, 'utf8')
   await writeFile(file, buffer)
-  written.push({ file: path.relative(ROOT, file), bytes: buffer.byteLength, sha256: createHash('sha256').update(buffer).digest('hex') })
+  written.push({
+    file: path.relative(ROOT, file),
+    bytes: buffer.byteLength,
+    sha256: createHash('sha256').update(buffer).digest('hex'),
+  })
   return buffer.byteLength
 }
-
 
 // ---------------------------------------------------------------------------
 // The demos
@@ -961,21 +1004,23 @@ function courtyardTerrace(rough) {
     { atStud: 15, widthStuds: 2, fromCourse: 1, toCourse: 3, element: rough ? undefined : 'window' },
   ]
 
-  const shell = planEnclosure(spec({
-    sub: 'shell',
-    origin: [0, 0, 0],
-    color: C.tan,
-    trimColor: C.white,
-    glassColor: C.transClear,
-    family: 'brick',
-    depthStuds: 1,
-    widthStuds: width,
-    footprintDepthStuds: depth,
-    courses,
-    floor: true,
-    floorLayers,
-    openings,
-  }))
+  const shell = planEnclosure(
+    spec({
+      sub: 'shell',
+      origin: [0, 0, 0],
+      color: C.tan,
+      trimColor: C.white,
+      glassColor: C.transClear,
+      family: 'brick',
+      depthStuds: 1,
+      widthStuds: width,
+      footprintDepthStuds: depth,
+      courses,
+      floor: true,
+      floorLayers,
+      openings,
+    }),
+  )
   build.addPlan(shell)
 
   // The deck is laid inside the enclosure plan, so the wall origin — and with
@@ -983,28 +1028,36 @@ function courtyardTerrace(rough) {
   const roofSurface = -(floorLayers * PLATE_LDU + courses * BRICK_LDU)
   if (rough) return { build, notes: shell.notes, warnings: shell.warnings }
 
-  build.addPlan(planBrickField(spec({
-    sub: 'roof',
-    origin: [0, roofSurface, 0],
-    color: C.darkBluishGrey,
-    family: 'plate',
-    widthStuds: width,
-    footprintDepthStuds: depth,
-    layers: 2,
-  })))
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'roof',
+        origin: [0, roofSurface, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: width,
+        footprintDepthStuds: depth,
+        layers: 2,
+      }),
+    ),
+  )
 
   const parapetSurface = roofSurface - 2 * PLATE_LDU
-  build.addPlan(planEnclosure(spec({
-    sub: 'parapet',
-    origin: [0, parapetSurface, 0],
-    color: C.darkTan,
-    family: 'brick',
-    depthStuds: 1,
-    widthStuds: width,
-    footprintDepthStuds: depth,
-    courses: 1,
-    floor: false,
-  })))
+  build.addPlan(
+    planEnclosure(
+      spec({
+        sub: 'parapet',
+        origin: [0, parapetSurface, 0],
+        color: C.darkTan,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: width,
+        footprintDepthStuds: depth,
+        courses: 1,
+        floor: false,
+      }),
+    ),
+  )
 
   return { build, notes: shell.notes, warnings: shell.warnings }
 }
@@ -1066,7 +1119,7 @@ function ridgelineHauler(rough) {
   build.place('3010', C.darkBluishGrey, 0, 110, afterLock, bed)
 
   return { build, notes: [], warnings: [] }
-}/**
+} /**
  * A standing heron.
  *
  * The creature demo exists to show the kernel handling something that is not a
@@ -1085,15 +1138,20 @@ function heronSculpture(rough) {
     ],
   })
 
-  build.addPlan(planBrickField(spec({
-    sub: 'base',
-    origin: [0, 0, 0],
-    color: C.darkGreen,
-    family: 'plate',
-    widthStuds: 8,
-    footprintDepthStuds: 8,
-    layers: 2,
-  })), { sub: 'base' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'base',
+        origin: [0, 0, 0],
+        color: C.darkGreen,
+        family: 'plate',
+        widthStuds: 8,
+        footprintDepthStuds: 8,
+        layers: 2,
+      }),
+    ),
+    { sub: 'base' },
+  )
   const baseTop = -2 * PLATE_LDU
 
   // Two round-brick columns under the body's centreline, so the load path is
@@ -1133,7 +1191,7 @@ function heronSculpture(rough) {
   build.row('3070b', C.black, [70, 90], [30], skull, head)
 
   return { build, notes: [], warnings: [] }
-}/**
+} /**
  * A shutter bay with a hinge the kernel can drive.
  *
  * `planHingedFlap` builds a joint the connection graph reads as a real revolute
@@ -1150,54 +1208,68 @@ function shutterBay(rough) {
     ],
   })
 
-  build.addPlan(planBrickField(spec({
-    sub: 'deck',
-    origin: [0, 0, 0],
-    color: C.lightBluishGrey,
-    family: 'plate',
-    widthStuds: 14,
-    footprintDepthStuds: 10,
-    layers: 2,
-  })))
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'deck',
+        origin: [0, 0, 0],
+        color: C.lightBluishGrey,
+        family: 'plate',
+        widthStuds: 14,
+        footprintDepthStuds: 10,
+        layers: 2,
+      }),
+    ),
+  )
   const deckTop = -2 * PLATE_LDU
 
-  build.addPlan(planWall(spec({
-    sub: 'wall',
-    origin: [0, deckTop, 180],
-    color: C.sand,
-    trimColor: C.white,
-    glassColor: C.transClear,
-    family: 'brick',
-    depthStuds: 1,
-    axis: 'x',
-    lengthStuds: 14,
-    courses: 5,
-    openings: [{ atStud: 5, widthStuds: 4, fromCourse: 1, toCourse: 3, element: 'window' }],
-  })))
+  build.addPlan(
+    planWall(
+      spec({
+        sub: 'wall',
+        origin: [0, deckTop, 180],
+        color: C.sand,
+        trimColor: C.white,
+        glassColor: C.transClear,
+        family: 'brick',
+        depthStuds: 1,
+        axis: 'x',
+        lengthStuds: 14,
+        courses: 5,
+        openings: [{ atStud: 5, widthStuds: 4, fromCourse: 1, toCourse: 3, element: 'window' }],
+      }),
+    ),
+  )
 
   if (rough) {
     // Before the refinement pass the shutter is a slab of plates sitting a
     // course above the deck with nothing holding it: it looks right and comes
     // apart in your hands.
-    build.addPlan(planBrickField(spec({
-      sub: 'shutter',
-      origin: [40, deckTop - BRICK_LDU, 20],
-      color: C.orange,
-      family: 'plate',
-      widthStuds: 8,
-      footprintDepthStuds: 4,
-      layers: 1,
-    })))
+    build.addPlan(
+      planBrickField(
+        spec({
+          sub: 'shutter',
+          origin: [40, deckTop - BRICK_LDU, 20],
+          color: C.orange,
+          family: 'plate',
+          widthStuds: 8,
+          footprintDepthStuds: 4,
+          layers: 1,
+        }),
+      ),
+    )
     return { build, notes: [], warnings: ['Shutter placed by coordinate; nothing carries it.'] }
   }
 
-  const flap = planHingedFlap(spec({
-    sub: 'shutter',
-    origin: [40, deckTop, 20],
-    color: C.orange,
-    widthStuds: 8,
-    reachStuds: 2,
-  }))
+  const flap = planHingedFlap(
+    spec({
+      sub: 'shutter',
+      origin: [40, deckTop, 20],
+      color: C.orange,
+      widthStuds: 8,
+      reachStuds: 2,
+    }),
+  )
   build.addPlan(flap)
 
   // Tiles finish the exposed deck either side of the shutter.
@@ -1234,25 +1306,32 @@ function draughtingDesk(rough) {
   // Two 1 x 2 x 5 bricks per corner: one seam per leg, and the seam is exactly
   // where the shelf lands.
   const lower = []
-  for (const x of legX) for (const z of legZ) lower.push(build.place('2454b', C.reddishBrown, x, z, 0, { ...legs, rotY: 90 }))
+  for (const x of legX)
+    for (const z of legZ) lower.push(build.place('2454b', C.reddishBrown, x, z, 0, { ...legs, rotY: 90 }))
   const shelfSurface = lower[0]
 
   // One layer or two is the whole difference between a shelf and a sheet:
   // plates side by side in a single plane do not clutch each other at all.
   const layers = rough ? 1 : 2
-  build.addPlan(planBrickField(spec({
-    sub: 'shelf',
-    origin: [0, shelfSurface, 0],
-    color: C.tan,
-    family: 'plate',
-    widthStuds: 12,
-    footprintDepthStuds: 4,
-    layers,
-  })), { sub: 'shelf' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'shelf',
+        origin: [0, shelfSurface, 0],
+        color: C.tan,
+        family: 'plate',
+        widthStuds: 12,
+        footprintDepthStuds: 4,
+        layers,
+      }),
+    ),
+    { sub: 'shelf' },
+  )
   const shelfTop = shelfSurface - layers * PLATE_LDU
 
   const upper = []
-  for (const x of legX) for (const z of legZ) upper.push(build.place('2454b', C.reddishBrown, x, z, shelfTop, { ...legs, rotY: 90 }))
+  for (const x of legX)
+    for (const z of legZ) upper.push(build.place('2454b', C.reddishBrown, x, z, shelfTop, { ...legs, rotY: 90 }))
   const deskSurface = upper[0]
 
   // Rails tie each pair of legs together, so the desktop is carried along its
@@ -1260,15 +1339,20 @@ function draughtingDesk(rough) {
   const frame = { sub: 'frame' }
   const railTop = build.row('6112', C.reddishBrown, [120], [10, 70], deskSurface, frame)
 
-  build.addPlan(planBrickField(spec({
-    sub: 'top',
-    origin: [0, railTop, 0],
-    color: C.darkTan,
-    family: 'plate',
-    widthStuds: 12,
-    footprintDepthStuds: 4,
-    layers,
-  })), { sub: 'top' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'top',
+        origin: [0, railTop, 0],
+        color: C.darkTan,
+        family: 'plate',
+        widthStuds: 12,
+        footprintDepthStuds: 4,
+        layers,
+      }),
+    ),
+    { sub: 'top' },
+  )
 
   if (!rough) {
     const topSurface = railTop - 2 * PLATE_LDU
@@ -1276,7 +1360,7 @@ function draughtingDesk(rough) {
   }
 
   return { build, notes: [], warnings: [] }
-}/**
+} /**
  * A SNOT kiosk.
  *
  * Studs-not-on-top is the technique that separates a stack of bricks from a
@@ -1296,30 +1380,40 @@ function snotKiosk(rough) {
     ],
   })
 
-  build.addPlan(planBrickField(spec({
-    sub: 'plinth',
-    origin: [0, 0, 0],
-    color: C.darkBluishGrey,
-    family: 'plate',
-    widthStuds: 6,
-    footprintDepthStuds: 6,
-    layers: 2,
-  })), { sub: 'plinth' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'plinth',
+        origin: [0, 0, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        layers: 2,
+      }),
+    ),
+    { sub: 'plinth' },
+  )
 
   // Three brick courses. `planBrickField` staggers each row against the one
   // before it, so the core is bonded in both directions rather than three
   // sheets of bricks that happen to be stacked.
   let level = -2 * PLATE_LDU
   for (let course = 0; course < 3; course += 1) {
-    build.addPlan(planBrickField(spec({
-      sub: 'core',
-      origin: [0, level, 0],
-      color: C.white,
-      family: 'brick',
-      widthStuds: 6,
-      footprintDepthStuds: 6,
-      layers: 1,
-    })), { sub: 'core' })
+    build.addPlan(
+      planBrickField(
+        spec({
+          sub: 'core',
+          origin: [0, level, 0],
+          color: C.white,
+          family: 'brick',
+          widthStuds: 6,
+          footprintDepthStuds: 6,
+          layers: 1,
+        }),
+      ),
+      { sub: 'core' },
+    )
     level -= BRICK_LDU
   }
 
@@ -1333,15 +1427,20 @@ function snotKiosk(rough) {
     build.place('11211', C.white, x, 10, level, facade)
     snotIds.push(build.lastPartId())
   }
-  build.addPlan(planBrickField(spec({
-    sub: 'core',
-    origin: [0, level, 20],
-    color: C.white,
-    family: 'brick',
-    widthStuds: 6,
-    footprintDepthStuds: 5,
-    layers: 1,
-  })), { sub: 'core' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'core',
+        origin: [0, level, 20],
+        color: C.white,
+        family: 'brick',
+        widthStuds: 6,
+        footprintDepthStuds: 5,
+        layers: 1,
+      }),
+    ),
+    { sub: 'core' },
+  )
   const capSurface = level - BRICK_LDU
 
   // Where the studs on the side of those bricks are, read from the compiled
@@ -1351,11 +1450,12 @@ function snotKiosk(rough) {
   const snotDefinition = catalog.get('11211')
   const sideStud = snotDefinition.connectors.find(
     (connector) =>
-      connector.family === 'stud'
-      && connector.gender === 'male'
-      && Math.abs(connector.ori ? connector.ori[4] : 1) < 0.5,
+      connector.family === 'stud' &&
+      connector.gender === 'male' &&
+      Math.abs(connector.ori ? connector.ori[4] : 1) < 0.5,
   )
-  if (!sideStud) throw new Error('11211 no longer carries a horizontal stud connector; the SNOT demo has nothing to face.')
+  if (!sideStud)
+    throw new Error('11211 no longer carries a horizontal stud connector; the SNOT demo has nothing to face.')
 
   snotXs.forEach((x, index) => {
     const studY = level - underPlaneOf(snotDefinition) + sideStud.pos[1]
@@ -1374,35 +1474,600 @@ function snotKiosk(rough) {
     })
   })
 
-  build.addPlan(planBrickField(spec({
-    sub: 'cap',
-    origin: [0, capSurface, 0],
-    color: C.darkBluishGrey,
-    family: 'plate',
-    widthStuds: 6,
-    footprintDepthStuds: 6,
-    layers: 2,
-  })), { sub: 'cap' })
+  build.addPlan(
+    planBrickField(
+      spec({
+        sub: 'cap',
+        origin: [0, capSurface, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        layers: 2,
+      }),
+    ),
+    { sub: 'cap' },
+  )
 
   return { build, notes: [], warnings: [] }
-}const DEMOS = [
+}
+
+/**
+ * A display-scale interpretation of the University of Illinois Main Quad.
+ *
+ * This is intentionally not a single facade enlarged until the piece counter
+ * looks impressive. The 120 x 80-stud site is a real three-layer landscape:
+ * a cross-bonded structural slab, then 9,600 individually placeable finish
+ * pieces describing lawn, paths, roads, plots and building pads. Seven named
+ * buildings, the Alma Mater group, Morrow Plots, mature trees and brick-built
+ * students sit on that common foundation. Every last piece is still an ordinary
+ * catalog-backed PartInstance and therefore still goes through collision,
+ * connection, instructions and statics with the rest of the collection.
+ */
+function illinoisMainQuad(rough) {
+  const build = new Build({
+    subassemblies: [
+      { id: 'site', name: 'Campus base and quad', accent: '#83e7ee' },
+      { id: 'finish', name: 'Paths, lawns and building pads', accent: '#8bcf65' },
+      { id: 'union', name: 'Illini Union', accent: '#f7b04a' },
+      { id: 'foellinger', name: 'Foellinger Auditorium', accent: '#77b96a' },
+      { id: 'altgeld', name: 'Altgeld Hall and Alma Mater', accent: '#d66b55' },
+      { id: 'west_halls', name: 'West Quad halls', accent: '#d6a85d' },
+      { id: 'east_halls', name: 'East Quad halls', accent: '#d98662' },
+      { id: 'morrow', name: 'Morrow Plots', accent: '#8bcf65' },
+      { id: 'landscape', name: 'Trees and campus furniture', accent: '#5da765' },
+      { id: 'people', name: 'Students and visitors', accent: '#f5a33f' },
+    ],
+  })
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  const width = 120
+  const depth = 80
+  const baseLayers = rough ? 1 : 2
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'site',
+        origin: [0, 0, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: width,
+        footprintDepthStuds: depth,
+        layers: baseLayers,
+      }),
+    ),
+    'site',
+  )
+  const baseSurface = -baseLayers * PLATE_LDU
+
+  // The first candidate is a genuine massing study on a one-layer site. The
+  // large sheets touch but do not clutch, and the four block models only bind
+  // the plates directly underneath them. The published pass resolves that
+  // measurable failure with the cross-bonded base and the full campus above.
+  if (rough) {
+    const mass = (sub, x, z, w, d, courses, color) => {
+      absorb(
+        planEnclosure(
+          spec({
+            sub,
+            origin: [x * STUD_LDU, baseSurface, z * STUD_LDU],
+            color,
+            family: 'brick',
+            depthStuds: 1,
+            widthStuds: w,
+            footprintDepthStuds: d,
+            courses,
+            floor: false,
+          }),
+        ),
+        sub,
+      )
+    }
+    mass('union', 44, 2, 32, 12, 2, C.reddishBrown)
+    mass('foellinger', 44, 66, 32, 12, 3, C.reddishBrown)
+    mass('west_halls', 6, 20, 21, 43, 2, C.darkTan)
+    mass('east_halls', 93, 20, 21, 43, 2, C.darkTan)
+    return {
+      build,
+      notes: [
+        'A one-layer site and four block models established the axial campus plan, but the slab remained a field of disconnected strips.',
+      ],
+      warnings,
+    }
+  }
+
+  const BUILDING_ZONES = [
+    { x0: 44, x1: 76, z0: 2, z1: 14 },
+    { x0: 44, x1: 76, z0: 66, z1: 78 },
+    { x0: 5, x1: 30, z0: 2, z1: 15 },
+    { x0: 5, x1: 27, z0: 18, z1: 35 },
+    { x0: 5, x1: 27, z0: 45, z1: 63 },
+    { x0: 93, x1: 115, z0: 18, z1: 35 },
+    { x0: 93, x1: 115, z0: 45, z1: 63 },
+  ]
+  const TREE_SITES = [
+    [29, 20],
+    [29, 31],
+    [29, 49],
+    [29, 60],
+    [90, 20],
+    [90, 31],
+    [90, 49],
+    [90, 60],
+    [35, 15],
+    [84, 15],
+    [35, 64],
+    [84, 64],
+    [33, 22],
+    [86, 22],
+    [33, 57],
+    [86, 57],
+  ]
+  // x and z are the stud cells carrying the campus figures.
+  const FIGURE_SITES = [
+    [39, 25],
+    [43, 33],
+    [48, 52],
+    [53, 20],
+    [55, 58],
+    [58, 29],
+    [62, 51],
+    [65, 22],
+    [69, 57],
+    [73, 34],
+    [78, 49],
+    [82, 27],
+    [34, 41],
+    [47, 39],
+    [73, 40],
+    [86, 43],
+    [58, 10],
+    [63, 69],
+  ]
+  const forcedStuds = new Set([
+    ...TREE_SITES.map(([x, z]) => `${x}:${z}`),
+    ...FIGURE_SITES.map(([x, z]) => `${x}:${z}`),
+    ...[49, 53, 57, 62, 66, 70].flatMap((x) => [`${x}:14`, `${x}:65`]),
+  ])
+  const inBuilding = (x, z) => BUILDING_ZONES.some((zone) => x >= zone.x0 && x < zone.x1 && z >= zone.z0 && z < zone.z1)
+  const inMorrow = (x, z) => x >= 92 && x < 114 && z >= 68 && z < 78
+  const inQuad = (x, z) => x >= 31 && x < 89 && z >= 14 && z < 66
+  const onQuadPath = (x, z) => {
+    if (!inQuad(x, z)) return false
+    if (Math.abs(x - 60) <= 1 || Math.abs(z - 40) <= 1) return true
+    if (x <= 60 && z <= 40 && Math.abs(z - 40 - 0.82 * (x - 60)) <= 0.85) return true
+    if (x >= 60 && z <= 40 && Math.abs(z - 40 + 0.82 * (x - 60)) <= 0.85) return true
+    if (x <= 60 && z >= 40 && Math.abs(z - 40 + 0.82 * (x - 60)) <= 0.85) return true
+    if (x >= 60 && z >= 40 && Math.abs(z - 40 - 0.82 * (x - 60)) <= 0.85) return true
+    return x <= 32 || x >= 87 || z <= 15 || z >= 64
+  }
+
+  // One finish piece per stud is what gives this scale model a readable site
+  // plan instead of a green rectangle. Smooth tiles carry every path and road;
+  // studded plates remain wherever architecture, vegetation or people attach.
+  for (let z = 0; z < depth; z += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const forced = forcedStuds.has(`${x}:${z}`)
+      const building = inBuilding(x, z)
+      const road = z < 2 || x < 2 || x >= width - 2
+      const plot = inMorrow(x, z)
+      const path = !building && (onQuadPath(x, z) || (z >= 7 && z <= 9) || (x >= 59 && x <= 61))
+      const tiled = !forced && !building && (road || path)
+      const color = road
+        ? C.darkBluishGrey
+        : path
+          ? C.lightBluishGrey
+          : plot
+            ? (x + z) % 3 === 0
+              ? C.reddishBrown
+              : C.green
+            : building
+              ? C.darkTan
+              : C.green
+      build.place(tiled ? '3070b' : '3024', color, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, baseSurface, {
+        sub: 'finish',
+        label: `campus finish ${x},${z}`,
+      })
+    }
+  }
+  const campusSurface = baseSurface - PLATE_LDU
+
+  const addBuilding = ({ sub, x, z, w, d, courses, color, roofColor, openings = [], parapet = true }) => {
+    absorb(
+      planEnclosure(
+        spec({
+          sub,
+          origin: [x * STUD_LDU, campusSurface, z * STUD_LDU],
+          color,
+          trimColor: C.white,
+          glassColor: C.transLightBlue,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: w,
+          footprintDepthStuds: d,
+          courses,
+          floor: false,
+          openings,
+        }),
+      ),
+      sub,
+    )
+    const roofSurface = campusSurface - courses * BRICK_LDU
+    absorb(
+      planBrickField(
+        spec({
+          sub,
+          origin: [x * STUD_LDU, roofSurface, z * STUD_LDU],
+          color: roofColor,
+          family: 'plate',
+          widthStuds: w,
+          footprintDepthStuds: d,
+          layers: 2,
+        }),
+      ),
+      sub,
+    )
+    const roofTop = roofSurface - 2 * PLATE_LDU
+    if (parapet) {
+      absorb(
+        planEnclosure(
+          spec({
+            sub,
+            origin: [x * STUD_LDU, roofTop, z * STUD_LDU],
+            color: C.darkTan,
+            family: 'brick',
+            depthStuds: 1,
+            widthStuds: w,
+            footprintDepthStuds: d,
+            courses: 1,
+            floor: false,
+          }),
+        ),
+        sub,
+      )
+    }
+    return { roofTop }
+  }
+  const windows = (widthStuds, doorAt) => {
+    const result = []
+    for (let at = 3; at + 2 < widthStuds; at += 5) {
+      if (Math.abs(at - doorAt) < 4) continue
+      result.push({ atStud: at, widthStuds: 2, fromCourse: 1, toCourse: 2, element: 'window' })
+    }
+    if (doorAt >= 0) result.push({ atStud: doorAt, widthStuds: 4, fromCourse: 0, toCourse: 5, element: 'door' })
+    return result
+  }
+
+  const union = addBuilding({
+    sub: 'union',
+    x: 44,
+    z: 2,
+    w: 32,
+    d: 12,
+    courses: 6,
+    color: C.reddishBrown,
+    roofColor: C.darkBluishGrey,
+    openings: windows(32, 14),
+    parapet: false,
+  })
+  const foellinger = addBuilding({
+    sub: 'foellinger',
+    x: 44,
+    z: 66,
+    w: 32,
+    d: 12,
+    courses: 7,
+    color: C.reddishBrown,
+    roofColor: C.darkBluishGrey,
+    openings: windows(32, 14),
+    parapet: false,
+  })
+  const altgeld = addBuilding({
+    sub: 'altgeld',
+    x: 5,
+    z: 2,
+    w: 24,
+    d: 13,
+    courses: 6,
+    color: C.darkRed,
+    roofColor: C.darkBluishGrey,
+    openings: windows(24, 10),
+    parapet: false,
+  })
+  addBuilding({
+    sub: 'west_halls',
+    x: 5,
+    z: 18,
+    w: 22,
+    d: 17,
+    courses: 6,
+    color: C.darkTan,
+    roofColor: C.darkBluishGrey,
+    openings: windows(22, 9),
+  })
+  addBuilding({
+    sub: 'west_halls',
+    x: 5,
+    z: 45,
+    w: 22,
+    d: 18,
+    courses: 6,
+    color: C.reddishBrown,
+    roofColor: C.darkBluishGrey,
+    openings: windows(22, 9),
+  })
+  addBuilding({
+    sub: 'east_halls',
+    x: 93,
+    z: 18,
+    w: 22,
+    d: 17,
+    courses: 6,
+    color: C.reddishBrown,
+    roofColor: C.darkBluishGrey,
+    openings: windows(22, 9),
+  })
+  addBuilding({
+    sub: 'east_halls',
+    x: 93,
+    z: 45,
+    w: 22,
+    d: 18,
+    courses: 6,
+    color: C.darkTan,
+    roofColor: C.darkBluishGrey,
+    openings: windows(22, 9),
+  })
+
+  const stackColumn = (sub, xStud, zStud, courses, color = C.white) => {
+    let surface = campusSurface
+    for (let course = 0; course < courses; course += 1) {
+      surface = build.place('3062b', color, xStud * STUD_LDU, zStud * STUD_LDU, surface, { sub })
+    }
+    return surface
+  }
+  // Colonnades face the Quad: south on the Union, north on Foellinger.
+  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('union', x, 14.5, 4)
+  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('foellinger', x, 65.5, 5)
+
+  // Foellinger's copper dome: six bonded plate lifts narrow into two real
+  // compiled cone elements, so the south-end silhouette remains unmistakable.
+  let domeSurface = foellinger.roofTop
+  for (const [w, d] of [
+    [10, 8],
+    [8, 6],
+    [6, 4],
+  ]) {
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'foellinger',
+          origin: [(60 - w / 2) * STUD_LDU, domeSurface, (72 - d / 2) * STUD_LDU],
+          color: C.darkGreen,
+          family: 'plate',
+          widthStuds: w,
+          footprintDepthStuds: d,
+          layers: 2,
+        }),
+      ),
+      'foellinger',
+    )
+    domeSurface -= 2 * PLATE_LDU
+  }
+  domeSurface = build.place('3943b', C.darkGreen, 60 * STUD_LDU, 72 * STUD_LDU, domeSurface, { sub: 'foellinger' })
+  build.place('3942c', C.darkGreen, 60 * STUD_LDU, 72 * STUD_LDU, domeSurface, { sub: 'foellinger', offGrid: true })
+
+  // The Union cupola and Altgeld bell tower make the north edge read as a
+  // campus, not as a row of anonymous boxes.
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'union',
+        origin: [57 * STUD_LDU, union.roofTop, 5 * STUD_LDU],
+        color: C.white,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        courses: 2,
+        floor: false,
+      }),
+    ),
+    'union',
+  )
+  let cupolaSurface = union.roofTop - 2 * BRICK_LDU
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'union',
+        origin: [57 * STUD_LDU, cupolaSurface, 5 * STUD_LDU],
+        color: C.darkGreen,
+        family: 'plate',
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        layers: 2,
+      }),
+    ),
+    'union',
+  )
+  cupolaSurface -= 2 * PLATE_LDU
+  build.place('3943b', C.darkGreen, 60 * STUD_LDU, 8 * STUD_LDU, cupolaSurface, { sub: 'union' })
+
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'altgeld',
+        origin: [7 * STUD_LDU, altgeld.roofTop, 3 * STUD_LDU],
+        color: C.darkRed,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        courses: 4,
+        floor: false,
+      }),
+    ),
+    'altgeld',
+  )
+  let towerSurface = altgeld.roofTop - 4 * BRICK_LDU
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'altgeld',
+        origin: [7 * STUD_LDU, towerSurface, 3 * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: 6,
+        footprintDepthStuds: 6,
+        layers: 2,
+      }),
+    ),
+    'altgeld',
+  )
+  towerSurface -= 2 * PLATE_LDU
+  build.place('3943b', C.darkGreen, 10 * STUD_LDU, 6 * STUD_LDU, towerSurface, { sub: 'altgeld' })
+
+  // Alma Mater, Learning and Labor: three bronze statuette elements on a
+  // stone plinth. The element is a catalog-backed minifigure silhouette, not a
+  // painted cuboid, and each figure is separately selectable in the editor.
+  let almaSurface = campusSurface
+  almaSurface = build.place('3031', C.lightBluishGrey, 36 * STUD_LDU, 12 * STUD_LDU, almaSurface, { sub: 'altgeld' })
+  almaSurface = build.place('3001', C.darkBluishGrey, 36 * STUD_LDU, 12 * STUD_LDU, almaSurface, { sub: 'altgeld' })
+  for (const x of [34.5, 35.5, 36.5]) {
+    const seat = build.place('3024', C.lightBluishGrey, x * STUD_LDU, 12.5 * STUD_LDU, almaSurface, { sub: 'altgeld' })
+    build.place('90398', 80, x * STUD_LDU, 12.5 * STUD_LDU, seat, { sub: 'altgeld', offGrid: true })
+  }
+
+  // Morrow Plots, protected by their characteristic low perimeter fence.
+  for (const z of [68.5, 77.5]) {
+    for (const x of [94, 98, 102, 106, 110])
+      build.place('3633', C.white, x * STUD_LDU, z * STUD_LDU, campusSurface, { sub: 'morrow' })
+  }
+  for (const x of [92.5, 113.5]) {
+    for (const z of [71, 75])
+      build.place('3633', C.white, x * STUD_LDU, z * STUD_LDU, campusSurface, { sub: 'morrow', rotY: 90 })
+  }
+  for (let z = 70; z <= 76; z += 2) {
+    for (let x = 94; x <= 112; x += 3) {
+      const cropSurface = build.place('3062b', C.green, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, campusSurface, {
+        sub: 'morrow',
+      })
+      build.place('32607', (x + z) % 2 ? C.yellow : C.orange, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, cropSurface, {
+        sub: 'morrow',
+      })
+    }
+  }
+
+  for (const [index, [x, z]] of TREE_SITES.entries()) {
+    let surface = build.place('3062b', C.reddishBrown, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, campusSurface, {
+      sub: 'landscape',
+    })
+    surface = build.place('3062b', C.reddishBrown, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, {
+      sub: 'landscape',
+    })
+    surface = build.place(
+      '4727',
+      index % 3 === 0 ? C.darkGreen : C.green,
+      (x + 0.5) * STUD_LDU,
+      (z + 0.5) * STUD_LDU,
+      surface,
+      {
+        sub: 'landscape',
+        rotY: (index % 4) * 90,
+      },
+    )
+    build.place('4728', index % 4 === 0 ? C.green : C.darkGreen, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, {
+      sub: 'landscape',
+      rotY: ((index + 1) % 4) * 90,
+    })
+  }
+
+  const figureColors = [C.orange, C.blue, C.white, C.mediumBlue, C.green, C.darkBluishGrey]
+  for (const [index, [x, z]] of FIGURE_SITES.entries()) {
+    const worldX = (x + 0.5) * STUD_LDU
+    const worldZ = (z + 0.5) * STUD_LDU
+    build.place('90398', figureColors[index % figureColors.length], worldX, worldZ, campusSurface, { sub: 'people' })
+  }
+
+  notes.push(
+    'The site follows the Main Quad axis: Illini Union at the north, Foellinger Auditorium at the south, academic halls on both flanks, Altgeld and Alma Mater at the northwest, and Morrow Plots at the southeast.',
+    'Eighteen campus figures and the three-figure Alma Mater group are ordinary selectable parts in the same document as the architecture.',
+  )
+  return { build, notes, warnings }
+}
+
+const DEMOS = [
+  {
+    id: 'illinois-main-quad',
+    title: 'Illinois Main Quad campus',
+    discipline: 'Campus architecture',
+    tagline:
+      'A 120 × 80-stud university campus with seven landmarks, a tiled quad, trees, Morrow Plots and 21 LEGO characters.',
+    summary:
+      'A display-scale UIUC campus set anchored by the Illini Union and Foellinger Auditorium, with Altgeld Hall, ' +
+      'Alma Mater, six flanking academic blocks, the Main Quad path geometry, Morrow Plots, mature trees and ' +
+      'brick-built students. The site finish alone is 9,600 individually editable pieces over a cross-bonded base.',
+    techniques: [
+      '10,000+ catalog-backed pieces',
+      'Cross-bonded 120 × 80-stud foundation',
+      'Seven named campus landmarks',
+      'Stepped copper dome and bell tower',
+      '18 campus figures',
+      'Three-figure Alma Mater group',
+    ],
+    refinement:
+      'The massing study established the Main Quad axis on a one-layer field, but its plate runs were disconnected. ' +
+      'The published set cross-bonds the entire site, replaces the massing blocks with detailed landmark buildings, ' +
+      'and adds the 9,600-piece landscape, characters and buildable campus life.',
+    camera: { yaw: 34, pitch: 54, zoom: 0.96 },
+    showcase: { landmarkCount: 7, characterCount: 21, siteFinishParts: 9_600 },
+    showcaseProof: { characterDefinitionIds: ['90398'], siteFinishSubassemblyId: 'finish' },
+    maxPartsPerStep: 64,
+    tensionAllowance: 256,
+    tensionReason:
+      'Window panes are seated inside their frames rather than carried in vertical compression. The statics pass ' +
+      'counts those glazed inserts as tension-carried, measures their mass, and still checks every attachment group ' +
+      'against the conservative clutch assumption.',
+    hero: true,
+    brief: {
+      prompt:
+        'Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.',
+      envelopeStuds: [120, null, 80],
+      palette: ['Illinois orange and blue', 'Campus red brick', 'Copper green', 'Quad green', 'Limestone white'],
+      functions: [
+        '10,000+ editable pieces',
+        'Recognisable campus landmarks',
+        'LEGO characters',
+        'Verified build sequence',
+      ],
+    },
+    author: illinoisMainQuad,
+  },
   {
     id: 'courtyard-terrace',
     title: 'Courtyard terrace',
     discipline: 'Architecture',
     tagline: 'A bonded storey, seated windows and a parapet roof, from four parametric calls.',
     summary:
-      'Every course is offset against the one below, the corners alternate which run goes full length, '
-      + 'and each opening holds a real compiled window or door frame chosen by measured footprint.',
+      'Every course is offset against the one below, the corners alternate which run goes full length, ' +
+      'and each opening holds a real compiled window or door frame chosen by measured footprint.',
     techniques: ['Running bond', 'Interlocking corners', 'Seated window and door frames', 'Cross-bonded slab'],
     refinement:
-      'The first candidate laid a single-layer deck and cut bare holes where the openings are. '
-      + 'Plates side by side in one plane do not clutch, so the deck came apart into loose strips.',
+      'The first candidate laid a single-layer deck and cut bare holes where the openings are. ' +
+      'Plates side by side in one plane do not clutch, so the deck came apart into loose strips.',
     camera: { yaw: 38, pitch: 26, zoom: 1 },
     maxPartsPerStep: 12,
-    hero: true,
+    hero: false,
     brief: {
-      prompt: 'A terrace block twenty studs by fourteen, six courses high, in tan, with two windows and a door across the front, and a roof you could stand a figure on.',
+      prompt:
+        'A terrace block twenty studs by fourteen, six courses high, in tan, with two windows and a door across the front, and a roof you could stand a figure on.',
       envelopeStuds: [20, null, 14],
       palette: ['Tan', 'White', 'Dark Bluish Grey', 'Dark Tan'],
       functions: ['Bonded courses', 'Seated frames', 'Walkable roof'],
@@ -1415,12 +2080,12 @@ function snotKiosk(rough) {
     discipline: 'Vehicle',
     tagline: 'A flatbed on two real wheel bricks, with a closed cab and a tiled deck.',
     summary:
-      'The chassis is two plate layers whose seams deliberately miss each other, so the hauler is one '
-      + 'rigid body rather than two halves that happen to touch.',
+      'The chassis is two plate layers whose seams deliberately miss each other, so the hauler is one ' +
+      'rigid body rather than two halves that happen to touch.',
     techniques: ['Interlocked chassis', 'Wheel bricks as running gear', 'Tiled load bed'],
     refinement:
-      'The first candidate locked the chassis with two 4 x 4 plates that left the centreline seam '
-      + 'unbridged, so the front and rear halves were separate components.',
+      'The first candidate locked the chassis with two 4 x 4 plates that left the centreline seam ' +
+      'unbridged, so the front and rear halves were separate components.',
     camera: { yaw: -34, pitch: 22, zoom: 1 },
     maxPartsPerStep: 8,
     author: ridgelineHauler,
@@ -1431,12 +2096,12 @@ function snotKiosk(rough) {
     discipline: 'Creature',
     tagline: 'A standing bird whose stability is measured, not assumed.',
     summary:
-      'Slopes, round bricks and a cheese-slope beak, every one of them resting on a plane derived from '
-      + 'its own compiled connectors rather than a nominal brick height.',
+      'Slopes, round bricks and a cheese-slope beak, every one of them resting on a plane derived from ' +
+      'its own compiled connectors rather than a nominal brick height.',
     techniques: ['Round-brick legs', 'Slope tail and wings', 'Measured tipping margin'],
     refinement:
-      'The first candidate placed the head by coordinate in front of the body. It rendered perfectly and '
-      + 'the load path from the ground never reached it.',
+      'The first candidate placed the head by coordinate in front of the body. It rendered perfectly and ' +
+      'the load path from the ground never reached it.',
     camera: { yaw: 24, pitch: 14, zoom: 1 },
     maxPartsPerStep: 6,
     author: heronSculpture,
@@ -1447,19 +2112,19 @@ function snotKiosk(rough) {
     discipline: 'Mechanism',
     tagline: 'A hinge the connection graph reads as a real revolute joint.',
     summary:
-      'The shutter is a hinge-brick pair and a plate flap. The kernel records the joint with its freedom, '
-      + 'so the same model can be opened from the inspector or by an agent.',
+      'The shutter is a hinge-brick pair and a plate flap. The kernel records the joint with its freedom, ' +
+      'so the same model can be opened from the inspector or by an agent.',
     techniques: ['Hinge-brick pair', 'Revolute joint in the graph', 'Seated window'],
     refinement:
-      'The first candidate laid the shutter as free plates one course above the deck — a slab held by '
-      + 'nothing, which the load-path walk never reaches.',
+      'The first candidate laid the shutter as free plates one course above the deck — a slab held by ' +
+      'nothing, which the load-path walk never reaches.',
     camera: { yaw: -22, pitch: 30, zoom: 1 },
     maxPartsPerStep: 8,
     tensionAllowance: 5,
     tensionReason:
-      'The hinge top plates and the flap they carry hang from the hinge rather than resting on it, '
-      + 'which is what a hinge is. The statics pass reports them as carried in tension and checks that '
-      + 'the clutch assumption covers their mass.',
+      'The hinge top plates and the flap they carry hang from the hinge rather than resting on it, ' +
+      'which is what a hinge is. The statics pass reports them as carried in tension and checks that ' +
+      'the clutch assumption covers their mass.',
     author: shutterBay,
   },
   {
@@ -1468,12 +2133,12 @@ function snotKiosk(rough) {
     discipline: 'Furniture',
     tagline: 'Four legs, a braced underframe and a top that is a slab rather than a sheet.',
     summary:
-      'Rails tie the legs at desk height so the top is carried at its edges, and both the shelf and the '
-      + 'desktop are cross-bonded two-layer slabs.',
+      'Rails tie the legs at desk height so the top is carried at its edges, and both the shelf and the ' +
+      'desktop are cross-bonded two-layer slabs.',
     techniques: ['Cross-bonded slab', 'Braced underframe', 'Tiled work surface'],
     refinement:
-      'The first candidate laid the shelf and the desktop one plate deep. Single-layer plates in one plane '
-      + 'do not clutch each other, so the middle of both surfaces was loose.',
+      'The first candidate laid the shelf and the desktop one plate deep. Single-layer plates in one plane ' +
+      'do not clutch each other, so the middle of both surfaces was loose.',
     camera: { yaw: 42, pitch: 18, zoom: 1 },
     maxPartsPerStep: 8,
     author: draughtingDesk,
@@ -1484,19 +2149,19 @@ function snotKiosk(rough) {
     discipline: 'Advanced technique',
     tagline: 'Facade tiles placed on vertical studs by the 6-DOF connector solver.',
     summary:
-      'A course of studs-on-side bricks turns the front wall sideways, and every facing tile is posed by '
-      + '`bestSnapTransform` from the two connector frames — the same solver a drag in the editor uses.',
+      'A course of studs-on-side bricks turns the front wall sideways, and every facing tile is posed by ' +
+      '`bestSnapTransform` from the two connector frames — the same solver a drag in the editor uses.',
     techniques: ['Studs not on top', 'Solved connector frames', 'Cross-bonded cap'],
     refinement:
-      'The first candidate stopped at the studs-on-side course: the sideways studs were exposed and the '
-      + 'facade was never faced.',
+      'The first candidate stopped at the studs-on-side course: the sideways studs were exposed and the ' +
+      'facade was never faced.',
     camera: { yaw: 12, pitch: 20, zoom: 1 },
     maxPartsPerStep: 10,
     tensionAllowance: 3,
     tensionReason:
-      'The facing tiles hang off vertical studs. That is what studs-not-on-top means, and it is the one '
-      + 'case where clutch is genuinely in tension, so the statics pass measures the load against the '
-      + 'clutch assumption instead of waving it through.',
+      'The facing tiles hang off vertical studs. That is what studs-not-on-top means, and it is the one ' +
+      'case where clutch is genuinely in tension, so the statics pass measures the load against the ' +
+      'clutch assumption instead of waving it through.',
     author: snotKiosk,
   },
 ]
@@ -1512,14 +2177,16 @@ async function compile(demo, rough) {
     id: rough ? `${demo.id}-rough` : demo.id,
     name: rough ? `${demo.title} — first candidate` : demo.title,
     notes: authored.notes?.length
-      ? [{
-          id: 'note_plan',
-          anchorPartIds: [],
-          text: authored.notes.join(' '),
-          status: 'resolved',
-          author: HUMAN,
-          revisionCreated: 1,
-        }]
+      ? [
+          {
+            id: 'note_plan',
+            anchorPartIds: [],
+            text: authored.notes.join(' '),
+            status: 'resolved',
+            author: HUMAN,
+            revisionCreated: 1,
+          },
+        ]
       : [],
     maxPartsPerStep: demo.maxPartsPerStep,
   })
@@ -1603,18 +2270,37 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
   // The refinement story has to be true. If the earlier candidate is not worse
   // on a measured axis, there is nothing to show and the claim is dropped.
   const improved =
-    delta.componentsAfter < delta.componentsBefore
-    || delta.loosePartsAfter < delta.loosePartsBefore
-    || delta.unsupportedAfter < delta.unsupportedBefore
-    || delta.collisionsAfter < delta.collisionsBefore
+    delta.componentsAfter < delta.componentsBefore ||
+    delta.loosePartsAfter < delta.loosePartsBefore ||
+    delta.unsupportedAfter < delta.unsupportedBefore ||
+    delta.collisionsAfter < delta.collisionsBefore
   if (!improved) {
     failures.push(
-      `${demo.id}: the first candidate is not measurably worse than the published model `
-      + `(components ${delta.componentsBefore}→${delta.componentsAfter}, loose ${delta.loosePartsBefore}→${delta.loosePartsAfter}, `
-      + `unsupported ${delta.unsupportedBefore}→${delta.unsupportedAfter}, collisions ${delta.collisionsBefore}→${delta.collisionsAfter}). `
-      + 'Either the refinement is real and measurable, or it is not published.',
+      `${demo.id}: the first candidate is not measurably worse than the published model ` +
+        `(components ${delta.componentsBefore}→${delta.componentsAfter}, loose ${delta.loosePartsBefore}→${delta.loosePartsAfter}, ` +
+        `unsupported ${delta.unsupportedBefore}→${delta.unsupportedAfter}, collisions ${delta.collisionsBefore}→${delta.collisionsAfter}). ` +
+        'Either the refinement is real and measurable, or it is not published.',
     )
     continue
+  }
+
+  // Collection-defining scale claims are data, not copy. Count the character
+  // elements and site-finish subassembly from the compiled document before the
+  // numbers are allowed into the manifest or onto the landing page.
+  if (demo.showcase) {
+    const characterDefinitions = new Set(demo.showcaseProof?.characterDefinitionIds ?? [])
+    const characterCount = Object.values(refined.document.parts).filter((part) =>
+      characterDefinitions.has(part.definitionId),
+    ).length
+    const finishId = demo.showcaseProof?.siteFinishSubassemblyId
+    const siteFinishParts = finishId ? (refined.document.subassemblies[finishId]?.partIds.length ?? 0) : 0
+    if (characterCount !== demo.showcase.characterCount || siteFinishParts !== demo.showcase.siteFinishParts) {
+      failures.push(
+        `${demo.id}: showcase proof failed — characters ${characterCount}/${demo.showcase.characterCount}, ` +
+          `site finish ${siteFinishParts}/${demo.showcase.siteFinishParts}.`,
+      )
+      continue
+    }
   }
 
   const preview = buildPreview(refined.document, checks.validation)
@@ -1622,7 +2308,8 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
 
   const thumb = renderDocument(refined.document, { width: 720, height: 450, background: [17, 23, 25] })
   const social = renderDocument(refined.document, { width: 1200, height: 630, background: [12, 17, 19] })
-  if (thumb.coverage < 0.04) failures.push(`${demo.id}: rendered thumbnail covers only ${(thumb.coverage * 100).toFixed(1)}% of the frame`)
+  if (thumb.coverage < 0.04)
+    failures.push(`${demo.id}: rendered thumbnail covers only ${(thumb.coverage * 100).toFixed(1)}% of the frame`)
 
   const base = path.join(OUT_PUBLIC, demo.id)
   const assets = {}
@@ -1645,6 +2332,7 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
     tagline: demo.tagline,
     summary: demo.summary,
     techniques: demo.techniques,
+    showcase: demo.showcase ?? null,
     refinement: demo.refinement,
     hero: Boolean(demo.hero),
     tensionAllowance: demo.tensionAllowance ?? 0,
@@ -1674,10 +2362,10 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
     },
   })
   process.stdout.write(
-    `  ${demo.id.padEnd(20)} ${String(refinedSummary.partCount).padStart(4)} parts  `
-    + `${String(refinedSummary.connectionCount).padStart(5)} mates  ${String(refinedSummary.steps).padStart(3)} steps  `
-    + `${refinedSummary.statics.massLabel.padStart(8)}  margin ${String(refinedSummary.statics.tippingMarginLdu).padStart(7)} LDU  `
-    + `${Date.now() - started} ms\n`,
+    `  ${demo.id.padEnd(20)} ${String(refinedSummary.partCount).padStart(4)} parts  ` +
+      `${String(refinedSummary.connectionCount).padStart(5)} mates  ${String(refinedSummary.steps).padStart(3)} steps  ` +
+      `${refinedSummary.statics.massLabel.padStart(8)}  margin ${String(refinedSummary.statics.tippingMarginLdu).padStart(7)} LDU  ` +
+      `${Date.now() - started} ms\n`,
   )
 }
 
@@ -1687,8 +2375,8 @@ if (failures.length) {
   process.exit(1)
 }
 
-if (!ONLY.length && results.length < 6) {
-  process.stderr.write(`\nDemo build FAILED — only ${results.length} demo(s) passed every gate; six are required.\n`)
+if (!ONLY.length && results.length < 7) {
+  process.stderr.write(`\nDemo build FAILED — only ${results.length} demo(s) passed every gate; seven are required.\n`)
   await server.close()
   process.exit(1)
 }
@@ -1761,10 +2449,15 @@ if (CHECK_MODE) {
       return
     }
     const [a, b] = await Promise.all([readFile(generatedFile), readFile(committedFile)])
-    if (!a.equals(b)) drift.push(`${path.relative(ROOT, committedFile)} differs from a fresh build (${a.byteLength} vs ${b.byteLength} bytes)`)
+    if (!a.equals(b))
+      drift.push(
+        `${path.relative(ROOT, committedFile)} differs from a fresh build (${a.byteLength} vs ${b.byteLength} bytes)`,
+      )
   }
   const walk = async (directory, prefix = '') => {
-    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )) {
       const nested = path.join(directory, entry.name)
       if (entry.isDirectory()) await walk(nested, path.join(prefix, entry.name))
       else await compare(nested, path.join(committedPublic, prefix, entry.name))
