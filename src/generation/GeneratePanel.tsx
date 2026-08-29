@@ -72,20 +72,7 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
       </div>
 
       {state.briefPhase === 'idle' && !state.brief && (
-        <div className="bw-gen__notice" data-tone="empty" role="status">
-          <strong>
-            <Sparkles size={11} aria-hidden="true" /> Describe it, then check the brief
-          </strong>
-          <p>
-            The request is compiled into a design brief first — envelope, scale, functions, palette, symmetry, part
-            budget and style — with the phrase behind every field and the contradictions it could not settle. You edit
-            that brief, resolve the contradictions, and only then does the generator run.
-          </p>
-          <p className="bw-gen__notice-repair">
-            Candidates are built in memory and shown as ghosts. Nothing is written to this document until you accept
-            one.
-          </p>
-        </div>
+        <p className="bw-gen__hint">Describe it, then check the brief. Nothing is written until you accept a ghost.</p>
       )}
 
       {state.briefPhase === 'compiling' && (

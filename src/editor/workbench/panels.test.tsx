@@ -283,9 +283,11 @@ describe('transform controls', () => {
 describe('selection modes', () => {
   const renderSelection = () => render(<Harness>{(w) => <SelectionPanel workbench={w} />}</Harness>)
 
-  it('disables the seeded modes with nothing selected', () => {
+  it('keeps modes off-screen until something is selected', () => {
     renderSelection()
-    expect((screen.getByRole('button', { name: /^Colour/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: /^Colour/ })).toBeNull()
+    select([showcasePartIds()[0]])
+    expect((screen.getByRole('button', { name: /^Colour/ }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByRole('button', { name: 'Visible' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
@@ -322,7 +324,7 @@ describe('selection modes', () => {
     expect(revision()).toBe(before)
     expect(screen.getByRole('button', { name: /Show everything/ }).hasAttribute('disabled')).toBe(false)
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Show everything/ })) })
-    expect((screen.getByRole('button', { name: /Show everything/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: /Show everything/ })).toBeNull()
   })
 
   it('saves and restores a named selection set', () => {

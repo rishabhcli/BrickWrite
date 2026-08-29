@@ -89,10 +89,16 @@
 }
 
 .bw-refine__btn--primary {
-  background: color-mix(in srgb, var(--bw-r-orange) 16%, var(--bw-r-panel-2));
+  background: var(--bw-r-orange);
   border-color: var(--bw-r-orange);
-  color: var(--bw-r-orange);
-  font-weight: 600;
+  color: #1a1208;
+  font-weight: 700;
+}
+
+.bw-refine__btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bw-r-orange) 86%, white);
+  border-color: var(--bw-r-orange);
+  color: #1a1208;
 }
 
 .bw-refine__btn--danger:hover:not(:disabled) {
@@ -105,12 +111,10 @@
 .bw-refine__empty {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 14px 12px;
-  border: 1px dashed var(--bw-r-line-hi);
-  background:
-    repeating-linear-gradient(135deg, transparent 0 7px, rgba(131, 231, 238, .028) 7px 8px),
-    var(--bw-r-panel-2);
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border: 1px solid var(--bw-r-line);
+  background: var(--bw-r-panel-2);
   border-radius: 3px;
 }
 

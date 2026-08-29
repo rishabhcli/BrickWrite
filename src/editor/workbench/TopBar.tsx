@@ -1,5 +1,4 @@
 import { Save } from 'lucide-react'
-import { catalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { ProjectMenu } from '../ProjectMenu'
 import { AutonomySwitch } from './AutonomySwitch'
@@ -8,12 +7,11 @@ import type { Workbench } from './useWorkbench'
 /**
  * Identity, persistence and agent reach.
  *
- * The three facts an operator needs before touching anything: which document is
- * open, whether their work is actually being saved, and how much the agent is
- * currently allowed to do.
+ * Which document is open, whether work is actually being saved, and how much
+ * the agent is currently allowed to do.
  */
 export function TopBar({ workbench }: { workbench: Workbench }) {
-  const { state, sessionStatus, toolStatus } = workbench
+  const { state, sessionStatus } = workbench
   return (
     <header className="topbar">
       <div className="brand-lockup">
@@ -43,13 +41,6 @@ export function TopBar({ workbench }: { workbench: Workbench }) {
           <Save size={13} />
           <span>{sessionStatus.error ? 'Not saved' : sessionStatus.durable ? 'Saved' : 'In memory'}</span>
           <em>r{state.document.revision}</em>
-        </div>
-        <div className={`codex-state ${toolStatus.native ? 'connected' : 'ready'}`}>
-          <span className="pulse-ring"><i /></span>
-          <div>
-            <strong>{toolStatus.native ? 'Codex connected' : 'Site tools ready'}</strong>
-            <small>{toolStatus.toolCount} tools · {state.autonomy} access · catalog {catalog.version}</small>
-          </div>
         </div>
         <AutonomySwitch value={state.autonomy} onChange={(mode) => cadEngine.setAutonomy(mode)} />
       </div>

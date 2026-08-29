@@ -332,7 +332,7 @@ try {
   assert(!(await page.evaluate(() => window.brickwright.tools.has('build_apply'))), 'Leaving Build mode did not revoke write tools')
 
   // -- preflight is non-mutating; acceptance is atomic ----------------------
-  await page.getByRole('button', { name: /ghost .* proposal|cargo rack/i }).click()
+  await page.getByRole('button', { name: /ghost proposal|cargo rack/i }).click()
   await page.locator('.proposal-overlay').waitFor()
   assert((await page.evaluate(() => window.brickwright.getDocument().revision)) === startRevision, 'Preflight mutated the document')
   await page.locator('.proposal-overlay').getByRole('button', { name: /Accept/i }).click()

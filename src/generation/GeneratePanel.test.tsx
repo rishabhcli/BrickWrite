@@ -199,7 +199,7 @@ describe('the empty state', () => {
     mount()
     expect(screen.getByRole('region', { name: 'Generate' })).toBeInTheDocument()
     expect(screen.getByText(/Describe it, then check the brief/)).toBeInTheDocument()
-    expect(screen.getByText(/Nothing is written to this document until you accept one/)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing is written until you accept a ghost/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Compile brief/ })).toBeDisabled()
   })
 

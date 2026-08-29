@@ -43,7 +43,7 @@ import {
   type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
-import { applyChromeReveal, CHROME_SURFACE_TARGETS, publishChrome, setChromeRevealHandler } from '../../webmcp/chrome'
+import { applyChromeReveal, applyDockFocus, applyExclusiveDock, CHROME_SURFACE_TARGETS, publishChrome, setChromeRevealHandler } from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
   chordFromEvent,
@@ -81,9 +81,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const viewport = useViewportSize()
 
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcutMap())
-  const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() => loadLayout(
+  const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() => applyExclusiveDock(loadLayout(
     typeof window === 'undefined' ? 1600 : window.innerWidth,
-  ))
+  )))
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
   const saveInput = useRef<HTMLInputElement>(null)
@@ -118,8 +118,10 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   }, [rawLayout, updateLayout])
 
   const toggleSection = useCallback((id: string) => {
-    updateLayout({ ...rawLayout, sections: { ...rawLayout.sections, [id]: !rawLayout.sections[id] } })
-  }, [rawLayout, updateLayout])
+    if (workbench.tool === 'connect' && id !== 'connect') workbench.setTool('select')
+    const open = rawLayout.sections[id] !== false
+    updateLayout(applyDockFocus(rawLayout, id, !open))
+  }, [rawLayout, updateLayout, workbench])
 
   const applyPreset = useCallback((preset: LayoutPresetId) => {
     updateLayout({ ...defaultLayout(preset), sections: rawLayout.sections })
@@ -330,6 +332,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const sections = layout.sections
   const { state } = workbench
+  const connectActive = workbench.tool === 'connect'
+  const rightSectionOpen = (id: string) => !connectActive && sections[id] !== false
 
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
@@ -403,16 +407,17 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         ) : (
           <div className="dock dock-right" aria-label="Inspector dock">
             <div className="dock-head">
-              <span className="eyebrow">INSPECT & EDIT</span>
+              <span className="eyebrow">INSPECT</span>
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
             </div>
             <div className="dock-scroll">
-              {workbench.tool === 'connect' && (
+              {connectActive && (
                 <DockSection
                   id="connect"
                   title="Connect"
                   icon={<CircleDot size={11} />}
                   open
+                  grow
                   onToggle={() => workbench.setTool('select')}
                 >
                   <ConnectPanel workbench={workbench} />
@@ -423,7 +428,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 title="Selection"
                 icon={<MousePointer2 size={11} />}
                 badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
-                open={sections.selection !== false}
+                open={rightSectionOpen('selection')}
+                grow={rightSectionOpen('selection')}
                 onToggle={() => toggleSection('selection')}
               >
                 <SelectionPanel workbench={workbench} />
@@ -432,7 +438,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 id="transform"
                 title="Transform"
                 icon={<Move3d size={11} />}
-                open={sections.transform !== false}
+                open={rightSectionOpen('transform')}
+                grow={rightSectionOpen('transform')}
                 onToggle={() => toggleSection('transform')}
               >
                 <TransformPanel workbench={workbench} />
@@ -444,7 +451,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     id={id}
                     title={title ?? id}
                     icon={icon}
-                    open={sections[id] !== false}
+                    open={rightSectionOpen(id)}
+                    grow={rightSectionOpen(id)}
                     onToggle={() => toggleSection(id)}
                   >
                     {content}
@@ -455,7 +463,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 id="inspector"
                 title="Inspector"
                 icon={<SlidersHorizontal size={11} />}
-                open={sections.inspector !== false}
+                open={rightSectionOpen('inspector')}
+                grow={rightSectionOpen('inspector')}
                 onToggle={() => toggleSection('inspector')}
               >
                 <InspectorPanel

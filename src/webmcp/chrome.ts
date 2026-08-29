@@ -89,6 +89,40 @@ export function withChromeReveal<T extends object>(surface: ChromeSurface, paylo
   return { ...payload, revealed: revealChrome(surface) }
 }
 
+/** Right-dock sections that compete for the same 300px column. Opening one closes the others. */
+export const DOCK_FOCUS_SECTIONS = [
+  'selection',
+  'transform',
+  'inspector',
+  'connect',
+  'generation.panel',
+  'refinement.panel',
+  'agent.workbench',
+] as const
+
+export function applyDockFocus<T extends { sections: Readonly<Record<string, boolean>> }>(
+  layout: T,
+  id: string,
+  open: boolean,
+): T {
+  const sections = { ...layout.sections }
+  const focused = (DOCK_FOCUS_SECTIONS as readonly string[]).includes(id)
+  if (focused && open) {
+    for (const other of DOCK_FOCUS_SECTIONS) sections[other] = other === id
+  } else {
+    sections[id] = open
+  }
+  return { ...layout, sections }
+}
+
+/** Collapse competing right-dock sheets so a restored layout is never a stack. */
+export function applyExclusiveDock<T extends { sections: Readonly<Record<string, boolean>> }>(layout: T): T {
+  const open = DOCK_FOCUS_SECTIONS.filter((id) => layout.sections[id] === true)
+  if (open.length <= 1) return layout
+  const keep = open.includes('selection') ? 'selection' : open[0]
+  return applyDockFocus(layout, keep, true)
+}
+
 export function applyChromeReveal<T extends {
   left: ChromeDock
   right: ChromeDock
@@ -96,10 +130,10 @@ export function applyChromeReveal<T extends {
   sections: Readonly<Record<string, boolean>>
 }>(layout: T, surface: ChromeSurface): T {
   const { dock, section } = CHROME_SURFACE_TARGETS[surface]
+  const next = section ? applyDockFocus(layout, section, true) : layout
   return {
-    ...layout,
-    [dock]: { ...layout[dock], collapsed: false },
-    sections: section ? { ...layout.sections, [section]: true } : layout.sections,
+    ...next,
+    [dock]: { ...next[dock], collapsed: false },
   }
 }
 

@@ -81,6 +81,11 @@ export function StatusBar({
           <Sparkles size={11} /> {state.proposals.length} proposal{state.proposals.length === 1 ? '' : 's'} awaiting review
         </span>
       )}
+      {state.proposals.length === 0 && state.validation.partCount > 0 && (
+        <button type="button" className="status-ghost" onClick={workbench.createDemoProposal}>
+          Ghost proposal
+        </button>
+      )}
       {!online && (
         <span className="status-offline" title="The browser reports no network. Editing, validation and export are all local and unaffected.">
           <CloudOff size={11} /> Offline — local editing unaffected

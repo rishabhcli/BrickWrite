@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { defaultLayout } from '../editor/workbench/layout'
 import {
   applyChromeReveal,
+  applyDockFocus,
+  applyExclusiveDock,
   publishChrome,
   readChrome,
   resetChrome,
@@ -23,7 +25,43 @@ describe('chrome reveal', () => {
     expect(next.right.collapsed).toBe(false)
     expect(next.left.collapsed).toBe(false)
     expect(next.sections['generation.panel']).toBe(true)
+    expect(next.sections.selection).toBe(false)
     expect(next.sections['refinement.panel']).toBe(false)
+  })
+
+  it('opens one right-dock section by closing the others', () => {
+    const crowded = {
+      ...defaultLayout(),
+      sections: {
+        ...defaultLayout().sections,
+        selection: true,
+        transform: true,
+        inspector: true,
+        'generation.panel': false,
+      },
+    }
+    const next = applyDockFocus(crowded, 'generation.panel', true)
+    expect(next.sections['generation.panel']).toBe(true)
+    expect(next.sections.selection).toBe(false)
+    expect(next.sections.transform).toBe(false)
+    expect(next.sections.inspector).toBe(false)
+    expect(next.sections.palette).toBe(true)
+  })
+
+  it('collapses a restored stack down to one focused sheet', () => {
+    const stacked = {
+      ...defaultLayout(),
+      sections: {
+        ...defaultLayout().sections,
+        selection: true,
+        transform: true,
+        inspector: true,
+      },
+    }
+    const next = applyExclusiveDock(stacked)
+    expect(next.sections.selection).toBe(true)
+    expect(next.sections.transform).toBe(false)
+    expect(next.sections.inspector).toBe(false)
   })
 
   it('uncollapses the timeline without inventing a section id', () => {

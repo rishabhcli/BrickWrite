@@ -1,4 +1,4 @@
-import { Check, Sparkles, X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { searchCatalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
@@ -61,8 +61,6 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
     workbench.dropPart(record ?? { id, name: id }, event.clientX, event.clientY)
   }, [workbench])
 
-  const selectedPart = workbench.selectedPart
-
   return (
     <section
       className={`viewport-shell ${dragOver ? 'drag-target' : ''}`}
@@ -98,25 +96,13 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
         }}
       />
       <div className="viewport-corners" aria-hidden="true"><i /><i /><i /><i /></div>
-      <div className="viewport-breadcrumb">
-        <span>ASSEMBLY</span><b>/</b>
-        <strong>{selectedPart ? state.document.subassemblies[selectedPart.subassemblyId]?.name : 'MASTER MODEL'}</strong>
-      </div>
       <div className="viewport-title-block">
-        <span className="eyebrow">CATALOG-BACKED ASSEMBLY / REV {state.document.revision}</span>
-        <h1 title={state.document.name}>
-          <span>{state.document.name}</span> <em>// R{String(state.document.revision).padStart(2, '0')}</em>
-        </h1>
         <p>{workbench.selectionLabel}</p>
       </div>
       <div className="viewport-metrics">
         <Metric label="PARTS" value={String(state.validation.partCount).padStart(3, '0')} />
-        <Metric label="CONNECTIONS" value={String(state.validation.connectionCount).padStart(3, '0')} />
-        <Metric label="COLLISIONS" value={String(state.validation.collisions.length).padStart(2, '0')} good={state.validation.collisions.length === 0} />
-      </div>
-      <div className="viewport-status">
-        <span><i /> LIVE KERNEL</span>
-        <b>{workbench.viewportHint}</b>
+        <Metric label="CONN" value={String(state.validation.connectionCount).padStart(3, '0')} />
+        <Metric label="HITS" value={String(state.validation.collisions.length).padStart(2, '0')} good={state.validation.collisions.length === 0} />
       </div>
 
       {renderMode !== 'beauty' && (
@@ -154,14 +140,6 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
       )}
 
       {state.validation.partCount === 0 && !placement && <EmptyBuildState onPickStarter={pickStarter} />}
-
-      {state.proposals.length === 0 && state.validation.partCount > 0 && (
-        <button className="agent-suggest" onClick={workbench.createDemoProposal}>
-          <Sparkles size={14} />
-          <span><small>AGENT WORKFLOW</small>Create a ghost reinforcement proposal</span>
-          <b>TRY</b>
-        </button>
-      )}
 
       {workbench.playbackStep !== null && (
         <div className="instruction-overlay">

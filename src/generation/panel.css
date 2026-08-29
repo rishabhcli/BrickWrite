@@ -76,10 +76,16 @@
 .bw-gen__btn:disabled { opacity: .42; cursor: not-allowed; }
 
 .bw-gen__btn--primary {
-  background: color-mix(in srgb, var(--bw-g-orange) 16%, var(--bw-g-panel-2));
+  background: var(--bw-g-orange);
   border-color: var(--bw-g-orange);
-  color: var(--bw-g-orange);
-  font-weight: 600;
+  color: #1a1208;
+  font-weight: 700;
+}
+
+.bw-gen__btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bw-g-orange) 86%, white);
+  border-color: var(--bw-g-orange);
+  color: #1a1208;
 }
 
 .bw-gen__btn--danger:hover:not(:disabled) { border-color: var(--bw-g-red); color: var(--bw-g-red); }

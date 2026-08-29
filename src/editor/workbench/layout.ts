@@ -87,9 +87,11 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   transform: false,
   inspector: false,
   validate: false,
+  connect: false,
   // The quieter 300px inspector cannot hold Generate, Refine and the design
-  // partner open at once. Headers stay visible; `workspace_reveal` (and a
-  // click) opens the one the operator or agent is actually using.
+  // partner open at once. Headers stay visible; opening one (or
+  // `workspace_reveal`) closes the others so the column is never a stack of
+  // half-visible sheets.
   'generation.panel': false,
   'refinement.panel': false,
   'agent.workbench': false,
