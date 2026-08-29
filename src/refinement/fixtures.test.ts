@@ -97,7 +97,7 @@ describe('refinement improves the objective each fixture targets', () => {
         }))
         .sort((a, b) => b.gain - a.gain)[0]
 
-      // eslint-disable-next-line no-console
+       
       console.log(
         `[${fixture.id}] ${definition.label} (${definition.direction}) ` +
           `${best.proposal.metrics.before[target].toFixed(3)} → ${best.proposal.metrics.after[target].toFixed(3)} ` +

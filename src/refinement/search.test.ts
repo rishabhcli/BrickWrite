@@ -166,7 +166,7 @@ describe('metric vector honesty', () => {
     )
     expect(traded, 'expected a proposal that improves one objective and regresses another').toBeDefined()
 
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[metric honesty] ${traded!.strategy}: ` +
         OBJECTIVE_IDS.filter((id) => Math.abs(traded!.metrics.delta[id]) > 1e-9)

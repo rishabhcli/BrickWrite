@@ -108,7 +108,7 @@ export function usePersistentState<T>(key: string, fallback: T): [T, (next: T | 
     return () => window.removeEventListener('storage', onStorage)
     // `fallback` is only read when the key is absent, so it does not need to
     // participate in the subscription's identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [key])
 
   return [value, update]

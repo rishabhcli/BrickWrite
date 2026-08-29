@@ -251,7 +251,7 @@ export function useContributions(slot: WorkbenchSlotId): readonly RegisteredCont
   return useMemo(
     () => registry.list(slot).filter((entry) => !entry.when || entry.when(api)),
     // `version` is the store's change token; `registry.list` is pure given it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [registry, slot, version, api],
   )
 }

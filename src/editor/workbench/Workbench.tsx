@@ -305,7 +305,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     if (welcomeUnseen()) workbench.setModal('core:welcome')
     // Only ever on the first commit; the guide is a first-run state, not a
     // condition that can recur mid-session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   const modal = workbench.modal

@@ -67,7 +67,7 @@ export function registerLandingRoutes(register?: RouteRegistrar): () => void {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __brickwrightRegisterRoute: RouteRegistrar | undefined
 }
 

@@ -276,7 +276,7 @@ function BatchEdges({
 
   const merged = useMemo(
     () => buildMergedEdgeGeometry(descriptor.members, geometry.edges),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [signature, geometry],
   )
 

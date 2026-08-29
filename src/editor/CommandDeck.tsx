@@ -203,7 +203,7 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
     }
     // Opening establishes a snapshot. Live document changes continue to flow
     // through the memoized collections without stealing focus.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open])
 
   useEffect(() => {

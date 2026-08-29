@@ -655,7 +655,7 @@ function CameraRig({
     framed.current = hasParts
     // Opening a different document, or exploding the one that is open, both
     // replace what is on screen, so both are legitimate reasons to reframe.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [camera, documentId, exploded, resetKey, view])
 
   // A document that arrives empty and is then filled — a fresh project, an

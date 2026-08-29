@@ -164,7 +164,7 @@ export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: Joi
   const scaleFor = useMemo(() => {
     const eye = camera.position.clone()
     return (position: THREE.Vector3) => Math.max(0.45, Math.min(4, eye.distanceTo(position) * 0.045))
-  }, [camera.position.x, camera.position.y, camera.position.z]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [camera.position.x, camera.position.y, camera.position.z])  
 
   return (
     <group name="joint-manipulators">
