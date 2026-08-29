@@ -606,7 +606,10 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
 
 /** Facet count for one tier, or the total across all of them. */
 function tierCount(page: CatalogSearchPage, tier: CatalogTier | 'all', state: string): string {
-  if (tier === 'catalogued' && state === 'idle') return '·'
+  // Not "zero" and not a bug: this tier's size is only known once a search has
+  // run. An em dash is the ordinary way a table says "no value here"; the
+  // interpunct that used to sit here read as a glyph that had failed to render.
+  if (tier === 'catalogued' && state === 'idle') return '—'
   const value = tier === 'all'
     ? page.tiers.placeable + page.tiers.modelled + page.tiers.catalogued
     : page.tiers[tier]
