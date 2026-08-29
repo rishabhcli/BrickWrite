@@ -19,7 +19,7 @@ export function AgentWorkbenchContribution() {
   useRegisterContribution({
     id: 'agent.workbench',
     slot: 'panel-right',
-    priority: 120,
+    priority: 135,
     title: 'Design partner',
     render: () => <AgentWorkbench session={session} />,
   })

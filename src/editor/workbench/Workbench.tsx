@@ -429,7 +429,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 icon={<MousePointer2 size={11} />}
                 badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
                 open={rightSectionOpen('selection')}
-                grow={rightSectionOpen('selection')}
+                grow={rightSectionOpen('selection') && state.selection.length > 0}
                 onToggle={() => toggleSection('selection')}
               >
                 <SelectionPanel workbench={workbench} />
