@@ -408,6 +408,11 @@ try {
   const canvasBox = await page.locator('canvas').boundingBox()
   const canvasCentre = { x: canvasBox.width / 2, y: canvasBox.height / 2 }
   await page.locator('canvas').click({ position: canvasCentre })
+  // Inspector starts collapsed so the column can hold one sheet. Reveal it
+  // the same way VALIDATE does below, instead of assuming the identity panel
+  // is already mounted.
+  await page.evaluate(async () => window.brickwright.invoke('workspace_reveal', { surface: 'inspector' }))
+  await page.waitForFunction(() => document.querySelector('[data-section="inspector"] .dock-section-toggle')?.getAttribute('aria-expanded') === 'true')
   await page.locator('.inspector-panel .selection-identity').waitFor({ timeout: 5_000 })
   await page.keyboard.press('g')
   await page.waitForFunction(() => Boolean(window.__brickwrightGizmo), null, { timeout: 5_000 })
