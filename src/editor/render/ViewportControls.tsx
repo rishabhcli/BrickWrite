@@ -152,10 +152,13 @@ export function ViewportControls(props: ViewportControlsProps) {
   const qualityController = useMemo(() => new QualityController(), [])
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
 
-  useEffect(() => () => {
-    idPass.dispose()
-    derived.dispose()
-  }, [derived, idPass])
+  useEffect(
+    () => () => {
+      idPass.dispose()
+      derived.dispose()
+    },
+    [derived, idPass],
+  )
 
   useEffect(() => {
     // First-click pick used to pay shader compile and target allocation. A
@@ -164,9 +167,10 @@ export function ViewportControls(props: ViewportControlsProps) {
     const warm = () => {
       idPass.pick(camera, -1, -1, { radius: 0 })
     }
-    const idle = 'requestIdleCallback' in window ? window.requestIdleCallback(warm) : window.setTimeout(warm, 0)
+    const supportsIdle = typeof window.requestIdleCallback === 'function'
+    const idle = supportsIdle ? window.requestIdleCallback(warm) : window.setTimeout(warm, 0)
     return () => {
-      if (typeof idle === 'number' && 'cancelIdleCallback' in window) window.cancelIdleCallback(idle)
+      if (supportsIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle)
       else window.clearTimeout(idle)
     }
   }, [camera, idPass])
@@ -174,7 +178,17 @@ export function ViewportControls(props: ViewportControlsProps) {
   // Props read from callbacks that outlive a render. Refs rather than
   // dependencies, because rebuilding the pointer listeners on every document
   // revision would drop an in-flight drag.
-  const latest = useRef({ model, selection, visibility, sectionPlanes, enabled, extent, camera, size, joints: [] as readonly ArticulatedJoint[] })
+  const latest = useRef({
+    model,
+    selection,
+    visibility,
+    sectionPlanes,
+    enabled,
+    extent,
+    camera,
+    size,
+    joints: [] as readonly ArticulatedJoint[],
+  })
   latest.current = { ...latest.current, model, selection, visibility, sectionPlanes, enabled, extent, camera, size }
 
   const stats = useRef({ contextLosses: 0, contextRestores: 0, fps: 0, tier: 'high', tierIndex: 1 })
@@ -326,7 +340,16 @@ export function ViewportControls(props: ViewportControlsProps) {
   const publishJointDrag = useCallback((): JointDragReport => {
     const drag = jointDrag.current
     if (!drag) {
-      return { active: false, edgeId: null, handle: null, rotateDegrees: 0, slideLdu: 0, previewCount: 0, sweep: null, commits: 0 }
+      return {
+        active: false,
+        edgeId: null,
+        handle: null,
+        rotateDegrees: 0,
+        slideLdu: 0,
+        previewCount: 0,
+        sweep: null,
+        commits: 0,
+      }
     }
     const preview = previewTransforms(latest.current.model, drag.joint, drag.request)
     return {
@@ -464,11 +487,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       } else {
         const hit = intersectPlane(plane, ray)
         if (!hit) return false
-        const reference: Vec3 = [
-          hit[0] - plane.origin[0],
-          hit[1] - plane.origin[1],
-          hit[2] - plane.origin[2],
-        ]
+        const reference: Vec3 = [hit[0] - plane.origin[0], hit[1] - plane.origin[1], hit[2] - plane.origin[2]]
         sectionDrag.current = {
           id,
           mode,
@@ -572,8 +591,30 @@ export function ViewportControls(props: ViewportControlsProps) {
    * cancel a box selection between the operator pressing and releasing. It
    * presented as a marquee that drew correctly and then selected nothing.
    */
-  const handlers = useRef({ pick, pickRegion, updateJoint, updateSection, endJoint, endSection, onSelect, onSelectMany, onClearSelection, onOverlay })
-  handlers.current = { pick, pickRegion, updateJoint, updateSection, endJoint, endSection, onSelect, onSelectMany, onClearSelection, onOverlay }
+  const handlers = useRef({
+    pick,
+    pickRegion,
+    updateJoint,
+    updateSection,
+    endJoint,
+    endSection,
+    onSelect,
+    onSelectMany,
+    onClearSelection,
+    onOverlay,
+  })
+  handlers.current = {
+    pick,
+    pickRegion,
+    updateJoint,
+    updateSection,
+    endJoint,
+    endSection,
+    onSelect,
+    onSelectMany,
+    onClearSelection,
+    onOverlay,
+  }
 
   useEffect(() => {
     const element = gl.domElement
@@ -598,7 +639,11 @@ export function ViewportControls(props: ViewportControlsProps) {
       } else if (event.shiftKey) {
         const orbit = controls as { enabled?: boolean } | null
         if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
-        handlers.current.onOverlay({ marquee: { left: point.x, top: point.y, width: 0, height: 0 }, lasso: null, sweep: null })
+        handlers.current.onOverlay({
+          marquee: { left: point.x, top: point.y, width: 0, height: 0 },
+          lasso: null,
+          sweep: null,
+        })
       }
     }
 
@@ -681,7 +726,13 @@ export function ViewportControls(props: ViewportControlsProps) {
         const height = Math.abs(point.y - start.y)
         // A shift-click that never became a drag is a click, handled below.
         if (width >= CLICK_SLOP_PX || height >= CLICK_SLOP_PX) {
-          const region = handlers.current.pickRegion({ kind: 'box', x0: start.x, y0: start.y, x1: point.x, y1: point.y })
+          const region = handlers.current.pickRegion({
+            kind: 'box',
+            x0: start.x,
+            y0: start.y,
+            x1: point.x,
+            y1: point.y,
+          })
           handlers.current.onSelectMany([...region.partIds], true)
           return
         }
@@ -847,15 +898,14 @@ export function ViewportControls(props: ViewportControlsProps) {
           Math.max(...measured.map((entry) => entry.max[2])),
         ]
         const centre = lduToScene([(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2])
-        const extent = Math.max(
-          8,
-          Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * MODEL_ROOT_SCALE,
-        )
+        const extent = Math.max(8, Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * MODEL_ROOT_SCALE)
         // Framing is a jump rather than a flight: this is the entry point an
         // agent and a test call, and both want the camera where they asked for
         // it by the time the call returns.
         const active = latest.current.camera
-        active.position.copy(centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)))
+        active.position.copy(
+          centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)),
+        )
         active.lookAt(centre)
         const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
         if (orbit?.target) {
@@ -882,9 +932,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       setVisibility: async (patch: VisibilityPatch) => {
         const current = latest.current.visibility
         const seeds =
-          patch.isolateSeedIds === undefined
-            ? current.isolation?.seedPartIds ?? null
-            : patch.isolateSeedIds
+          patch.isolateSeedIds === undefined ? (current.isolation?.seedPartIds ?? null) : patch.isolateSeedIds
         const hops = patch.hops ?? current.isolation?.hops ?? 1
         // The hop walk runs on the worker when one exists. Its answer is not
         // needed to build the next state — `resolveVisibility` recomputes it —
