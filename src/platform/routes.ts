@@ -55,8 +55,12 @@ export function resetRouteRegistry(): void {
  * free of React: the route table is imported by the shell, by tests and by the
  * import-graph assertion, and none of those should have to pull the component
  * tree and its stylesheet to read a list of paths. It buys no separate chunk —
- * `states.tsx` is statically imported by the shell regardless — and the build
- * says so with an INEFFECTIVE_DYNAMIC_IMPORT notice, which is accurate.
+ * `AppShell.tsx` imports `not-installed` statically, because it resolves an
+ * unregistered route synchronously inside a `useMemo` and cannot await — and the
+ * build says so with an INEFFECTIVE_DYNAMIC_IMPORT notice, which is accurate.
+ * The dynamic form is kept regardless: it is what keeps React out of this
+ * module's own import graph, which is the property `import-graph.test.ts`
+ * asserts and the reason the route table can be read by tests for free.
  */
 async function loadSurface(id: RouteId): Promise<{ default: ComponentType }> {
   const loader = registry.get(id)

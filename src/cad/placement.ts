@@ -51,8 +51,6 @@ export type PlacementReason = 'mated' | 'ground' | 'occupied' | 'absent' | 'inco
 
 export type PlacementFace = 'on-top' | 'underneath' | 'beside-x' | 'beside-minus-x' | 'beside-z' | 'beside-minus-z'
 
-const SIDE_FACES = new Set<PlacementFace>(['beside-x', 'beside-minus-x', 'beside-z', 'beside-minus-z'])
-
 const CONNECT_FACES: readonly PlacementFace[] = [
   'on-top',
   'underneath',

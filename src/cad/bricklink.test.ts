@@ -76,7 +76,7 @@ describe('BrickLink wanted-list export', () => {
 
   it('reports unverified item numbers rather than claiming them', () => {
     const document = createShowcaseDocument()
-    const { report, xml: _xml } = exportBrickLinkXml(document)
+    const { report } = exportBrickLinkXml(document)
     const lines = buildBrickLinkLines(document)
     const unverified = lines.filter((line) => line.idSource !== 'bricklink').length
     expect(report.unverifiedIds).toBe(unverified)

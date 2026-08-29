@@ -1,9 +1,5 @@
 import { catalog } from './catalog'
-import {
-  ProjectRepository,
-  type StoredCheckpoint,
-  type StoredTransaction,
-} from './persistence'
+import { ProjectRepository, type StoredCheckpoint, type StoredTransaction } from './persistence'
 import type { ModelDocument, ValidationReport } from './types'
 import { validateDocument } from './validation'
 
@@ -47,9 +43,7 @@ export interface ArchiveImportReport {
   readonly recomputedHealthy: boolean
 }
 
-export type ArchiveParseResult =
-  | { ok: true; archive: BrickwrightArchive }
-  | { ok: false; message: string }
+export type ArchiveParseResult = { ok: true; archive: BrickwrightArchive } | { ok: false; message: string }
 
 export function attestationOf(report: ValidationReport): ArchiveAttestation {
   return {
@@ -216,15 +210,15 @@ export async function exportProjectArchive(
   validation: ValidationReport,
 ): Promise<string> {
   const stored = await repository.readCheckpoint(document.id)
-  const liveIsStored = stored !== null && stored.revision === document.revision
-  const checkpoint: StoredCheckpoint = liveIsStored
-    ? stored
-    : {
-        projectId: document.id,
-        revision: document.revision,
-        savedAt: new Date().toISOString(),
-        document,
-      }
+  const checkpoint: StoredCheckpoint =
+    stored && stored.revision === document.revision
+      ? stored
+      : {
+          projectId: document.id,
+          revision: document.revision,
+          savedAt: new Date().toISOString(),
+          document,
+        }
   const transactions = await repository.listTransactions(document.id, checkpoint.revision)
   return serializeArchive({
     checkpoint,

@@ -8,7 +8,8 @@
       "DOM.Iterable"
     ],
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ],
     "skipLibCheck": true,
     "module": "ESNext",
@@ -26,10 +27,16 @@
     "api",
     "tools",
     "server",
+    "src",
     "convex/model/capabilities.ts",
     "convex/model/checksum.ts",
     "convex/model/limits.ts",
     "convex/model/protocol.ts",
     "convex/model/redaction.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/__tests__"
   ]
 }
