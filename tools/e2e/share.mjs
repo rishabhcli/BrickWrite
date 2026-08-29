@@ -32,6 +32,7 @@ const publishToken = 'acceptance-publish-token'
 const ARTIFACTS = 'artifacts/share'
 
 let edge
+let browser
 const shots = []
 
 function assert(condition, message) {
@@ -97,7 +98,7 @@ try {
   await waitFor(`${edgeUrl}/share/does-not-exist`, 'the Pages Functions runner')
   step('edge runner up')
 
-  const browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } })
   const consoleErrors = []
   page.on('console', (message) => {
@@ -111,10 +112,9 @@ try {
   // == 1. publish ===========================================================
   // Share Studio, against the real compiled catalog and real LDraw geometry,
   // rendering real cards in the browser and posting them to the edge.
-  await page.goto(
-    `${edgeUrl}/src/features/share/dev/studio.html?view=studio&token=${publishToken}`,
-    { waitUntil: 'domcontentloaded' },
-  )
+  await page.goto(`${edgeUrl}/src/features/share/dev/studio.html?view=studio&token=${publishToken}`, {
+    waitUntil: 'domcontentloaded',
+  })
   await page.locator('[data-testid="harness-ready"]').waitFor({ timeout: 180_000 })
   step('harness ready')
 
@@ -131,7 +131,8 @@ try {
     const context = canvas.getContext('2d')
     const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
     let distinct = new Set()
-    for (let index = 0; index < data.length; index += 4 * 97) distinct.add(`${data[index]},${data[index + 1]},${data[index + 2]}`)
+    for (let index = 0; index < data.length; index += 4 * 97)
+      distinct.add(`${data[index]},${data[index + 1]},${data[index + 2]}`)
     return distinct.size
   })
   assert(previewInk > 12, `Share Studio's preview looks blank (${previewInk} distinct samples)`)
@@ -215,7 +216,10 @@ try {
   const cardBytes = new Uint8Array(await card.arrayBuffer())
   assert(cardBytes.byteLength > 20_000, `og:image is only ${cardBytes.byteLength} bytes`)
   const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-  assert(signature.every((byte, index) => cardBytes[index] === byte), 'og:image is not a PNG')
+  assert(
+    signature.every((byte, index) => cardBytes[index] === byte),
+    'og:image is not a PNG',
+  )
   const width = new DataView(cardBytes.buffer).getUint32(16)
   const height = new DataView(cardBytes.buffer).getUint32(20)
   assert(width === 1200 && height === 630, `og:image is ${width}x${height}, not 1200x630`)
@@ -230,7 +234,9 @@ try {
   assert(conditional.status === 304, `a matching ETag returned ${conditional.status}`)
 
   // The publication states which revision it captured, and its own hash.
-  const summary = await (await fetch(`${edgeUrl}/share/${slug}/summary.json`, { headers: { Accept: 'application/json' } })).json()
+  const summary = await (
+    await fetch(`${edgeUrl}/share/${slug}/summary.json`, { headers: { Accept: 'application/json' } })
+  ).json()
   assert(summary.revision === revision, `summary says revision ${summary.revision}, expected ${revision}`)
   assert(/^[0-9a-f]{64}$/.test(summary.contentHash), 'the publication has no content hash')
   const publishedHash = summary.contentHash
@@ -270,6 +276,7 @@ try {
   await shot(page, 'viewer-orbited')
 
   // Scrub the build sequence.
+  await page.locator('.bw-share-step-disclosure summary').click()
   await page.locator('[data-testid="step-1"]').click()
   await page.waitForTimeout(250)
   assert((await canvas.getAttribute('data-step')) === '1', 'the scrubber did not select step 1')
@@ -307,7 +314,15 @@ try {
     })
     const request = database.transaction('checkpoints', 'readonly').objectStore('checkpoints').getAll()
     return new Promise((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result.map((entry) => ({ id: entry.projectId, revision: entry.revision, parts: Object.keys(entry.document.parts).length, notes: entry.document.notes.length })))
+      request.onsuccess = () =>
+        resolve(
+          request.result.map((entry) => ({
+            id: entry.projectId,
+            revision: entry.revision,
+            parts: Object.keys(entry.document.parts).length,
+            notes: entry.document.notes.length,
+          })),
+        )
       request.onerror = () => reject(request.error)
     })
   })
@@ -318,7 +333,9 @@ try {
   await shot(page, 'forked')
 
   // Forking must not have touched the publication.
-  const afterFork = await (await fetch(`${edgeUrl}/share/${slug}/summary.json`, { headers: { Accept: 'application/json' } })).json()
+  const afterFork = await (
+    await fetch(`${edgeUrl}/share/${slug}/summary.json`, { headers: { Accept: 'application/json' } })
+  ).json()
   assert(afterFork.contentHash === publishedHash, 'the publication changed when it was forked')
 
   // == 6. embed =============================================================
@@ -332,7 +349,11 @@ try {
 
   // == 7. unlisted tokens ===================================================
   step('unlisted tokens')
-  const authorised = { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${publishToken}` }
+  const authorised = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${publishToken}`,
+  }
   await fetch(`${edgeUrl}/publications/${slug}/access`, {
     method: 'POST',
     headers: authorised,
@@ -344,11 +365,17 @@ try {
     await fetch(`${edgeUrl}/publications/${slug}/tokens`, {
       method: 'POST',
       headers: authorised,
-      body: JSON.stringify({ label: 'acceptance link', scope: { view: true, comment: false, fork: false, download: false, embed: false } }),
+      body: JSON.stringify({
+        label: 'acceptance link',
+        scope: { view: true, comment: false, fork: false, download: false, embed: false },
+      }),
     })
   ).json()
   assert(typeof minted.token === 'string' && minted.token.includes('.'), 'no token was minted')
-  assert(!('secretHash' in minted.record) || minted.record.secretHash === undefined, 'the mint response leaked the stored hash')
+  assert(
+    !('secretHash' in minted.record) || minted.record.secretHash === undefined,
+    'the mint response leaked the stored hash',
+  )
 
   const withToken = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`)
   assert(withToken.ok, `a valid token returned ${withToken.status}`)
@@ -372,7 +399,11 @@ try {
   const expiredResponse = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(expired.token)}`)
   assert(expiredResponse.status === 410, `an expired token returned ${expiredResponse.status}`)
 
-  await fetch(`${edgeUrl}/publications/${slug}/tokens/${tokenId}/revoke`, { method: 'POST', headers: authorised, body: '{}' })
+  await fetch(`${edgeUrl}/publications/${slug}/tokens/${tokenId}/revoke`, {
+    method: 'POST',
+    headers: authorised,
+    body: '{}',
+  })
   const afterRevokeToken = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`)
   assert(afterRevokeToken.status === 404, `a revoked token returned ${afterRevokeToken.status}`)
 
@@ -405,6 +436,7 @@ try {
   assert(feed.entries.length === 0, `the gallery still lists ${feed.entries.length} revoked publication(s)`)
 
   await browser.close()
+  browser = null
 
   process.stdout.write('\n=== share acceptance ===\n')
   process.stdout.write(`slug              ${slug}\n`)
@@ -419,5 +451,6 @@ try {
   process.stderr.write(`\nshare acceptance failed: ${cause?.stack ?? cause}\n`)
   process.exitCode = 1
 } finally {
+  await browser?.close().catch(() => undefined)
   edge?.kill()
 }

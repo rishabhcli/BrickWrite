@@ -24,7 +24,11 @@ const editorUrl = `${url.replace(/\/+$/, '')}/editor`
 let server
 
 async function available() {
-  try { return (await fetch(url)).ok } catch { return false }
+  try {
+    return (await fetch(url)).ok
+  } catch {
+    return false
+  }
 }
 
 async function waitForServer() {
@@ -57,7 +61,8 @@ async function revealChrome(page, surface) {
   const section = CHROME_SECTIONS[surface]
   if (section) {
     await page.waitForFunction(
-      (id) => document.querySelector(`[data-section="${id}"] .dock-section-toggle`)?.getAttribute('aria-expanded') === 'true',
+      (id) =>
+        document.querySelector(`[data-section="${id}"] .dock-section-toggle`)?.getAttribute('aria-expanded') === 'true',
       section,
     )
   }
@@ -112,7 +117,11 @@ const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, onCpu ? Math
 
 try {
   if (!(await available())) {
-    server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], { stdio: 'ignore' })
+    server = spawn(
+      process.execPath,
+      ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'],
+      { stdio: 'ignore' },
+    )
     await waitForServer()
   }
   await mkdir('artifacts', { recursive: true })
@@ -122,7 +131,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true })
   const errors = []
   const requests = []
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
   page.on('pageerror', (cause) => errors.push(cause.message))
   page.on('request', (request) => requests.push(request.url()))
 
@@ -133,7 +144,10 @@ try {
   // the editor so that wiring failures cannot hide behind isolated unit tests.
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.locator('.bw-landing').waitFor({ timeout: 15_000 })
-  assert(await page.locator('main').count() === 1, 'The framed landing page nests or duplicates the document main landmark')
+  assert(
+    (await page.locator('main').count()) === 1,
+    'The framed landing page nests or duplicates the document main landmark',
+  )
   const landingCatalogRequests = requests.filter((entry) => /\/catalog\/(?:latest|manifest|parts|colors)/.test(entry))
   assert(
     landingCatalogRequests.length === 0,
@@ -141,10 +155,16 @@ try {
   )
   await page.locator('a.bw-demo-card').first().click()
   await page.locator('.bw-explore').waitFor({ timeout: 30_000 })
-  assert(new URL(page.url()).pathname === '/explore', `A demo link did not route through the platform shell: ${page.url()}`)
+  assert(
+    new URL(page.url()).pathname === '/explore',
+    `A demo link did not route through the platform shell: ${page.url()}`,
+  )
   assert(new URL(page.url()).searchParams.has('demo'), `A demo link lost its selected demo: ${page.url()}`)
   await page.locator('.bw-explore canvas').waitFor({ timeout: 30_000 })
-  assert(await page.locator('.bw-explore [role="alert"]').count() === 0, 'The demo explorer failed to load its verified preview')
+  assert(
+    (await page.locator('.bw-explore [role="alert"]').count()) === 0,
+    'The demo explorer failed to load its verified preview',
+  )
   await page.locator('#bw-step').fill('1')
   await page.waitForFunction(() => new URL(window.location.href).searchParams.get('step') === '1')
 
@@ -161,10 +181,21 @@ try {
     const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
     return new RegExp(source, 'i').test(renderer)
   }, SOFTWARE_RASTERISER.source)
-  if (onCpu) process.stdout.write('  software rasteriser detected — widening interaction waits, keeping every assertion\n')
+  if (onCpu)
+    process.stdout.write('  software rasteriser detected — widening interaction waits, keeping every assertion\n')
+  const revealAgent = await page.evaluate(
+    async () => (await window.brickwright.invoke('workspace_reveal', { surface: 'agent' }))?.structuredContent,
+  )
+  assert(revealAgent?.applied === true, 'workspace_reveal did not open the compact design-partner dock')
   await page.locator('[data-section="agent.workbench"]').waitFor({ timeout: 15_000 })
-  assert(await page.locator('[data-section="generation.panel"]').count() === 1, 'The Generate contribution is not mounted in the editor')
-  assert(await page.locator('[data-section="refinement.panel"]').count() === 1, 'The Refine contribution is not mounted in the editor')
+  assert(
+    (await page.locator('[data-section="generation.panel"]').count()) === 1,
+    'The Generate contribution is not mounted in the editor',
+  )
+  assert(
+    (await page.locator('[data-section="refinement.panel"]').count()) === 1,
+    'The Refine contribution is not mounted in the editor',
+  )
 
   // -- first run explains itself, once ---------------------------------------
   // A dense CAD console that opens with no orientation is a usability defect,
@@ -175,7 +206,7 @@ try {
   await welcome.waitFor({ state: 'hidden' })
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
-  assert(await welcome.count() === 0, 'The first-run guide reappeared after being dismissed')
+  assert((await welcome.count()) === 0, 'The first-run guide reappeared after being dismissed')
   const welcomeReplayable = await page.evaluate(() => Boolean(window.localStorage.getItem('brickwright.welcome.v1')))
   assert(welcomeReplayable, 'Dismissing the first-run guide was not remembered')
 
@@ -191,18 +222,39 @@ try {
   const startParts = Object.keys(initial.document.parts).length
 
   // -- compiled catalog is real, and its two tiers are distinct --------------
-  assert(initial.workspace.catalog.identities > 20000, `Expected the full LDraw identity index, saw ${initial.workspace.catalog.identities}`)
-  assert(initial.workspace.catalog.placeable > 300, `Expected a substantial geometry pack, saw ${initial.workspace.catalog.placeable}`)
-  assert(initial.workspace.catalog.placeable < initial.workspace.catalog.identities, 'Placeable set should be a strict subset of catalog identities')
-  assert(initial.workspace.catalog.colors > 300, `Expected the full LDraw colour table, saw ${initial.workspace.catalog.colors}`)
-  assert(initial.coverage.coverage.withAuthoritativeConnections > 10000, 'Expected authoritative LDCad connection coverage across the library')
-  assert(initial.coverage.coverage.unresolvedReferences.length === 0, 'Geometry compiler left unresolved LDraw references')
+  assert(
+    initial.workspace.catalog.identities > 20000,
+    `Expected the full LDraw identity index, saw ${initial.workspace.catalog.identities}`,
+  )
+  assert(
+    initial.workspace.catalog.placeable > 300,
+    `Expected a substantial geometry pack, saw ${initial.workspace.catalog.placeable}`,
+  )
+  assert(
+    initial.workspace.catalog.placeable < initial.workspace.catalog.identities,
+    'Placeable set should be a strict subset of catalog identities',
+  )
+  assert(
+    initial.workspace.catalog.colors > 300,
+    `Expected the full LDraw colour table, saw ${initial.workspace.catalog.colors}`,
+  )
+  assert(
+    initial.coverage.coverage.withAuthoritativeConnections > 10000,
+    'Expected authoritative LDCad connection coverage across the library',
+  )
+  assert(
+    initial.coverage.coverage.unresolvedReferences.length === 0,
+    'Geometry compiler left unresolved LDraw references',
+  )
 
   // -- the opening document is a valid, connected, real-part assembly --------
   assert(startParts > 20, `Expected a substantial showcase, saw ${startParts} parts`)
   assert(initial.validation.collisions.length === 0, `Showcase has ${initial.validation.collisions.length} collisions`)
   assert(initial.validation.componentCount === 1, `Showcase is in ${initial.validation.componentCount} pieces`)
-  assert(initial.validation.connectionCount > 50, `Expected many mated connectors, saw ${initial.validation.connectionCount}`)
+  assert(
+    initial.validation.connectionCount > 50,
+    `Expected many mated connectors, saw ${initial.validation.connectionCount}`,
+  )
   assert(
     initial.validation.unverifiedCollisions === 0,
     `Showcase has ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
@@ -216,9 +268,15 @@ try {
 
   // -- the palette shows rendered previews, not decorative glyphs ------------
   const palette = await page.evaluate(async () => {
-    const search = await window.brickwright.invoke('catalog_search', { text: 'brick', requireGeometry: true, limit: 12 })
+    const search = await window.brickwright.invoke('catalog_search', {
+      text: 'brick',
+      requireGeometry: true,
+      limit: 12,
+    })
     const inspected = await Promise.all(
-      search.structuredContent.results.slice(0, 6).map((record) => window.brickwright.invoke('part_inspect', { id: record.id })),
+      search.structuredContent.results
+        .slice(0, 6)
+        .map((record) => window.brickwright.invoke('part_inspect', { id: record.id })),
     )
     const thumbnails = inspected.map((entry) => entry?.structuredContent?.definition?.thumbnail).filter(Boolean)
     // Fetch one to prove the asset the record points at is really served.
@@ -233,9 +291,15 @@ try {
       renderedInDom: document.querySelectorAll('.part-thumb img').length,
     }
   })
-  assert(palette.withThumbnails === 6, `Expected every placeable result to carry a thumbnail, saw ${palette.withThumbnails}`)
+  assert(
+    palette.withThumbnails === 6,
+    `Expected every placeable result to carry a thumbnail, saw ${palette.withThumbnails}`,
+  )
   assert(palette.distinctHashes === 6, `Thumbnails should be per-part, saw ${palette.distinctHashes} distinct hashes`)
-  assert(palette.probeOk && /image\/png/.test(palette.probeType ?? ''), `Thumbnail asset not served as PNG: ${palette.probeType}`)
+  assert(
+    palette.probeOk && /image\/png/.test(palette.probeType ?? ''),
+    `Thumbnail asset not served as PNG: ${palette.probeType}`,
+  )
   assert(palette.renderedInDom > 10, `Expected the palette to render thumbnails, saw ${palette.renderedInDom}`)
 
   // -- the index covers the whole catalogue, and search can reach it --------
@@ -267,10 +331,7 @@ try {
     catalogue.build.results.every((entry) => entry.placeable),
     'The placeable tier returned something that cannot be placed',
   )
-  assert(
-    catalogue.wide.matched.cataloguedTierSearched,
-    'Searching every tier did not load the wider catalogue index',
-  )
+  assert(catalogue.wide.matched.cataloguedTierSearched, 'Searching every tier did not load the wider catalogue index')
   assert(
     catalogue.wide.matched.byTier.catalogued > 0 && catalogue.wide.matched.byTier.placeable > 0,
     `Expected matches in both tiers, saw ${JSON.stringify(catalogue.wide.matched.byTier)}`,
@@ -309,6 +370,7 @@ try {
 
   // The human sees the same index behind the same facets.
   await page.locator('[data-catalog-search]').fill('minifig head')
+  await page.locator('.category-row .facet-toggle').click()
   await page.locator('.tier-row button', { hasText: 'EVERYTHING' }).click()
   await page.waitForFunction(() => !document.querySelector('.catalog-loading'), null, { timeout: 60_000 })
   const humanFacets = await page.locator('.tier-row button').allInnerTexts()
@@ -337,7 +399,10 @@ try {
   )
   await page.keyboard.press('Escape')
   await shortcutDialog.waitFor({ state: 'hidden' })
-  assert(await shortcutsButton.evaluate((node) => document.activeElement === node), 'Closing the command map did not restore focus')
+  assert(
+    await shortcutsButton.evaluate((node) => document.activeElement === node),
+    'Closing the command map did not restore focus',
+  )
   await page.keyboard.press('?')
   await shortcutDialog.waitFor()
   await page.keyboard.press('?')
@@ -364,7 +429,9 @@ try {
     `The human Command Deck exposes ${deckCommands} commands but the agent registry advertises ${agentMutations.length} mutations`,
   )
   assert(
-    /HUMAN\s+SAME KERNEL\s+AGENT/.test((await commandDialog.locator('.operator-parity').innerText()).replace(/\s+/g, ' ')),
+    /HUMAN\s+SAME KERNEL\s+AGENT/.test(
+      (await commandDialog.locator('.operator-parity').innerText()).replace(/\s+/g, ' '),
+    ),
     'The Command Deck does not communicate its shared-kernel parity boundary',
   )
   assert(
@@ -385,7 +452,10 @@ try {
   await page.screenshot({ path: 'artifacts/e2e-command-deck.png', fullPage: true })
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
-  assert(await commandButton.evaluate((node) => document.activeElement === node), 'Closing the Command Deck did not restore focus')
+  assert(
+    await commandButton.evaluate((node) => document.activeElement === node),
+    'Closing the Command Deck did not restore focus',
+  )
 
   // -- dynamic WebMCP surface ------------------------------------------------
   assert(initial.tools.includes('render_capture'), 'render_capture was not registered')
@@ -395,36 +465,80 @@ try {
   assert(initial.tools.includes('project_list'), 'project_list was not registered in Inspect')
   assert(initial.tools.includes('workspace_reveal'), 'workspace_reveal was not registered in Inspect')
   assert(initial.workspace.chrome?.docks?.right, 'workspace_get omitted dock chrome')
-  assert(initial.workspace.chrome.sections['generation.panel'] === false, 'Generate should start collapsed in the quieter dock')
+  assert(
+    initial.workspace.chrome.sections['generation.panel'] === false,
+    'Generate should start collapsed in the quieter dock',
+  )
   const revealed = await revealChrome(page, 'generation')
   assert(revealed?.applied === true, `workspace_reveal did not open the Generate dock: ${JSON.stringify(revealed)}`)
-  assert(await page.locator('.bw-gen[aria-label="Generate"]').count() === 1, 'workspace_reveal did not mount the Generate panel')
-  const listedProjects = await page.evaluate(async () => (await window.brickwright.invoke('project_list', {}))?.structuredContent)
-  assert(Array.isArray(listedProjects?.projects), `project_list did not return summaries: ${JSON.stringify(listedProjects)}`)
-  assert(typeof listedProjects?.currentProjectId === 'string' && listedProjects.currentProjectId.length > 0, 'project_list omitted the open project id')
+  assert(
+    (await page.locator('.bw-gen[aria-label="Generate"]').count()) === 1,
+    'workspace_reveal did not mount the Generate panel',
+  )
+  const listedProjects = await page.evaluate(
+    async () => (await window.brickwright.invoke('project_list', {}))?.structuredContent,
+  )
+  assert(
+    Array.isArray(listedProjects?.projects),
+    `project_list did not return summaries: ${JSON.stringify(listedProjects)}`,
+  )
+  assert(
+    typeof listedProjects?.currentProjectId === 'string' && listedProjects.currentProjectId.length > 0,
+    'project_list omitted the open project id',
+  )
 
-  const capture = await page.evaluate(() => window.brickwright.invoke('render_capture', { view: 'isometric', mode: 'beauty' }))
-  assert(capture.content.some((item) => item.type === 'image' && item.data.length > 10_000), 'render_capture did not return viewport pixels')
+  const capture = await page.evaluate(() =>
+    window.brickwright.invoke('render_capture', { view: 'isometric', mode: 'beauty' }),
+  )
+  assert(
+    capture.content.some((item) => item.type === 'image' && item.data.length > 10_000),
+    'render_capture did not return viewport pixels',
+  )
 
   await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
-  assert(await page.evaluate(() => window.brickwright.tools.has('build_apply')), 'Build mode did not register write tools')
+  assert(
+    await page.evaluate(() => window.brickwright.tools.has('build_apply')),
+    'Build mode did not register write tools',
+  )
   await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
-  assert(!(await page.evaluate(() => window.brickwright.tools.has('build_apply'))), 'Leaving Build mode did not revoke write tools')
+  assert(
+    !(await page.evaluate(() => window.brickwright.tools.has('build_apply'))),
+    'Leaving Build mode did not revoke write tools',
+  )
 
   // -- preflight is non-mutating; acceptance is atomic ----------------------
   await page.getByRole('button', { name: /ghost proposal|cargo rack/i }).click()
   await page.locator('.proposal-overlay').waitFor()
-  assert((await page.evaluate(() => window.brickwright.getDocument().revision)) === startRevision, 'Preflight mutated the document')
-  await page.locator('.proposal-overlay').getByRole('button', { name: /Accept/i }).click()
-  const afterProposal = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
-  assert(afterProposal.revision === startRevision + 1, `Proposal did not commit as one transaction (r${afterProposal.revision})`)
-  assert(afterProposal.parts === startParts + 2, `Proposal committed ${afterProposal.parts - startParts} parts, expected 2`)
+  assert(
+    (await page.evaluate(() => window.brickwright.getDocument().revision)) === startRevision,
+    'Preflight mutated the document',
+  )
+  await page
+    .locator('.proposal-overlay')
+    .getByRole('button', { name: /Accept/i })
+    .click()
+  const afterProposal = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+  assert(
+    afterProposal.revision === startRevision + 1,
+    `Proposal did not commit as one transaction (r${afterProposal.revision})`,
+  )
+  assert(
+    afterProposal.parts === startParts + 2,
+    `Proposal committed ${afterProposal.parts - startParts} parts, expected 2`,
+  )
 
   // -- an agent-unplaceable identity is refused with a teaching error -------
   // The subject is discovered from the catalog rather than hardcoded, so the
   // assertion stays valid as the geometry pack changes.
   const unplaceable = await page.evaluate(async () => {
-    const search = await window.brickwright.invoke('catalog_search', { text: 'plate', includeHelpers: false, limit: 200 })
+    const search = await window.brickwright.invoke('catalog_search', {
+      text: 'plate',
+      includeHelpers: false,
+      limit: 200,
+    })
     return search.structuredContent.results.find((record) => !record.placeable)?.id ?? null
   })
   assert(unplaceable, 'Expected the catalog to contain a searchable identity without compiled geometry')
@@ -475,9 +589,18 @@ try {
   })
   assert(contract.profile === 'brickwright.tools/3', `Expected a versioned tool profile, saw ${contract.profile}`)
   assert(/^fnv1a:[0-9a-f]{8}$/.test(contract.profileHash ?? ''), `Expected a profile hash, saw ${contract.profileHash}`)
-  assert(contract.malformed?.code === 'INVALID_INPUT', `Malformed batch was not refused: ${JSON.stringify(contract.malformed)}`)
-  assert(contract.sheared?.code === 'INVALID_INPUT', `Sheared basis was not refused: ${JSON.stringify(contract.sheared)}`)
-  assert(contract.drifted?.code === 'STALE_TOOL_PROFILE', `Stale profile was not refused: ${JSON.stringify(contract.drifted)}`)
+  assert(
+    contract.malformed?.code === 'INVALID_INPUT',
+    `Malformed batch was not refused: ${JSON.stringify(contract.malformed)}`,
+  )
+  assert(
+    contract.sheared?.code === 'INVALID_INPUT',
+    `Sheared basis was not refused: ${JSON.stringify(contract.sheared)}`,
+  )
+  assert(
+    contract.drifted?.code === 'STALE_TOOL_PROFILE',
+    `Stale profile was not refused: ${JSON.stringify(contract.drifted)}`,
+  )
   assert(contract.drifted?.retryable === true, 'A stale profile should be reported as retryable')
 
   // -- the transform gizmo is actually grabbable ----------------------------
@@ -508,11 +631,9 @@ try {
   await page.mouse.down()
   await page.mouse.move(handle.x + 70, handle.y - 40, { steps: 12 })
   await page.mouse.up()
-  await page.waitForFunction(
-    (revision) => window.brickwright.getDocument().revision > revision,
-    beforeDrag.revision,
-    { timeout: 10_000 },
-  )
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeDrag.revision, {
+    timeout: 10_000,
+  })
   const afterDrag = await page.evaluate(() => {
     const model = window.brickwright.getDocument()
     return { revision: model.revision, parts: Object.keys(model.parts).length }
@@ -520,11 +641,9 @@ try {
   assert(afterDrag.revision === beforeDrag.revision + 1, 'Dragging the gizmo did not commit exactly one transaction')
   assert(afterDrag.parts === beforePlaceParts, 'Dragging the gizmo changed the part count')
   await page.getByRole('button', { name: 'Undo' }).click()
-  await page.waitForFunction(
-    (revision) => window.brickwright.getDocument().revision > revision,
-    afterDrag.revision,
-    { timeout: 10_000 },
-  )
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterDrag.revision, {
+    timeout: 10_000,
+  })
 
   await page.keyboard.press('v')
 
@@ -536,11 +655,9 @@ try {
   await page.locator('.part-card:not(.unplaceable) .part-card-main').first().click()
   await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
   await page.locator('canvas').click({ position: canvasCentre })
-  await page.waitForFunction(
-    (revision) => window.brickwright.getDocument().revision > revision,
-    beforePlace.revision,
-    { timeout: 10_000 },
-  )
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforePlace.revision, {
+    timeout: 10_000,
+  })
   const afterPlace = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
@@ -583,10 +700,11 @@ try {
   // that a button looked pressed.
   const workflow = {}
   const lastPartId = () => page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).at(-1))
-  const modelState = () => page.evaluate(() => ({
-    revision: window.brickwright.getDocument().revision,
-    parts: Object.keys(window.brickwright.getDocument().parts).length,
-  }))
+  const modelState = () =>
+    page.evaluate(() => ({
+      revision: window.brickwright.getDocument().revision,
+      parts: Object.keys(window.brickwright.getDocument().parts).length,
+    }))
 
   // find -> place, from the keyboard alone.
   await page.locator('[data-catalog-search]').fill('3005')
@@ -600,7 +718,11 @@ try {
     'Arming a part from the keyboard did not name it in the placement HUD',
   )
   await page.locator('canvas').click({ position: canvasCentre })
-  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeFind.parts, { timeout: 10_000 })
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length > parts,
+    beforeFind.parts,
+    { timeout: 10_000 },
+  )
   const afterFind = await modelState()
   assert(afterFind.parts === beforeFind.parts + 1, 'Keyboard find-then-place did not add exactly one part')
   assert(afterFind.revision === beforeFind.revision + 1, 'Keyboard placement was not a single transaction')
@@ -623,7 +745,11 @@ try {
   )
   await numericX.fill(String(numericTarget))
   await numericX.press('Enter')
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeNumeric.revision, { timeout: 10_000 })
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    beforeNumeric.revision,
+    { timeout: 10_000 },
+  )
   const numericResult = await page.evaluate((id) => {
     const model = window.brickwright.getDocument()
     const basis = model.parts[id].transform.basis
@@ -642,10 +768,7 @@ try {
     `Numeric entry committed ${numericResult.revision - beforeNumeric.revision} transactions, not one`,
   )
   const shownX = Number(await numericX.inputValue())
-  assert(
-    shownX === numericResult.x,
-    `The numeric field shows ${shownX} but the document stores ${numericResult.x}`,
-  )
+  assert(shownX === numericResult.x, `The numeric field shows ${shownX} but the document stores ${numericResult.x}`)
   // A numeric edit that sheared the basis would be refused by the kernel on the
   // next commit, so the canonical path has to keep it exactly orthonormal.
   assert(
@@ -664,10 +787,14 @@ try {
   )
   await numericY.fill(String(liftTarget))
   await numericY.press('Enter')
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeLift.revision, { timeout: 10_000 })
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeLift.revision, {
+    timeout: 10_000,
+  })
   const detachedEdges = await page.evaluate(
-    (id) => Object.values(window.brickwright.getDocument().connections)
-      .filter((edge) => edge.a.partId === id || edge.b.partId === id).length,
+    (id) =>
+      Object.values(window.brickwright.getDocument().connections).filter(
+        (edge) => edge.a.partId === id || edge.b.partId === id,
+      ).length,
     subjectId,
   )
   assert(detachedEdges === 0, `Lifting the part clear left ${detachedEdges} connections behind`)
@@ -698,19 +825,39 @@ try {
   // a dead button.
   let connectReady = false
   let refusal = null
-  for (const offset of [[0, 0], [90, -50], [-90, -50], [140, 30], [-140, 30], [0, -110], [60, 90], [-60, 90], [180, -20], [-180, -20]]) {
+  for (const offset of [
+    [0, 0],
+    [90, -50],
+    [-90, -50],
+    [140, 30],
+    [-140, 30],
+    [0, -110],
+    [60, 90],
+    [-60, 90],
+    [180, -20],
+    [-180, -20],
+  ]) {
     await page.locator('canvas').click({ position: { x: canvasCentre.x + offset[0], y: canvasCentre.y + offset[1] } })
     await page.waitForTimeout(220)
     if ((await connectPanel.getAttribute('data-stage')) !== 'review') continue
-    if (!(await page.locator('.connect-commit').isDisabled())) { connectReady = true; break }
+    if (!(await page.locator('.connect-commit').isDisabled())) {
+      connectReady = true
+      break
+    }
     refusal = (await connectPanel.locator('.connect-empty').innerText()).trim()
     assert(refusal.length > 0, 'Connect offered no mate and gave no reason')
     await page.locator('.connect-actions button', { hasText: 'BACK' }).click()
     await page.waitForTimeout(140)
   }
-  assert(connectReady, `Connect never found a legal mate for ${movingName}${refusal ? ` (last refusal: ${refusal})` : ''}`)
+  assert(
+    connectReady,
+    `Connect never found a legal mate for ${movingName}${refusal ? ` (last refusal: ${refusal})` : ''}`,
+  )
   const previewRows = await connectPanel.locator('.connect-preview div').count()
-  assert(previewRows >= 4, `The mate preview should state its mates, certainty, movement and seat, saw ${previewRows} rows`)
+  assert(
+    previewRows >= 4,
+    `The mate preview should state its mates, certainty, movement and seat, saw ${previewRows} rows`,
+  )
   await page.screenshot({ path: 'artifacts/workbench/state-connect.png' })
 
   const beforeConnect = await modelState()
@@ -719,19 +866,26 @@ try {
     subjectId,
   )
   await page.locator('.connect-commit').click()
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeConnect.revision, { timeout: 10_000 })
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    beforeConnect.revision,
+    { timeout: 10_000 },
+  )
   const afterConnect = await modelState()
   assert(afterConnect.revision === beforeConnect.revision + 1, 'Connect committed more than one transaction')
   assert(afterConnect.parts === beforeConnect.parts, 'Connect changed the part count; it may only move a part')
   assert(
-    (await page.evaluate((id) => JSON.stringify(window.brickwright.getDocument().parts[id].transform), subjectId)) !== beforeConnectPose,
+    (await page.evaluate((id) => JSON.stringify(window.brickwright.getDocument().parts[id].transform), subjectId)) !==
+      beforeConnectPose,
     'Connect committed without moving anything',
   )
   // The mate has to be real: the kernel's own connection graph must now record
   // an edge touching the part Connect moved.
   const matedEdges = await page.evaluate(
-    (id) => Object.values(window.brickwright.getDocument().connections)
-      .filter((edge) => edge.a.partId === id || edge.b.partId === id).length,
+    (id) =>
+      Object.values(window.brickwright.getDocument().connections).filter(
+        (edge) => edge.a.partId === id || edge.b.partId === id,
+      ).length,
     subjectId,
   )
   assert(matedEdges > 0, 'Connect moved the part but the kernel recorded no connection')
@@ -740,10 +894,13 @@ try {
 
   // recolour: choose an active colour in the palette, then paint the selection.
   await revealChrome(page, 'transform')
-  const beforeColour = await page.evaluate((id) => ({
-    revision: window.brickwright.getDocument().revision,
-    color: window.brickwright.getDocument().parts[id].color,
-  }), subjectId)
+  const beforeColour = await page.evaluate(
+    (id) => ({
+      revision: window.brickwright.getDocument().revision,
+      color: window.brickwright.getDocument().parts[id].color,
+    }),
+    subjectId,
+  )
   const swatchIndex = await page.evaluate((current) => {
     const swatches = [...document.querySelectorAll('.palette-dock .swatches button')]
     return swatches.findIndex((node) => !(node.getAttribute('title') ?? '').includes(`LDraw ${current}`))
@@ -751,7 +908,11 @@ try {
   assert(swatchIndex >= 0, 'The project palette offered no colour other than the one already applied')
   await page.locator('.palette-dock .swatches button').nth(swatchIndex).click()
   await page.locator('.dock-right').getByRole('button', { name: 'Paint' }).click()
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeColour.revision, { timeout: 10_000 })
+  await page.waitForFunction(
+    (revision) => window.brickwright.getDocument().revision > revision,
+    beforeColour.revision,
+    { timeout: 10_000 },
+  )
   const afterColour = await page.evaluate((id) => window.brickwright.getDocument().parts[id].color, subjectId)
   assert(afterColour !== beforeColour.color, 'Painting the selection did not change its colour')
   workflow.recolour = { from: beforeColour.color, to: afterColour }
@@ -759,9 +920,16 @@ try {
   // clone
   const beforeClone = await modelState()
   await page.locator('.dock-right').getByRole('button', { name: 'Clone' }).click()
-  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeClone.parts, { timeout: 10_000 })
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length > parts,
+    beforeClone.parts,
+    { timeout: 10_000 },
+  )
   const afterClone = await modelState()
-  assert(afterClone.parts === beforeClone.parts + 1, `Clone added ${afterClone.parts - beforeClone.parts} parts, not one`)
+  assert(
+    afterClone.parts === beforeClone.parts + 1,
+    `Clone added ${afterClone.parts - beforeClone.parts} parts, not one`,
+  )
   assert(afterClone.revision === beforeClone.revision + 1, 'Clone was not a single transaction')
   workflow.clone = afterClone
 
@@ -773,16 +941,26 @@ try {
   await page.locator('.array-control').getByLabel('Array copies').fill('3')
   await page.locator('.array-control').getByLabel('Array axis').selectOption('y')
   await page.locator('.array-control').getByRole('button', { name: 'ARRAY' }).click()
-  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length > parts, beforeArray.parts, { timeout: 10_000 })
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length > parts,
+    beforeArray.parts,
+    { timeout: 10_000 },
+  )
   const afterArray = await modelState()
-  assert(afterArray.parts === beforeArray.parts + 3, `A three-copy array added ${afterArray.parts - beforeArray.parts} parts`)
+  assert(
+    afterArray.parts === beforeArray.parts + 3,
+    `A three-copy array added ${afterArray.parts - beforeArray.parts} parts`,
+  )
   assert(afterArray.revision === beforeArray.revision + 1, 'The array was not a single transaction')
   workflow.array = afterArray
 
   // isolate: view state, never a document edit.
   await revealChrome(page, 'selection')
   const beforeIsolate = await page.evaluate(() => window.brickwright.getDocument().revision)
-  await page.locator('.dock-right').getByRole('button', { name: /Isolate/ }).click()
+  await page
+    .locator('.dock-right')
+    .getByRole('button', { name: /Isolate/ })
+    .click()
   await page.locator('.status-visibility').waitFor({ timeout: 5_000 })
   const isolateNote = (await page.locator('.status-visibility').innerText()).trim()
   assert(/Isolated \d+ of \d+ parts/.test(isolateNote), `Isolate did not report its scope, saw "${isolateNote}"`)
@@ -798,7 +976,8 @@ try {
   // undo unwinds the whole workflow, one transaction at a time.
   const beforeUndoChain = await modelState()
   for (let step = 0; step < 14; step += 1) {
-    if ((await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)) === beforeFind.parts) break
+    if ((await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)) === beforeFind.parts)
+      break
     await page.getByRole('button', { name: 'Undo' }).click()
     await page.waitForTimeout(120)
   }
@@ -822,25 +1001,46 @@ try {
   )
 
   // -- manual placement uses the same bus, and undo stays monotonic ---------
-  const beforeAdd = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
+  const beforeAdd = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
   await page.locator('.part-card').first().locator('.part-add').click()
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeAdd.revision, { timeout: 10_000 })
-  const afterAdd = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
-  assert(afterAdd.revision === beforeAdd.revision + 1 && afterAdd.parts === beforeAdd.parts + 1, 'Manual catalog placement did not use the shared command bus')
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeAdd.revision, {
+    timeout: 10_000,
+  })
+  const afterAdd = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+  assert(
+    afterAdd.revision === beforeAdd.revision + 1 && afterAdd.parts === beforeAdd.parts + 1,
+    'Manual catalog placement did not use the shared command bus',
+  )
 
   await page.getByRole('button', { name: 'Undo' }).click()
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterAdd.revision, { timeout: 10_000 })
-  const afterUndo = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision, parts: Object.keys(window.brickwright.getDocument().parts).length }))
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterAdd.revision, {
+    timeout: 10_000,
+  })
+  const afterUndo = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
   assert(afterUndo.revision === afterAdd.revision + 1, 'Undo did not advance the revision monotonically')
   assert(afterUndo.parts === beforeAdd.parts, 'Undo did not restore the previous part set')
 
   // -- stale agent writes are rejected by the kernel ------------------------
-  const stale = await page.evaluate(() => window.brickwright.invoke('build_preflight', {
-    expectedRevision: 1,
-    label: 'Stale plan',
-    operations: [{ op: 'add', definitionId: '3005', color: 4, position: [0, -400, 0] }],
-  }))
-  assert(stale.structuredContent?.error?.code === 'STALE_DOCUMENT', `Expected STALE_DOCUMENT, saw ${JSON.stringify(stale.structuredContent).slice(0, 160)}`)
+  const stale = await page.evaluate(() =>
+    window.brickwright.invoke('build_preflight', {
+      expectedRevision: 1,
+      label: 'Stale plan',
+      operations: [{ op: 'add', definitionId: '3005', color: 4, position: [0, -400, 0] }],
+    }),
+  )
+  assert(
+    stale.structuredContent?.error?.code === 'STALE_DOCUMENT',
+    `Expected STALE_DOCUMENT, saw ${JSON.stringify(stale.structuredContent).slice(0, 160)}`,
+  )
 
   // -- one named capability is operated by human and agent alike ------------
   // The human invokes it from the Command Deck; WebMCP discovers and invokes
@@ -862,7 +1062,10 @@ try {
     revision: window.brickwright.getDocument().revision,
     name: window.brickwright.getDocument().name,
   }))
-  assert(humanParity.name === 'Human + Agent Survey Rover', 'The human Command Deck did not commit its shared capability')
+  assert(
+    humanParity.name === 'Human + Agent Survey Rover',
+    'The human Command Deck did not commit its shared capability',
+  )
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
 
@@ -875,10 +1078,20 @@ try {
       expectedRevision: model.revision,
       args: { name: 'Agent + Human Survey Rover' },
     })
-    return { help: help?.structuredContent, result: result?.structuredContent, name: window.brickwright.getDocument().name }
+    return {
+      help: help?.structuredContent,
+      result: result?.structuredContent,
+      name: window.brickwright.getDocument().name,
+    }
   })
-  assert(agentParity.help?.call === 'action_mutate', 'WebMCP help did not route the shared capability through action_mutate')
-  assert(agentParity.result?.author === 'agent', `Agent capability lost provenance: ${JSON.stringify(agentParity.result).slice(0, 200)}`)
+  assert(
+    agentParity.help?.call === 'action_mutate',
+    'WebMCP help did not route the shared capability through action_mutate',
+  )
+  assert(
+    agentParity.result?.author === 'agent',
+    `Agent capability lost provenance: ${JSON.stringify(agentParity.result).slice(0, 200)}`,
+  )
   assert(agentParity.result?.sourceTool === 'action_mutate', 'Agent capability did not retain its source tool')
   assert(agentParity.result?.capability === 'rename_document', 'Agent result did not name the shared capability')
   assert(agentParity.name === 'Agent + Human Survey Rover', 'The agent did not commit the shared capability')
@@ -890,7 +1103,10 @@ try {
     return { name: model.name, revision: model.revision }
   })
   assert(parityUndo.name === beforeParity.name, 'Shared undo did not restore the pre-parity project name')
-  assert(parityUndo.revision === beforeParity.revision + 4, 'Human/agent edits and their undos did not remain monotonic')
+  assert(
+    parityUndo.revision === beforeParity.revision + 4,
+    'Human/agent edits and their undos did not remain monotonic',
+  )
   await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
 
   // -- the collision kernel confirms against triangles, not just boxes -------
@@ -959,10 +1175,16 @@ try {
   const expectedGuideSteps = await page.evaluate(
     () => window.brickwright.getDocument().steps.filter((step) => step.partIds.length).length,
   )
-  assert(guideSteps === expectedGuideSteps, `Build guide rendered ${guideSteps} steps for a ${expectedGuideSteps}-step document`)
+  assert(
+    guideSteps === expectedGuideSteps,
+    `Build guide rendered ${guideSteps} steps for a ${expectedGuideSteps}-step document`,
+  )
   assert(guideImages > guideSteps, 'Build guide did not embed both assembly renders and part thumbnails')
   assert(!/<(?:script|link)[^>]+https?:/i.test(guide), 'Build guide depends on a remote script or stylesheet')
-  assert(guide.includes('every part after the first step attaches'), 'Build guide omitted the build-order verification claim')
+  assert(
+    guide.includes('every part after the first step attaches'),
+    'Build guide omitted the build-order verification claim',
+  )
   await page.locator('.export-panel > header').getByRole('button', { name: 'Close deliverables' }).click()
 
   await revealChrome(page, 'inspector')
@@ -971,7 +1193,8 @@ try {
 
   // -- the build sequence is derived and verified, not authored -------------
   const sequence = await page.evaluate(async () => {
-    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))?.structuredContent
+    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))
+      ?.structuredContent
     return {
       steps: derived?.steps?.length,
       verified: derived?.verified,
@@ -994,12 +1217,16 @@ try {
   const articulation = await page.evaluate(async () => {
     const hatch = Object.values(window.brickwright.getDocument().parts).find((part) => part.definitionId === '3938')
     if (!hatch) return { error: 'showcase has no hinge top plate' }
-    const joints = (await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatch.id] } }))
-      ?.structuredContent
+    const joints = (
+      await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatch.id] } })
+    )?.structuredContent
     return { hatchId: hatch.id, joints }
   })
   assert(!articulation.error, `Articulation probe failed: ${articulation.error}`)
-  assert(articulation.joints?.joints?.length === 1, `Expected one drivable joint, saw ${JSON.stringify(articulation.joints?.joints)}`)
+  assert(
+    articulation.joints?.joints?.length === 1,
+    `Expected one drivable joint, saw ${JSON.stringify(articulation.joints?.joints)}`,
+  )
   assert(articulation.joints.joints[0].family === 'hinge', 'Expected the drivable joint to be the hinge')
 
   await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
@@ -1010,7 +1237,13 @@ try {
     const result = await window.brickwright.invoke('action_mutate', {
       action: 'articulate_joint',
       expectedRevision: model.revision,
-      args: { partIds: [hatchId], edgeId: (await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatchId] } })).structuredContent.joints[0].edgeId, rotateDegrees: 35 },
+      args: {
+        partIds: [hatchId],
+        edgeId: (
+          await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatchId] } })
+        ).structuredContent.joints[0].edgeId,
+        rotateDegrees: 35,
+      },
     })
     const after = window.brickwright.getDocument()
     return {
@@ -1138,7 +1371,8 @@ try {
     `A storey plus two stacked copies added ${generated.after - generated.before} parts, not three storeys' worth`,
   )
   assert(
-    generated.stacked.report.pitchLdu === generated.storey.report.courses * 24 + 8 * (generated.storey.report.floorLayers ?? 2),
+    generated.stacked.report.pitchLdu ===
+      generated.storey.report.courses * 24 + 8 * (generated.storey.report.floorLayers ?? 2),
     `The stack pitch of ${generated.stacked.report.pitchLdu} LDU does not match the storey it measured`,
   )
   assert(generated.collisions === 0, `The generated building collides with itself in ${generated.collisions} places`)
@@ -1170,7 +1404,12 @@ try {
       originLdu: [1600, 0, 1600],
     })
     const captured = await mutate('capture_module', { name: 'Corner block' })
-    const stamped = await mutate('stamp_module', { module: 'Corner block', atLdu: [2000, 0, 1600], copies: 1, color: 14 })
+    const stamped = await mutate('stamp_module', {
+      module: 'Corner block',
+      atLdu: [2000, 0, 1600],
+      copies: 1,
+      color: 14,
+    })
     const validation = (await window.brickwright.invoke('validate_model', {}))?.structuredContent
     return {
       before,
@@ -1192,7 +1431,10 @@ try {
     block.raised.report.windows > 3 && block.raised.report.doors === 1,
     `Expected windows and a door seated in the facade, saw ${JSON.stringify({ windows: block.raised.report.windows, doors: block.raised.report.doors })}`,
   )
-  assert(block.raised.report.warnings.length === 0, `The building reported problems: ${JSON.stringify(block.raised.report.warnings)}`)
+  assert(
+    block.raised.report.warnings.length === 0,
+    `The building reported problems: ${JSON.stringify(block.raised.report.warnings)}`,
+  )
   assert(block.modules.includes('Corner block'), 'The captured module is not in the document')
   assert(
     block.stamped.report.parts === block.raised.report.parts,
@@ -1207,8 +1449,14 @@ try {
   // A large generated model still sequences into a verified instruction set.
   const generatedOrder = await page.evaluate(async () => {
     const started = performance.now()
-    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))?.structuredContent
-    return { ms: Math.round(performance.now() - started), steps: derived?.steps?.length, verified: derived?.verified, warnings: derived?.warnings?.length ?? 0 }
+    const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))
+      ?.structuredContent
+    return {
+      ms: Math.round(performance.now() - started),
+      steps: derived?.steps?.length,
+      verified: derived?.verified,
+      warnings: derived?.warnings?.length ?? 0,
+    }
   })
   assert(generatedOrder.verified === true, 'The generated building failed its own build-order reachability check')
   assert(generatedOrder.steps > 5, `A ${generated.after}-part model sequenced into only ${generatedOrder.steps} steps`)
@@ -1358,7 +1606,8 @@ try {
   const projectRows = await page.locator('.project-list li').count()
   const projectRowText = await page.locator('.project-list li').allInnerTexts()
   assert(
-    projectRowText.some((row) => row.includes('E2E fork')) && projectRowText.some((row) => row.includes(beforeFork.name)),
+    projectRowText.some((row) => row.includes('E2E fork')) &&
+      projectRowText.some((row) => row.includes(beforeFork.name)),
     `Expected both projects in the switcher, saw ${JSON.stringify(projectRowText)}`,
   )
 
@@ -1383,8 +1632,9 @@ try {
   // generic 30-second actionability limit on a loaded CI runner.
   await page.waitForFunction(
     () => {
-      const button = [...document.querySelectorAll('.project-actions button')]
-        .find((candidate) => candidate.textContent?.includes('Data'))
+      const button = [...document.querySelectorAll('.project-actions button')].find((candidate) =>
+        candidate.textContent?.includes('Data'),
+      )
       return button instanceof HTMLButtonElement && !button.disabled
     },
     null,
@@ -1499,7 +1749,10 @@ try {
   await page.keyboard.press('v')
   await commandPalette.locator('.keymap-conflicts').waitFor({ timeout: 5_000 })
   const conflictText = await commandPalette.locator('.keymap-conflicts').innerText()
-  assert(/tool\.move/.test(conflictText) && /tool\.select/.test(conflictText), `The conflict did not name both commands: ${conflictText}`)
+  assert(
+    /tool\.move/.test(conflictText) && /tool\.select/.test(conflictText),
+    `The conflict did not name both commands: ${conflictText}`,
+  )
   await shot('state-keymap-conflict')
   await commandPalette.getByRole('button', { name: /RESET ALL/ }).click()
   assert(
@@ -1509,7 +1762,9 @@ try {
   await page.keyboard.press('Escape')
   await commandPalette.waitFor({ state: 'hidden' })
   assert(
-    await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).evaluate((node) => document.activeElement === node),
+    await page
+      .locator('.primary-tools .tool-button', { hasText: 'Select' })
+      .evaluate((node) => document.activeElement === node),
     'Closing the command palette did not restore focus to whatever opened it',
   )
 
@@ -1524,10 +1779,11 @@ try {
     const unlabelledFields = []
     for (const field of document.querySelectorAll('input, select, textarea')) {
       const id = field.getAttribute('id')
-      const named = field.getAttribute('aria-label')
-        || (id && document.querySelector(`label[for="${id}"]`))
-        || field.closest('label')
-        || field.getAttribute('title')
+      const named =
+        field.getAttribute('aria-label') ||
+        (id && document.querySelector(`label[for="${id}"]`)) ||
+        field.closest('label') ||
+        field.getAttribute('title')
       if (!named) unlabelledFields.push(field.className || field.outerHTML.slice(0, 80))
     }
     return { unnamed, unlabelledFields }
@@ -1627,11 +1883,15 @@ try {
     await splitter.evaluate((node) => document.activeElement === node),
     'The dock splitter cannot take focus, so resizing is pointer-only',
   )
-  const widthBeforeKeys = await page.evaluate(() => Math.round(document.querySelector('.dock-left').getBoundingClientRect().width))
+  const widthBeforeKeys = await page.evaluate(() =>
+    Math.round(document.querySelector('.dock-left').getBoundingClientRect().width),
+  )
   await page.keyboard.press('ArrowRight')
   await page.keyboard.press('ArrowRight')
   await page.waitForTimeout(150)
-  const widthAfterKeys = await page.evaluate(() => Math.round(document.querySelector('.dock-left').getBoundingClientRect().width))
+  const widthAfterKeys = await page.evaluate(() =>
+    Math.round(document.querySelector('.dock-left').getBoundingClientRect().width),
+  )
   assert(
     widthAfterKeys > widthBeforeKeys,
     `Arrow keys did not resize the dock (${widthBeforeKeys} -> ${widthAfterKeys})`,
@@ -1657,9 +1917,7 @@ try {
   ])
   await revealChrome(page, 'transform')
   await page.waitForFunction(() => document.querySelector('.transform-action span'))
-  contrast.push(...await sampleContrast(page, [
-    ['.transform-action span', 4.5],
-  ]))
+  contrast.push(...(await sampleContrast(page, [['.transform-action span', 4.5]])))
   await revealChrome(page, 'selection')
   await page.waitForFunction(() => document.querySelector('.selection-summary strong'))
   const selectionScoped = await page.evaluate(async () => {
@@ -1670,10 +1928,12 @@ try {
     await page.locator('canvas').click({ position: canvasCentre })
   }
   await page.waitForFunction(() => document.querySelector('.selection-modes button'), null, { timeout: 10_000 })
-  contrast.push(...await sampleContrast(page, [
-    ['.selection-summary strong', 4.5],
-    ['.selection-modes button', 4.5],
-  ]))
+  contrast.push(
+    ...(await sampleContrast(page, [
+      ['.selection-summary strong', 4.5],
+      ['.selection-modes button', 4.5],
+    ])),
+  )
   for (const sample of contrast) {
     assert(sample.ratio !== null, `Contrast sample "${sample.selector}" was not on screen`)
     assert(
@@ -1700,7 +1960,10 @@ try {
   const seconds = (value) => Math.max(...(value ?? '0s').split(',').map((entry) => Number.parseFloat(entry) || 0))
   assert(seconds(motionBefore) > 0.05, `Expected a real transition by default, saw ${motionBefore}`)
   assert(seconds(motionAfter.card) < 0.01, `prefers-reduced-motion left a ${motionAfter.card} transition on part cards`)
-  assert(seconds(motionAfter.chevron) < 0.01, `prefers-reduced-motion left a ${motionAfter.chevron} transition on dock chevrons`)
+  assert(
+    seconds(motionAfter.chevron) < 0.01,
+    `prefers-reduced-motion left a ${motionAfter.chevron} transition on dock chevrons`,
+  )
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   quality.reducedMotion = { normal: motionBefore, reduced: motionAfter.card }
 
@@ -1774,11 +2037,9 @@ try {
   await writeFile(roundTripPath, exported, 'utf8')
   await page.getByRole('button', { name: 'More export options' }).click()
   await page.locator('.export-panel input[type=file]').setInputFiles(roundTripPath)
-  await page.waitForFunction(
-    (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
-    type1,
-    { timeout: 30_000 },
-  )
+  await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length === parts, type1, {
+    timeout: 30_000,
+  })
   const imported = await page.evaluate(() => {
     const model = window.brickwright.getDocument()
     return {
@@ -1796,139 +2057,145 @@ try {
 
   assert(errors.length === 0, `Browser errors: ${errors.join('; ')}`)
 
-  console.log(JSON.stringify({
-    status: 'passed',
-    catalog: initial.workspace.catalog,
-    index: {
-      ...catalogue.build.index,
-      exactNumberRanksFirst: catalogue.exact.results[0]?.id,
-      wholeCatalogueMatches: catalogue.wide.matched,
-      pagingDeterministic: true,
-      searchMs,
-      panelFacets: humanFacets.length,
-      panelTotal: humanTotal,
-    },
-    coverage: {
-      identities: initial.coverage.coverage.catalogIdentities,
-      authoritativeConnections: initial.coverage.coverage.withAuthoritativeConnections,
-      connectors: initial.coverage.coverage.connectorTotal,
-      compiledMeshes: initial.coverage.coverage.geometryCompiled,
-      triangles: initial.coverage.coverage.triangleTotal,
-    },
-    showcase: {
-      revision: startRevision,
-      parts: startParts,
-      connections: initial.validation.connectionCount,
-      collisions: initial.validation.collisions.length,
-      unverifiedCollisions: initial.validation.unverifiedCollisions,
-    },
-    rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
-    meshAssetsFetched: geometry.meshes,
-    palette: {
-      thumbnailsOnResults: palette.withThumbnails,
-      distinctThumbnailHashes: palette.distinctHashes,
-      renderedInDom: palette.renderedInDom,
-    },
-    interface: {
-      modalShortcutsBlocked: true,
-      focusRestored: true,
-      firstRunGuideShownOnceOnly: true,
-      gizmoScreenPixels: Math.round(gizmoSize.screenPixels),
-      gizmoDragCommitted: afterDrag.revision === beforeDrag.revision + 1,
-      viewportPlacement: { parts: afterPlace.parts, revision: afterPlace.revision },
-      buildStepsVisibleAfterEdit: stepCards,
-      boxSelection: marqueeSelected,
-      commandDeckCapabilities: 13,
-      commandDeckScreenshot: 'artifacts/e2e-command-deck.png',
-      sharedCapabilityParity: {
-        humanRevision: humanParity.revision,
-        agentRevision: agentParity.result?.resultRevision,
-        restoredRevision: parityUndo.revision,
+  console.log(
+    JSON.stringify(
+      {
+        status: 'passed',
+        catalog: initial.workspace.catalog,
+        index: {
+          ...catalogue.build.index,
+          exactNumberRanksFirst: catalogue.exact.results[0]?.id,
+          wholeCatalogueMatches: catalogue.wide.matched,
+          pagingDeterministic: true,
+          searchMs,
+          panelFacets: humanFacets.length,
+          panelTotal: humanTotal,
+        },
+        coverage: {
+          identities: initial.coverage.coverage.catalogIdentities,
+          authoritativeConnections: initial.coverage.coverage.withAuthoritativeConnections,
+          connectors: initial.coverage.coverage.connectorTotal,
+          compiledMeshes: initial.coverage.coverage.geometryCompiled,
+          triangles: initial.coverage.coverage.triangleTotal,
+        },
+        showcase: {
+          revision: startRevision,
+          parts: startParts,
+          connections: initial.validation.connectionCount,
+          collisions: initial.validation.collisions.length,
+          unverifiedCollisions: initial.validation.unverifiedCollisions,
+        },
+        rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
+        meshAssetsFetched: geometry.meshes,
+        palette: {
+          thumbnailsOnResults: palette.withThumbnails,
+          distinctThumbnailHashes: palette.distinctHashes,
+          renderedInDom: palette.renderedInDom,
+        },
+        interface: {
+          modalShortcutsBlocked: true,
+          focusRestored: true,
+          firstRunGuideShownOnceOnly: true,
+          gizmoScreenPixels: Math.round(gizmoSize.screenPixels),
+          gizmoDragCommitted: afterDrag.revision === beforeDrag.revision + 1,
+          viewportPlacement: { parts: afterPlace.parts, revision: afterPlace.revision },
+          buildStepsVisibleAfterEdit: stepCards,
+          boxSelection: marqueeSelected,
+          commandDeckCapabilities: 13,
+          commandDeckScreenshot: 'artifacts/e2e-command-deck.png',
+          sharedCapabilityParity: {
+            humanRevision: humanParity.revision,
+            agentRevision: agentParity.result?.resultRevision,
+            restoredRevision: parityUndo.revision,
+          },
+        },
+        generation: {
+          storeyParts: generated.storey.report.parts,
+          storeyCourses: generated.storey.report.courses,
+          runningBond: generated.storey.report.runningBond,
+          stackedParts: generated.stacked.report.parts,
+          stackPitchLdu: generated.stacked.report.pitchLdu,
+          partsFromTwoCalls: generated.after - generated.before,
+          transactions: generated.afterRevision - generated.beforeRevision,
+          collisions: generated.collisions,
+          sequencedSteps: generatedOrder.steps,
+          sequenceVerified: generatedOrder.verified,
+          sequenceMs: generatedOrder.ms,
+          buildingParts: block.raised.report.parts,
+          buildingWindows: block.raised.report.windows,
+          buildingDoors: block.raised.report.doors,
+          moduleStampedParts: block.stamped.report.parts,
+          blockCollisions: block.collisions,
+        },
+        refusedUnplaceableIdentity: unplaceable,
+        buildOrder: {
+          steps: sequence.steps,
+          verified: sequence.verified,
+          partsCovered: sequence.totalParts,
+          warnings: sequence.warnings,
+        },
+        articulation: {
+          drivableJoints: articulation.joints?.joints?.length,
+          family: articulation.joints?.joints?.[0]?.family,
+          freedom: articulation.joints?.joints?.[0]?.freedom?.kind,
+          drivenByAgent: driven.committed,
+        },
+        contractEnforcement: {
+          profile: contract.profile,
+          malformedBatch: contract.malformed?.code,
+          shearedBasis: contract.sheared?.code,
+          staleProfile: contract.drifted?.code,
+        },
+        afterProposal,
+        afterAdd,
+        afterUndo,
+        exportType1Lines: type1,
+        importRoundTrip: { parts: imported.parts, connections: imported.connections },
+        delivery: {
+          mpdFileBlocks: (mpd.match(/^0 FILE /gm) ?? []).length,
+          guideSteps,
+          guideImages,
+          guideBytes: Buffer.byteLength(guide),
+        },
+        constraintGate: {
+          refusedOutsideEnvelope: constraintGate.refused.code,
+          constraintsLifted: constraintGate.lifted.length,
+          committedOnceLifted: Number.isInteger(constraintGate.released.revision),
+        },
+        renderScale: {
+          partsAfterBatch: renderScale.parts,
+          drawCallsBefore: renderScale.before.drawCalls,
+          drawCallsAfter: renderScale.after.drawCalls,
+          drawCallsAddedBy400Parts: renderScale.after.drawCalls - renderScale.before.drawCalls,
+          trianglesAfter: renderScale.after.triangles,
+        },
+        reloadRestored: afterReload,
+        projects: {
+          restoreHeadline,
+          forkMs,
+          forkedProjectId: forked.id,
+          forkedParts: forked.parts,
+          projectsListed: projectRows,
+          switchedBackTo: restored.id,
+          attributionDatasets: attribution.datasets,
+          licenceReviewFlags: attribution.reviewFlags,
+        },
+        workflows: workflow,
+        quality: {
+          responsive: quality.responsive,
+          keyboardReachableControls: quality.keyboardReachable,
+          keyboardResize: quality.keyboardResize,
+          contrast: quality.contrast,
+          reducedMotion: quality.reducedMotion,
+          screenshots: quality.screenshots.length,
+          screenshotDirectory: 'artifacts/workbench/',
+        },
+        screenshot: 'artifacts/e2e-final.png',
       },
-    },
-    generation: {
-      storeyParts: generated.storey.report.parts,
-      storeyCourses: generated.storey.report.courses,
-      runningBond: generated.storey.report.runningBond,
-      stackedParts: generated.stacked.report.parts,
-      stackPitchLdu: generated.stacked.report.pitchLdu,
-      partsFromTwoCalls: generated.after - generated.before,
-      transactions: generated.afterRevision - generated.beforeRevision,
-      collisions: generated.collisions,
-      sequencedSteps: generatedOrder.steps,
-      sequenceVerified: generatedOrder.verified,
-      sequenceMs: generatedOrder.ms,
-      buildingParts: block.raised.report.parts,
-      buildingWindows: block.raised.report.windows,
-      buildingDoors: block.raised.report.doors,
-      moduleStampedParts: block.stamped.report.parts,
-      blockCollisions: block.collisions,
-    },
-    refusedUnplaceableIdentity: unplaceable,
-    buildOrder: {
-      steps: sequence.steps,
-      verified: sequence.verified,
-      partsCovered: sequence.totalParts,
-      warnings: sequence.warnings,
-    },
-    articulation: {
-      drivableJoints: articulation.joints?.joints?.length,
-      family: articulation.joints?.joints?.[0]?.family,
-      freedom: articulation.joints?.joints?.[0]?.freedom?.kind,
-      drivenByAgent: driven.committed,
-    },
-    contractEnforcement: {
-      profile: contract.profile,
-      malformedBatch: contract.malformed?.code,
-      shearedBasis: contract.sheared?.code,
-      staleProfile: contract.drifted?.code,
-    },
-    afterProposal,
-    afterAdd,
-    afterUndo,
-    exportType1Lines: type1,
-    importRoundTrip: { parts: imported.parts, connections: imported.connections },
-    delivery: {
-      mpdFileBlocks: (mpd.match(/^0 FILE /gm) ?? []).length,
-      guideSteps,
-      guideImages,
-      guideBytes: Buffer.byteLength(guide),
-    },
-    constraintGate: {
-      refusedOutsideEnvelope: constraintGate.refused.code,
-      constraintsLifted: constraintGate.lifted.length,
-      committedOnceLifted: Number.isInteger(constraintGate.released.revision),
-    },
-    renderScale: {
-      partsAfterBatch: renderScale.parts,
-      drawCallsBefore: renderScale.before.drawCalls,
-      drawCallsAfter: renderScale.after.drawCalls,
-      drawCallsAddedBy400Parts: renderScale.after.drawCalls - renderScale.before.drawCalls,
-      trianglesAfter: renderScale.after.triangles,
-    },
-    reloadRestored: afterReload,
-    projects: {
-      restoreHeadline,
-      forkMs,
-      forkedProjectId: forked.id,
-      forkedParts: forked.parts,
-      projectsListed: projectRows,
-      switchedBackTo: restored.id,
-      attributionDatasets: attribution.datasets,
-      licenceReviewFlags: attribution.reviewFlags,
-    },
-    workflows: workflow,
-    quality: {
-      responsive: quality.responsive,
-      keyboardReachableControls: quality.keyboardReachable,
-      keyboardResize: quality.keyboardResize,
-      contrast: quality.contrast,
-      reducedMotion: quality.reducedMotion,
-      screenshots: quality.screenshots.length,
-      screenshotDirectory: 'artifacts/workbench/',
-    },
-    screenshot: 'artifacts/e2e-final.png',
-  }, null, 2))
+      null,
+      2,
+    ),
+  )
   await browser.close()
 } finally {
   server?.kill('SIGTERM')

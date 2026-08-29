@@ -195,6 +195,10 @@ const measureOverflow = () => {
   const right = root.getBoundingClientRect().right
   let worst = 0
   for (const element of root.querySelectorAll('*')) {
+    // Atmosphere/stud layers are intentionally oversized and clipped by the
+    // surface. They are aria-hidden scenery, not content a visitor can lose
+    // off-screen, so responsive containment measures only perceivable UI.
+    if (element.closest('[aria-hidden="true"]')) continue
     const box = element.getBoundingClientRect()
     if (box.width === 0 && box.height === 0) continue
     worst = Math.max(worst, Math.round(box.right - right))
@@ -239,8 +243,9 @@ async function buildLandingEntry(outDir) {
   const entry = Object.values(built).find((chunk) => chunk.isEntry)
   if (!entry) throw new Error('the landing entry produced no entry chunk')
   const styles = (entry.css ?? []).map((href) => `    <link rel="stylesheet" href="/${href}">`).join('\n')
-  const displayFont = (await readdir(path.join(outDir, 'assets')))
-    .find((file) => /^chakra-petch-latin-600-normal-.*\.woff2$/.test(file))
+  const displayFont = (await readdir(path.join(outDir, 'assets'))).find((file) =>
+    /^chakra-petch-latin-600-normal-.*\.woff2$/.test(file),
+  )
   if (!displayFont) throw new Error('the landing build produced no Latin Chakra Petch 600 font')
   await writeFile(
     path.join(outDir, 'index.html'),
@@ -284,29 +289,32 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const consoleErrors = []
-  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
   page.on('pageerror', (cause) => consoleErrors.push(cause.message))
   const bootRequests = []
   page.on('request', (request) => bootRequests.push(new URL(request.url()).pathname))
 
   await page.goto(`${SHARED_URL}/`, { waitUntil: 'networkidle' })
   const heading = await page.locator('h1').first().innerText()
-  check(/stands up/i.test(heading), `landing renders its own headline (saw "${heading}")`)
-    && pass('landing route renders')
+  check(/whole campus/i.test(heading), `landing renders its flagship headline (saw "${heading}")`) &&
+    pass('landing route renders')
 
   // -- the boot budget, on the integrated shell -----------------------------
   // The strongest form of this is `src/features/landing/imports.test.ts`, which
   // walks the static import graph. This is the same property observed from
   // outside, on whatever the shell actually served.
-  const forbiddenBoot = bootRequests.filter((url) =>
-    /\/catalog\//.test(url)
-    || /\.bwmesh$/.test(url)
-    || /\/assets\/(?:geometry|thumb)\//.test(url)
-    || /\/src\/App\.tsx/.test(url)
-    || /\/src\/(?:editor|webmcp)\//.test(url)
-    || /\/src\/cad\/(?:catalog|catalog-loader|engine|session|collision|snapping|mesh)\.ts/.test(url)
-    || /node_modules\/\.vite\/deps\/three/.test(url)
-    || /\/(?:three|@react-three)\//.test(url),
+  const forbiddenBoot = bootRequests.filter(
+    (url) =>
+      /\/catalog\//.test(url) ||
+      /\.bwmesh$/.test(url) ||
+      /\/assets\/(?:geometry|thumb)\//.test(url) ||
+      /\/src\/App\.tsx/.test(url) ||
+      /\/src\/(?:editor|webmcp)\//.test(url) ||
+      /\/src\/cad\/(?:catalog|catalog-loader|engine|session|collision|snapping|mesh)\.ts/.test(url) ||
+      /node_modules\/\.vite\/deps\/three/.test(url) ||
+      /\/(?:three|@react-three)\//.test(url),
   )
   check(
     forbiddenBoot.length === 0,
@@ -316,8 +324,12 @@ try {
   pass(`boot budget honoured across ${bootRequests.length} requests`)
 
   const cardCount = await page.locator('.bw-demo-card').count()
-  check(cardCount === manifest.demos.length, `landing lists all ${manifest.demos.length} demos (saw ${cardCount})`)
-    && pass(`${cardCount} demo cards`)
+  const expectedFeatured = Math.min(3, manifest.demos.length)
+  const allDemosLink = await page.getByRole('link', { name: `Explore all ${manifest.demos.length}` }).count()
+  check(
+    cardCount === expectedFeatured && allDemosLink === 1,
+    `landing features ${expectedFeatured} builds and links all ${manifest.demos.length} (saw ${cardCount} and link ${allDemosLink})`,
+  ) && pass(`${cardCount} featured demo cards and a route to all ${manifest.demos.length}`)
 
   // -- accessibility -------------------------------------------------------
   const a11y = await page.evaluate(() => {
@@ -341,6 +353,7 @@ try {
         const right = root.getBoundingClientRect().right
         let worst = 0
         for (const element of root.querySelectorAll('*')) {
+          if (element.closest('[aria-hidden="true"]')) continue
           const box = element.getBoundingClientRect()
           if (box.width === 0 && box.height === 0) continue
           worst = Math.max(worst, Math.round(box.right - right))
@@ -354,7 +367,10 @@ try {
   check(a11y.mains === 1, `exactly one main landmark (saw ${a11y.mains})`)
   check(a11y.unlabelledImages === 0, `every image has alt text (${a11y.unlabelledImages} without)`)
   check(a11y.unlabelledSections === 0, `every section is labelled (${a11y.unlabelledSections} without)`)
-  check(a11y.canvasAriaHidden && a11y.canvasWrappersLabelled, 'the model canvas is aria-hidden inside a labelled role=img')
+  check(
+    a11y.canvasAriaHidden && a11y.canvasWrappersLabelled,
+    'the model canvas is aria-hidden inside a labelled role=img',
+  )
   check(a11y.horizontalOverflow <= 1, `no horizontal overflow at 1440px (overflow ${a11y.horizontalOverflow}px)`)
   pass('landmarks, labels and overflow')
 
@@ -364,21 +380,26 @@ try {
     const seen = []
     for (let index = 0; index < 60; index += 1) {
       await page.keyboard.press('Tab')
-      seen.push(await page.evaluate(() => {
-        const active = document.activeElement
-        if (!active || active === document.body) return null
-        return {
-          tag: active.tagName,
-          card: active.classList.contains('bw-demo-card'),
-          text: (active.textContent ?? '').trim().slice(0, 40),
-        }
-      }))
+      seen.push(
+        await page.evaluate(() => {
+          const active = document.activeElement
+          if (!active || active === document.body) return null
+          return {
+            tag: active.tagName,
+            card: active.classList.contains('bw-demo-card'),
+            text: (active.textContent ?? '').trim().slice(0, 40),
+          }
+        }),
+      )
     }
     return seen
   })()
   const trapped = keyboard.slice(4).every((entry) => entry && entry.text === keyboard[4]?.text)
   check(!trapped, 'tabbing is not caught in a focus trap')
-  check(keyboard.some((entry) => entry?.card), 'demo cards are reachable by keyboard')
+  check(
+    keyboard.some((entry) => entry?.card),
+    'demo cards are reachable by keyboard',
+  )
   pass('keyboard traversal')
 
   // -- reduced motion ------------------------------------------------------
@@ -386,7 +407,9 @@ try {
   const reducedPage = await reduced.newPage()
   await reducedPage.goto(`${SHARED_URL}/`, { waitUntil: 'networkidle' })
   const motion = await reducedPage.evaluate(() => ({
-    hidden: [...document.querySelectorAll('.bw-reveal')].filter((element) => element.getAttribute('data-shown') !== 'true').length,
+    hidden: [...document.querySelectorAll('.bw-reveal')].filter(
+      (element) => element.getAttribute('data-shown') !== 'true',
+    ).length,
     reveals: document.querySelectorAll('.bw-reveal').length,
     stage: document.querySelector('.bw-stage-step[aria-current=true]')?.textContent ?? '',
   }))
@@ -396,7 +419,10 @@ try {
     // Reachable without the timer: the stage track is a real tab list.
     stages: document.querySelectorAll('.bw-stage-step').length,
   }))
-  check(motion.reveals > 0 && motion.hidden === 0, `every revealed block is shown immediately (${motion.hidden} still hidden)`)
+  check(
+    motion.reveals > 0 && motion.hidden === 0,
+    `every revealed block is shown immediately (${motion.hidden} still hidden)`,
+  )
   check(motion.stage === motionAfter.stage, 'the hero does not auto-advance under prefers-reduced-motion')
   check(motionAfter.stages === 4, `all four hero stages are still selectable (saw ${motionAfter.stages})`)
   await reducedPage.screenshot({ path: path.join(ARTIFACTS, 'landing-reduced-motion.png'), fullPage: false })
@@ -427,13 +453,17 @@ try {
     await shot.close()
   }
   for (const [key, measured] of Object.entries(overflow)) {
-    check(measured.worst <= 1, `${key} keeps its content inside its container (worst element ${measured.worst}px past the right edge)`)
+    check(
+      measured.worst <= 1,
+      `${key} keeps its content inside its container (worst element ${measured.worst}px past the right edge)`,
+    )
     if (measured.surfaceWidth > measured.viewportWidth + 1) {
       // Reported rather than failed: the surface fills whatever box the shell's
       // frame gives it, and a frame wider than the viewport is the frame's.
-      const note = `${key}: the shell frame is ${measured.surfaceWidth}px wide in a ${measured.viewportWidth}px viewport,`
-        + ' so the page is laid out wider than the screen. That box is set by src/platform (.pf-frame / .pf-topbar),'
-        + ' not by these surfaces.'
+      const note =
+        `${key}: the shell frame is ${measured.surfaceWidth}px wide in a ${measured.viewportWidth}px viewport,` +
+        ' so the page is laid out wider than the screen. That box is set by src/platform (.pf-frame / .pf-topbar),' +
+        ' not by these surfaces.'
       notes.push(note)
       process.stdout.write(`  note  ${note}\n`)
     }
@@ -450,13 +480,22 @@ try {
 
   await page.locator(`a.bw-chip[href="/explore?demo=${heroDemo.id}"]`).first().click()
   await page.waitForURL(`**/explore?demo=${heroDemo.id}`)
-  check((await page.locator('.bw-explore-title h1').innerText()) === heroDemo.title, 'switching demos updates the surface')
+  check(
+    (await page.locator('.bw-explore-title h1').innerText()) === heroDemo.title,
+    'switching demos updates the surface',
+  )
   await page.goBack()
   await page.waitForURL(`**/explore?demo=${secondDemo.id}&step=2`)
-  check((await page.locator('.bw-explore-title h1').innerText()) === secondDemo.title, 'the back button returns to the previous demo')
+  check(
+    (await page.locator('.bw-explore-title h1').innerText()) === secondDemo.title,
+    'the back button returns to the previous demo',
+  )
   await page.goForward()
   await page.waitForURL(`**/explore?demo=${heroDemo.id}`)
-  check((await page.locator('.bw-explore-title h1').innerText()) === heroDemo.title, 'the forward button returns to the later demo')
+  check(
+    (await page.locator('.bw-explore-title h1').innerText()) === heroDemo.title,
+    'the forward button returns to the later demo',
+  )
 
   // Scrubbing a step is linkable, and does not add a history entry per frame.
   await page.locator('#bw-step').fill('3')
@@ -473,16 +512,17 @@ try {
   check(/local project/i.test(forkNote), `an anonymous visitor gets a local project (saw "${forkNote.slice(0, 90)}")`)
 
   const stored = await page.evaluate(async () => {
-    const open = () => new Promise((resolve, reject) => {
-      const request = indexedDB.open('brickwright', 2)
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-      request.onupgradeneeded = () => {
-        for (const table of ['checkpoints', 'transactions', 'meta']) {
-          if (!request.result.objectStoreNames.contains(table)) request.result.createObjectStore(table)
+    const open = () =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open('brickwright', 2)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+        request.onupgradeneeded = () => {
+          for (const table of ['checkpoints', 'transactions', 'meta']) {
+            if (!request.result.objectStoreNames.contains(table)) request.result.createObjectStore(table)
+          }
         }
-      }
-    })
+      })
     const database = await open()
     const rows = await new Promise((resolve, reject) => {
       const transaction = database.transaction('checkpoints', 'readonly')
@@ -490,11 +530,18 @@ try {
       query.onsuccess = () => resolve(query.result)
       query.onerror = () => reject(query.error)
     })
-    return rows.map((row) => ({ id: row.projectId, name: row.document.name, parts: Object.keys(row.document.parts).length }))
+    return rows.map((row) => ({
+      id: row.projectId,
+      name: row.document.name,
+      parts: Object.keys(row.document.parts).length,
+    }))
   })
   const forked = stored.find((project) => project.id.startsWith('doc_') && project.id.includes('fork'))
   check(Boolean(forked), `the fork is a real stored project (found ${JSON.stringify(stored)})`)
-  check(forked?.parts === heroDemo.validation.partCount, `the fork carries all ${heroDemo.validation.partCount} parts (saw ${forked?.parts})`)
+  check(
+    forked?.parts === heroDemo.validation.partCount,
+    `the fork carries all ${heroDemo.validation.partCount} parts (saw ${forked?.parts})`,
+  )
   check(forked?.id !== heroDemo.documentId, 'the fork has its own project id, so it cannot replay into the demo')
 
   const servedAfter = await page.evaluate(async (id) => {
@@ -547,15 +594,27 @@ try {
   const forkInput = await authedPage.evaluate(() => window.__brickwrightForkInput)
   check(/cloud project/i.test(cloudNote), `a signed-in visitor gets a cloud project (saw "${cloudNote.slice(0, 90)}")`)
   check(forkInput?.source?.demoId === secondDemo.id, 'the adapter is told which demo the fork came from')
-  check(forkInput?.source?.sha256 === secondDemo.assets.document.sha256, 'the adapter is given the snapshot digest as provenance')
-  check(forkInput?.parts === secondDemo.validation.partCount, `the adapter receives all ${secondDemo.validation.partCount} parts`)
+  check(
+    forkInput?.source?.sha256 === secondDemo.assets.document.sha256,
+    'the adapter is given the snapshot digest as provenance',
+  )
+  check(
+    forkInput?.parts === secondDemo.validation.partCount,
+    `the adapter receives all ${secondDemo.validation.partCount} parts`,
+  )
   const cloudHandoff = await authedPage.getByRole('link', { name: /Open it in the editor/ }).getAttribute('href')
-  check(cloudHandoff === '/editor?project=cloud_e2e_1', `the cloud fork hands off to its own project (saw ${cloudHandoff})`)
+  check(
+    cloudHandoff === '/editor?project=cloud_e2e_1',
+    `the cloud fork hands off to its own project (saw ${cloudHandoff})`,
+  )
   report.cloudFork = forkInput
   await authed.close()
   pass('authenticated-fork adapter path')
 
-  check(consoleErrors.length === 0, `no console errors during the behaviour run (${consoleErrors.slice(0, 3).join(' | ')})`)
+  check(
+    consoleErrors.length === 0,
+    `no console errors during the behaviour run (${consoleErrors.slice(0, 3).join(' | ')})`,
+  )
   await context.close()
 
   // =========================================================================
@@ -584,7 +643,9 @@ try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     const page = await context.newPage()
     const consoleErrors = []
-    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
     page.on('pageerror', (cause) => consoleErrors.push(cause.message))
     const seen = []
     page.on('response', async (response) => {
@@ -673,11 +734,12 @@ try {
   for (let index = 0; index < DELIVERY_SAMPLES; index += 1) samples.push(await measureDelivery())
   // The median sample is the one reported and asserted on, so the request log,
   // the console output and the numbers all describe the same single load.
-  const median = [...samples].sort((left, right) => left.vitals.lcp - right.vitals.lcp)[
-    Math.floor(samples.length / 2)
-  ]
+  const median = [...samples].sort((left, right) => left.vitals.lcp - right.vitals.lcp)[Math.floor(samples.length / 2)]
   const { vitals, requests, consoleErrors: perfErrors, painted } = median
-  check(painted, `the landing headline painted within 30 s under throttling (console: ${perfErrors.slice(0, 2).join(' | ')})`)
+  check(
+    painted,
+    `the landing headline painted within 30 s under throttling (console: ${perfErrors.slice(0, 2).join(' | ')})`,
+  )
   const lcpElement = vitals.lcpElement ?? 'unknown'
 
   // Chunk *names* are a rolldown implementation detail; what matters is what is
@@ -705,18 +767,24 @@ try {
   const forbidden = requests.filter((entry) => /\/catalog\//.test(entry.url) || /\.bwmesh$/.test(entry.url))
   const lcpSamples = samples.map((sample) => sample.vitals.lcp.toFixed(0)).join(', ')
   process.stdout.write(
-    `\n  throttling: ${median.cpu.slowdown}x CPU — calibrated, host ran the benchmark in `
-      + `${median.cpu.benchmarkMs} ms against a ${TARGET_WORKLOAD_MS} ms reference device — `
-      + `${((THROTTLE.downloadThroughput * 8) / 1024 / 1024).toFixed(2)} Mbit/s down, ${THROTTLE.latency} ms RTT\n`,
+    `\n  throttling: ${median.cpu.slowdown}x CPU — calibrated, host ran the benchmark in ` +
+      `${median.cpu.benchmarkMs} ms against a ${TARGET_WORKLOAD_MS} ms reference device — ` +
+      `${((THROTTLE.downloadThroughput * 8) / 1024 / 1024).toFixed(2)} Mbit/s down, ${THROTTLE.latency} ms RTT\n`,
   )
   if (median.cpu.slowdown <= 1) {
-    process.stdout.write('  note  this host is slower than the reference device, so the timings below are pessimistic\n')
+    process.stdout.write(
+      '  note  this host is slower than the reference device, so the timings below are pessimistic\n',
+    )
   }
-  process.stdout.write(`  LCP        ${vitals.lcp.toFixed(0)} ms  (budget ${LCP_BUDGET_MS} ms; ${DELIVERY_SAMPLES} samples: ${lcpSamples}) — element ${lcpElement}\n`)
+  process.stdout.write(
+    `  LCP        ${vitals.lcp.toFixed(0)} ms  (budget ${LCP_BUDGET_MS} ms; ${DELIVERY_SAMPLES} samples: ${lcpSamples}) — element ${lcpElement}\n`,
+  )
   process.stdout.write(`  CLS        ${vitals.cls.toFixed(4)}     (budget ${CLS_BUDGET})\n`)
   process.stdout.write(`  requests   ${requests.length}\n\n`)
   for (const entry of requests) {
-    process.stdout.write(`    ${String(entry.status).padEnd(4)} ${entry.type.padEnd(10)} ${String(entry.bytes).padStart(8)}  ${entry.url}\n`)
+    process.stdout.write(
+      `    ${String(entry.status).padEnd(4)} ${entry.type.padEnd(10)} ${String(entry.bytes).padStart(8)}  ${entry.url}\n`,
+    )
   }
   process.stdout.write('\n')
 
@@ -726,18 +794,27 @@ try {
   const criticalPath = requests.filter((entry) => ['document', 'stylesheet', 'script'].includes(entry.type))
   const criticalBytes = criticalPath.reduce((sum, entry) => sum + entry.bytes, 0)
   process.stdout.write(
-    `  critical   ${(criticalBytes / 1024).toFixed(0)} KiB across ${criticalPath.length} requests `
-      + `(budget ${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB)\n`,
+    `  critical   ${(criticalBytes / 1024).toFixed(0)} KiB across ${criticalPath.length} requests ` +
+      `(budget ${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB)\n`,
   )
   check(
     criticalBytes > 0 && criticalBytes <= CRITICAL_PATH_BUDGET_BYTES,
-    `the render-critical payload is ${(criticalBytes / 1024).toFixed(0)} KiB, within `
-      + `${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB`,
+    `the render-critical payload is ${(criticalBytes / 1024).toFixed(0)} KiB, within ` +
+      `${(CRITICAL_PATH_BUDGET_BYTES / 1024).toFixed(0)} KiB`,
   )
-  check(vitals.lcp > 0 && vitals.lcp < LCP_BUDGET_MS, `LCP ${vitals.lcp.toFixed(0)} ms is under the ${LCP_BUDGET_MS} ms budget`)
+  check(
+    vitals.lcp > 0 && vitals.lcp < LCP_BUDGET_MS,
+    `LCP ${vitals.lcp.toFixed(0)} ms is under the ${LCP_BUDGET_MS} ms budget`,
+  )
   check(vitals.cls <= CLS_BUDGET, `CLS ${vitals.cls.toFixed(4)} is within ${CLS_BUDGET}`)
-  check(forbidden.length === 0, `no catalog or compiled mesh is fetched (${forbidden.map((entry) => entry.url).join(', ')})`)
-  check(carried.length === 0, `no fetched chunk carries the renderer, the catalog or the kernel (${carried.join('; ')})`)
+  check(
+    forbidden.length === 0,
+    `no catalog or compiled mesh is fetched (${forbidden.map((entry) => entry.url).join(', ')})`,
+  )
+  check(
+    carried.length === 0,
+    `no fetched chunk carries the renderer, the catalog or the kernel (${carried.join('; ')})`,
+  )
 
   check(perfErrors.length === 0, `no console errors on the production build (${perfErrors.slice(0, 3).join(' | ')})`)
   report.performance = {
@@ -751,9 +828,9 @@ try {
     layoutShifts: vitals.shifts,
     consoleErrors: perfErrors,
     scope:
-      'the landing and explore surfaces built as their own entry (src/features/landing/standalone.tsx), '
-      + 'served statically with SPA fallback. It excludes the platform shell entry, which statically '
-      + 'imports the Hexclave account SDK.',
+      'the landing and explore surfaces built as their own entry (src/features/landing/standalone.tsx), ' +
+      'served statically with SPA fallback. It excludes the platform shell entry, which statically ' +
+      'imports the Hexclave account SDK.',
     requestCount: requests.length,
     transferredBytes: requests.reduce((sum, entry) => sum + entry.bytes, 0),
     requests,
@@ -766,15 +843,10 @@ try {
   // modulepreloads Hexclave onto `/`. This second gate reads that file.
   const shippedHtmlPath = path.join(ROOT, 'dist', 'index.html')
   if (!existsSync(shippedHtmlPath)) {
-    check(
-      !process.env.CI,
-      'dist/index.html exists so the shipped-shell Hexclave gate can run (npm run build first)',
-    )
+    check(!process.env.CI, 'dist/index.html exists so the shipped-shell Hexclave gate can run (npm run build first)')
   } else {
     const shippedHtml = await readFile(shippedHtmlPath, 'utf8')
-    const hrefs = [
-      ...shippedHtml.matchAll(/\b(?:href|src)="(\/assets\/[^"]+)"/g),
-    ].map((match) => match[1])
+    const hrefs = [...shippedHtml.matchAll(/\b(?:href|src)="(\/assets\/[^"]+)"/g)].map((match) => match[1])
     const hexclaveInHead = hrefs.filter((href) => /hexclave/i.test(href))
     check(
       hexclaveInHead.length === 0,
@@ -802,7 +874,10 @@ try {
   for (const viewport of viewports) {
     const shot = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } })
     const shotPage = await shot.newPage()
-    for (const [surface, url] of [['landing', '/'], ['explore', `/explore?demo=${heroDemo.id}`]]) {
+    for (const [surface, url] of [
+      ['landing', '/'],
+      ['explore', `/explore?demo=${heroDemo.id}`],
+    ]) {
       await shotPage.goto(`${buildUrl}${url}`, { waitUntil: 'networkidle' })
       await shotPage.waitForTimeout(800)
       const key = `${surface}-${viewport.name}`
@@ -810,8 +885,8 @@ try {
       standaloneOverflow[key] = measured
       check(
         measured.worst <= 1 && measured.surfaceWidth <= viewport.width + 1,
-        `${key} fits a ${viewport.width}px viewport unshelled `
-        + `(surface ${measured.surfaceWidth}px, worst element ${measured.worst}px over)`,
+        `${key} fits a ${viewport.width}px viewport unshelled ` +
+          `(surface ${measured.surfaceWidth}px, worst element ${measured.worst}px over)`,
       )
       await shotPage.screenshot({
         path: path.join(ARTIFACTS, `${key}-standalone.png`),

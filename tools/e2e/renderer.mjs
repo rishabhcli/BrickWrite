@@ -538,7 +538,7 @@ try {
   // real connection edge rather than an assertion about one. Applying a
   // proposal is a mutation, so the session is put into build autonomy first —
   // through the same control an operator uses, not by reaching past it.
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.getByRole('radio', { name: 'build', exact: true }).click()
   await page.waitForFunction(
     () => window.brickwright?.tools?.has?.('build_apply') ?? false,
     null,
