@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { defaultLayout } from '../editor/workbench/layout'
+import { defaultLayout, type WorkbenchLayout } from '../editor/workbench/layout'
 import {
   applyChromeReveal,
   applyDockFocus,
@@ -16,7 +16,7 @@ afterEach(resetChrome)
 
 describe('chrome reveal', () => {
   it('opens the right dock and Generate section without touching the left dock', () => {
-    const closed = {
+    const closed: WorkbenchLayout = {
       ...defaultLayout('desktop'),
       right: { size: 300, collapsed: true },
       sections: { ...defaultLayout().sections, 'generation.panel': false },
@@ -30,7 +30,7 @@ describe('chrome reveal', () => {
   })
 
   it('opens one right-dock section by closing the others', () => {
-    const crowded = {
+    const crowded: WorkbenchLayout = {
       ...defaultLayout(),
       sections: {
         ...defaultLayout().sections,
@@ -49,7 +49,7 @@ describe('chrome reveal', () => {
   })
 
   it('collapses a restored stack down to one focused sheet', () => {
-    const stacked = {
+    const stacked: WorkbenchLayout = {
       ...defaultLayout(),
       sections: {
         ...defaultLayout().sections,
