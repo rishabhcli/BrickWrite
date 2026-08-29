@@ -56,17 +56,25 @@ describe('the landing page', () => {
     expect(container.querySelector('nav')).toBeNull()
   })
 
-  it('offers all four calls to action', () => {
+  it('offers the flagship and all four creator calls to action', () => {
     render(<LandingPage />)
-    expect(screen.getByRole('link', { name: /Start a blank build/ })).toHaveAttribute('href', '/editor?doc=blank')
-    expect(screen.getByRole('link', { name: 'Describe a build' })).toHaveAttribute('href', '/editor?doc=blank&intent=describe')
-    expect(screen.getByRole('link', { name: `Explore ${DEMOS.length} demos` })).toHaveAttribute('href', '/explore')
-    expect(screen.getByRole('link', { name: /Open the professional editor/ })).toHaveAttribute('href', '/editor')
+    const hero = DEMOS.find((demo) => demo.hero)!
+    expect(screen.getByRole('link', { name: /Explore the campus/ })).toHaveAttribute(
+      'href',
+      hrefFor({ kind: 'explore', demoId: hero.id }),
+    )
+    expect(screen.getByRole('link', { name: /Start building/ })).toHaveAttribute('href', '/editor?doc=blank')
+    expect(screen.getByRole('link', { name: 'Describe an idea' })).toHaveAttribute(
+      'href',
+      '/editor?doc=blank&intent=describe',
+    )
+    expect(screen.getByRole('link', { name: `Explore all ${DEMOS.length}` })).toHaveAttribute('href', '/explore')
+    expect(screen.getByRole('link', { name: /Open the editor/ })).toHaveAttribute('href', '/editor')
   })
 
-  it('links every published demo, with a described image sized to avoid layout shift', () => {
+  it('links three featured demos, with described images sized to avoid layout shift', () => {
     render(<LandingPage />)
-    for (const demo of DEMOS) {
+    for (const demo of DEMOS.slice(0, 3)) {
       const card = screen.getByRole('link', { name: new RegExp(demo.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
       expect(card).toHaveAttribute('href', hrefFor({ kind: 'explore', demoId: demo.id }))
       const image = within(card).getByRole('img')
@@ -75,6 +83,7 @@ describe('the landing page', () => {
       expect(image.getAttribute('alt')?.length ?? 0).toBeGreaterThan(20)
       expect(image).toHaveAttribute('src', demo.assets.thumbnail.url)
     }
+    expect(screen.getAllByRole('link').filter((link) => link.querySelector('img'))).toHaveLength(3)
   })
 
   it('quotes only numbers that came out of a validation run', () => {
@@ -91,7 +100,6 @@ describe('the landing page', () => {
 
   it('publishes the gates the demos had to clear', () => {
     render(<LandingPage />)
-    expect(screen.getByRole('heading', { name: /A demo that fails the kernel/ })).toBeInTheDocument()
     const gates = within(screen.getByRole('list', { name: 'Publication gates' })).getAllByRole('listitem')
     expect(gates.length).toBeGreaterThanOrEqual(5)
     expect(gates.map((item) => item.textContent).join(' ')).toMatch(/triangle-confirmed collision/)
@@ -105,38 +113,27 @@ describe('the landing page', () => {
     expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
   })
 
-  it('lights the page from the pointer only on a fine cursor, and hides decorative motion from assistive tech', () => {
+  it('keeps the atmosphere decorative and the compact model stage operable', () => {
     const { container } = render(<LandingPage />)
     expect(container.querySelector('.bw-landing')?.getAttribute('data-pointer')).toBe('off')
     expect(container.querySelector('.bw-atmosphere')).toBeTruthy()
-    expect(container.querySelector('.bw-cursor')?.getAttribute('aria-hidden')).toBe('true')
-    expect(container.querySelector('.bw-bill-rail')?.getAttribute('aria-hidden')).toBe('true')
-    expect(container.querySelector('.bw-gate-rail')?.getAttribute('aria-hidden')).toBe('true')
-    expect(container.querySelector('.bw-film-ruler')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.bw-studs')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-reticle')).toBeTruthy()
-    expect(container.querySelector('.bw-film-stage')?.getAttribute('data-stage')).toBe('brief')
-    expect(container.querySelector('[data-film-stage="brief"]')?.getAttribute('data-active')).toBe('true')
-    expect(container.querySelector('[data-film-stage="validated"]')?.getAttribute('data-active')).toBe('false')
-    expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('stands up')
+    expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('whole campus.')
     const hero = DEMOS.find((demo) => demo.hero)!
-    for (const technique of hero.techniques) {
-      expect(container.textContent).toContain(technique)
-    }
-    expect(container.querySelector('.bw-bill-rail')?.textContent).toContain(hero.bill[0].name)
-    expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.roughValidation.partCount))
-    expect(container.querySelectorAll('.bw-film-ruler li')).toHaveLength(4)
-    expect(container.querySelectorAll('.bw-cursor')).toHaveLength(2)
-    expect(container.querySelector('.bw-stage-keys')?.textContent).toBe('1–4')
+    expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.validation.partCount))
+    expect(container.querySelectorAll('.bw-stage-step')).toHaveLength(4)
+    expect(container.querySelector('.bw-film')).toBeNull()
+    expect(container.querySelector('.bw-bill-rail')).toBeNull()
   })
 
-  it('jumps the film with the number keys and writes the beat into the URL', () => {
-    window.history.replaceState(null, '', '/')
-    const { container } = render(<LandingPage />)
-    fireEvent.keyDown(window, { key: '4' })
-    expect(container.querySelector('.bw-film-stage')?.getAttribute('data-stage')).toBe('validated')
-    expect(window.location.search).toContain('beat=validated')
+  it('switches the compact model stage directly', () => {
+    render(<LandingPage />)
+    const validated = screen.getByRole('tab', { name: /Validated/ })
+    fireEvent.click(validated)
+    expect(validated).toHaveAttribute('aria-selected', 'true')
   })
 })
 
@@ -153,11 +150,11 @@ describe('with reduced motion requested', () => {
     for (const element of reveals) expect(element.getAttribute('data-shown')).toBe('true')
   })
 
-  it('leaves the hero on its first stage rather than animating through them', async () => {
+  it('leaves the hero on its evidence-first stage rather than animating through them', async () => {
     render(<LandingPage />)
     await new Promise((resolve) => setTimeout(resolve, 60))
     const selected = screen.getAllByRole('tab').find((tab) => tab.getAttribute('aria-selected') === 'true')
-    expect(selected?.textContent).toMatch(/Brief/)
+    expect(selected?.textContent).toMatch(/Validated/)
   })
 })
 
@@ -177,9 +174,12 @@ describe('landing analytics', () => {
   })
 
   it('refuses a demo id that is not published', () => {
-    expect(() => assertLandingVocabulary({ name: 'demo.viewed', demoId: 'not-a-demo', surface: 'explore' }))
-      .toThrow(LandingAnalyticsVocabularyError)
-    expect(() => assertLandingVocabulary({ name: 'demo.viewed', demoId: DEMOS[0].id, surface: 'explore' })).not.toThrow()
+    expect(() => assertLandingVocabulary({ name: 'demo.viewed', demoId: 'not-a-demo', surface: 'explore' })).toThrow(
+      LandingAnalyticsVocabularyError,
+    )
+    expect(() =>
+      assertLandingVocabulary({ name: 'demo.viewed', demoId: DEMOS[0].id, surface: 'explore' }),
+    ).not.toThrow()
   })
 
   it('buffers, and says so, until a sink is registered', () => {

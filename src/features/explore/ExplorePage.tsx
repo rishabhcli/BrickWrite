@@ -60,9 +60,16 @@ export function ExplorePage() {
     setRoughPreview(null)
     setError(null)
     loadPreview(demo, 'published', controller.signal)
-      .then((loaded) => { if (!cancelled) setPreview(loaded) })
-      .catch((cause: unknown) => { if (!cancelled && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
-    return () => { cancelled = true; controller.abort() }
+      .then((loaded) => {
+        if (!cancelled) setPreview(loaded)
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [demo])
 
   // The earlier candidate is a second fetch, taken only when somebody asks to
@@ -70,7 +77,9 @@ export function ExplorePage() {
   useEffect(() => {
     if (view !== 'before-after' || roughPreview) return
     const controller = new AbortController()
-    loadPreview(demo, 'rough', controller.signal).then(setRoughPreview).catch(() => undefined)
+    loadPreview(demo, 'rough', controller.signal)
+      .then(setRoughPreview)
+      .catch(() => undefined)
     return () => controller.abort()
   }, [view, roughPreview, demo])
 
@@ -112,7 +121,7 @@ export function ExplorePage() {
     }
   }, [demo, fork.pending])
 
-  const activePreview = view === 'before-after' ? roughPreview ?? preview : preview
+  const activePreview = view === 'before-after' ? (roughPreview ?? preview) : preview
   const selectedPart = activePreview && selected !== null ? activePreview.parts[selected] : null
   const stepIndexLimit = view === 'before-after' ? undefined : step
 
@@ -124,16 +133,16 @@ export function ExplorePage() {
   const report = view === 'before-after' ? demo.roughValidation : demo.validation
 
   return (
-    <div
-      ref={pointer.ref}
-      className="bw-surface bw-explore"
-      data-pointer={pointer.live ? 'live' : 'off'}
-    >
+    <div ref={pointer.ref} className="bw-surface bw-explore" data-pointer={pointer.live ? 'live' : 'off'}>
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
-      <a className="bw-button small bw-skip" href="#bw-explore-main">Skip to the model</a>
+      <a className="bw-button small bw-skip" href="#bw-explore-main">
+        Skip to the model
+      </a>
       <header className="bw-explore-bar">
-        <a className="bw-button ghost small" href={hrefFor({ kind: 'landing' })} onClick={anchor({ kind: 'landing' })}>← Brickwright</a>
+        <a className="bw-button ghost small" href={hrefFor({ kind: 'landing' })} onClick={anchor({ kind: 'landing' })}>
+          ← Brickwright
+        </a>
         <div className="bw-explore-title">
           <h1>{demo.title}</h1>
           <span>{demo.discipline}</span>
@@ -164,7 +173,10 @@ export function ExplorePage() {
       <div className="bw-explore-body" id="bw-explore-main">
         <section className="bw-explore-view" aria-label={`${demo.title} model view`}>
           <div className="bw-stage bw-corners">
-            <i /><i /><i /><i />
+            <i />
+            <i />
+            <i />
+            <i />
             <StageHud
               yaw={camera.yaw}
               pitch={camera.pitch}
@@ -189,13 +201,17 @@ export function ExplorePage() {
                     if (index !== null) trackLanding({ name: 'demo.part_inspected', demoId: demo.id })
                   }}
                   label={
-                    `${demo.title}: ${activePreview.parts.length} parts drawn as measured LDraw envelopes. `
-                    + `Showing ${view === 'before-after' ? 'the first candidate' : `build step ${step} of ${totalSteps}`}.`
+                    `${demo.title}: ${activePreview.parts.length} parts drawn as measured LDraw envelopes. ` +
+                    `Showing ${view === 'before-after' ? 'the first candidate' : `build step ${step} of ${totalSteps}`}.`
                   }
                 />
               </Suspense>
             ) : null}
-            {error ? <p className="bw-fork-note error" role="alert" style={{ position: 'absolute', inset: 'auto 16px 16px' }}>{error}</p> : null}
+            {error ? (
+              <p className="bw-fork-note error" role="alert" style={{ position: 'absolute', inset: 'auto 16px 16px' }}>
+                {error}
+              </p>
+            ) : null}
           </div>
 
           <div className="bw-explore-controls">
@@ -214,7 +230,9 @@ export function ExplorePage() {
                 ))}
               </div>
               <span className="spacer" style={{ flex: 1 }} />
-              <button type="button" className="bw-chip" onClick={() => setCamera(demo.camera)}>Reset view</button>
+              <button type="button" className="bw-chip" onClick={() => setCamera(demo.camera)}>
+                Reset view
+              </button>
             </div>
 
             <div className="bw-control-row">
@@ -229,7 +247,9 @@ export function ExplorePage() {
                   disabled={view === 'before-after'}
                   onChange={(event) => setStep(Number(event.target.value))}
                 />
-                <span className="bw-control-value">{step} / {totalSteps}</span>
+                <span className="bw-control-value">
+                  {step} / {totalSteps}
+                </span>
               </label>
               <label htmlFor="bw-explode">
                 Exploded
@@ -247,11 +267,16 @@ export function ExplorePage() {
 
             <p className="bw-step-caption">
               {view === 'before-after' ? (
-                <>Showing the first candidate: <b>{demo.roughValidation.partCount}</b> parts in{' '}
-                <b>{demo.roughValidation.componentCount}</b> connected component{demo.roughValidation.componentCount === 1 ? '' : 's'}.</>
+                <>
+                  Showing the first candidate: <b>{demo.roughValidation.partCount}</b> parts in{' '}
+                  <b>{demo.roughValidation.componentCount}</b> connected component
+                  {demo.roughValidation.componentCount === 1 ? '' : 's'}.
+                </>
               ) : (
-                <><b>{stepName}</b> — the sequence is derived from the connection graph, and every step after the
-                first attaches to structure placed earlier.</>
+                <>
+                  <b>{stepName}</b> — the sequence is derived from the connection graph, and every step after the first
+                  attaches to structure placed earlier.
+                </>
               )}
             </p>
           </div>
@@ -262,113 +287,181 @@ export function ExplorePage() {
             <span className="bw-eyebrow accent">{demo.discipline}</span>
             <h2>{demo.title}</h2>
             <p>{demo.summary}</p>
-            <div className="bw-chips">{demo.techniques.map((entry) => <span className="bw-chip" key={entry}>{entry}</span>)}</div>
+            <div className="bw-chips">
+              {demo.techniques.map((entry) => (
+                <span className="bw-chip" key={entry}>
+                  {entry}
+                </span>
+              ))}
+            </div>
           </div>
 
           <div className="bw-inspector-section bw-fork">
             <span className="bw-eyebrow">Fork it</span>
             <button type="button" className="bw-button primary bw-magnet" onClick={startFork} disabled={fork.pending}>
-              {fork.pending ? 'Copying…' : 'Edit this build'} <span className="bw-key" aria-hidden="true">→</span>
+              {fork.pending ? 'Copying…' : 'Edit this build'}{' '}
+              <span className="bw-key" aria-hidden="true">
+                →
+              </span>
             </button>
             <p className="bw-note">
-              The published demo is immutable. This copies the snapshot into a project of your own; the demo
-              itself is never modified.
+              The published demo is immutable. This copies the snapshot into a project of your own; the demo itself is
+              never modified.
             </p>
             {fork.outcome ? <ForkResult demo={demo} outcome={fork.outcome} /> : null}
           </div>
 
-          <div className="bw-inspector-section">
-            <span className="bw-eyebrow">Validation · revision {demo.validation.revision}</span>
-            <ul className="bw-facts">
-              <Fact k="Parts" v={demo.validation.partCount} />
-              <Fact k="Distinct elements" v={demo.distinctParts} />
-              <Fact k="Mated connectors" v={demo.validation.connectionCount} />
-              <Fact k="Confirmed collisions" v={demo.validation.collisionCount} tone={demo.validation.collisionCount ? 'warn' : 'ok'} />
-              <Fact k="Unverified verdicts" v={demo.validation.unverifiedCollisions} tone={demo.validation.unverifiedCollisions ? 'warn' : 'ok'} />
-              <Fact k="Connected components" v={demo.validation.componentCount} tone={demo.validation.componentCount === 1 ? 'ok' : 'warn'} />
-              <Fact k="Build steps" v={`${demo.validation.steps} · ${demo.validation.buildOrderVerified ? 'verified' : 'unverified'}`} tone={demo.validation.buildOrderVerified ? 'ok' : 'warn'} />
-              <Fact k="Footprint" v={`${demo.validation.footprintStuds[0]} × ${demo.validation.footprintStuds[1]} studs`} />
-              <Fact k="Colours without set evidence" v={demo.validation.virtualColorCount} />
-            </ul>
-          </div>
+          <details className="bw-explore-report">
+            <summary>
+              <span>Model report</span>
+              <strong>
+                {demo.validation.partCount} parts · {demo.validation.connectionCount} mates
+              </strong>
+            </summary>
+            <div className="bw-explore-report-body">
+              <div className="bw-inspector-section">
+                <span className="bw-eyebrow">Validation · revision {demo.validation.revision}</span>
+                <ul className="bw-facts">
+                  <Fact k="Parts" v={demo.validation.partCount} />
+                  <Fact k="Distinct elements" v={demo.distinctParts} />
+                  <Fact k="Mated connectors" v={demo.validation.connectionCount} />
+                  <Fact
+                    k="Confirmed collisions"
+                    v={demo.validation.collisionCount}
+                    tone={demo.validation.collisionCount ? 'warn' : 'ok'}
+                  />
+                  <Fact
+                    k="Unverified verdicts"
+                    v={demo.validation.unverifiedCollisions}
+                    tone={demo.validation.unverifiedCollisions ? 'warn' : 'ok'}
+                  />
+                  <Fact
+                    k="Connected components"
+                    v={demo.validation.componentCount}
+                    tone={demo.validation.componentCount === 1 ? 'ok' : 'warn'}
+                  />
+                  <Fact
+                    k="Build steps"
+                    v={`${demo.validation.steps} · ${demo.validation.buildOrderVerified ? 'verified' : 'unverified'}`}
+                    tone={demo.validation.buildOrderVerified ? 'ok' : 'warn'}
+                  />
+                  <Fact
+                    k="Footprint"
+                    v={`${demo.validation.footprintStuds[0]} × ${demo.validation.footprintStuds[1]} studs`}
+                  />
+                  <Fact k="Colours without set evidence" v={demo.validation.virtualColorCount} />
+                </ul>
+              </div>
 
-          <div className="bw-inspector-section">
-            <span className="bw-eyebrow">Statics</span>
-            <ul className="bw-facts">
-              <Fact k="Mass" v={demo.validation.statics.massLabel} />
-              <Fact k="Support footprint" v={demo.validation.statics.supportLabel} />
-              <Fact k="Tipping margin" v={`${demo.validation.statics.tippingMarginLdu} LDU`} tone={demo.validation.statics.stable ? 'ok' : 'warn'} />
-              <Fact k="Mass coverage" v={`${Math.round(demo.validation.statics.coverage * 100)}%`} />
-              <Fact k="Carried in tension" v={demo.validation.statics.unsupportedParts} />
-              <Fact k="Groups over clutch capacity" v={demo.validation.statics.overloadedGroups} tone={demo.validation.statics.overloadedGroups ? 'warn' : 'ok'} />
-            </ul>
-            <p className="bw-note" style={{ marginTop: 10 }}>{demo.validation.statics.massBasis}</p>
-            <p className="bw-note">
-              Clutch capacity is an assumption, not a measurement: {demo.validation.statics.clutchGramsPerStud} gf per stud,
-              the conservative end of independent measurements.
-            </p>
-            {demo.tensionReason ? <p className="bw-note">{demo.tensionReason}</p> : null}
-          </div>
+              <div className="bw-inspector-section">
+                <span className="bw-eyebrow">Statics</span>
+                <ul className="bw-facts">
+                  <Fact k="Mass" v={demo.validation.statics.massLabel} />
+                  <Fact k="Support footprint" v={demo.validation.statics.supportLabel} />
+                  <Fact
+                    k="Tipping margin"
+                    v={`${demo.validation.statics.tippingMarginLdu} LDU`}
+                    tone={demo.validation.statics.stable ? 'ok' : 'warn'}
+                  />
+                  <Fact k="Mass coverage" v={`${Math.round(demo.validation.statics.coverage * 100)}%`} />
+                  <Fact k="Carried in tension" v={demo.validation.statics.unsupportedParts} />
+                  <Fact
+                    k="Groups over clutch capacity"
+                    v={demo.validation.statics.overloadedGroups}
+                    tone={demo.validation.statics.overloadedGroups ? 'warn' : 'ok'}
+                  />
+                </ul>
+                <p className="bw-note" style={{ marginTop: 10 }}>
+                  {demo.validation.statics.massBasis}
+                </p>
+                <p className="bw-note">
+                  Clutch capacity is an assumption, not a measurement: {demo.validation.statics.clutchGramsPerStud} gf
+                  per stud, the conservative end of independent measurements.
+                </p>
+                {demo.tensionReason ? <p className="bw-note">{demo.tensionReason}</p> : null}
+              </div>
 
-          <div className="bw-inspector-section">
-            <span className="bw-eyebrow">Refinement</span>
-            <p>{demo.refinement}</p>
-            <div className="bw-compare">
-              <span className="head">Measurement</span>
-              <span className="head">Candidate</span>
-              <span className="head">Published</span>
-              <CompareRow label="Components" before={demo.delta.componentsBefore} after={demo.delta.componentsAfter} lowerIsBetter />
-              <CompareRow label="Loose parts" before={demo.delta.loosePartsBefore} after={demo.delta.loosePartsAfter} lowerIsBetter />
-              <CompareRow label="Parts" before={demo.roughValidation.partCount} after={demo.validation.partCount} />
-              <CompareRow label="Mates" before={demo.roughValidation.connectionCount} after={demo.validation.connectionCount} />
+              <div className="bw-inspector-section">
+                <span className="bw-eyebrow">Refinement</span>
+                <p>{demo.refinement}</p>
+                <div className="bw-compare">
+                  <span className="head">Measurement</span>
+                  <span className="head">Candidate</span>
+                  <span className="head">Published</span>
+                  <CompareRow
+                    label="Components"
+                    before={demo.delta.componentsBefore}
+                    after={demo.delta.componentsAfter}
+                    lowerIsBetter
+                  />
+                  <CompareRow
+                    label="Loose parts"
+                    before={demo.delta.loosePartsBefore}
+                    after={demo.delta.loosePartsAfter}
+                    lowerIsBetter
+                  />
+                  <CompareRow label="Parts" before={demo.roughValidation.partCount} after={demo.validation.partCount} />
+                  <CompareRow
+                    label="Mates"
+                    before={demo.roughValidation.connectionCount}
+                    after={demo.validation.connectionCount}
+                  />
+                </div>
+              </div>
+
+              <div className="bw-inspector-section">
+                <span className="bw-eyebrow">{selectedPart ? 'Selected part' : 'Parts in this model'}</span>
+                {selectedPart && activePreview ? (
+                  <SelectedPart preview={activePreview} index={selected!} onClear={() => setSelected(null)} />
+                ) : null}
+                <ul className="bw-part-list">
+                  {demo.bill.map((line) => (
+                    <li key={line.definitionId}>
+                      <button
+                        type="button"
+                        className="bw-part-button"
+                        aria-pressed={false}
+                        onClick={() => {
+                          if (!activePreview) return
+                          const definition = activePreview.definitions.findIndex(
+                            (entry) => entry.id === line.definitionId,
+                          )
+                          const index = activePreview.parts.findIndex(
+                            (part) => part[PART_FIELDS.definition] === definition,
+                          )
+                          if (index >= 0) {
+                            setSelected(index)
+                            trackLanding({ name: 'demo.part_inspected', demoId: demo.id })
+                          }
+                        }}
+                      >
+                        <span className="bw-swatch" style={{ background: '#2b3538' }} aria-hidden="true" />
+                        <strong>{line.name}</strong>
+                        <code>
+                          {line.definitionId} × {line.count}
+                        </code>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="bw-inspector-section">
+                <span className="bw-eyebrow">Provenance</span>
+                <ul className="bw-facts">
+                  <Fact k="Catalog" v={demo.provenance.catalogVersion} />
+                  <Fact k="Schema" v={`ModelDocument v${demo.schemaVersion}`} />
+                  <Fact k="Authored" v={demo.provenance.authoredAt.slice(0, 10)} />
+                  <Fact k="Snapshot" v={`${(demo.assets.document.bytes / 1024).toFixed(0)} KB`} />
+                </ul>
+                <p className="bw-note" style={{ marginTop: 10 }}>
+                  Generated by <code>{demo.provenance.generator}</code>; stills rendered by{' '}
+                  <code>{demo.provenance.renderer}</code>. The interactive view above draws each part’s measured LDraw
+                  envelope, not its compiled mesh — open the editor for that.
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="bw-inspector-section">
-            <span className="bw-eyebrow">{selectedPart ? 'Selected part' : 'Parts in this model'}</span>
-            {selectedPart && activePreview ? (
-              <SelectedPart preview={activePreview} index={selected!} onClear={() => setSelected(null)} />
-            ) : null}
-            <ul className="bw-part-list">
-              {demo.bill.map((line) => (
-                <li key={line.definitionId}>
-                  <button
-                    type="button"
-                    className="bw-part-button"
-                    aria-pressed={false}
-                    onClick={() => {
-                      if (!activePreview) return
-                      const definition = activePreview.definitions.findIndex((entry) => entry.id === line.definitionId)
-                      const index = activePreview.parts.findIndex((part) => part[PART_FIELDS.definition] === definition)
-                      if (index >= 0) {
-                        setSelected(index)
-                        trackLanding({ name: 'demo.part_inspected', demoId: demo.id })
-                      }
-                    }}
-                  >
-                    <span className="bw-swatch" style={{ background: '#2b3538' }} aria-hidden="true" />
-                    <strong>{line.name}</strong>
-                    <code>{line.definitionId} × {line.count}</code>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="bw-inspector-section">
-            <span className="bw-eyebrow">Provenance</span>
-            <ul className="bw-facts">
-              <Fact k="Catalog" v={demo.provenance.catalogVersion} />
-              <Fact k="Schema" v={`ModelDocument v${demo.schemaVersion}`} />
-              <Fact k="Authored" v={demo.provenance.authoredAt.slice(0, 10)} />
-              <Fact k="Snapshot" v={`${(demo.assets.document.bytes / 1024).toFixed(0)} KB`} />
-            </ul>
-            <p className="bw-note" style={{ marginTop: 10 }}>
-              Generated by <code>{demo.provenance.generator}</code>; stills rendered by <code>{demo.provenance.renderer}</code>.
-              The interactive view above draws each part’s measured LDraw envelope, not its compiled mesh — open
-              the editor for that.
-            </p>
-          </div>
+          </details>
         </aside>
       </div>
 
@@ -380,17 +473,21 @@ export function ExplorePage() {
       <section className="bw-visually-hidden" aria-label="Build sequence, as text">
         <h2>Build sequence for {demo.title}</h2>
         <p>
-          {demo.validation.partCount} parts, {demo.validation.connectionCount} mated connectors,
-          {' '}{demo.validation.steps} verified build steps. Currently showing step {step}.
+          {demo.validation.partCount} parts, {demo.validation.connectionCount} mated connectors, {demo.validation.steps}{' '}
+          verified build steps. Currently showing step {step}.
         </p>
         <ol>
-          {(preview?.steps ?? Array.from({ length: totalSteps }, (_, index) => ({
-            index: index + 1,
-            name: `Step ${index + 1}`,
-            partCount: 0,
-          }))).map((entry) => (
+          {(
+            preview?.steps ??
+            Array.from({ length: totalSteps }, (_, index) => ({
+              index: index + 1,
+              name: `Step ${index + 1}`,
+              partCount: 0,
+            }))
+          ).map((entry) => (
             <li key={entry.index}>
-              {entry.name}{entry.partCount ? `: ${entry.partCount} part${entry.partCount === 1 ? '' : 's'}` : ''}
+              {entry.name}
+              {entry.partCount ? `: ${entry.partCount} part${entry.partCount === 1 ? '' : 's'}` : ''}
             </li>
           ))}
         </ol>
@@ -408,7 +505,17 @@ function Fact({ k, v, tone }: { k: string; v: string | number; tone?: 'ok' | 'wa
   )
 }
 
-function CompareRow({ label, before, after, lowerIsBetter = false }: { label: string; before: number; after: number; lowerIsBetter?: boolean }) {
+function CompareRow({
+  label,
+  before,
+  after,
+  lowerIsBetter = false,
+}: {
+  label: string
+  before: number
+  after: number
+  lowerIsBetter?: boolean
+}) {
   const improved = lowerIsBetter ? after < before : after > before
   return (
     <>
@@ -436,22 +543,28 @@ function SelectedPart({ preview, index, onClear }: { preview: DemoPreview; index
         <Fact k="Compiled connectors" v={definition?.connectors ?? 0} />
         <Fact k="Official set appearances" v={definition?.frequency ?? 0} />
       </ul>
-      <button type="button" className="bw-button ghost small" style={{ marginTop: 10 }} onClick={onClear}>Clear selection</button>
+      <button type="button" className="bw-button ghost small" style={{ marginTop: 10 }} onClick={onClear}>
+        Clear selection
+      </button>
     </div>
   )
 }
 
 function ForkResult({ demo, outcome }: { demo: DemoEntry; outcome: ForkOutcome }) {
   if (!outcome.ok) {
-    return <p className="bw-fork-note error" role="alert">{outcome.message}</p>
+    return (
+      <p className="bw-fork-note error" role="alert">
+        {outcome.message}
+      </p>
+    )
   }
   return (
     <div className="bw-fork-note good" role="status">
       <p style={{ margin: 0 }}>
         {outcome.destination === 'cloud'
           ? `Copied to a cloud project through the ${outcome.adapter} adapter`
-          : 'Copied to a local project in this browser'}
-        {' '}as <b>{outcome.name}</b> — {outcome.parts} parts. {demo.title} itself is unchanged.
+          : 'Copied to a local project in this browser'}{' '}
+        as <b>{outcome.name}</b> — {outcome.parts} parts. {demo.title} itself is unchanged.
       </p>
       {outcome.destination === 'local' && outcome.note ? <p style={{ margin: '6px 0 0' }}>{outcome.note}</p> : null}
       <a
@@ -459,9 +572,13 @@ function ForkResult({ demo, outcome }: { demo: DemoEntry; outcome: ForkOutcome }
         style={{ marginTop: 10 }}
         href={hrefFor({ kind: 'editor-project', projectId: outcome.projectId })}
         onClick={anchor({ kind: 'editor-project', projectId: outcome.projectId }, () =>
-          trackLanding({ name: 'editor.opened', from: 'explore', withProject: true }))}
+          trackLanding({ name: 'editor.opened', from: 'explore', withProject: true }),
+        )}
       >
-        Open it in the editor <span className="bw-key" aria-hidden="true">→</span>
+        Open it in the editor{' '}
+        <span className="bw-key" aria-hidden="true">
+          →
+        </span>
       </a>
     </div>
   )

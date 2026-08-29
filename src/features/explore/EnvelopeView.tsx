@@ -112,6 +112,7 @@ export function EnvelopeView({
     const fit = fitScene(preview.boundsLdu, basis, size, { padding: 0.12, zoom: camera.zoom })
     const scene = buildScene(preview, basis, { stepLimit, explode, explodeOffsets: offsets })
     const hits: HitTarget[] = []
+    const collectHits = Boolean(onSelectIndex)
     // Roughly a stud's radius, so the dimples scale with the model rather than
     // sitting at a fixed pixel size that turns into noise when zoomed out.
     const studRadiusLdu = 6
@@ -128,7 +129,7 @@ export function EnvelopeView({
 
       for (const face of faces) {
         const points = face.corners.map((corner) => project(corner, basis, fit))
-        polygons.push(points)
+        if (collectHits) polygons.push(points)
         context.beginPath()
         context.moveTo(points[0][0], points[0][1])
         for (let index = 1; index < points.length; index += 1) context.lineTo(points[index][0], points[index][1])
@@ -158,11 +159,11 @@ export function EnvelopeView({
           drawStudRing(context, preview, box, basis, fit, color.hex, face.shade, studRadiusLdu, dimmed)
         }
       }
-      hits.push({ index: box.index, polygons })
+      if (collectHits) hits.push({ index: box.index, polygons })
     }
     // Nearest first, so a click lands on the part in front.
     hitsRef.current = hits.reverse()
-  }, [preview, camera, size, stepLimit, highlightStep, explode, selectedIndex, wave, offsets, palette])
+  }, [preview, camera, size, stepLimit, highlightStep, explode, selectedIndex, wave, offsets, palette, onSelectIndex])
 
   const orbitBy = useCallback(
     (deltaYaw: number, deltaPitch: number) => {
@@ -200,7 +201,8 @@ export function EnvelopeView({
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     dragRef.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
     if (!drag || drag.moved || !onSelectIndex) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point: [number, number] = [event.clientX - rect.left, event.clientY - rect.top]
@@ -211,10 +213,19 @@ export function EnvelopeView({
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!interactive) return
     const step = event.shiftKey ? 15 : 5
-    if (event.key === 'ArrowLeft') { orbitBy(-step, 0); event.preventDefault() }
-    else if (event.key === 'ArrowRight') { orbitBy(step, 0); event.preventDefault() }
-    else if (event.key === 'ArrowUp') { orbitBy(0, step); event.preventDefault() }
-    else if (event.key === 'ArrowDown') { orbitBy(0, -step); event.preventDefault() }
+    if (event.key === 'ArrowLeft') {
+      orbitBy(-step, 0)
+      event.preventDefault()
+    } else if (event.key === 'ArrowRight') {
+      orbitBy(step, 0)
+      event.preventDefault()
+    } else if (event.key === 'ArrowUp') {
+      orbitBy(0, step)
+      event.preventDefault()
+    } else if (event.key === 'ArrowDown') {
+      orbitBy(0, -step)
+      event.preventDefault()
+    }
   }
 
   return (
@@ -222,11 +233,7 @@ export function EnvelopeView({
       ref={frameRef}
       className={className ? `bw-envelope ${className}` : 'bw-envelope'}
       role="img"
-      aria-label={
-        interactive
-          ? `${label} Orbit with the arrow keys once this view has focus.`
-          : label
-      }
+      aria-label={interactive ? `${label} Orbit with the arrow keys once this view has focus.` : label}
       tabIndex={interactive ? 0 : -1}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -247,9 +254,9 @@ function normalisedU(point: Vec, basis: ReturnType<typeof cameraBasis>, preview:
   let high = -Infinity
   for (let corner = 0; corner < 8; corner += 1) {
     const u =
-      (corner & 1 ? max[0] : min[0]) * basis.right[0]
-      + (corner & 2 ? max[1] : min[1]) * basis.right[1]
-      + (corner & 4 ? max[2] : min[2]) * basis.right[2]
+      (corner & 1 ? max[0] : min[0]) * basis.right[0] +
+      (corner & 2 ? max[1] : min[1]) * basis.right[1] +
+      (corner & 4 ? max[2] : min[2]) * basis.right[2]
     if (u < low) low = u
     if (u > high) high = u
   }

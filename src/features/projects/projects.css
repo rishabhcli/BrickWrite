@@ -5,7 +5,9 @@
   min-height: 100%;
 }
 
-.bw-projects-hero { margin-bottom: clamp(28px, 4vw, 48px); }
+.bw-projects-hero {
+  margin-bottom: clamp(28px, 4vw, 48px);
+}
 
 .bw-projects-header {
   display: flex;
@@ -27,7 +29,9 @@
   gap: 10px;
 }
 
-.bw-templates-section { margin-bottom: clamp(36px, 5vw, 64px); }
+.bw-templates-section {
+  margin-bottom: clamp(36px, 5vw, 64px);
+}
 
 .bw-templates-grid {
   display: grid;
@@ -45,7 +49,9 @@
   text-align: left;
   color: inherit;
   font: inherit;
-  transition: transform 0.24s var(--bw-spring), border-color 0.2s ease;
+  transition:
+    transform 0.24s var(--bw-spring),
+    border-color 0.2s ease;
 }
 .bw-template-card:hover {
   border-color: rgba(245, 163, 63, 0.5);
@@ -69,7 +75,9 @@
 .bw-template-plate span {
   border-radius: 50%;
   background: radial-gradient(circle at 40% 35%, #ffd39a, #c56a28 62%, #7a3a16);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 4px 0 #5a2a12;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 4px 0 #5a2a12;
 }
 .bw-template-card h3 {
   margin: 0;
@@ -79,7 +87,9 @@
   font-weight: 700;
 }
 
-.bw-projects-filter-bar { margin-bottom: 20px; }
+.bw-projects-filter-bar {
+  margin-bottom: 20px;
+}
 
 .bw-projects-search {
   display: flex;
@@ -103,7 +113,9 @@
   outline: none;
   width: 100%;
 }
-.bw-projects-search input::placeholder { color: var(--bw-faint); }
+.bw-projects-search input::placeholder {
+  color: var(--bw-faint);
+}
 
 .bw-projects-grid {
   display: grid;
@@ -119,7 +131,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: transform 0.24s var(--bw-spring), border-color 0.2s ease;
+  transition:
+    transform 0.24s var(--bw-spring),
+    border-color 0.2s ease;
 }
 .bw-project-card:hover {
   border-color: rgba(245, 163, 63, 0.4);
@@ -144,7 +158,9 @@
   color: var(--bw-faint);
   font-variant-numeric: tabular-nums;
 }
-.bw-project-card-meta b { color: var(--bw-ink); }
+.bw-project-card-meta b {
+  color: var(--bw-ink);
+}
 
 .bw-project-card-actions {
   display: flex;
@@ -168,4 +184,70 @@
   color: var(--bw-muted);
   max-width: 28ch;
   margin: 0;
+}
+
+/* Models first; starter plates stay one deliberate click away. */
+.bw-projects-page {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.bw-projects-hero {
+  margin-bottom: 28px;
+}
+.bw-projects-header-title .bw-display {
+  font-size: clamp(46px, 6vw, 76px);
+  letter-spacing: -0.04em;
+}
+.bw-templates-disclosure {
+  margin: 0 0 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 18, 20, 0.72);
+}
+.bw-templates-disclosure > summary {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  list-style: none;
+  cursor: pointer;
+}
+.bw-templates-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.bw-templates-disclosure > summary::after {
+  content: '+';
+  color: var(--bw-cyan);
+  font: 600 20px var(--bw-display);
+}
+.bw-templates-disclosure[open] > summary::after {
+  content: '−';
+}
+.bw-templates-disclosure > summary small,
+.bw-templates-disclosure > summary strong {
+  display: block;
+  font-family: var(--bw-display);
+}
+.bw-templates-disclosure > summary small {
+  color: var(--bw-faint);
+  font-size: 8px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.bw-templates-disclosure > summary strong {
+  margin-top: 3px;
+  color: var(--bw-ink);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.bw-templates-disclosure .bw-templates-grid {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--bw-line);
+}
+.bw-projects-list-section .bw-section-head {
+  margin-bottom: 16px;
+}
+.bw-project-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: #0d1315;
 }

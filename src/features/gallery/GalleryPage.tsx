@@ -140,52 +140,83 @@ export default function GalleryPage({
           />
         </label>
 
-        <label className="bw-gallery-select">
-          <span>Sort</span>
-          <select value={sort} data-testid="gallery-sort" onChange={(event) => setSort(event.target.value as GallerySort)}>
-            {GALLERY_SORTS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <details className="bw-gallery-filter-menu">
+          <summary>
+            Filter &amp; sort
+            {tags.length > 0 || collectionId || healthyOnly ? <em>active</em> : null}
+          </summary>
+          <div className="bw-gallery-filter-panel">
+            <label className="bw-gallery-select">
+              <span>Sort</span>
+              <select
+                value={sort}
+                data-testid="gallery-sort"
+                onChange={(event) => setSort(event.target.value as GallerySort)}
+              >
+                {GALLERY_SORTS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label className="bw-gallery-check">
-          <input
-            type="checkbox"
-            checked={healthyOnly}
-            data-testid="gallery-healthy"
-            onChange={(event) => setHealthyOnly(event.target.checked)}
-          />
-          Validated only
-        </label>
+            <label className="bw-gallery-check">
+              <input
+                type="checkbox"
+                checked={healthyOnly}
+                data-testid="gallery-healthy"
+                onChange={(event) => setHealthyOnly(event.target.checked)}
+              />
+              Validated only
+            </label>
+
+            {collections.length > 0 ? (
+              <nav className="bw-gallery-collections" aria-label="Curated collections">
+                <button
+                  type="button"
+                  aria-pressed={collectionId === null}
+                  className={collectionId === null ? 'is-active' : ''}
+                  onClick={() => setCollectionId(null)}
+                >
+                  Everything
+                </button>
+                {collections.map((collection) => (
+                  <button
+                    key={collection.id}
+                    type="button"
+                    aria-pressed={collectionId === collection.id}
+                    className={collectionId === collection.id ? 'is-active' : ''}
+                    onClick={() => setCollectionId(collection.id)}
+                    data-testid={`collection-${collection.id}`}
+                  >
+                    {collection.title}
+                  </button>
+                ))}
+              </nav>
+            ) : null}
+
+            {result.facets.length > 0 ? (
+              <ul className="bw-gallery-facets" aria-label="Tags">
+                {result.facets.slice(0, 24).map((facet) => (
+                  <li key={facet.tag}>
+                    <button
+                      type="button"
+                      aria-pressed={tags.includes(facet.tag)}
+                      className={tags.includes(facet.tag) ? 'is-active' : ''}
+                      onClick={() => toggleTag(facet.tag)}
+                      data-testid={`facet-${facet.tag}`}
+                    >
+                      #{facet.tag}
+                      <em>{facet.count}</em>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </details>
       </div>
-
-      {collections.length > 0 ? (
-        <nav className="bw-gallery-collections" aria-label="Curated collections">
-          <button
-            type="button"
-            aria-pressed={collectionId === null}
-            className={collectionId === null ? 'is-active' : ''}
-            onClick={() => setCollectionId(null)}
-          >
-            Everything
-          </button>
-          {collections.map((collection) => (
-            <button
-              key={collection.id}
-              type="button"
-              aria-pressed={collectionId === collection.id}
-              className={collectionId === collection.id ? 'is-active' : ''}
-              onClick={() => setCollectionId(collection.id)}
-              data-testid={`collection-${collection.id}`}
-            >
-              {collection.title}
-            </button>
-          ))}
-        </nav>
-      ) : null}
 
       {activeCollection ? (
         <p className="bw-gallery-collection-note">
@@ -194,25 +225,6 @@ export default function GalleryPage({
             ? ` ${collectionState.missing} entr${collectionState.missing === 1 ? 'y is' : 'ies are'} no longer available.`
             : ''}
         </p>
-      ) : null}
-
-      {result.facets.length > 0 ? (
-        <ul className="bw-gallery-facets" aria-label="Tags">
-          {result.facets.slice(0, 24).map((facet) => (
-            <li key={facet.tag}>
-              <button
-                type="button"
-                aria-pressed={tags.includes(facet.tag)}
-                className={tags.includes(facet.tag) ? 'is-active' : ''}
-                onClick={() => toggleTag(facet.tag)}
-                data-testid={`facet-${facet.tag}`}
-              >
-                #{facet.tag}
-                <em>{facet.count}</em>
-              </button>
-            </li>
-          ))}
-        </ul>
       ) : null}
 
       {phase.kind === 'loading' ? (
@@ -241,9 +253,7 @@ export default function GalleryPage({
         <div className="bw-gallery-state" data-testid="gallery-no-matches">
           <h2>No published model matches that</h2>
           {result.unmatchedTerms.length > 0 ? (
-            <p>
-              Nothing here mentions {result.unmatchedTerms.map((term) => `“${term}”`).join(', ')}.
-            </p>
+            <p>Nothing here mentions {result.unmatchedTerms.map((term) => `“${term}”`).join(', ')}.</p>
           ) : (
             <p>Try removing a tag or the validated-only filter.</p>
           )}
@@ -265,7 +275,12 @@ export default function GalleryPage({
             ))}
           </ul>
           {phase.cursor ? (
-            <button type="button" className="bw-gallery-more" onClick={() => void loadMore()} data-testid="gallery-more">
+            <button
+              type="button"
+              className="bw-gallery-more"
+              onClick={() => void loadMore()}
+              data-testid="gallery-more"
+            >
               Load more
             </button>
           ) : null}
@@ -358,7 +373,13 @@ function ReportDialog({
   const dialog = useFocusTrap(true, { onEscape: onClose })
 
   return (
-    <div ref={dialog as RefObject<HTMLDivElement>} className="bw-gallery-dialog" role="dialog" aria-modal="true" aria-label={`Report ${entry.title}`}>
+    <div
+      ref={dialog as RefObject<HTMLDivElement>}
+      className="bw-gallery-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Report ${entry.title}`}
+    >
       <div className="bw-gallery-dialog-panel">
         <h2>Report “{entry.title}”</h2>
         {state === 'sent' ? (

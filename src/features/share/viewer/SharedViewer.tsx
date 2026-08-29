@@ -60,10 +60,7 @@ export function SharedViewer({
   const [forkError, setForkError] = useState<string | null>(null)
 
   const steps = publication.document.steps
-  const bom = useMemo(
-    () => publication.summary.bom,
-    [publication.summary.bom],
-  )
+  const bom = useMemo(() => publication.summary.bom, [publication.summary.bom])
 
   // Arrow keys scrub the sequence from anywhere on the page that is not itself
   // a text field, so the scrubber is usable without hunting for its handle.
@@ -179,22 +176,27 @@ export function SharedViewer({
                 Finished
               </button>
             </div>
-            <ol className="bw-share-step-list">
-              {steps.map((step) => (
-                <li key={step.id}>
-                  <button
-                    type="button"
-                    aria-pressed={state.step === step.index}
-                    onClick={() => dispatch({ type: 'step', value: step.index })}
-                    data-testid={`step-${step.index}`}
-                  >
-                    <span className="bw-share-step-index">{step.index}</span>
-                    <span className="bw-share-step-name">{step.name}</span>
-                    <span className="bw-share-step-count">{step.partIds.length}</span>
-                  </button>
-                </li>
-              ))}
-            </ol>
+            <details className="bw-share-step-disclosure">
+              <summary>
+                All build steps <span>{steps.length}</span>
+              </summary>
+              <ol className="bw-share-step-list">
+                {steps.map((step) => (
+                  <li key={step.id}>
+                    <button
+                      type="button"
+                      aria-pressed={state.step === step.index}
+                      onClick={() => dispatch({ type: 'step', value: step.index })}
+                      data-testid={`step-${step.index}`}
+                    >
+                      <span className="bw-share-step-index">{step.index}</span>
+                      <span className="bw-share-step-name">{step.name}</span>
+                      <span className="bw-share-step-count">{step.partIds.length}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </details>
           </section>
         ) : (
           <p className="bw-share-empty">This model has no sequenced build steps, so there is nothing to scrub.</p>
@@ -288,34 +290,38 @@ export function SharedViewer({
 
         <ShareBar url={shareUrl} title={publication.title} embedUrl={capabilities.embed ? embedUrl : undefined} />
 
-        <section className="bw-share-bom">
-          <h2>Parts list</h2>
-          {bom.length === 0 ? (
-            <p className="bw-share-empty">This publication contains no parts.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Qty</th>
-                  <th scope="col">Part</th>
-                  <th scope="col">Colour</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bom.map((line) => (
-                  <tr key={`${line.definitionId}:${line.colorCode}`}>
-                    <td className="bw-share-qty">{line.quantity}</td>
-                    <td>
-                      <span className="bw-share-swatch" style={{ background: line.colorHex }} />
-                      {line.name}
-                    </td>
-                    <td>{line.colorName}</td>
+        <details className="bw-share-bom bw-share-disclosure">
+          <summary>
+            Parts list <span>{bom.length} lines</span>
+          </summary>
+          <div>
+            {bom.length === 0 ? (
+              <p className="bw-share-empty">This publication contains no parts.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Qty</th>
+                    <th scope="col">Part</th>
+                    <th scope="col">Colour</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+                </thead>
+                <tbody>
+                  {bom.map((line) => (
+                    <tr key={`${line.definitionId}:${line.colorCode}`}>
+                      <td className="bw-share-qty">{line.quantity}</td>
+                      <td>
+                        <span className="bw-share-swatch" style={{ background: line.colorHex }} />
+                        {line.name}
+                      </td>
+                      <td>{line.colorName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </details>
 
         <p className="bw-share-license">
           Shared under {publication.license}. Brick geometry from the LDraw library, CC BY 4.0.

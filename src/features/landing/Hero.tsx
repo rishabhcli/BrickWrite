@@ -36,6 +36,8 @@ interface StageCopy {
 
 export interface HeroProps {
   demo: DemoEntry
+  /** First frame for an uncontrolled hero. The front door opens on proof. */
+  initialStage?: HeroStage
   /** When set, the parent owns the stage — used by the landing film. */
   stage?: HeroStage
   onStageChange?: (stage: HeroStage) => void
@@ -50,11 +52,19 @@ export interface HeroProps {
   scrub?: number
 }
 
-export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, hideBrief = false, scrub }: HeroProps) {
+export function Hero({
+  demo,
+  initialStage = 'brief',
+  stage: stageProp,
+  onStageChange,
+  autoPlay = true,
+  hideBrief = false,
+  scrub,
+}: HeroProps) {
   const reduced = useReducedMotion()
   const stageRef = useRef<HTMLDivElement | null>(null)
   const visible = useOnScreen(stageRef, '120px')
-  const [internalStage, setInternalStage] = useState<HeroStage>('brief')
+  const [internalStage, setInternalStage] = useState<HeroStage>(initialStage)
   const stage = stageProp ?? internalStage
   const [wave, setWave] = useState(0)
   const [previews, setPreviews] = useState<{ rough: DemoPreview; published: DemoPreview } | null>(null)
@@ -68,10 +78,7 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
   useEffect(() => {
     if (!visible || previews) return
     const controller = new AbortController()
-    Promise.all([
-      loadPreview(demo, 'rough', controller.signal),
-      loadPreview(demo, 'published', controller.signal),
-    ])
+    Promise.all([loadPreview(demo, 'rough', controller.signal), loadPreview(demo, 'published', controller.signal)])
       .then(([rough, published]) => setPreviews({ rough, published }))
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return
@@ -153,16 +160,21 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
     }
   }, [demo])
 
-  const activePreview = previews ? (stage === 'brief' || stage === 'candidate' ? previews.rough : previews.published) : null
+  const activePreview = previews
+    ? stage === 'brief' || stage === 'candidate'
+      ? previews.rough
+      : previews.published
+    : null
   const stageWave = stage === 'validated' ? undefined : wave
   const explode = reduced || typeof scrub !== 'number' ? 0 : explodeFromScrub(scrub)
-  const displayCamera = orbitLocked || reduced || typeof scrub !== 'number'
-    ? camera
-    : {
-        yaw: demo.camera.yaw + scrub * 52,
-        pitch: demo.camera.pitch + Math.sin(scrub * Math.PI) * 10,
-        zoom: demo.camera.zoom * (1 - scrub * 0.08),
-      }
+  const displayCamera =
+    orbitLocked || reduced || typeof scrub !== 'number'
+      ? camera
+      : {
+          yaw: demo.camera.yaw + scrub * 52,
+          pitch: demo.camera.pitch + Math.sin(scrub * Math.PI) * 10,
+          zoom: demo.camera.zoom * (1 - scrub * 0.08),
+        }
   const telemetry = stage === 'brief' || stage === 'candidate' ? demo.roughValidation : demo.validation
   const dotClass = stage === 'validated' ? 'dot done' : stage === 'refinement' ? 'dot settling' : 'dot'
 
@@ -174,7 +186,10 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
   return (
     <div className="bw-hero-stage">
       <div className="bw-stage bw-corners" ref={stageRef} onPointerDown={takeOver}>
-        <i /><i /><i /><i />
+        <i />
+        <i />
+        <i />
+        <i />
         <StageHud
           yaw={displayCamera.yaw}
           pitch={displayCamera.pitch}
@@ -189,7 +204,10 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
             <EnvelopeView
               preview={activePreview}
               camera={displayCamera}
-              onCameraChange={(next) => { takeOver(); setCamera(next) }}
+              onCameraChange={(next) => {
+                takeOver()
+                setCamera(next)
+              }}
               wave={stageWave}
               explode={explode}
               label={describeStage(demo, stage)}
@@ -197,7 +215,11 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
           </Suspense>
         ) : null}
         {loadError ? (
-          <p className="bw-note" style={{ position: 'absolute', inset: 'auto 16px 16px', color: 'var(--bw-orange)' }} role="status">
+          <p
+            className="bw-note"
+            style={{ position: 'absolute', inset: 'auto 16px 16px', color: 'var(--bw-orange)' }}
+            role="status"
+          >
             The demo preview could not be loaded: {loadError}
           </p>
         ) : null}
@@ -205,10 +227,16 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
 
       <p className="bw-stage-caption">
         <span className={dotClass} aria-hidden="true" />
-        <span>{demo.title} · {copy[stage].label}</span>
+        <span>
+          {demo.title} · {copy[stage].label}
+        </span>
         <span className="spacer" />
         <span className="bw-stage-hint">Drag to orbit</span>
-        {typeof scrub === 'number' ? <span className="bw-stage-keys" aria-hidden="true">1–4</span> : null}
+        {typeof scrub === 'number' ? (
+          <span className="bw-stage-keys" aria-hidden="true">
+            1–4
+          </span>
+        ) : null}
         <span>Envelope view · catalog {demo.catalogVersion}</span>
       </p>
 
@@ -222,9 +250,14 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
             aria-current={entry === stage ? 'true' : undefined}
             aria-selected={entry === stage}
             data-done={STAGES.indexOf(stage) > index ? 'true' : 'false'}
-            onClick={() => { setAuto(false); commitStage(entry) }}
+            onClick={() => {
+              setAuto(false)
+              commitStage(entry)
+            }}
           >
-            <b>{String(index + 1).padStart(2, '0')} {copy[entry].label}</b>
+            <b>
+              {String(index + 1).padStart(2, '0')} {copy[entry].label}
+            </b>
             <span>{copy[entry].detail}</span>
           </button>
         ))}
@@ -236,13 +269,22 @@ export function Hero({ demo, stage: stageProp, onStageChange, autoPlay = true, h
           <blockquote>{demo.brief.prompt}</blockquote>
           <div className="bw-brief-fields">
             {demo.brief.envelopeStuds[0] && demo.brief.envelopeStuds[2] ? (
-              <span className="bw-brief-field">Envelope <b>{demo.brief.envelopeStuds[0]} × {demo.brief.envelopeStuds[2]} studs</b></span>
+              <span className="bw-brief-field">
+                Envelope{' '}
+                <b>
+                  {demo.brief.envelopeStuds[0]} × {demo.brief.envelopeStuds[2]} studs
+                </b>
+              </span>
             ) : null}
             {demo.brief.functions.map((entry) => (
-              <span className="bw-brief-field" key={entry}>Requires <b>{entry}</b></span>
+              <span className="bw-brief-field" key={entry}>
+                Requires <b>{entry}</b>
+              </span>
             ))}
             {demo.brief.palette.map((entry) => (
-              <span className="bw-brief-field" key={entry}>Palette <b>{entry}</b></span>
+              <span className="bw-brief-field" key={entry}>
+                Palette <b>{entry}</b>
+              </span>
             ))}
           </div>
         </div>

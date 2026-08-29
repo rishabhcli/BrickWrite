@@ -66,11 +66,7 @@ export function ProjectsPage() {
   }, [projects, search])
 
   return (
-    <div
-      ref={pointer.ref}
-      className="bw-surface bw-projects-page"
-      data-pointer={pointer.live ? 'live' : 'off'}
-    >
+    <div ref={pointer.ref} className="bw-surface bw-projects-page" data-pointer={pointer.live ? 'live' : 'off'}>
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div className="bw-shell">
@@ -84,7 +80,10 @@ export function ProjectsPage() {
             </div>
             <div className="bw-projects-actions">
               <Link className="bw-button primary bw-magnet" to="/editor">
-                New model <span className="bw-key" aria-hidden="true">→</span>
+                New model{' '}
+                <span className="bw-key" aria-hidden="true">
+                  →
+                </span>
               </Link>
               <Link className="bw-button ghost" to="/explore">
                 Demos
@@ -93,13 +92,13 @@ export function ProjectsPage() {
           </div>
         </section>
 
-        <section className="bw-templates-section" aria-labelledby="bw-templates-title">
-          <div className="bw-section-head">
-            <span className="bw-section-index">Start</span>
-            <h2 className="bw-display x3" id="bw-templates-title">
-              Open a plate
-            </h2>
-          </div>
+        <details className="bw-templates-section bw-templates-disclosure">
+          <summary>
+            <span>
+              <small>Start from a template</small>
+              <strong>Blank plate or verified demo</strong>
+            </span>
+          </summary>
           <div className="bw-templates-grid">
             {STARTERS.map((starter) => {
               const demo = starter.demoId ? DEMOS.find((entry) => entry.id === starter.demoId) : undefined
@@ -125,7 +124,7 @@ export function ProjectsPage() {
               )
             })}
           </div>
-        </section>
+        </details>
 
         <section className="bw-projects-list-section" aria-labelledby="bw-saved-title">
           <div className="bw-section-head">
@@ -155,14 +154,8 @@ export function ProjectsPage() {
               </div>
             ) : filtered.length === 0 ? (
               <div className="bw-projects-empty">
-                <h3 className="bw-display x3">
-                  {search ? 'Nothing matches' : 'No models yet'}
-                </h3>
-                <p>
-                  {search
-                    ? 'Clear the search to see every saved build.'
-                    : 'A blank plate, or any of the six demos.'}
-                </p>
+                <h3 className="bw-display x3">{search ? 'Nothing matches' : 'No models yet'}</h3>
+                <p>{search ? 'Clear the search to see every saved build.' : 'A blank plate, or any published demo.'}</p>
                 <Link className="bw-button primary small" to="/editor?doc=blank">
                   Start a blank build
                 </Link>
@@ -174,8 +167,12 @@ export function ProjectsPage() {
                     <h3 className="bw-project-card-title">{project.name}</h3>
                   </div>
                   <div className="bw-project-card-meta">
-                    <span>r<b>{project.revision}</b></span>
-                    <span><b>{project.partCount}</b> parts</span>
+                    <span>
+                      r<b>{project.revision}</b>
+                    </span>
+                    <span>
+                      <b>{project.partCount}</b> parts
+                    </span>
                     <span>{new Date(project.savedAt).toLocaleDateString()}</span>
                   </div>
                   <div className="bw-project-card-actions">
@@ -183,7 +180,10 @@ export function ProjectsPage() {
                       className="bw-button small primary"
                       to={`/editor?project=${encodeURIComponent(project.projectId)}`}
                     >
-                      Open <span className="bw-key" aria-hidden="true">→</span>
+                      Open{' '}
+                      <span className="bw-key" aria-hidden="true">
+                        →
+                      </span>
                     </Link>
                     {deleteConfirm === project.projectId ? (
                       <>
@@ -194,11 +194,7 @@ export function ProjectsPage() {
                         >
                           Confirm delete
                         </button>
-                        <button
-                          type="button"
-                          className="bw-button small ghost"
-                          onClick={() => setDeleteConfirm(null)}
-                        >
+                        <button type="button" className="bw-button small ghost" onClick={() => setDeleteConfirm(null)}>
                           Cancel
                         </button>
                       </>
