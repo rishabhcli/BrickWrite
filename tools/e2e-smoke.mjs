@@ -64,6 +64,47 @@ async function revealChrome(page, surface) {
   return revealed
 }
 
+/**
+ * Contrast of the copy currently in the DOM. Exclusive dock sheets unmount
+ * their bodies, so callers reveal the matching surface before sampling it.
+ */
+async function sampleContrast(page, samples) {
+  return page.evaluate((pairs) => {
+    const luminance = (rgb) => {
+      const channel = (value) => {
+        const v = value / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+    }
+    const parse = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+    const backdropOf = (node) => {
+      let current = node
+      while (current) {
+        const background = getComputedStyle(current).backgroundColor
+        const parts = (background.match(/[\d.]+/g) ?? []).map(Number)
+        if (parts.length >= 3 && (parts[3] === undefined || parts[3] > 0.6)) return parts.slice(0, 3)
+        current = current.parentElement
+      }
+      return [9, 13, 14]
+    }
+    const ratio = (a, b) => {
+      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+      return (high + 0.05) / (low + 0.05)
+    }
+    return pairs.map(([selector, minimum]) => {
+      const node = document.querySelector(selector)
+      if (!node) return { selector, minimum, ratio: null }
+      const style = getComputedStyle(node)
+      return {
+        selector,
+        minimum,
+        ratio: Number(ratio(parse(style.color), backdropOf(node)).toFixed(2)),
+      }
+    })
+  }, samples)
+}
+
 try {
   if (!(await available())) {
     server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], { stdio: 'ignore' })
@@ -1534,54 +1575,36 @@ try {
   // -- contrast -------------------------------------------------------------
   // Sampled on the text that carries meaning rather than blanket-scanned: the
   // status bar, the dock headers, the tool labels and the palette copy.
+  // Exclusive dock sheets unmount their bodies, so Transform and Selection
+  // are sampled after revealing each surface on its own.
+  const contrast = await sampleContrast(page, [
+    ['.statusbar .status-scope', 4.5],
+    ['.statusbar .status-hint', 4.5],
+    ['.dock-section-toggle span', 4.5],
+    ['.tool-button.active span', 4.5],
+    ['.part-copy strong', 4.5],
+    ['.dock-head .eyebrow', 3],
+    ['.part-copy span', 3],
+  ])
   await revealChrome(page, 'transform')
   await page.waitForFunction(() => document.querySelector('.transform-action span'))
-  const contrast = await page.evaluate(() => {
-    const luminance = (rgb) => {
-      const channel = (value) => {
-        const v = value / 255
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-      }
-      return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
-    }
-    const parse = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
-    const backdropOf = (node) => {
-      let current = node
-      while (current) {
-        const background = getComputedStyle(current).backgroundColor
-        const parts = (background.match(/[\d.]+/g) ?? []).map(Number)
-        if (parts.length >= 3 && (parts[3] === undefined || parts[3] > 0.6)) return parts.slice(0, 3)
-        current = current.parentElement
-      }
-      return [9, 13, 14]
-    }
-    const ratio = (a, b) => {
-      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-      return (high + 0.05) / (low + 0.05)
-    }
-    const samples = [
-      ['.statusbar .status-scope', 4.5],
-      ['.statusbar .status-hint', 4.5],
-      ['.dock-section-toggle span', 4.5],
-      ['.tool-button.active span', 4.5],
-      ['.part-copy strong', 4.5],
-      ['.selection-summary strong', 4.5],
-      ['.transform-action span', 4.5],
-      ['.selection-modes button', 4.5],
-      ['.dock-head .eyebrow', 3],
-      ['.part-copy span', 3],
-    ]
-    return samples.map(([selector, minimum]) => {
-      const node = document.querySelector(selector)
-      if (!node) return { selector, minimum, ratio: null }
-      const style = getComputedStyle(node)
-      return {
-        selector,
-        minimum,
-        ratio: Number(ratio(parse(style.color), backdropOf(node)).toFixed(2)),
-      }
-    })
+  contrast.push(...await sampleContrast(page, [
+    ['.transform-action span', 4.5],
+  ]))
+  await revealChrome(page, 'selection')
+  await page.waitForFunction(() => document.querySelector('.selection-summary strong'))
+  const selectionScoped = await page.evaluate(async () => {
+    const workspace = (await window.brickwright.invoke('workspace_get', {}))?.structuredContent
+    return (workspace?.selection ?? []).length > 0
   })
+  if (!selectionScoped) {
+    await page.locator('canvas').click({ position: canvasCentre })
+  }
+  await page.waitForFunction(() => document.querySelector('.selection-modes button'), null, { timeout: 10_000 })
+  contrast.push(...await sampleContrast(page, [
+    ['.selection-summary strong', 4.5],
+    ['.selection-modes button', 4.5],
+  ]))
   for (const sample of contrast) {
     assert(sample.ratio !== null, `Contrast sample "${sample.selector}" was not on screen`)
     assert(
