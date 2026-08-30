@@ -1183,7 +1183,10 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   flex-direction: column;
   align-items: center;
   gap: 28px;
-  padding-block: clamp(32px, 8vw, 96px);
+  /* The section already carries clamp(56px, 7vw, 112px). Repeating a near-equal
+     block here stacked to about 390px of padding around one line and a button,
+     which read as the page having run out rather than as breathing room. */
+  padding-block: clamp(8px, 2vw, 28px);
   position: relative;
 }
 .bw-close .bw-display {

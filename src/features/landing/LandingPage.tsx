@@ -163,7 +163,9 @@ function FeaturedBuilds() {
           <div>
             <span className="bw-section-index">Built and checked</span>
             <h2 className="bw-display x2" id="bw-demos-title">
-              One flagship. Six proving grounds.
+              {DEMOS.length === 1
+                ? 'One flagship set.'
+                : `One flagship. ${DEMOS.length - 1} more, built the same way.`}
             </h2>
           </div>
           <a className="bw-button ghost" href={hrefFor({ kind: 'explore' })} onClick={link({ kind: 'explore' })}>
