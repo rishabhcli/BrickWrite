@@ -43,6 +43,8 @@ export {
   type CloudAuditRecord,
   type CloudBackend,
   type CloudBranchRecord,
+  type CloudHistoryPage,
+  type ReadHistoryArgs,
   type CloudCommentRecord,
   type CloudErrorCode,
   type CloudErrorShape,
@@ -65,12 +67,9 @@ export {
   type StaleDocumentDetails,
 } from './protocol'
 
-export {
-  attachCloudSync,
-  settled,
-  type AttachCloudSyncOptions,
-  type CloudSyncHandle,
-} from './attach'
+export { readCompleteHistory } from './history'
+
+export { attachCloudSync, settled, type AttachCloudSyncOptions, type CloudSyncHandle } from './attach'
 
 export {
   CloudProjectStore,
@@ -179,12 +178,7 @@ export {
 
 export { refs } from './functionRefs'
 
-export {
-  useAnchorReports,
-  useProjectList,
-  useSyncState,
-  type ProjectListState,
-} from './hooks'
+export { useAnchorReports, useProjectList, useSyncState, type ProjectListState } from './hooks'
 
 // ---------------------------------------------------------------------------
 // In-editor surfaces
@@ -204,12 +198,7 @@ export {
   CloudVersionHistoryContribution,
 } from './contributions'
 
-export {
-  CloudSyncProvider,
-  useCloudSync,
-  useOptionalCloudSync,
-  type CloudSyncProviderProps,
-} from './CloudSyncProvider'
+export { CloudSyncProvider, useCloudSync, useOptionalCloudSync, type CloudSyncProviderProps } from './CloudSyncProvider'
 
 export {
   CloudRuntime,
@@ -224,19 +213,10 @@ export {
   type CloudRuntimeSnapshot,
 } from './runtime'
 
-export {
-  browserCloud,
-  browserCloudRuntime,
-  browserKernelBridge,
-  resetBrowserCloudRuntime,
-} from './browserRuntime'
+export { browserCloud, browserCloudRuntime, browserKernelBridge, resetBrowserCloudRuntime } from './browserRuntime'
 
 export { describeSync, type SyncReadout, type SyncReadoutInput } from './syncReadout'
 export { CloudProjectsPanel } from './ProjectsPanel'
 export { CloudSyncStatus, useProjectLinked, useSyncReadout } from './SyncStatus'
 export { CloudVersionHistory } from './VersionHistory'
-export {
-  VERSION_HISTORY_MODAL_ID,
-  type CloudWorkbenchApi,
-  type SurfaceNotice,
-} from './surface'
+export { VERSION_HISTORY_MODAL_ID, type CloudWorkbenchApi, type SurfaceNotice } from './surface'

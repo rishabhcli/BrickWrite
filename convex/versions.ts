@@ -11,7 +11,10 @@ import {
   type CloudVersionRecord,
 } from './model/protocol'
 import { branchRecord, versionRecord } from './model/records'
-import { copyLatestCheckpointToBranch, readSnapshot, writeSnapshot } from './model/snapshots'
+import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/snapshots'
+import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/checksum'
+import { isRevision } from './model/history'
+import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
 import { snapshotUpload } from './model/validators'
 
 /**
@@ -90,7 +93,7 @@ export const create = mutation({
       detail: { revision: args.snapshot.revision, bytes: args.snapshot.bytes, branch: branch.name },
     })
     const row = await ctx.db.get(versionId)
-    if (!row) return cloudFailure('NOT_FOUND', 'The version vanished during creation.', 'Retry.')
+    if (!row) throw new Error('The version vanished during creation.')
     return { ok: true, value: versionRecord(row) }
   },
 })
@@ -149,12 +152,9 @@ export const createBranch = mutation({
       .withIndex('by_project_name', (q) => q.eq('projectId', project._id).eq('name', name))
       .first()
     if (clash) {
-      return cloudFailure(
-        'NAME_TAKEN',
-        'This project already has a branch with that name.',
-        'Choose another name.',
-        { branchId: clash._id },
-      )
+      return cloudFailure('NAME_TAKEN', 'This project already has a branch with that name.', 'Choose another name.', {
+        branchId: clash._id,
+      })
     }
     const parentResult = await resolveBranch(ctx, project, args.fromBranchId)
     if (!parentResult.ok) return parentResult
@@ -165,11 +165,23 @@ export const createBranch = mutation({
     // race replays onto it exactly as it was authored. Forking past the head
     // would invent history the parent never had.
     const at = args.atRevision ?? parent.headRevision
-    if (at < 0 || at > parent.headRevision) {
+    if (!isRevision(at) || at > parent.headRevision) {
       return cloudFailure(
         'INVALID_ARGUMENT',
         `A branch cannot fork at revision ${at}; ${parent.name} runs to ${parent.headRevision}.`,
         'Fork at the divergence revision or at the branch head.',
+      )
+    }
+
+    // Validate before inserting anything: returning a typed error from a
+    // Convex mutation commits earlier writes; it does not roll them back.
+    const source = await latestBranchCheckpoint(ctx, project._id, parent._id, at)
+    if (!source.ok) return source
+    if (!source.value && (args.kind ?? 'named') !== 'conflict') {
+      return cloudFailure(
+        'NOT_FOUND',
+        'The source branch has no checkpoint to copy, so the new branch would not open.',
+        'Save the source branch once, then create the named branch.',
       )
     }
 
@@ -185,6 +197,27 @@ export const createBranch = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    if (source.value) {
+      const snapshot = source.value
+      const text = canonicalJson(snapshot.document)
+      const seeded = await writeSnapshot(ctx, {
+        projectId: project._id,
+        branchId,
+        kind: 'checkpoint',
+        createdBySubject: identity.subject,
+        upload: {
+          revision: snapshot.revision,
+          schemaVersion: snapshot.schemaVersion,
+          catalogVersion: snapshot.catalogVersion,
+          bytes: utf8Bytes(text),
+          checksum: checksumOfText(text),
+          chunks: chunkText(text, SNAPSHOT_CHUNK_BYTES),
+        },
+      })
+      // Unexpected write failure must roll back the new branch, not commit an
+      // unopenable shell. Expected source errors were returned above, pre-write.
+      if (!seeded.ok) throw new Error(`Branch checkpoint failed: ${seeded.error.code}`)
+    }
     await writeAuditEvent(ctx, {
       projectId: project._id,
       actorSubject: identity.subject,
@@ -192,26 +225,7 @@ export const createBranch = mutation({
       detail: { branch: name, from: parent.name, atRevision: at },
     })
     const row = await ctx.db.get(branchId)
-    if (!row) return cloudFailure('NOT_FOUND', 'The branch vanished during creation.', 'Retry.')
-    const seeded = await copyLatestCheckpointToBranch(ctx, {
-      projectId: project._id,
-      fromBranchId: parent._id,
-      toBranchId: branchId,
-      atRevision: at,
-      createdBySubject: identity.subject,
-    })
-    if (!seeded.ok) {
-      await ctx.db.delete(branchId)
-      return seeded
-    }
-    if (seeded.value === null && (args.kind ?? 'named') !== 'conflict') {
-      await ctx.db.delete(branchId)
-      return cloudFailure(
-        'NOT_FOUND',
-        'The source branch has no checkpoint to copy, so the new branch would not open.',
-        'Save the source branch once, then create the named branch.',
-      )
-    }
+    if (!row) throw new Error('The branch vanished during creation.')
     return { ok: true, value: branchRecord(row) }
   },
 })

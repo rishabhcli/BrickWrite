@@ -97,3 +97,22 @@ describe('production API proxy', () => {
     expect(refused.status).toBe(429)
   })
 })
+
+it('propagates browser cancellation through the proxy to the upstream fetch', async () => {
+  const abort = new AbortController()
+  let upstreamSignal: AbortSignal | null | undefined
+  vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+    upstreamSignal = init?.signal
+    return new Response('streaming')
+  })
+  const request = new Request('https://brickwrite.tech/api/assistant', { method: 'POST', body: '{}', signal: abort.signal })
+  const response = await onRequest({ request, env: {
+    BRICKWRIGHT_API_ORIGIN: 'https://brickwrite-api.vercel.app',
+    BRICKWRIGHT_PROXY_SECRET: 'proxy-proof', RATE_LIMIT_KV: new MemoryRateLimit(),
+  } })
+  expect(upstreamSignal).toBe(request.signal)
+  expect(upstreamSignal?.aborted).toBe(false)
+  abort.abort()
+  expect(upstreamSignal?.aborted).toBe(true)
+  await response.body?.cancel()
+})

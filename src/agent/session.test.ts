@@ -650,3 +650,32 @@ describe('session control', () => {
     session.dispose()
   })
 })
+
+describe('incomplete transport turns cannot commit a build', () => {
+  afterEach(() => reset())
+  it.each([null, 'error', 'max_tokens', 'refusal', 'tool_use'] as const)('keeps planned changes pending after a %s completion', async (stop) => {
+    reset('build')
+    const before = cadEngine.getSnapshot().document
+    const scripted = scriptedTransport([{ toolCalls: [{ name: 'preflight_capability', input: { capability: 'rename_document', args: { name: 'Do not auto-apply' } } }] }])
+    let leg = 0
+    const session = new AgentSession({ transport: {
+      id: 'incomplete-test',
+      async stream(request, handlers, signal) {
+        if (leg++ === 0) await scripted.stream(request, handlers, signal)
+        else {
+          handlers.onText?.('Partial final reply')
+          if (stop !== null) handlers.onDone?.(stop)
+        }
+      },
+    } })
+    try {
+      await session.send('Rename this build')
+      expect(session.getState().waves).toHaveLength(1)
+      expect(session.getState().waves[0].status).toBe('pending')
+      expect(session.getState().status).toBe('error')
+      expect(session.getState().transcript.at(-1)?.status).toBe('failed')
+      expect(cadEngine.getSnapshot().document.revision).toBe(before.revision)
+      expect(cadEngine.getSnapshot().document.name).toBe(before.name)
+    } finally { session.dispose() }
+  })
+})

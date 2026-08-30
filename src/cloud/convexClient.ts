@@ -5,9 +5,13 @@ import type {
   AddCommentArgs,
   AppendTransactionArgs,
   AppendTransactionValue,
+  AppendTransactionsArgs,
+  AppendTransactionsValue,
   CloudAuditRecord,
   CloudBackend,
   CloudBranchRecord,
+  CloudHistoryPage,
+  ReadHistoryArgs,
   CloudCommentRecord,
   CloudErrorShape,
   CloudInvitationRecord,
@@ -46,9 +50,7 @@ import type {
  */
 
 /** Matches Convex's `AuthTokenFetcher`, which is what `setAuth` expects. */
-export type AccessTokenSource = (args: {
-  forceRefreshToken: boolean
-}) => Promise<string | null | undefined>
+export type AccessTokenSource = (args: { forceRefreshToken: boolean }) => Promise<string | null | undefined>
 
 export interface ConvexCloudReady {
   status: 'ready'
@@ -111,9 +113,7 @@ export function createConvexCloud(options: ConvexCloudOptions = {}): ConvexCloud
     // take the editor down with it.
     return {
       status: 'unconfigured',
-      reason: `The Convex client could not be constructed: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
+      reason: `The Convex client could not be constructed: ${cause instanceof Error ? cause.message : String(cause)}`,
     }
   }
   if (options.tokenSource) client.setAuth(options.tokenSource)
@@ -138,9 +138,7 @@ export function createConvexCloud(options: ConvexCloudOptions = {}): ConvexCloud
  * without importing `src/hexclave/client.ts` and does not break when that
  * workstream changes shape around it.
  */
-export function hexclaveTokenSource(app: {
-  getAccessToken: () => Promise<string | null>
-}): AccessTokenSource {
+export function hexclaveTokenSource(app: { getAccessToken: () => Promise<string | null> }): AccessTokenSource {
   return async () => app.getAccessToken()
 }
 
@@ -158,8 +156,7 @@ export const classifyTransportFailure = (cause: unknown): CloudErrorShape => {
   // Convex's client surfaces connectivity problems as thrown errors. The outbox
   // branches on the code, so an offline failure has to arrive as `OFFLINE` and
   // not as an unhandled rejection, or a lost connection would look permanent.
-  const offline =
-    /network|fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|offline|socket/i.test(message)
+  const offline = /network|fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|offline|socket/i.test(message)
   return offline
     ? {
         code: 'OFFLINE',
@@ -215,21 +212,13 @@ export class ConvexCloudBackend implements CloudBackend {
   createProject(args: CreateProjectArgs): Promise<CloudResult<CloudProjectSummary>> {
     return this.tell(refs.projects.create, args)
   }
-  renameProject(args: {
-    projectId: string
-    name: string
-  }): Promise<CloudResult<CloudProjectSummary>> {
+  renameProject(args: { projectId: string; name: string }): Promise<CloudResult<CloudProjectSummary>> {
     return this.tell(refs.projects.rename, args)
   }
-  setVisibility(args: {
-    projectId: string
-    visibility: ProjectVisibility
-  }): Promise<CloudResult<CloudProjectSummary>> {
+  setVisibility(args: { projectId: string; visibility: ProjectVisibility }): Promise<CloudResult<CloudProjectSummary>> {
     return this.tell(refs.projects.setVisibility, args)
   }
-  deleteProject(args: {
-    projectId: string
-  }): Promise<CloudResult<{ projectId: string; deletedAt: string }>> {
+  deleteProject(args: { projectId: string }): Promise<CloudResult<{ projectId: string; deletedAt: string }>> {
     return this.tell(refs.projects.remove, args)
   }
   saveCheckpoint(args: {
@@ -246,15 +235,18 @@ export class ConvexCloudBackend implements CloudBackend {
   }): Promise<CloudResult<CloudSnapshotRecord | null>> {
     return this.ask(refs.projects.latestCheckpoint, args)
   }
-  auditTrail(args: {
-    projectId: string
-    limit?: number
-  }): Promise<CloudResult<CloudAuditRecord[]>> {
+  auditTrail(args: { projectId: string; limit?: number }): Promise<CloudResult<CloudAuditRecord[]>> {
     return this.ask(refs.projects.auditTrail, args)
   }
 
+  appendTransactions(args: AppendTransactionsArgs): Promise<CloudResult<AppendTransactionsValue>> {
+    return this.tell(refs.transactions.appendBatch, args)
+  }
   appendTransaction(args: AppendTransactionArgs): Promise<CloudResult<AppendTransactionValue>> {
     return this.tell(refs.transactions.append, args)
+  }
+  readHistory(args: ReadHistoryArgs): Promise<CloudResult<CloudHistoryPage>> {
+    return this.ask(refs.transactions.history, args)
   }
   listTransactions(args: {
     projectId: string
@@ -298,10 +290,7 @@ export class ConvexCloudBackend implements CloudBackend {
   listVersions(args: { projectId: string }): Promise<CloudResult<CloudVersionRecord[]>> {
     return this.ask(refs.versions.list, args)
   }
-  versionDocument(args: {
-    projectId: string
-    versionId: string
-  }): Promise<CloudResult<CloudSnapshotRecord>> {
+  versionDocument(args: { projectId: string; versionId: string }): Promise<CloudResult<CloudSnapshotRecord>> {
     return this.ask(refs.versions.document, args)
   }
 
@@ -318,10 +307,7 @@ export class ConvexCloudBackend implements CloudBackend {
   }): Promise<CloudResult<CloudMemberRecord>> {
     return this.tell(refs.members.setRole, args)
   }
-  removeMember(args: {
-    projectId: string
-    subject: string
-  }): Promise<CloudResult<{ removed: boolean }>> {
+  removeMember(args: { projectId: string; subject: string }): Promise<CloudResult<{ removed: boolean }>> {
     return this.tell(refs.members.remove, args)
   }
   listInvitations(args: { projectId: string }): Promise<CloudResult<CloudInvitationRecord[]>> {
@@ -336,28 +322,17 @@ export class ConvexCloudBackend implements CloudBackend {
     // an internal Convex action, so nothing in this bundle ever sends an email.
     return this.tell(refs.invitations.create, args)
   }
-  revokeInvitation(args: {
-    projectId: string
-    invitationId: string
-  }): Promise<CloudResult<{ revoked: boolean }>> {
+  revokeInvitation(args: { projectId: string; invitationId: string }): Promise<CloudResult<{ revoked: boolean }>> {
     return this.tell(refs.invitations.revoke, args)
   }
-  acceptInvitation(args: {
-    token: string
-  }): Promise<CloudResult<{ projectId: string; role: string }>> {
+  acceptInvitation(args: { token: string }): Promise<CloudResult<{ projectId: string; role: string }>> {
     return this.tell(refs.invitations.accept, args)
   }
 
-  listComments(args: {
-    projectId: string
-    status?: 'open' | 'resolved'
-  }): Promise<CloudResult<CloudCommentRecord[]>> {
+  listComments(args: { projectId: string; status?: 'open' | 'resolved' }): Promise<CloudResult<CloudCommentRecord[]>> {
     return this.ask(refs.comments.list, args)
   }
-  commentsForPart(args: {
-    projectId: string
-    partId: string
-  }): Promise<CloudResult<CloudCommentRecord[]>> {
+  commentsForPart(args: { projectId: string; partId: string }): Promise<CloudResult<CloudCommentRecord[]>> {
     return this.ask(refs.comments.forPart, args)
   }
   addComment(args: AddCommentArgs): Promise<CloudResult<CloudCommentRecord>> {
@@ -377,10 +352,7 @@ export class ConvexCloudBackend implements CloudBackend {
   listPresence(args: { projectId: string }): Promise<CloudResult<CloudPresenceRecord[]>> {
     return this.ask(refs.presence.list, args)
   }
-  presenceLeave(args: {
-    projectId: string
-    sessionId: string
-  }): Promise<CloudResult<{ left: boolean }>> {
+  presenceLeave(args: { projectId: string; sessionId: string }): Promise<CloudResult<{ left: boolean }>> {
     return this.tell(refs.presence.leave, args)
   }
 }

@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ModelProviderUnavailableError, type DesignBrief } from '../../src/platform/contracts.ts'
+import { ModelProviderUnavailableError, awaitWithAbort, type DesignBrief } from '../../src/platform/contracts.ts'
+import { boundedTimeout, ndjsonWriter, readRequestText, RequestBodyError, requestLifetime } from '../http/lifecycle.ts'
 import {
   AnthropicGenerationProvider,
   SchemaViolationError,
@@ -129,13 +130,20 @@ function toWireError(cause: unknown): WireError {
     return { status: 502, code: 'schema_violation', detail: redact(cause.message) }
   }
   const name = (cause as { name?: string } | null)?.name
+  if (name === 'APIConnectionTimeoutError' || name === 'TimeoutError') {
+    return { status: 504, code: 'timeout', detail: 'The model API did not respond in time.' }
+  }
   if (name === 'AbortError' || (cause as { message?: string } | null)?.message === 'Request was aborted.') {
     return { status: 499, code: 'aborted', detail: 'The request was cancelled before it completed.' }
   }
   const status = (cause as { status?: number } | null)?.status
   if (typeof status === 'number') {
     if (status === 401 || status === 403) {
-      return { status: 503, code: 'model_provider_unavailable', detail: 'The configured model credential was rejected.' }
+      return {
+        status: 503,
+        code: 'model_provider_unavailable',
+        detail: 'The configured model credential was rejected.',
+      }
     }
     if (status === 429) {
       return { status: 429, code: 'rate_limited', detail: 'The model API is rate limiting this key; retry shortly.' }
@@ -145,29 +153,7 @@ function toWireError(cause: unknown): WireError {
   return { status: 500, code: 'internal_error', detail: 'Generation failed. The API process log has the detail.' }
 }
 
-async function readBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = []
-  let total = 0
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)
-    total += buffer.byteLength
-    if (total > MAX_BODY_BYTES) throw new BadRequest(`Request body exceeds ${MAX_BODY_BYTES} bytes.`)
-    chunks.push(buffer)
-  }
-  if (!total) throw new BadRequest('Request body was empty.')
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    throw new BadRequest('Request body was not valid JSON.')
-  }
-}
-
 class BadRequest extends Error {}
-
-/** One newline-delimited JSON event. */
-const write = (response: ServerResponse, event: Record<string, unknown>) => {
-  response.write(`${JSON.stringify(event)}\n`)
-}
 
 let cachedProvider: AnthropicGenerationProvider | null = null
 let cachedProviderError: unknown = null
@@ -232,7 +218,12 @@ async function resolvePalette(names: readonly string[]): Promise<{ palette: numb
   return { palette: palette.sort((a, b) => a - b), notes }
 }
 
-const normalise = (name: string) => name.toLowerCase().replace(/gray/g, 'grey').replace(/[^a-z]+/g, ' ').trim()
+const normalise = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/gray/g, 'grey')
+    .replace(/[^a-z]+/g, ' ')
+    .trim()
 
 let colourCache: Array<{ code: number; key: string }> | null | undefined
 
@@ -262,14 +253,16 @@ async function colourTable(): Promise<Array<{ code: number; key: string }> | nul
   return colourCache
 }
 
-interface HandlerOptions {
+export interface HandlerOptions {
   /** Injected by tests so the route can be exercised without a credential. */
   readonly providerConfig?: ProviderConfig
+  readonly timeoutMs?: number
+  readonly heartbeatMs?: number
 }
 
 async function handleGenerate(
   body: Record<string, unknown>,
-  response: ServerResponse,
+  emit: (event: Record<string, unknown>) => void,
   signal: AbortSignal,
   options: HandlerOptions,
 ): Promise<CompletionResult> {
@@ -289,13 +282,13 @@ async function handleGenerate(
     schema: body.schema,
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     signal,
-    onProgress: (stage) => write(response, { type: 'progress', stage }),
+    onProgress: (stage) => emit({ type: 'progress', stage }),
   })
 }
 
 async function handleBrief(
   body: Record<string, unknown>,
-  response: ServerResponse,
+  emit: (event: Record<string, unknown>) => void,
   signal: AbortSignal,
   options: HandlerOptions,
 ): Promise<CompletionResult & { brief: DesignBrief; notes: string[] }> {
@@ -308,7 +301,7 @@ async function handleBrief(
     schema: BRIEF_SCHEMA,
     maxTokens: 2000,
     signal,
-    onProgress: (stage) => write(response, { type: 'progress', stage }),
+    onProgress: (stage) => emit({ type: 'progress', stage }),
   })
 
   // Already validated by the provider; parsed again here to get the typed value
@@ -351,6 +344,10 @@ async function handleBrief(
  * of the routing, proves nothing about what actually runs.
  */
 export function createGenerationRoute(options: HandlerOptions = {}): RouteModule {
+  const timeoutMs = boundedTimeout(
+    options.timeoutMs ?? options.providerConfig?.timeoutMs ?? process.env.BRICKWRIGHT_GENERATION_TIMEOUT_MS,
+    120_000,
+  )
   return {
     prefix: '/api/',
     async handle(request, response, url) {
@@ -374,87 +371,116 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
         return true
       }
 
-      let body: Record<string, unknown>
+      const span = requestLifetime(request, response, timeoutMs)
       try {
-        body = (await readBody(request)) as Record<string, unknown>
-      } catch (cause) {
-        response.writeHead(400, { 'content-type': 'application/json' })
-        response.end(
-          JSON.stringify({
-            error: 'bad_request',
-            detail: cause instanceof BadRequest ? cause.message : 'Request body could not be read.',
-          }),
-        )
-        return true
-      }
-
-      // The provider is resolved before the stream opens, so "no credential" is
-      // an ordinary 503 the client can branch on rather than an error buried
-      // inside a 200 response it has already started reading.
-      try {
-        provider(options.providerConfig)
-      } catch (cause) {
-        const wire = toWireError(cause)
-        response.writeHead(wire.status, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ error: wire.code, detail: wire.detail }))
-        return true
-      }
-
-      // A client that goes away must take the model call with it, or a cancelled
-      // generation keeps spending tokens on an answer nobody will read.
-      //
-      // The signal is the *response* closing, not the request. A request with a
-      // body has already emitted `close` by the time its body has been read, so
-      // a listener attached here would never fire; the response socket closing
-      // before the response finished is what "the client hung up" actually looks
-      // like on this side.
-      const controller = new AbortController()
-      response.on('close', () => {
-        if (!response.writableFinished) controller.abort()
-      })
-
-      response.writeHead(200, {
-        'content-type': 'application/x-ndjson; charset=utf-8',
-        'cache-control': 'no-store',
-        connection: 'keep-alive',
-      })
-      const requestId = `gen_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-      write(response, { type: 'accepted', requestId })
-
-      try {
-        if (isBrief) {
-          const result = await handleBrief(body, response, controller.signal, options)
-          write(response, {
-            type: 'result',
-            requestId,
-            value: result.brief,
-            provenance: result.provenance,
-            usage: result.usage,
-            attempts: result.attempts,
-            notes: result.notes,
+        let body: Record<string, unknown>
+        try {
+          const text = await readRequestText(request, span.signal, MAX_BODY_BYTES)
+          try {
+            body = JSON.parse(text)
+          } catch {
+            throw new BadRequest('Request body was not valid JSON.')
+          }
+          if (!body || typeof body !== 'object' || Array.isArray(body))
+            throw new BadRequest('Request body must be a JSON object.')
+        } catch (cause) {
+          if (span.reason === 'client') return true
+          const code =
+            span.reason === 'timeout'
+              ? 'timeout'
+              : cause instanceof RequestBodyError && cause.code === 'PAYLOAD_TOO_LARGE'
+                ? 'payload_too_large'
+                : 'bad_request'
+          response.writeHead(code === 'timeout' ? 408 : code === 'payload_too_large' ? 413 : 400, {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+            connection: 'close',
           })
-        } else {
-          const result = await handleGenerate(body, response, controller.signal, options)
-          write(response, {
-            type: 'result',
-            requestId,
-            value: result.value,
-            provenance: result.provenance,
-            usage: result.usage,
-            attempts: result.attempts,
-          })
+          response.end(
+            JSON.stringify({
+              error: code,
+              detail:
+                code === 'timeout'
+                  ? 'The request body did not arrive before its deadline.'
+                  : cause instanceof BadRequest || cause instanceof RequestBodyError
+                    ? cause.message
+                    : 'Request body could not be read.',
+            }),
+          )
+          return true
         }
-      } catch (cause) {
-        const wire =
-          cause instanceof BadRequest
-            ? { status: 400, code: 'bad_request', detail: cause.message }
-            : toWireError(cause)
-        process.stderr.write(`[api] /api generation ${requestId} failed: ${redact(String(cause))}\n`)
-        write(response, { type: 'error', requestId, error: wire.code, detail: wire.detail })
+
+        // The provider is resolved before the stream opens, so "no credential" is
+        // an ordinary 503 the client can branch on rather than an error buried
+        // inside a 200 response it has already started reading.
+        try {
+          provider(options.providerConfig)
+        } catch (cause) {
+          const wire = toWireError(cause)
+          response.writeHead(wire.status, { 'content-type': 'application/json' })
+          response.end(JSON.stringify({ error: wire.code, detail: wire.detail }))
+          return true
+        }
+
+        response.writeHead(200, {
+          'content-type': 'application/x-ndjson; charset=utf-8',
+          'cache-control': 'no-store',
+          connection: 'keep-alive',
+          'x-accel-buffering': 'no',
+        })
+        const writer = ndjsonWriter(response, span.signal, options.heartbeatMs)
+        const emit = (event: Record<string, unknown>) => {
+          if (!span.signal.aborted) writer.write(event)
+        }
+        const requestId = `gen_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+        writer.write({ type: 'accepted', requestId })
+
+        try {
+          span.signal.throwIfAborted()
+          if (isBrief) {
+            const result = await awaitWithAbort(handleBrief(body, emit, span.signal, options), span.signal)
+            writer.write({
+              type: 'result',
+              requestId,
+              value: result.brief,
+              provenance: result.provenance,
+              usage: result.usage,
+              attempts: result.attempts,
+              notes: result.notes,
+            })
+          } else {
+            const result = await awaitWithAbort(handleGenerate(body, emit, span.signal, options), span.signal)
+            writer.write({
+              type: 'result',
+              requestId,
+              value: result.value,
+              provenance: result.provenance,
+              usage: result.usage,
+              attempts: result.attempts,
+            })
+          }
+        } catch (cause) {
+          if (span.reason === 'client') return true
+          const wire =
+            span.reason === 'timeout'
+              ? {
+                  status: 504,
+                  code: 'timeout',
+                  detail: 'The generation exceeded its request deadline and was cancelled.',
+                }
+              : cause instanceof BadRequest
+                ? { status: 400, code: 'bad_request', detail: cause.message }
+                : toWireError(cause)
+          process.stderr.write(`[api] /api generation ${requestId} failed: ${redact(String(cause))}\n`)
+          writer.write({ type: 'error', requestId, error: wire.code, detail: wire.detail })
+        } finally {
+          writer.close()
+          if (!response.destroyed && !response.writableEnded) response.end()
+        }
+        return true
       } finally {
-        response.end()
+        span.dispose()
       }
-      return true
     },
   }
 }

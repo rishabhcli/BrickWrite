@@ -31,12 +31,10 @@
     "convex/model/capabilities.ts",
     "convex/model/checksum.ts",
     "convex/model/limits.ts",
+    "convex/model/snapshotValidation.ts",
+    "convex/model/history.ts",
     "convex/model/protocol.ts",
     "convex/model/redaction.ts"
   ],
-  "exclude": [
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/**/__tests__"
-  ]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/__tests__"]
 }

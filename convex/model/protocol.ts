@@ -35,6 +35,8 @@ export type CloudErrorCode =
   | 'SCHEMA_MISMATCH'
   /** A snapshot read found fewer chunks than were written. */
   | 'INCOMPLETE_SNAPSHOT'
+  /** The requested branch cannot be replayed completely to its advertised head. */
+  | 'INCOMPLETE_HISTORY'
   | 'CHECKSUM_MISMATCH'
   | 'NAME_TAKEN'
   // The remaining codes are produced by the client transport only. The server
@@ -81,6 +83,9 @@ export const cloudSuccess = <T>(value: T): CloudResult<T> => ({ ok: true, value 
 export const SNAPSHOT_CHUNK_BYTES = 400_000
 export const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 export const MAX_TRANSACTION_BYTES = 512 * 1024
+/** Bounded all-or-nothing sync groups, including their wire envelopes. */
+export const MAX_TRANSACTION_BATCH_COUNT = 50
+export const MAX_TRANSACTION_BATCH_BYTES = 2 * 1024 * 1024
 export const MAX_COMMENT_BYTES = 8_000
 /** Presence rows older than this are stale and are not returned. */
 export const PRESENCE_TTL_MS = 30_000
@@ -147,6 +152,25 @@ export interface CloudTransactionRecord {
   catalogVersion: string
   createdAt: string
   transaction: Transaction
+}
+
+export type ReadHistoryArgs = {
+  projectId: string
+  branchId?: string
+  /** Exclusive cursor; send the previous page's nextRevision. */
+  sinceRevision: number
+  /** Pin subsequent pages to the first page's headRevision. */
+  throughRevision?: number
+  limit?: number
+}
+
+export interface CloudHistoryPage {
+  branchId: string
+  /** The pinned read target, not a moving head on subsequent pages. */
+  headRevision: number
+  transactions: CloudTransactionRecord[]
+  nextRevision: number
+  done: boolean
 }
 
 export interface CloudSnapshotRecord {
@@ -262,6 +286,8 @@ export type CreateProjectArgs = {
   catalogVersion: string
   /** Optional seed checkpoint, chunked by the caller. */
   snapshot?: SnapshotUpload
+  /** Resume only an exact original seed owned by this identity; never overwrite existing work. */
+  resumeExisting?: boolean
 }
 
 export type SnapshotUpload = {
@@ -293,6 +319,24 @@ export interface AppendTransactionValue {
   headRevision: number
   /** False when this call matched an existing `clientTransactionId`. */
   applied: boolean
+}
+
+/** Every batch targets one authorised project/branch and one contiguous log range. */
+export type BatchTransaction = Omit<AppendTransactionArgs, 'projectId' | 'branchId'>
+export type AppendTransactionsArgs = {
+  projectId: string
+  branchId?: string
+  transactions: BatchTransaction[]
+}
+export interface AppendTransactionsValue {
+  branchId: string
+  headRevision: number
+  transactions: Array<{
+    clientTransactionId: string
+    transactionId: string
+    resultRevision: number
+    applied: boolean
+  }>
 }
 
 /** `STALE_DOCUMENT` carries the head the caller must rebase onto. */

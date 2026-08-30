@@ -133,6 +133,11 @@ const readTools: ToolDefinition[] = [
           refinement: surfaceSnapshot.refinement ?? { status: 'idle', proposalCount: 0, selectedId: null },
           project: { id: state.document.id, name: state.document.name },
           share: surfaceSnapshot.share,
+          feedback: {
+            open: state.document.notes.filter((note) => note.status === 'open').length,
+            resolved: state.document.notes.filter((note) => note.status === 'resolved').length,
+            total: state.document.notes.length,
+          },
         },
         chrome: readChrome(),
       })
@@ -142,7 +147,7 @@ const readTools: ToolDefinition[] = [
     name: 'workspace_reveal',
     description:
       'Open a workbench dock section so a human can see what the agent is working on. '
-      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, timeline. '
+      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, timeline, feedback. '
       + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
     annotations: { readOnlyHint: true },

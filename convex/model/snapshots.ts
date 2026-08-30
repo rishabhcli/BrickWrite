@@ -1,13 +1,9 @@
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
-import { checksumOfText } from './checksum'
-import { validateSnapshotUpload } from './limits'
-import {
-  cloudFailure,
-  type CloudResult,
-  type CloudSnapshotRecord,
-  type SnapshotUpload,
-} from './protocol'
+import { checksumOfText, utf8Bytes } from './checksum'
+import { MAX_SNAPSHOT_CHUNKS } from './limits'
+import { decodeSnapshotUpload } from './snapshotValidation'
+import { cloudFailure, type CloudResult, type CloudSnapshotRecord, type SnapshotUpload } from './protocol'
 import { iso } from './auth'
 
 /**
@@ -35,7 +31,12 @@ export async function writeSnapshot(
     createdBySubject: string
   },
 ): Promise<CloudResult<string>> {
-  const validated = validateSnapshotUpload(args.upload)
+  const project = await ctx.db.get(args.projectId)
+  if (!project) return cloudFailure('NOT_FOUND', 'The snapshot project is missing.', 'Reload the project list.')
+  const validated = decodeSnapshotUpload(args.upload, {
+    localProjectId: project.localProjectId,
+    schemaVersion: project.schemaVersion,
+  })
   if (!validated.ok) return validated
 
   const groupId = crypto.randomUUID()
@@ -87,6 +88,13 @@ export async function readSnapshot(
     )
   }
   const expected = peek[0].chunkCount
+  if (!Number.isSafeInteger(expected) || expected < 1 || expected > MAX_SNAPSHOT_CHUNKS) {
+    return cloudFailure(
+      'INCOMPLETE_SNAPSHOT',
+      'The stored checkpoint has an invalid chunk count.',
+      'Restore a complete saved version; this checkpoint cannot safely be read.',
+    )
+  }
   const chunks = await ctx.db
     .query('snapshots')
     .withIndex('by_group', (q) => q.eq('groupId', groupId))
@@ -116,22 +124,49 @@ export async function readSnapshot(
     )
   }
   const ordered = [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex)
+  if (
+    ordered.some(
+      (chunk, index) =>
+        chunk.chunkIndex !== index ||
+        chunk.projectId !== first.projectId ||
+        chunk.branchId !== first.branchId ||
+        chunk.kind !== first.kind ||
+        chunk.revision !== first.revision ||
+        chunk.chunkCount !== first.chunkCount ||
+        chunk.checksum !== first.checksum ||
+        chunk.bytes !== first.bytes ||
+        chunk.schemaVersion !== first.schemaVersion ||
+        chunk.catalogVersion !== first.catalogVersion,
+    )
+  ) {
+    return cloudFailure(
+      'INCOMPLETE_SNAPSHOT',
+      'The checkpoint chunks have inconsistent metadata.',
+      'Restore a complete saved version; this checkpoint cannot safely be reassembled.',
+    )
+  }
   const text = ordered.map((chunk) => chunk.data).join('')
-  if (checksumOfText(text) !== first.checksum) {
+  if (utf8Bytes(text) !== first.bytes || checksumOfText(text) !== first.checksum) {
     return cloudFailure(
       'CHECKSUM_MISMATCH',
       'The stored checkpoint failed its checksum.',
       'Restore an earlier version; this one is corrupt.',
     )
   }
-  let document: CloudSnapshotRecord['document']
-  try {
-    document = JSON.parse(text) as CloudSnapshotRecord['document']
-  } catch {
+  const project = await ctx.db.get(projectId)
+  if (!project) return cloudFailure('NOT_FOUND', 'The snapshot project is missing.', 'Reload the project list.')
+  const decoded = decodeSnapshotUpload(
+    { ...first, chunks: ordered.map((chunk) => chunk.data) },
+    {
+      localProjectId: project.localProjectId,
+      schemaVersion: project.schemaVersion,
+    },
+  )
+  if (!decoded.ok) {
     return cloudFailure(
-      'CHECKSUM_MISMATCH',
-      'The stored checkpoint is not valid JSON.',
-      'Restore an earlier version; this one is corrupt.',
+      'INCOMPLETE_SNAPSHOT',
+      'The stored checkpoint is not a complete document matching its project and metadata.',
+      'Restore a complete saved version; this checkpoint cannot safely be replayed.',
     )
   }
   return {
@@ -148,70 +183,26 @@ export async function readSnapshot(
       catalogVersion: first.catalogVersion,
       createdBySubject: first.createdBySubject,
       createdAt: iso(first.createdAt),
-      document,
+      document: decoded.value,
     },
   }
 }
 
-/**
- * Copies the newest parent-branch checkpoint at or below `atRevision` onto a
- * newly created branch. Named branches created from the UI used to have no
- * checkpoint, so `loadProject` could not open them.
- */
-export async function copyLatestCheckpointToBranch(
-  ctx: MutationCtx,
-  args: {
-    projectId: Id<'projects'>
-    fromBranchId: Id<'branches'>
-    toBranchId: Id<'branches'>
-    atRevision: number
-    createdBySubject: string
-  },
-): Promise<CloudResult<string | null>> {
-  const rows = await ctx.db
+/** Index the selected branch before limiting, so busy siblings cannot hide it. */
+export async function latestBranchCheckpoint(
+  ctx: QueryCtx,
+  projectId: Id<'projects'>,
+  branchId: Id<'branches'>,
+  atRevision: number,
+): Promise<CloudResult<CloudSnapshotRecord | null>> {
+  const newest = await ctx.db
     .query('snapshots')
-    .withIndex('by_project_kind_revision', (q) =>
-      q.eq('projectId', args.projectId).eq('kind', 'checkpoint').lte('revision', args.atRevision),
+    .withIndex('by_branch_kind_revision', (q) =>
+      q.eq('branchId', branchId).eq('kind', 'checkpoint').lte('revision', atRevision),
     )
     .order('desc')
-    .take(256)
-  const newest = rows.find((row) => row.chunkIndex === 0 && row.branchId === args.fromBranchId)
-  // Named-branch create treats a missing checkpoint as failure so the branch
-  // cannot be opened as an empty shell. Conflict forks are allowed to continue
-  // unseeded: they write their own checkpoint immediately after create.
+    .filter((q) => q.eq(q.field('chunkIndex'), 0))
+    .first()
   if (!newest) return { ok: true, value: null }
-
-  const source = await ctx.db
-    .query('snapshots')
-    .withIndex('by_group', (q) => q.eq('groupId', newest.groupId))
-    .take(newest.chunkCount + 1)
-  if (source.length !== newest.chunkCount) {
-    return cloudFailure(
-      'INCOMPLETE_SNAPSHOT',
-      'The parent branch checkpoint cannot be copied because it is incomplete.',
-      'Save a checkpoint on the source branch and create the branch again.',
-    )
-  }
-
-  const groupId = crypto.randomUUID()
-  const createdAt = Date.now()
-  for (const chunk of source) {
-    await ctx.db.insert('snapshots', {
-      projectId: args.projectId,
-      branchId: args.toBranchId,
-      groupId,
-      kind: 'checkpoint',
-      revision: newest.revision,
-      chunkIndex: chunk.chunkIndex,
-      chunkCount: newest.chunkCount,
-      data: chunk.data,
-      checksum: chunk.checksum,
-      bytes: chunk.bytes,
-      schemaVersion: chunk.schemaVersion,
-      catalogVersion: chunk.catalogVersion,
-      createdBySubject: args.createdBySubject,
-      createdAt,
-    })
-  }
-  return { ok: true, value: groupId }
+  return readSnapshot(ctx, newest.groupId, projectId)
 }

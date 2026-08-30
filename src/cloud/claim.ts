@@ -1,12 +1,10 @@
 import type { ModelDocument, Transaction } from '../cad/types'
 import type { LocalProjectStore, StoredLoadedProject } from './projectStore'
-import {
-  cloudFailure,
-  type CloudBackend,
-  type CloudResult,
-  type ProjectVisibility,
-} from './protocol'
+import { cloudFailure, type CloudBackend, type CloudResult, type ProjectVisibility } from './protocol'
 import { canonicalJson, snapshotUploadFor, transactionChecksum } from './serialize'
+import { verifyHistoryRecord } from '../../convex/model/history'
+import { sendTransactionBatch, transactionBatch } from './batches'
+import { decodeSnapshotUpload } from '../../convex/model/snapshotValidation'
 
 /**
  * Claiming a local project into the cloud.
@@ -30,6 +28,7 @@ export interface ClaimOutcome {
   branchId: string
   checkpointRevision: number
   headRevision: number
+  /** Newly applied this attempt; retry acknowledgements are not counted again. */
   transactionsUploaded: number
 }
 
@@ -56,46 +55,88 @@ export async function claimLocalProject(args: ClaimArgs): Promise<CloudResult<Cl
     .filter((entry) => entry.resultRevision > checkpoint.revision)
     .sort((a, b) => a.resultRevision - b.resultRevision)
 
+  const snapshot = snapshotUploadFor(document)
+  const valid = decodeSnapshotUpload(snapshot, {
+    localProjectId: args.localProjectId,
+    schemaVersion: document.schemaVersion,
+  })
+  if (!valid.ok) return valid
+  if (checkpoint.revision !== document.revision) {
+    return cloudFailure(
+      'INCOMPLETE_SNAPSHOT',
+      'The local checkpoint revision does not match its document.',
+      'Keep the local copy and re-save a complete checkpoint before claiming it.',
+    )
+  }
+  let expectedHead = checkpoint.revision
+  for (const entry of log) {
+    const transaction = entry.transaction
+    const validEntry = verifyHistoryRecord(
+      {
+        transaction,
+        clientTransactionId: transaction.id,
+        baseRevision: transaction.baseRevision,
+        resultRevision: entry.resultRevision,
+        checksum: transactionChecksum(transaction),
+      },
+      expectedHead,
+    )
+    if (!validEntry.ok) return validEntry
+    expectedHead = transaction.resultRevision
+  }
+
   const created = await args.backend.createProject({
     localProjectId: args.localProjectId,
     name: args.name?.trim() || document.name,
     visibility: args.visibility ?? 'private',
     schemaVersion: document.schemaVersion,
     catalogVersion: document.catalogVersion,
-    snapshot: snapshotUploadFor(document),
+    snapshot,
+    resumeExisting: true,
   })
   if (!created.ok) return created
 
+  const transactions = log.map(({ transaction }) => ({
+    clientTransactionId: transaction.id,
+    baseRevision: transaction.baseRevision,
+    resultRevision: transaction.resultRevision,
+    transaction,
+    checksum: transactionChecksum(transaction),
+    schemaVersion: document.schemaVersion,
+    catalogVersion: document.catalogVersion,
+  }))
   let uploaded = 0
-  for (const entry of log) {
-    const transaction = entry.transaction
-    const appended = await args.backend.appendTransaction({
-      projectId: created.value.projectId,
-      branchId: created.value.defaultBranchId,
-      clientTransactionId: transaction.id,
-      baseRevision: transaction.baseRevision,
-      resultRevision: transaction.resultRevision,
-      transaction,
-      checksum: transactionChecksum(transaction),
-      schemaVersion: document.schemaVersion,
-      catalogVersion: document.catalogVersion,
-    })
-    // Stops at the first refusal and reports it, rather than skipping ahead.
-    // A gap in the log is not a smaller loss than a failed claim; it is a
-    // silent one, and the replica would never replay past the gap.
+  for (let cursor = 0; cursor < transactions.length;) {
+    const batch = transactionBatch(
+      { projectId: created.value.projectId, branchId: created.value.defaultBranchId },
+      transactions.slice(cursor),
+      Boolean(args.backend.appendTransactions),
+    )
+    const appended = await sendTransactionBatch(args.backend, batch)
     if (!appended.ok) {
+      const details = appended.error.details as { resultRevision?: number } | undefined
+      const stoppedAtRevision = details?.resultRevision ?? batch.transactions[0].resultRevision
       return cloudFailure(
         appended.error.code,
-        `The claim stopped at revision ${transaction.resultRevision}: ${appended.error.message}`,
+        `The claim stopped at revision ${stoppedAtRevision}: ${appended.error.message}`,
         appended.error.repair,
-        { uploaded, stoppedAtRevision: transaction.resultRevision, cause: appended.error },
+        { projectId: created.value.projectId, uploaded, stoppedAtRevision, cause: appended.error },
       )
     }
-    uploaded += 1
+    uploaded += appended.value.transactions.filter((receipt) => receipt.applied).length
+    cursor += batch.transactions.length
   }
 
   const head = await args.backend.getProject({ projectId: created.value.projectId })
   if (!head.ok) return head
+  if (head.value.headRevision !== expectedHead) {
+    return cloudFailure(
+      'STALE_DOCUMENT',
+      'The cloud copy changed while this project was being claimed.',
+      'Open the existing cloud project and reconcile it with the local copy; neither history was overwritten.',
+      { projectId: created.value.projectId, headRevision: head.value.headRevision, localRevision: expectedHead },
+    )
+  }
 
   return {
     ok: true,
@@ -127,10 +168,7 @@ export interface ClaimIntegrityReport {
  * added to `ModelDocument` next month is covered by this check on the day it is
  * added instead of the day somebody remembers to extend the comparison.
  */
-export function claimIntegrityReport(
-  local: StoredLoadedProject,
-  cloud: StoredLoadedProject,
-): ClaimIntegrityReport {
+export function claimIntegrityReport(local: StoredLoadedProject, cloud: StoredLoadedProject): ClaimIntegrityReport {
   const differences: string[] = []
 
   if (canonicalJson(local.document) !== canonicalJson(cloud.document)) {
@@ -140,9 +178,7 @@ export function claimIntegrityReport(
     if (differences.length === 0) differences.push('The documents differ in an unlisted field.')
   }
   if (local.replayed.length !== cloud.replayed.length) {
-    differences.push(
-      `Transaction count differs: ${local.replayed.length} local, ${cloud.replayed.length} cloud.`,
-    )
+    differences.push(`Transaction count differs: ${local.replayed.length} local, ${cloud.replayed.length} cloud.`)
   } else {
     for (let index = 0; index < local.replayed.length; index += 1) {
       if (transactionChecksum(local.replayed[index]) !== transactionChecksum(cloud.replayed[index])) {

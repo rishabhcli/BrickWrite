@@ -1,9 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
-import {
-  ModelProviderUnavailableError,
-  hash32,
-  stableStringify,
-} from '../../src/platform/contracts.ts'
+import { ModelProviderUnavailableError, hash32, stableStringify, awaitWithAbort } from '../../src/platform/contracts.ts'
+import { boundedTimeout } from '../http/lifecycle.ts'
 import type { ModelProvider, ModelRequest, ModelResult } from '../../src/platform/contracts.ts'
 import { DEFAULT_MODEL, DEFAULT_TIMEOUT_MS } from './protocol.ts'
 import { redactSecret, sanitizeMessage } from './sanitize.ts'
@@ -12,10 +9,9 @@ import { redactSecret, sanitizeMessage } from './sanitize.ts'
  * The one place in the repository that holds the model API key.
  *
  * `src/platform/contracts.ts` is imported for the contract itself: it is the
- * cross-workstream types file and is deliberately dependency-free — types, an
- * error class and two pure hash helpers — so loading it here costs the API
- * process nothing and guarantees this implementation and the browser proxy in
- * `src/agent/provider.ts` satisfy the *same* interface rather than two
+ * cross-workstream contract file and is deliberately dependency-free, so
+ * loading it here requires no browser initialization. This implementation and
+ * the browser proxy in `src/agent/provider.ts` satisfy the *same* interface rather than two
  * interfaces that happen to look alike.
  */
 
@@ -136,7 +132,10 @@ export class AnthropicModelProvider implements ModelProvider {
   constructor(options: AnthropicProviderOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY
     this.model = options.model ?? process.env.BRICKWRIGHT_ASSISTANT_MODEL ?? DEFAULT_MODEL
-    this.timeoutMs = options.timeoutMs ?? Number(process.env.BRICKWRIGHT_ASSISTANT_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS)
+    this.timeoutMs = boundedTimeout(
+      options.timeoutMs ?? process.env.BRICKWRIGHT_ASSISTANT_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_MS,
+    )
     this.effort = options.effort ?? 'high'
     this.client = options.client
   }
@@ -182,27 +181,34 @@ export class AnthropicModelProvider implements ModelProvider {
     let lastViolation = ''
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      request.signal?.throwIfAborted()
       const messages: Anthropic.MessageParam[] = [
         { role: 'user', content: correction ? `${request.prompt}\n\n${correction}` : request.prompt },
       ]
 
       let response: Anthropic.Message
       try {
-        response = await client.messages.create(
-          {
-            model: this.model,
-            max_tokens: request.maxTokens ?? 4096,
-            system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' as const } }],
-            messages,
-            output_config: {
-              effort: this.effort,
-              format: { type: 'json_schema', schema: pruneToSupportedSchema(request.schema) as Record<string, unknown> },
+        response = await awaitWithAbort(
+          client.messages.create(
+            {
+              model: this.model,
+              max_tokens: request.maxTokens ?? 4096,
+              system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' as const } }],
+              messages,
+              output_config: {
+                effort: this.effort,
+                format: {
+                  type: 'json_schema',
+                  schema: pruneToSupportedSchema(request.schema) as Record<string, unknown>,
+                },
+              },
+              ...(request.temperature !== undefined && !SAMPLING_REJECTING.test(this.model)
+                ? { temperature: request.temperature }
+                : {}),
             },
-            ...(request.temperature !== undefined && !SAMPLING_REJECTING.test(this.model)
-              ? { temperature: request.temperature }
-              : {}),
-          },
-          { signal: request.signal },
+            { signal: request.signal },
+          ),
+          request.signal,
         )
       } catch (cause) {
         throw classifyUpstream(cause, this.apiKey)

@@ -493,6 +493,16 @@ export class AgentSession {
           return
         }
 
+        const validCompletion =
+          (stop === 'end_turn' && toolCalls.length === 0) || (stop === 'tool_use' && toolCalls.length > 0)
+        if (!legError && !validCompletion) {
+          legError = {
+            code: 'UPSTREAM_ERROR',
+            message: 'The assistant turn did not complete successfully. No pending changes were automatically applied.',
+            retryable: true,
+          }
+        }
+
         if (legError) {
           const failure = legError as SessionError
           this.error = failure

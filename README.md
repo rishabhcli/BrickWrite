@@ -139,6 +139,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   nominal model would miss, such as the centre tube on a 2×2 brick.
 - **Data-derived stacking** — mating planes come from each part's own connectors, so slopes,
   curved bricks, grille tiles and windscreens land correctly.
+- **Bounded AI request lifetimes** — uploads, model work, and corrective retries share
+  a deadline; cancellations propagate upstream, and incomplete streams cannot release
+  agent tool calls or automatically apply pending builds. See [AI stream reliability](docs/ai-stream-reliability.md).
 - **Shared command bus** — human and agent edits create the same atomic `Transaction` records.
 - **Optimistic concurrency** — every mutation checks `expectedRevision`; stale plans fail
   with repair guidance.
@@ -187,6 +190,16 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   log on top of a periodic checkpoint, so reopening replays forward from the checkpoint.
   Replay stops at a revision gap rather than applying a log out of order, and the save
   indicator reports whether persistence is durable, memory-only or failing.
+- **Complete, branch-aware cloud history** — cloud downloads and conflict recovery read
+  every page against a fixed revision, including edits inherited at each branch's fork
+  point. A missing edit or checksum mismatch returns an actionable error instead of
+  quietly opening a partial model. The authenticated history API gives agents the same
+  revision/cursor contract. See [cloud history](docs/cloud-history.md).
+- **Safe cloud saves and claim retries** — snapshots are validated before any durable
+  write, so a rejected upload cannot leave a ghost project or consume a version label.
+  Interrupted claims can resume the exact original upload without duplicating edits or
+  overwriting newer work. Humans and agents share the same authenticated save contract.
+  See [cloud save integrity](docs/cloud-save-integrity.md).
 - **Enforced agent contract** — one Zod declaration produces both the JSON Schema each tool
   advertises and the validation the gateway applies, so they cannot drift. Errors pass through
   a single redactor that strips credentials, signed URLs, blobs and filesystem paths and never

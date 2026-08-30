@@ -50,6 +50,12 @@ export default defineSchema({
     updatedAt: v.number(),
     /** Soft delete: history is never destroyed by a click in a project list. */
     deletedAt: v.optional(v.number()),
+    /** Immutable creation receipt for explicit retries; absent on legacy rows. */
+    creation: v.optional(v.object({
+      name: v.string(),
+      visibility: v.union(v.literal('private'), v.literal('unlisted'), v.literal('public')),
+      snapshotGroupId: v.optional(v.string()),
+    })),
   })
     .index('by_owner', ['ownerSubject'])
     .index('by_owner_local', ['ownerSubject', 'localProjectId'])
@@ -75,12 +81,7 @@ export default defineSchema({
     proposal: v.optional(
       v.object({
         intoBranchId: v.id('branches'),
-        status: v.union(
-          v.literal('open'),
-          v.literal('merged'),
-          v.literal('withdrawn'),
-          v.literal('rejected'),
-        ),
+        status: v.union(v.literal('open'), v.literal('merged'), v.literal('withdrawn'), v.literal('rejected')),
         proposedBySubject: v.string(),
         proposedAt: v.number(),
         decidedBySubject: v.optional(v.string()),
@@ -150,6 +151,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_group', ['groupId', 'chunkIndex'])
+    .index('by_branch_kind_revision', ['branchId', 'kind', 'revision'])
     .index('by_project_kind_revision', ['projectId', 'kind', 'revision'])
     .index('by_project_revision', ['projectId', 'revision']),
 
@@ -179,12 +181,7 @@ export default defineSchema({
     projectId: v.id('projects'),
     /** Hexclave user id. The only identifier authorisation is ever keyed on. */
     subject: v.string(),
-    role: v.union(
-      v.literal('owner'),
-      v.literal('editor'),
-      v.literal('commenter'),
-      v.literal('viewer'),
-    ),
+    role: v.union(v.literal('owner'), v.literal('editor'), v.literal('commenter'), v.literal('viewer')),
     /** Display name copied from the token for member lists. Never an email. */
     displayName: v.optional(v.string()),
     invitedBySubject: v.optional(v.string()),
@@ -211,18 +208,8 @@ export default defineSchema({
     invitedBySubject: v.string(),
     createdAt: v.number(),
     expiresAt: v.number(),
-    status: v.union(
-      v.literal('pending'),
-      v.literal('accepted'),
-      v.literal('revoked'),
-      v.literal('expired'),
-    ),
-    deliveryStatus: v.union(
-      v.literal('pending'),
-      v.literal('sent'),
-      v.literal('not-configured'),
-      v.literal('failed'),
-    ),
+    status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked'), v.literal('expired')),
+    deliveryStatus: v.union(v.literal('pending'), v.literal('sent'), v.literal('not-configured'), v.literal('failed')),
     deliveryReason: v.optional(v.string()),
     acceptedBySubject: v.optional(v.string()),
     acceptedAt: v.optional(v.number()),

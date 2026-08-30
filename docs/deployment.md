@@ -32,6 +32,17 @@ That is the fastest end-to-end health check there is: if the second one returns
 `503 api_unavailable`, the Pages project has lost `BRICKWRIGHT_PROXY_SECRET`
 or `BRICKWRIGHT_API_ORIGIN`.
 
+## AI request lifetimes
+
+Assistant and generation timeout settings now bound the whole Node handler,
+including uploads and corrective attempts, rather than granting each attempt a
+fresh deadline. Defaults are 120 seconds server-side and 180 seconds in browser
+transports; keep them below the platform request limit. The Pages proxy forwards
+cancellation, and streaming responses send blank-line heartbeats. Deploy Node
+and Pages/frontend together for the complete behavior; no database migration is
+needed. See [AI stream reliability](ai-stream-reliability.md) for error contracts,
+client completion rules, limits, and local verification coverage.
+
 ## What CI does, and what it deliberately does not
 
 `verify` runs on every push and pull request: catalog integrity, the unit suite,
@@ -120,6 +131,17 @@ curl -s https://api.hexclave.com/api/v1/projects/current \
 `allowLocalhost` stays `true` so `npm run dev` needs no per-developer entry.
 
 ## Convex
+
+For the complete-history change, deploy Convex before the frontend: the new client
+uses `transactions:history` and the additive `snapshots.by_branch_kind_revision`
+index. No stored history is rewritten. See [cloud history](cloud-history.md) for
+the paging contract, recovery behavior, and regression tests.
+
+The save-integrity change also requires backend-first rollout: `projects:create`
+accepts `resumeExisting`, and `projects.creation` is an optional immutable receipt
+used to resume an exact interrupted claim. Existing rows are preserved without
+migration; ambiguous or legacy retries remain explicit refusals. See
+[cloud save integrity](cloud-save-integrity.md) for validation and retry boundaries.
 
 `convex/auth.config.ts` reads `HEXCLAVE_PROJECT_ID` from the *deployment*
 environment and throws when it is absent, so a deployment cannot come up

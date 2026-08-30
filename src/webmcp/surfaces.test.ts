@@ -210,6 +210,7 @@ describe('WebMCP surface inventory', () => {
       refinement: { status: 'idle', proposalCount: 0, selectedId: null },
       project: { id: cadEngine.getDocument().id },
       share: { slug: null, contentHash: null },
+      feedback: { open: 1, resolved: 0, total: 1 },
     })
     expect(workspace.chrome).toBeNull()
   })
@@ -227,6 +228,22 @@ describe('WebMCP surface inventory', () => {
       applied: true,
       dock: 'right',
       section: 'generation.panel',
+    })
+  })
+
+  it('lets an agent reveal the same bottom-dock feedback inbox a human uses', async () => {
+    adapter.start()
+    const seen: string[] = []
+    setChromeRevealHandler((surface) => seen.push(surface))
+
+    const revealed = await invoke('workspace_reveal', { surface: 'feedback' })
+
+    expect(seen).toEqual(['feedback'])
+    expect(revealed).toMatchObject({
+      surface: 'feedback',
+      applied: true,
+      dock: 'bottom',
+      section: null,
     })
   })
 })

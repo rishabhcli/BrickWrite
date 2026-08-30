@@ -128,7 +128,52 @@ export interface StructuredResponseBody {
 
 /** True for a value that is a well-formed event from the assistant route. */
 export function isAssistantEvent(value: unknown): value is AssistantEvent {
-  if (typeof value !== 'object' || value === null) return false
-  const type = (value as { type?: unknown }).type
-  return typeof type === 'string' && (ASSISTANT_EVENT_TYPES as readonly string[]).includes(type)
+  const record = (entry: unknown): entry is Record<string, unknown> =>
+    typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+  const text = (entry: unknown) => typeof entry === 'string' && entry.length > 0
+  const count = (entry: unknown) => typeof entry === 'number' && Number.isSafeInteger(entry) && entry >= 0
+  if (!record(value)) return false
+  switch (value.type) {
+    case 'start':
+      return text(value.requestId) && text(value.model) && count(value.toolTurn) && count(value.maxToolTurns)
+    case 'text':
+      return typeof value.text === 'string'
+    case 'tool_call':
+      return record(value.call) && text(value.call.id) && text(value.call.name) && record(value.call.input)
+    case 'turn':
+      return Array.isArray(value.raw) && value.raw.length <= 64
+    case 'usage':
+      return (
+        count(value.inputTokens) &&
+        count(value.outputTokens) &&
+        (value.cacheReadInputTokens === undefined || count(value.cacheReadInputTokens))
+      )
+    case 'done':
+      return (
+        typeof value.stop === 'string' &&
+        ['end_turn', 'tool_use', 'max_tokens', 'refusal', 'aborted', 'error'].includes(value.stop)
+      )
+    case 'error':
+      return (
+        typeof value.message === 'string' &&
+        typeof value.retryable === 'boolean' &&
+        typeof value.code === 'string' &&
+        [
+          'BAD_REQUEST',
+          'AUTH_REQUIRED',
+          'ACCOUNT_RESTRICTED',
+          'PAYLOAD_TOO_LARGE',
+          'MODEL_PROVIDER_UNAVAILABLE',
+          'TOOL_TURN_LIMIT',
+          'SCHEMA_VIOLATION',
+          'RATE_LIMITED',
+          'UPSTREAM_ERROR',
+          'TIMEOUT',
+          'ABORTED',
+          'INTERNAL_ERROR',
+        ].includes(value.code)
+      )
+    default:
+      return false
+  }
 }

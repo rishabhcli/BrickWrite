@@ -24,7 +24,7 @@ import { InspectorPanel } from './InspectorPanel'
 import { PalettePanel } from './PalettePanel'
 import { SelectionPanel } from './SelectionPanel'
 import { StatusBar } from './StatusBar'
-import { TimelinePanel } from './TimelinePanel'
+import { TimelinePanel, type TimelineView } from './TimelinePanel'
 import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
 import { TransformPanel } from './TransformPanel'
@@ -100,6 +100,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   )
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
+  const [timelineView, setTimelineView] = useState<TimelineView>('steps')
   const saveInput = useRef<HTMLInputElement>(null)
 
   const layout = useMemo(() => clampLayout(rawLayout, viewport), [rawLayout, viewport])
@@ -121,6 +122,20 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     setRawLayout(next)
     saveLayout(next)
   }, [])
+
+  // The feedback inbox carries tabs, filters, anchored cards and a reply field.
+  // A laptop preset's 124px build strip is enough for step cards but clips the
+  // inbox controls into the status bar, so entering this view grants it the
+  // smallest height at which every action remains visible. We never shrink a
+  // layout the operator has already made larger.
+  useEffect(() => {
+    if (timelineView !== 'feedback' || rawLayout.bottom.collapsed || rawLayout.bottom.size >= 168) return
+    updateLayout({
+      ...rawLayout,
+      bottom: { ...rawLayout.bottom, size: 168 },
+      preset: null,
+    })
+  }, [rawLayout, timelineView, updateLayout])
 
   const resizeDock = useCallback(
     (dock: DockId, size: number) => {
@@ -200,6 +215,10 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   useEffect(() => {
     setChromeRevealHandler((surface) => {
+      // `feedback` is not only a dock: it is one view inside that dock. An
+      // agent revealing the inbox must land on the same notes the human sees,
+      // not merely open the bottom band on whichever tab was last active.
+      if (surface === 'feedback') setTimelineView('feedback')
       const next = applyChromeReveal(layoutRef.current, surface)
       pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
       updateLayout(next)
@@ -305,7 +324,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     if (welcomeUnseen()) workbench.setModal('core:welcome')
     // Only ever on the first commit; the guide is a first-run state, not a
     // condition that can recur mid-session.
-     
   }, [])
 
   const modal = workbench.modal
@@ -617,18 +635,27 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         {layout.bottom.collapsed ? (
           <button className="dock-bar" onClick={() => toggleDock('bottom')} aria-label="Show the build timeline">
             <Boxes size={12} /> BUILD SEQUENCE · {state.document.steps.length} steps · {state.transactions.length} edits
+            {state.document.notes.some((note) => note.status === 'open') && (
+              <em>
+                {state.document.notes.filter((note) => note.status === 'open').length} handoff
+                {state.document.notes.filter((note) => note.status === 'open').length === 1 ? '' : 's'}
+              </em>
+            )}
           </button>
         ) : (
           <TimelinePanel
             onSequence={workbench.regenerateBuildOrder}
             state={state}
             playbackStep={workbench.playbackStep}
+            view={timelineView}
+            onViewChange={setTimelineView}
             onPlayStep={workbench.setPlaybackStep}
             onAccept={workbench.acceptProposal}
             onReject={workbench.rejectProposal}
             onSelectIds={(ids) => cadEngine.setSelection(ids)}
-            onOpenNote={(noteId) =>
-              workbench.setModal(noteId ? 'core:command-deck:respond_to_note' : 'core:command-deck:add_builder_note')
+            onAddNote={(text) => workbench.runSharedMutation('add_builder_note', { text })}
+            onRespondNote={(noteId, response, resolved) =>
+              workbench.runSharedMutation('respond_to_note', { noteId, response, resolved })
             }
           />
         )}

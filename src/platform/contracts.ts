@@ -148,38 +148,144 @@ export class ModelProviderUnavailableError extends Error {
   }
 }
 
+/** Stop awaiting abandoned work even if an SDK ignores its cancellation signal. */
+export function awaitWithAbort<T>(work: PromiseLike<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return Promise.resolve(work)
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort)
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    // Attach both handlers even when already aborted: a late rejection must not
+    // become an unhandled promise after the caller has stopped waiting.
+    Promise.resolve(work).then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (cause) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(cause)
+      },
+    )
+    if (signal.aborted) onAbort()
+  })
+}
+
+/** Abort a whole HTTP exchange, including credential lookup and response reads. */
+export function deadlineSignal(timeoutMs: number, parent?: AbortSignal) {
+  const controller = new AbortController()
+  const abort = () => controller.abort(parent?.reason ?? new DOMException('Aborted', 'AbortError'))
+  const duration = Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.min(timeoutMs, 600_000) : 180_000
+  const timer = setTimeout(() => controller.abort(new DOMException('The request timed out.', 'TimeoutError')), duration)
+  parent?.addEventListener('abort', abort, { once: true })
+  if (parent?.aborted) abort()
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer)
+      parent?.removeEventListener('abort', abort)
+    },
+  }
+}
+
+export interface NdjsonReadOptions {
+  signal?: AbortSignal
+  maxLineBytes?: number
+  maxTotalBytes?: number
+  /** Stop and cancel the reader after a protocol terminal event, not after EOF. */
+  stopWhen?: () => boolean
+}
+
 /**
  * Consume a byte stream as newline-delimited text without corrupting UTF-8
  * characters split across chunks.
  *
  * Framing belongs to the shared HTTP contract; interpreting a line belongs to
- * each protocol.  In particular, callers deliberately retain their different
- * malformed-frame policies (assistant streams report an event, generation
- * streams reject the request).
+ * each protocol. Limits include actual wire bytes, not decoded character counts.
+ * Readers are always released; parse failures and early completion cancel the
+ * upstream body rather than leaving an unread, potentially paid request alive.
  */
 export async function readNdjsonLines(
   stream: ReadableStream<Uint8Array>,
   onLine: (line: string) => void | Promise<void>,
+  options: NdjsonReadOptions = {},
 ): Promise<void> {
   const reader = stream.getReader()
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
   let buffer = ''
-
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let newline = buffer.indexOf('\n')
-    while (newline >= 0) {
-      const line = buffer.slice(0, newline)
-      buffer = buffer.slice(newline + 1)
-      await onLine(line)
-      newline = buffer.indexOf('\n')
+  let lineBytes = 0
+  let totalBytes = 0
+  let ended = false
+  const maxLine = options.maxLineBytes ?? 2 * 1024 * 1024
+  const maxTotal = options.maxTotalBytes ?? 16 * 1024 * 1024
+  try {
+    options.signal?.throwIfAborted()
+    for (;;) {
+      const { done, value } = await awaitWithAbort(reader.read(), options.signal)
+      options.signal?.throwIfAborted()
+      if (done) {
+        ended = true
+        break
+      }
+      totalBytes += value.byteLength
+      if (totalBytes > maxTotal) throw new Error('The event stream exceeded its total byte limit.')
+      let start = 0
+      while (start < value.length) {
+        const newline = value.indexOf(10, start)
+        const end = newline < 0 ? value.length : newline
+        lineBytes += end - start
+        if (lineBytes > maxLine) throw new Error('An event stream frame exceeded its byte limit.')
+        buffer += decoder.decode(value.subarray(start, end), { stream: true })
+        if (newline < 0) break
+        buffer += decoder.decode()
+        await awaitWithAbort(Promise.resolve(onLine(buffer)), options.signal)
+        buffer = ''
+        lineBytes = 0
+        if (options.stopWhen?.()) return
+        start = newline + 1
+      }
     }
+    buffer += decoder.decode()
+    if (buffer.length > 0) await awaitWithAbort(Promise.resolve(onLine(buffer)), options.signal)
+  } finally {
+    if (!ended) void reader.cancel().catch(() => {})
+    reader.releaseLock()
   }
+}
 
-  buffer += decoder.decode()
-  if (buffer.length > 0) await onLine(buffer)
+/** Bound non-streaming success/error bodies too, with the same cancellation cleanup. */
+export async function readResponseJson(
+  response: Response,
+  signal?: AbortSignal,
+  maxBytes = 2 * 1024 * 1024,
+): Promise<unknown> {
+  // Hosts may supply a minimal Response seam without a readable body.
+  if (!response.body?.getReader) return awaitWithAbort(response.json(), signal)
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let bytes = 0
+  let text = ''
+  let ended = false
+  try {
+    signal?.throwIfAborted()
+    for (;;) {
+      const { done, value } = await awaitWithAbort(reader.read(), signal)
+      signal?.throwIfAborted()
+      if (done) {
+        ended = true
+        break
+      }
+      bytes += value.byteLength
+      if (bytes > maxBytes) throw new Error('The response exceeded its byte limit.')
+      text += decoder.decode(value, { stream: true })
+    }
+    return JSON.parse(text + decoder.decode()) as unknown
+  } finally {
+    if (!ended) void reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
 }
 
 /** Stable, sorted JSON so a prompt hash is reproducible across processes. */

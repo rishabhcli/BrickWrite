@@ -71,6 +71,13 @@ describe('chrome reveal', () => {
     expect(next.sections).toEqual(collapsed.sections)
   })
 
+  it('opens the shared feedback inbox in the bottom dock', () => {
+    const collapsed = { ...defaultLayout(), bottom: { size: 152, collapsed: true } }
+    const next = applyChromeReveal(collapsed, 'feedback')
+    expect(next.bottom.collapsed).toBe(false)
+    expect(next.sections).toEqual(collapsed.sections)
+  })
+
   it('reports applied:false when the workbench is not mounted', () => {
     expect(revealChrome('generation')).toEqual({
       surface: 'generation',

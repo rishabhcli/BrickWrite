@@ -8,6 +8,7 @@ import {
   type SnapshotUpload,
   type StaleDocumentDetails,
 } from './protocol'
+import { sendTransactionBatch, transactionBatch } from './batches'
 import { checksumOf, snapshotUploadFor, transactionChecksum } from './serialize'
 
 /**
@@ -62,8 +63,7 @@ export const UNCONFIGURED_SYNC_STATE: SyncState = {
 }
 
 export type OutboxPayload =
-  | { kind: 'transaction'; transaction: Transaction }
-  | { kind: 'checkpoint'; snapshot: SnapshotUpload }
+  { kind: 'transaction'; transaction: Transaction } | { kind: 'checkpoint'; snapshot: SnapshotUpload }
 
 export interface OutboxEntry {
   /** `outbox:<zero-padded sequence>` — lexical key order is queue order. */
@@ -254,10 +254,7 @@ export class Outbox {
     return this.enqueue(projectId, document.id, { kind: 'transaction', transaction }, document)
   }
 
-  queueCheckpoint(
-    projectId: string,
-    document: ModelDocument,
-  ): Promise<CloudResult<OutboxEntry>> {
+  queueCheckpoint(projectId: string, document: ModelDocument): Promise<CloudResult<OutboxEntry>> {
     const snapshot = snapshotUploadFor(document)
     return this.enqueue(projectId, document.id, { kind: 'checkpoint', snapshot }, document)
   }
@@ -303,9 +300,7 @@ export class Outbox {
           status: conflict ? 'conflict' : 'error',
           reason: entry.lastError?.message ?? 'A queued change needs attention.',
           lastError: entry.lastError,
-          conflict: conflict
-            ? ((entry.lastError?.details as StaleDocumentDetails | undefined) ?? null)
-            : null,
+          conflict: conflict ? ((entry.lastError?.details as StaleDocumentDetails | undefined) ?? null) : null,
           blocked: { projectId: entry.projectId, localProjectId: entry.localProjectId },
         })
         return this.getState()
@@ -318,9 +313,32 @@ export class Outbox {
         return this.getState()
       }
 
-      const verdict = await this.send(entry)
+      const { verdict, sent } = await this.sendNext()
       if (verdict.ok) {
-        await this.forget(entry)
+        try {
+          // Delete only verified receipts. If local persistence fails part-way,
+          // remaining ids are safe to retry after reload or the next drain.
+          for (const acknowledged of sent) await this.forget(acknowledged)
+        } catch {
+          const pending = this.entries[0]
+          if (pending) {
+            pending.attempts += 1
+            pending.nextAttemptAt =
+              this.now() + Math.min(this.baseDelayMs * 2 ** Math.min(pending.attempts - 1, 16), this.ceilingDelayMs)
+          }
+          const failure = cloudFailure(
+            'TRANSPORT_FAILED',
+            'The cloud saved the edits, but this browser could not persist their acknowledgements.',
+            'Retry after local storage recovers; the original ids prevent duplicate edits.',
+          )
+          this.publish({
+            status: 'error',
+            reason: failure.error.message,
+            lastError: failure.error,
+            blocked: pending ? { projectId: pending.projectId, localProjectId: pending.localProjectId } : null,
+          })
+          return this.getState()
+        }
         this.publish({
           status: this.entries.length > 0 ? 'syncing' : 'idle',
           reason: this.entries.length > 0 ? `Sending ${this.entries.length} change(s).` : null,
@@ -353,10 +371,7 @@ export class Outbox {
       }
 
       if (TRANSIENT.has(error.code)) {
-        const delay = Math.min(
-          this.baseDelayMs * 2 ** Math.min(entry.attempts - 1, 16),
-          this.ceilingDelayMs,
-        )
+        const delay = Math.min(this.baseDelayMs * 2 ** Math.min(entry.attempts - 1, 16), this.ceilingDelayMs)
         entry.nextAttemptAt = this.now() + delay
         await this.persist(entry)
         this.publish({
@@ -386,6 +401,60 @@ export class Outbox {
     return this.getState()
   }
 
+  /** Batches adjacent ready edits only: never across a checkpoint, project,
+   * local history, schema/catalogue boundary, parked item, or revision gap. */
+  private async sendNext(): Promise<{ verdict: CloudResult<null>; sent: OutboxEntry[] }> {
+    const first = this.entries[0]
+    if (first.payload.kind !== 'transaction' || !this.backend.appendTransactions) {
+      return { verdict: await this.send(first), sent: [first] }
+    }
+    const candidates: OutboxEntry[] = []
+    const payloads = []
+    let revision = first.payload.transaction.baseRevision
+    for (const entry of this.entries) {
+      if (
+        entry.payload.kind !== 'transaction' ||
+        entry.projectId !== first.projectId ||
+        entry.localProjectId !== first.localProjectId ||
+        entry.schemaVersion !== first.schemaVersion ||
+        entry.catalogVersion !== first.catalogVersion ||
+        entry.parked ||
+        entry.nextAttemptAt > this.now() ||
+        entry.payload.transaction.baseRevision !== revision ||
+        transactionChecksum(entry.payload.transaction) !== entry.checksum
+      )
+        break
+      const transaction = entry.payload.transaction
+      candidates.push(entry)
+      payloads.push({
+        clientTransactionId: transaction.id,
+        baseRevision: transaction.baseRevision,
+        resultRevision: transaction.resultRevision,
+        transaction,
+        checksum: entry.checksum,
+        schemaVersion: entry.schemaVersion,
+        catalogVersion: entry.catalogVersion,
+      })
+      revision = transaction.resultRevision
+    }
+    if (!candidates.length) return { verdict: await this.send(first), sent: [first] }
+    const batch = transactionBatch({ projectId: first.projectId }, payloads, true)
+    const result = await sendTransactionBatch(this.backend, batch)
+    // A definitive data refusal wrote nothing. Send just the first edit to
+    // isolate a bad later entry, rather than blaming/discarding a valid head.
+    if (
+      !result.ok &&
+      batch.transactions.length > 1 &&
+      ['INVALID_ARGUMENT', 'CHECKSUM_MISMATCH', 'SCHEMA_MISMATCH', 'PAYLOAD_TOO_LARGE'].includes(result.error.code)
+    ) {
+      return { verdict: await this.send(first), sent: [first] }
+    }
+    return {
+      verdict: result.ok ? { ok: true, value: null } : result,
+      sent: candidates.slice(0, batch.transactions.length),
+    }
+  }
+
   private async send(entry: OutboxEntry): Promise<CloudResult<null>> {
     if (entry.payload.kind === 'checkpoint') {
       const result = await this.backend.saveCheckpoint({
@@ -407,15 +476,19 @@ export class Outbox {
         { key: entry.key },
       )
     }
-    const result = await this.backend.appendTransaction({
+    const result = await sendTransactionBatch(this.backend, {
       projectId: entry.projectId,
-      clientTransactionId: transaction.id,
-      baseRevision: transaction.baseRevision,
-      resultRevision: transaction.resultRevision,
-      transaction,
-      checksum: entry.checksum,
-      schemaVersion: entry.schemaVersion,
-      catalogVersion: entry.catalogVersion,
+      transactions: [
+        {
+          clientTransactionId: transaction.id,
+          baseRevision: transaction.baseRevision,
+          resultRevision: transaction.resultRevision,
+          transaction,
+          checksum: entry.checksum,
+          schemaVersion: entry.schemaVersion,
+          catalogVersion: entry.catalogVersion,
+        },
+      ],
     })
     return result.ok ? { ok: true, value: null } : result
   }
@@ -490,9 +563,7 @@ export class Outbox {
 
   /** Checksum over a payload, exposed so a caller can verify an entry it read. */
   static checksumFor(payload: OutboxPayload): string {
-    return payload.kind === 'transaction'
-      ? transactionChecksum(payload.transaction)
-      : payload.snapshot.checksum
+    return payload.kind === 'transaction' ? transactionChecksum(payload.transaction) : payload.snapshot.checksum
   }
 
   /** Digest of the whole queue, for a "is my work sent?" indicator. */

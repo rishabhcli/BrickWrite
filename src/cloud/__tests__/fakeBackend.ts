@@ -1,8 +1,9 @@
 import { roleAllows, type Capability, type CloudRole } from '../../../convex/model/capabilities'
 import { canonicalJson, checksumOfText, utf8Bytes } from '../../../convex/model/checksum'
-import { validateSnapshotUpload } from '../../../convex/model/limits'
+import { decodeSnapshotUpload } from '../../../convex/model/snapshotValidation'
+import { readBranchHistory, verifyHistoryRecord } from '../../../convex/model/history'
 import { redactAuditDetail } from '../../../convex/model/redaction'
-import type { ModelDocument, Transaction } from '../../cad/types'
+import type { Transaction } from '../../cad/types'
 import {
   MAX_COMMENT_BYTES,
   MAX_TRANSACTION_BYTES,
@@ -13,6 +14,8 @@ import {
   type CloudAuditRecord,
   type CloudBackend,
   type CloudBranchRecord,
+  type CloudHistoryPage,
+  type ReadHistoryArgs,
   type CloudCommentRecord,
   type CloudErrorCode,
   type CloudErrorShape,
@@ -75,6 +78,7 @@ interface ProjectRow {
   createdAt: number
   updatedAt: number
   deletedAt?: number
+  creation?: { name: string; visibility: ProjectVisibility; snapshotGroupId?: string }
 }
 
 interface BranchRow {
@@ -213,12 +217,10 @@ export interface AuditRow {
   detail: Record<string, string | number | boolean>
 }
 
-const fail = <T>(
-  code: CloudErrorCode,
-  message: string,
-  repair: string,
-  details?: unknown,
-): CloudResult<T> => ({ ok: false, error: { code, message, repair, details } })
+const fail = <T>(code: CloudErrorCode, message: string, repair: string, details?: unknown): CloudResult<T> => ({
+  ok: false,
+  error: { code, message, repair, details },
+})
 
 const UNAUTHENTICATED: CloudErrorShape = {
   code: 'UNAUTHENTICATED',
@@ -233,16 +235,7 @@ const notFound = <T>(): CloudResult<T> =>
     'Check the project link, or ask its owner for access.',
   )
 
-const SWATCHES = [
-  '#f0a202',
-  '#3aa6b9',
-  '#c94f7c',
-  '#7cb342',
-  '#8a6fdf',
-  '#d95d39',
-  '#2e9e83',
-  '#b07d62',
-]
+const SWATCHES = ['#f0a202', '#3aa6b9', '#c94f7c', '#7cb342', '#8a6fdf', '#d95d39', '#2e9e83', '#b07d62']
 
 function swatchFor(subject: string): string {
   let hash = 0
@@ -326,9 +319,7 @@ export class FakeConvexDeployment {
   }
 
   membership(projectId: string, subject: string): MemberRow | undefined {
-    return this.members.find(
-      (member) => member.projectId === projectId && member.subject === subject,
-    )
+    return this.members.find((member) => member.projectId === projectId && member.subject === subject)
   }
 
   /**
@@ -400,7 +391,10 @@ export class FakeConvexDeployment {
     upload: SnapshotUpload
     createdBySubject: string
   }): CloudResult<string> {
-    const validated = validateSnapshotUpload(args.upload)
+    const project = this.projects.find((row) => row._id === args.projectId)
+    const validated = decodeSnapshotUpload(args.upload, project && {
+      localProjectId: project.localProjectId, schemaVersion: project.schemaVersion,
+    })
     if (!validated.ok) return validated
     const groupId = this.id('snapgroup')
     const createdAt = this.now()
@@ -459,13 +453,13 @@ export class FakeConvexDeployment {
         'Restore an earlier version; this one is corrupt.',
       )
     }
-    let document: ModelDocument
-    try {
-      document = JSON.parse(text) as ModelDocument
-    } catch {
+    const project = this.projects.find((row) => row._id === projectId)
+    const decoded = decodeSnapshotUpload({ ...first, chunks: [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex).map((row) => row.data) },
+      project && { localProjectId: project.localProjectId, schemaVersion: project.schemaVersion })
+    if (!decoded.ok) {
       return fail(
-        'CHECKSUM_MISMATCH',
-        'The stored checkpoint is not valid JSON.',
+        'INCOMPLETE_SNAPSHOT',
+        'The stored checkpoint is not a complete document matching its project and metadata.',
         'Restore an earlier version; this one is corrupt.',
       )
     }
@@ -483,7 +477,7 @@ export class FakeConvexDeployment {
         catalogVersion: first.catalogVersion,
         createdBySubject: first.createdBySubject,
         createdAt: this.iso(first.createdAt),
-        document,
+        document: decoded.value,
       },
     }
   }
@@ -703,6 +697,13 @@ class FakeConvexBackend implements CloudBackend {
     if (!name) {
       return fail('INVALID_ARGUMENT', 'A project needs a name.', 'Type a name and retry.')
     }
+    if (!args.localProjectId.trim() || !args.catalogVersion.trim() || args.schemaVersion !== 2) {
+      return fail(args.schemaVersion !== 2 ? 'SCHEMA_MISMATCH' : 'INVALID_ARGUMENT',
+        'A cloud project needs a document id, catalogue version and supported schema.',
+        'Create the project from a complete schema-2 document.')
+    }
+    const seed = args.snapshot ? decodeSnapshotUpload(args.snapshot, args) : undefined
+    if (seed && !seed.ok) return seed
     const existing = this.db.projects.find(
       (project) =>
         project.ownerSubject === this.identity?.subject &&
@@ -710,6 +711,18 @@ class FakeConvexBackend implements CloudBackend {
         project.deletedAt === undefined,
     )
     if (existing) {
+      if (args.resumeExisting && seed?.ok && existing.creation?.snapshotGroupId &&
+          existing.creation.name === name && existing.creation.visibility === (args.visibility ?? 'private')) {
+        const authorised = this.authorise(existing._id, 'transaction.write')
+        if (!authorised.ok) return authorised
+        const initial = this.db.readSnapshot(existing.creation.snapshotGroupId, existing._id)
+        if (!initial.ok) return initial
+        if (canonicalJson(initial.value.document) === canonicalJson(seed.value)) {
+          const branch = this.db.branch(existing)
+          if (!branch.ok) return branch
+          return { ok: true, value: this.db.summarise(existing, authorised.value.role) }
+        }
+      }
       return fail(
         'NAME_TAKEN',
         'This account already has a cloud copy of that local project.',
@@ -733,6 +746,7 @@ class FakeConvexBackend implements CloudBackend {
       catalogVersion: args.catalogVersion,
       createdAt: now,
       updatedAt: now,
+      creation: { name, visibility: args.visibility ?? 'private' },
     }
     if (args.snapshot) {
       const written = this.db.writeSnapshot({
@@ -742,9 +756,9 @@ class FakeConvexBackend implements CloudBackend {
         upload: args.snapshot,
         createdBySubject: this.identity.subject,
       })
-      // The real mutation is one transaction, so a refused snapshot leaves no
-      // project behind. Validating before any row is pushed reproduces that.
+      // Expected refusals have already been validated, before any rows.
       if (!written.ok) return written
+      project.creation!.snapshotGroupId = written.value
     }
     this.db.projects.push(project)
     this.db.branches.push({
@@ -773,10 +787,7 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: this.db.summarise(project, 'owner') }
   }
 
-  async renameProject(args: {
-    projectId: string
-    name: string
-  }): Promise<CloudResult<CloudProjectSummary>> {
+  async renameProject(args: { projectId: string; name: string }): Promise<CloudResult<CloudProjectSummary>> {
     const offline = this.guard<CloudProjectSummary>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'project.rename')
@@ -836,6 +847,13 @@ class FakeConvexBackend implements CloudBackend {
     const { project, identity } = authorised.value
     const branch = this.db.branch(project, args.branchId)
     if (!branch.ok) return branch
+    const valid = decodeSnapshotUpload(args.snapshot, { localProjectId: project.localProjectId, schemaVersion: project.schemaVersion })
+    if (!valid.ok) return valid
+    if (args.snapshot.revision > branch.value.headRevision) {
+      return fail('STALE_DOCUMENT', 'A checkpoint cannot precede the transactions that establish its revision.',
+        'Sync the missing transactions before retrying this checkpoint; keep the local copy.',
+        { headRevision: branch.value.headRevision, branchId: branch.value._id })
+    }
     const written = this.db.writeSnapshot({
       projectId: project._id,
       branchId: branch.value._id,
@@ -861,7 +879,9 @@ class FakeConvexBackend implements CloudBackend {
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'project.read')
     if (!authorised.ok) return authorised
-    const ceiling = args.atRevision ?? Number.MAX_SAFE_INTEGER
+    const branch = this.db.branch(authorised.value.project, args.branchId)
+    if (!branch.ok) return branch
+    const ceiling = Math.min(args.atRevision ?? branch.value.headRevision, branch.value.headRevision)
     const candidates = this.db.snapshots
       .filter(
         (row) =>
@@ -869,7 +889,7 @@ class FakeConvexBackend implements CloudBackend {
           row.kind === 'checkpoint' &&
           row.chunkIndex === 0 &&
           row.revision <= ceiling &&
-          (!args.branchId || row.branchId === args.branchId),
+          row.branchId === branch.value._id,
       )
       .sort((a, b) => b.revision - a.revision || b.createdAt - a.createdAt)
     const newest = candidates[0]
@@ -877,10 +897,7 @@ class FakeConvexBackend implements CloudBackend {
     return this.db.readSnapshot(newest.groupId, authorised.value.project._id)
   }
 
-  async auditTrail(args: {
-    projectId: string
-    limit?: number
-  }): Promise<CloudResult<CloudAuditRecord[]>> {
+  async auditTrail(args: { projectId: string; limit?: number }): Promise<CloudResult<CloudAuditRecord[]>> {
     const offline = this.guard<CloudAuditRecord[]>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'audit.read')
@@ -901,9 +918,7 @@ class FakeConvexBackend implements CloudBackend {
    * revision cannot interleave: the second sees the head the first advanced and
    * is refused with `STALE_DOCUMENT`.
    */
-  async appendTransaction(
-    args: AppendTransactionArgs,
-  ): Promise<CloudResult<AppendTransactionValue>> {
+  async appendTransaction(args: AppendTransactionArgs): Promise<CloudResult<AppendTransactionValue>> {
     const offline = this.guard<AppendTransactionValue>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'transaction.write')
@@ -954,6 +969,14 @@ class FakeConvexBackend implements CloudBackend {
         { expected: args.checksum, actual: digest },
       )
     }
+
+    const replayable = verifyHistoryRecord(args, args.baseRevision)
+    if (!replayable.ok)
+      return fail(
+        'INVALID_ARGUMENT',
+        replayable.error.message,
+        'Re-derive the complete transaction from the engine; its id, revisions and patch must match the request.',
+      )
 
     const branchResult = this.db.branch(project, args.branchId)
     if (!branchResult.ok) return branchResult
@@ -1049,6 +1072,32 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: rows.map((row) => this.db.transactionRecord(row)) }
   }
 
+  async readHistory(args: ReadHistoryArgs): Promise<CloudResult<CloudHistoryPage>> {
+    const offline = this.guard<CloudHistoryPage>()
+    if (offline) return offline
+    const authorised = this.authorise(args.projectId, 'project.read')
+    if (!authorised.ok) return authorised
+    const branch = this.db.branch(authorised.value.project, args.branchId)
+    if (!branch.ok) return branch
+    const db = this.db
+    return readBranchHistory(
+      {
+        async branch(id) {
+          const row = db.branches.find((row) => row._id === id)
+          return row ? db.branchRecord(row) : null
+        },
+        async *transactions(branchId, after, through) {
+          const rows = db.transactions
+            .filter((row) => row.branchId === branchId && row.resultRevision > after && row.resultRevision <= through)
+            .sort((a, b) => a.resultRevision - b.resultRevision)
+          for (const row of rows) yield db.transactionRecord(row)
+        },
+      },
+      db.branchRecord(branch.value),
+      args,
+    )
+  }
+
   async findTransaction(args: {
     projectId: string
     branchId?: string
@@ -1090,16 +1139,11 @@ class FakeConvexBackend implements CloudBackend {
     if (!name) {
       return fail('INVALID_ARGUMENT', 'A branch needs a name.', 'Name the branch and retry.')
     }
-    const clash = this.db.branches.find(
-      (row) => row.projectId === project._id && row.name === name,
-    )
+    const clash = this.db.branches.find((row) => row.projectId === project._id && row.name === name)
     if (clash) {
-      return fail(
-        'NAME_TAKEN',
-        'This project already has a branch with that name.',
-        'Choose another name.',
-        { branchId: clash._id },
-      )
+      return fail('NAME_TAKEN', 'This project already has a branch with that name.', 'Choose another name.', {
+        branchId: clash._id,
+      })
     }
     const parent = this.db.branch(project, args.fromBranchId)
     if (!parent.ok) return parent
@@ -1190,11 +1234,7 @@ class FakeConvexBackend implements CloudBackend {
     const target = this.db.branch(project, args.intoBranchId)
     if (!target.ok) return target
     if (source.value._id === target.value._id) {
-      return fail(
-        'INVALID_ARGUMENT',
-        'A branch cannot be merged into itself.',
-        'Pick a different target branch.',
-      )
+      return fail('INVALID_ARGUMENT', 'A branch cannot be merged into itself.', 'Pick a different target branch.')
     }
     if (source.value.proposal?.status === 'open') {
       return fail(
@@ -1235,18 +1275,10 @@ class FakeConvexBackend implements CloudBackend {
     if (!source.ok) return source
     const branch = source.value
     if (!branch.proposal || branch.proposal.status !== 'open') {
-      return fail(
-        'NOT_FOUND',
-        'That branch has no open merge proposal.',
-        'Open a proposal before deciding on one.',
-      )
+      return fail('NOT_FOUND', 'That branch has no open merge proposal.', 'Open a proposal before deciding on one.')
     }
     if (args.decision === 'withdrawn' && branch.proposal.proposedBySubject !== identity.subject) {
-      return fail(
-        'FORBIDDEN',
-        'Only the author of a proposal may withdraw it.',
-        'Ask an owner to reject it instead.',
-      )
+      return fail('FORBIDDEN', 'Only the author of a proposal may withdraw it.', 'Ask an owner to reject it instead.')
     }
     const now = this.db.stamp()
     branch.proposal = {
@@ -1276,9 +1308,7 @@ class FakeConvexBackend implements CloudBackend {
     }
     const branch = this.db.branch(project, args.branchId)
     if (!branch.ok) return branch
-    const clash = this.db.versions.find(
-      (row) => row.projectId === project._id && row.label === label,
-    )
+    const clash = this.db.versions.find((row) => row.projectId === project._id && row.label === label)
     if (clash) {
       return fail(
         'NAME_TAKEN',
@@ -1327,10 +1357,7 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: rows.map((row) => this.db.versionRecord(row)) }
   }
 
-  async versionDocument(args: {
-    projectId: string
-    versionId: string
-  }): Promise<CloudResult<CloudSnapshotRecord>> {
+  async versionDocument(args: { projectId: string; versionId: string }): Promise<CloudResult<CloudSnapshotRecord>> {
     const offline = this.guard<CloudSnapshotRecord>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'project.read')
@@ -1387,11 +1414,7 @@ class FakeConvexBackend implements CloudBackend {
     }
     const membership = this.db.membership(project._id, args.subject)
     if (!membership) {
-      return fail(
-        'NOT_FOUND',
-        'That account is not a member of this project.',
-        'Invite them first.',
-      )
+      return fail('NOT_FOUND', 'That account is not a member of this project.', 'Invite them first.')
     }
     membership.role = args.role
     this.db.audit(project._id, identity.subject, 'member.setRole', {
@@ -1401,18 +1424,12 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: this.db.memberRecord(membership) }
   }
 
-  async removeMember(args: {
-    projectId: string
-    subject: string
-  }): Promise<CloudResult<{ removed: boolean }>> {
+  async removeMember(args: { projectId: string; subject: string }): Promise<CloudResult<{ removed: boolean }>> {
     const offline = this.guard<{ removed: boolean }>()
     if (offline) return offline
     if (!this.identity) return { ok: false, error: UNAUTHENTICATED }
     const leaving = this.identity.subject === args.subject
-    const authorised = this.authorise(
-      args.projectId,
-      leaving ? 'project.read' : 'member.remove',
-    )
+    const authorised = this.authorise(args.projectId, leaving ? 'project.read' : 'member.remove')
     if (!authorised.ok) return authorised
     const { project, identity } = authorised.value
     if (args.subject === project.ownerSubject) {
@@ -1422,9 +1439,7 @@ class FakeConvexBackend implements CloudBackend {
         'The owner cannot leave this project. Delete it instead, or keep the owner account signed in.',
       )
     }
-    const index = this.db.members.findIndex(
-      (row) => row.projectId === project._id && row.subject === args.subject,
-    )
+    const index = this.db.members.findIndex((row) => row.projectId === project._id && row.subject === args.subject)
     if (index < 0) return { ok: true, value: { removed: false } }
     this.db.members.splice(index, 1)
     for (let cursor = this.db.presence.length - 1; cursor >= 0; cursor -= 1) {
@@ -1433,25 +1448,16 @@ class FakeConvexBackend implements CloudBackend {
         this.db.presence.splice(cursor, 1)
       }
     }
-    this.db.audit(
-      project._id,
-      identity.subject,
-      leaving ? 'member.leave' : 'member.remove',
-      { subject: args.subject },
-    )
+    this.db.audit(project._id, identity.subject, leaving ? 'member.leave' : 'member.remove', { subject: args.subject })
     return { ok: true, value: { removed: true } }
   }
 
-  async listInvitations(args: {
-    projectId: string
-  }): Promise<CloudResult<CloudInvitationRecord[]>> {
+  async listInvitations(args: { projectId: string }): Promise<CloudResult<CloudInvitationRecord[]>> {
     const offline = this.guard<CloudInvitationRecord[]>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'member.invite')
     if (!authorised.ok) return authorised
-    const rows = this.db.invitations.filter(
-      (row) => row.projectId === authorised.value.project._id,
-    )
+    const rows = this.db.invitations.filter((row) => row.projectId === authorised.value.project._id)
     return { ok: true, value: rows.map((row) => this.db.invitationRecord(row)) }
   }
 
@@ -1467,11 +1473,7 @@ class FakeConvexBackend implements CloudBackend {
     const { project, identity } = authorised.value
     const email = args.email.trim().toLowerCase()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return fail(
-        'INVALID_ARGUMENT',
-        'That does not look like an email address.',
-        'Check the address and retry.',
-      )
+      return fail('INVALID_ARGUMENT', 'That does not look like an email address.', 'Check the address and retry.')
     }
     const duplicate = this.db.invitations.find(
       (row) => row.projectId === project._id && row.email === email && row.status === 'pending',
@@ -1517,11 +1519,7 @@ class FakeConvexBackend implements CloudBackend {
     const { project, identity } = authorised.value
     const invitation = this.db.invitations.find((row) => row._id === args.invitationId)
     if (!invitation || invitation.projectId !== project._id) {
-      return fail(
-        'NOT_FOUND',
-        'That invitation does not belong to this project.',
-        'Reload the invitation list.',
-      )
+      return fail('NOT_FOUND', 'That invitation does not belong to this project.', 'Reload the invitation list.')
     }
     if (invitation.status !== 'pending') return { ok: true, value: { revoked: false } }
     invitation.status = 'revoked'
@@ -1545,11 +1543,7 @@ class FakeConvexBackend implements CloudBackend {
     }
     if (invitation.expiresAt < this.db.stamp()) {
       invitation.status = 'expired'
-      return fail(
-        'NOT_FOUND',
-        'That invitation has expired.',
-        'Ask the project owner to send a fresh invitation.',
-      )
+      return fail('NOT_FOUND', 'That invitation has expired.', 'Ask the project owner to send a fresh invitation.')
     }
     const project = this.db.project(invitation.projectId)
     if (!project) {
@@ -1597,19 +1591,13 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: rows.map((row) => this.db.commentRecord(row)) }
   }
 
-  async commentsForPart(args: {
-    projectId: string
-    partId: string
-  }): Promise<CloudResult<CloudCommentRecord[]>> {
+  async commentsForPart(args: { projectId: string; partId: string }): Promise<CloudResult<CloudCommentRecord[]>> {
     const offline = this.guard<CloudCommentRecord[]>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'comment.read')
     if (!authorised.ok) return authorised
     const rows = this.db.comments
-      .filter(
-        (row) =>
-          row.projectId === authorised.value.project._id && row.anchor.partId === args.partId,
-      )
+      .filter((row) => row.projectId === authorised.value.project._id && row.anchor.partId === args.partId)
       .sort((a, b) => a.createdAt - b.createdAt)
     return { ok: true, value: rows.map((row) => this.db.commentRecord(row)) }
   }
@@ -1638,11 +1626,7 @@ class FakeConvexBackend implements CloudBackend {
     if (args.replyToId) {
       const parent = this.db.comments.find((row) => row._id === args.replyToId)
       if (!parent || parent.projectId !== project._id) {
-        return fail(
-          'NOT_FOUND',
-          'The comment being replied to is not in this project.',
-          'Reload the comment thread.',
-        )
+        return fail('NOT_FOUND', 'The comment being replied to is not in this project.', 'Reload the comment thread.')
       }
       replyToId = parent._id
     }
@@ -1680,11 +1664,7 @@ class FakeConvexBackend implements CloudBackend {
     const { project, identity } = reader.value
     const comment = this.db.comments.find((row) => row._id === args.commentId)
     if (!comment || comment.projectId !== project._id) {
-      return fail(
-        'NOT_FOUND',
-        'That comment is not in this project.',
-        'Reload the comment list.',
-      )
+      return fail('NOT_FOUND', 'That comment is not in this project.', 'Reload the comment list.')
     }
     if (comment.authorSubject !== identity.subject) {
       const authorised = this.authorise(args.projectId, 'comment.resolve')
@@ -1703,9 +1683,7 @@ class FakeConvexBackend implements CloudBackend {
 
   // -- presence ------------------------------------------------------------
 
-  async presenceHeartbeat(
-    args: PresenceHeartbeatArgs,
-  ): Promise<CloudResult<CloudPresenceRecord>> {
+  async presenceHeartbeat(args: PresenceHeartbeatArgs): Promise<CloudResult<CloudPresenceRecord>> {
     const offline = this.guard<CloudPresenceRecord>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'presence.publish')
@@ -1719,15 +1697,9 @@ class FakeConvexBackend implements CloudBackend {
       )
     }
     const now = this.db.stamp()
-    const existing = this.db.presence.find(
-      (row) => row.projectId === project._id && row.sessionId === args.sessionId,
-    )
+    const existing = this.db.presence.find((row) => row.projectId === project._id && row.sessionId === args.sessionId)
     if (existing && existing.subject !== identity.subject) {
-      return fail(
-        'FORBIDDEN',
-        'That session id belongs to another account.',
-        'Mint a fresh session id for this tab.',
-      )
+      return fail('FORBIDDEN', 'That session id belongs to another account.', 'Mint a fresh session id for this tab.')
     }
     const fields = {
       projectId: project._id,
@@ -1754,24 +1726,17 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: this.db.presenceRecord(row) }
   }
 
-  async listPresence(args: {
-    projectId: string
-  }): Promise<CloudResult<CloudPresenceRecord[]>> {
+  async listPresence(args: { projectId: string }): Promise<CloudResult<CloudPresenceRecord[]>> {
     const offline = this.guard<CloudPresenceRecord[]>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'presence.publish')
     if (!authorised.ok) return authorised
     const at = this.db.stamp()
-    const rows = this.db.presence.filter(
-      (row) => row.projectId === authorised.value.project._id && row.expiresAt > at,
-    )
+    const rows = this.db.presence.filter((row) => row.projectId === authorised.value.project._id && row.expiresAt > at)
     return { ok: true, value: rows.map((row) => this.db.presenceRecord(row)) }
   }
 
-  async presenceLeave(args: {
-    projectId: string
-    sessionId: string
-  }): Promise<CloudResult<{ left: boolean }>> {
+  async presenceLeave(args: { projectId: string; sessionId: string }): Promise<CloudResult<{ left: boolean }>> {
     const offline = this.guard<{ left: boolean }>()
     if (offline) return offline
     const authorised = this.authorise(args.projectId, 'presence.publish')

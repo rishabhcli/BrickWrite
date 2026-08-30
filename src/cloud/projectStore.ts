@@ -25,13 +25,10 @@ import {
 } from './protocol'
 import { claimLocalProject, type ClaimOutcome } from './claim'
 import { Outbox, type SyncState } from './outbox'
-import {
-  executeConflictFork,
-  planRebase,
-  type ConflictFork,
-  type ScopeOverlap,
-} from './rebase'
+import { executeConflictFork, planRebase, type ConflictFork, type ScopeOverlap } from './rebase'
 import { snapshotUploadFor, transactionChecksum } from './serialize'
+import { readCompleteHistory } from './history'
+import { incompleteHistory } from '../../convex/model/history'
 
 /**
  * One project interface, two implementations.
@@ -102,14 +99,8 @@ export interface ProjectStore {
    * ignores the option; the cloud store must be told, because a conflict fork
    * has its own checkpoint and its own log.
    */
-  loadProject(
-    projectId: string,
-    options?: { branchId?: string },
-  ): Promise<CloudResult<StoredLoadedProject | null>>
-  appendTransaction(
-    projectId: string,
-    transaction: Transaction,
-  ): Promise<CloudResult<AppendOutcome>>
+  loadProject(projectId: string, options?: { branchId?: string }): Promise<CloudResult<StoredLoadedProject | null>>
+  appendTransaction(projectId: string, transaction: Transaction): Promise<CloudResult<AppendOutcome>>
   saveCheckpoint(document: ModelDocument): Promise<CloudResult<CheckpointOutcome>>
   deleteProject(projectId: string): Promise<CloudResult<{ deleted: boolean }>>
   renameProject(projectId: string, name: string): Promise<CloudResult<StoredProjectSummary>>
@@ -138,20 +129,14 @@ export interface ProjectStore {
   ): Promise<CloudResult<CloudMemberRecord>>
   removeMember(projectId: string, subject: string): Promise<CloudResult<{ removed: boolean }>>
   myRole(projectId: string): Promise<CloudResult<CloudRole | null>>
-  setVisibility(
-    projectId: string,
-    visibility: ProjectVisibility,
-  ): Promise<CloudResult<StoredProjectSummary>>
+  setVisibility(projectId: string, visibility: ProjectVisibility): Promise<CloudResult<StoredProjectSummary>>
   listInvitations(projectId: string): Promise<CloudResult<CloudInvitationRecord[]>>
   createInvitation(
     projectId: string,
     email: string,
     role: Exclude<CloudRole, 'owner'>,
   ): Promise<CloudResult<CloudInvitationRecord>>
-  revokeInvitation(
-    projectId: string,
-    invitationId: string,
-  ): Promise<CloudResult<{ revoked: boolean }>>
+  revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>>
 
   listComments(projectId: string): Promise<CloudResult<CloudCommentRecord[]>>
   addComment(
@@ -243,10 +228,7 @@ export class LocalProjectStore implements ProjectStore {
     return log.reduce((head, entry) => Math.max(head, entry.resultRevision), checkpoint.revision)
   }
 
-  async appendTransaction(
-    projectId: string,
-    transaction: Transaction,
-  ): Promise<CloudResult<AppendOutcome>> {
+  async appendTransaction(projectId: string, transaction: Transaction): Promise<CloudResult<AppendOutcome>> {
     const head = await this.headRevision(projectId)
     if (head === null) {
       return cloudFailure(
@@ -300,11 +282,7 @@ export class LocalProjectStore implements ProjectStore {
     }
     const checkpoint = await this.readCheckpoint(projectId)
     if (!checkpoint) {
-      return cloudFailure(
-        'NOT_FOUND',
-        'That project is no longer in local storage.',
-        'Reload the project list.',
-      )
+      return cloudFailure('NOT_FOUND', 'That project is no longer in local storage.', 'Reload the project list.')
     }
     await this.repository.saveCheckpoint({ ...checkpoint.document, name: trimmed })
     const summaries = await this.repository.listProjects()
@@ -469,20 +447,31 @@ export class CloudProjectStore implements ProjectStore {
     })
     if (!checkpoint.ok) return checkpoint
     if (!checkpoint.value) return { ok: true, value: null }
+    if (checkpoint.value.projectId !== id || (options?.branchId && checkpoint.value.branchId !== options.branchId)) {
+      return incompleteHistory('The checkpoint belongs to a different project or branch.')
+    }
 
     let document = checkpoint.value.document
-    const log = await this.backend.listTransactions({
+    const log = await readCompleteHistory(this.backend, {
       projectId: id,
-      branchId: options?.branchId,
+      branchId: checkpoint.value.branchId ?? options?.branchId,
       sinceRevision: checkpoint.value.revision,
     })
     if (!log.ok) return log
+    if (document.revision !== checkpoint.value.revision || document.revision > log.value.headRevision) {
+      return incompleteHistory('The checkpoint does not match the branch history.')
+    }
 
     const replayed: Transaction[] = []
-    for (const record of log.value) {
+    for (const record of log.value.transactions) {
+      if (record.schemaVersion !== document.schemaVersion) {
+        return cloudFailure(
+          'SCHEMA_MISMATCH',
+          'The history uses a different document schema than its checkpoint.',
+          'Reload the application or restore a complete version; no partial model was opened.',
+        )
+      }
       const transaction = record.transaction
-      if (transaction.resultRevision <= document.revision) continue
-      if (!transaction.patch || transaction.patch.baseRevision !== document.revision) break
       document = applyMutations(document, transaction.patch.forward)
       document = {
         ...document,
@@ -497,10 +486,7 @@ export class CloudProjectStore implements ProjectStore {
     }
   }
 
-  async appendTransaction(
-    projectId: string,
-    transaction: Transaction,
-  ): Promise<CloudResult<AppendOutcome>> {
+  async appendTransaction(projectId: string, transaction: Transaction): Promise<CloudResult<AppendOutcome>> {
     const id = this.resolveId(projectId)
     const summary = await this.summaryFor(id)
     if (!summary.ok) return summary
@@ -596,10 +582,7 @@ export class CloudProjectStore implements ProjectStore {
     })
   }
 
-  async versionDocument(
-    projectId: string,
-    versionId: string,
-  ): Promise<CloudResult<ModelDocument>> {
+  async versionDocument(projectId: string, versionId: string): Promise<CloudResult<ModelDocument>> {
     const result = await this.backend.versionDocument({
       projectId: this.resolveId(projectId),
       versionId,
@@ -628,10 +611,7 @@ export class CloudProjectStore implements ProjectStore {
     return this.backend.myRole({ projectId: this.resolveId(projectId) })
   }
 
-  async setVisibility(
-    projectId: string,
-    visibility: ProjectVisibility,
-  ): Promise<CloudResult<StoredProjectSummary>> {
+  async setVisibility(projectId: string, visibility: ProjectVisibility): Promise<CloudResult<StoredProjectSummary>> {
     const result = await this.backend.setVisibility({ projectId: this.resolveId(projectId), visibility })
     if (!result.ok) return result
     this.remember([result.value])
@@ -650,10 +630,7 @@ export class CloudProjectStore implements ProjectStore {
     return this.backend.createInvitation({ projectId: this.resolveId(projectId), email, role })
   }
 
-  revokeInvitation(
-    projectId: string,
-    invitationId: string,
-  ): Promise<CloudResult<{ revoked: boolean }>> {
+  revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>> {
     return this.backend.revokeInvitation({ projectId: this.resolveId(projectId), invitationId })
   }
 
@@ -815,10 +792,7 @@ export class MirroredProjectStore implements ProjectStore {
    * is durable, whatever the network is doing. A queue refusal is reported in
    * the sync state rather than as a failed edit, because the edit did not fail.
    */
-  async appendTransaction(
-    projectId: string,
-    transaction: Transaction,
-  ): Promise<CloudResult<AppendOutcome>> {
+  async appendTransaction(projectId: string, transaction: Transaction): Promise<CloudResult<AppendOutcome>> {
     const local = await this.local.appendTransaction(projectId, transaction)
     if (!local.ok) return local
 
@@ -826,11 +800,7 @@ export class MirroredProjectStore implements ProjectStore {
     if (link && local.value.applied) {
       const checkpoint = await this.local.readCheckpoint(projectId)
       if (checkpoint) {
-        const queued = await this.outbox.queueTransaction(
-          link.cloudProjectId,
-          checkpoint.document,
-          transaction,
-        )
+        const queued = await this.outbox.queueTransaction(link.cloudProjectId, checkpoint.document, transaction)
         if (!queued.ok) {
           return { ok: true, value: { ...local.value, syncError: queued.error } }
         }
@@ -878,6 +848,11 @@ export class MirroredProjectStore implements ProjectStore {
     localProjectId: string,
     options?: { name?: string; visibility?: ProjectVisibility },
   ): Promise<CloudResult<ClaimOutcome>> {
+    const existing = await this.links.get(localProjectId)
+    if (existing) {
+      return cloudFailure('NAME_TAKEN', 'This local project is already linked to a cloud copy.',
+        'Open or sync the linked project instead of claiming it again.', { projectId: existing.cloudProjectId })
+    }
     const claimed = await claimLocalProject({
       local: this.local,
       backend: this.backend,
@@ -922,9 +897,7 @@ export class MirroredProjectStore implements ProjectStore {
     const queuedIds = new Set(
       this.outbox.pending
         .filter((entry) => entry.payload.kind === 'transaction')
-        .map((entry) =>
-          entry.payload.kind === 'transaction' ? entry.payload.transaction.id : '',
-        ),
+        .map((entry) => (entry.payload.kind === 'transaction' ? entry.payload.transaction.id : '')),
     )
     const missing = (await this.local.readLog(localProjectId))
       .filter((entry) => entry.resultRevision > remote.value.headRevision)
@@ -964,8 +937,9 @@ export class MirroredProjectStore implements ProjectStore {
         'Open the project so a checkpoint is written.',
       )
     }
-    const remote = await this.backend.listTransactions({
+    const remote = await readCompleteHistory(this.backend, {
       projectId: link.value.cloudProjectId,
+      branchId: link.value.branchId,
       sinceRevision: checkpoint.revision,
     })
     if (!remote.ok) return remote
@@ -978,7 +952,7 @@ export class MirroredProjectStore implements ProjectStore {
     const plan = planRebase({
       base: checkpoint.document,
       localTail,
-      remoteTail: remote.value.map((record) => record.transaction),
+      remoteTail: remote.value.transactions.map((record) => record.transaction),
     })
 
     if (plan.kind === 'up-to-date') return { ok: true, value: { kind: 'up-to-date' } }
@@ -996,11 +970,7 @@ export class MirroredProjectStore implements ProjectStore {
       await this.outbox.clearProject(link.value.cloudProjectId)
       await this.local.replaceHistory(checkpoint.document, [...plan.adoptedRemote, ...plan.rebased])
       for (const transaction of plan.rebased) {
-        const queued = await this.outbox.queueTransaction(
-          link.value.cloudProjectId,
-          checkpoint.document,
-          transaction,
-        )
+        const queued = await this.outbox.queueTransaction(link.value.cloudProjectId, checkpoint.document, transaction)
         if (!queued.ok) return queued
       }
       return {
@@ -1066,9 +1036,7 @@ export class MirroredProjectStore implements ProjectStore {
     document: ModelDocument,
     options?: { notes?: string; branchId?: string },
   ): Promise<CloudResult<CloudVersionRecord>> {
-    return this.cloudDelegate(projectId, (id) =>
-      this.cloud.createVersion(id, label, document, options),
-    )
+    return this.cloudDelegate(projectId, (id) => this.cloud.createVersion(id, label, document, options))
   }
 
   versionDocument(projectId: string, versionId: string): Promise<CloudResult<ModelDocument>> {
@@ -1095,10 +1063,7 @@ export class MirroredProjectStore implements ProjectStore {
     return this.cloudDelegate(projectId, (id) => this.cloud.myRole(id))
   }
 
-  setVisibility(
-    projectId: string,
-    visibility: ProjectVisibility,
-  ): Promise<CloudResult<StoredProjectSummary>> {
+  setVisibility(projectId: string, visibility: ProjectVisibility): Promise<CloudResult<StoredProjectSummary>> {
     return this.cloudDelegate(projectId, (id) => this.cloud.setVisibility(id, visibility))
   }
 
@@ -1114,10 +1079,7 @@ export class MirroredProjectStore implements ProjectStore {
     return this.cloudDelegate(projectId, (id) => this.cloud.createInvitation(id, email, role))
   }
 
-  revokeInvitation(
-    projectId: string,
-    invitationId: string,
-  ): Promise<CloudResult<{ revoked: boolean }>> {
+  revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>> {
     return this.cloudDelegate(projectId, (id) => this.cloud.revokeInvitation(id, invitationId))
   }
 

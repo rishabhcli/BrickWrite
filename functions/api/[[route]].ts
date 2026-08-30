@@ -100,6 +100,7 @@ export const onRequest = async (context: { request: Request; env: ApiProxyEnv })
       method: request.method,
       headers,
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+      signal: request.signal,
       redirect: 'manual',
     })
     const responseHeaders = new Headers(upstream.headers)
@@ -115,4 +116,3 @@ export const onRequest = async (context: { request: Request; env: ApiProxyEnv })
     return json(502, { error: 'api_unreachable', detail: 'The model API could not be reached.' })
   }
 }
-

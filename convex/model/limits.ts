@@ -18,6 +18,8 @@ import {
 
 /** Chunk rows stay well inside Convex's per-document limit even for wide characters. */
 export const MAX_CHUNK_BYTES = SNAPSHOT_CHUNK_BYTES * 2
+/** Bounds row writes even when a caller sends thousands of tiny/empty chunks. */
+export const MAX_SNAPSHOT_CHUNKS = 64
 
 /**
  * Checks an upload and returns the reassembled text.
@@ -27,6 +29,18 @@ export const MAX_CHUNK_BYTES = SNAPSHOT_CHUNK_BYTES * 2
  * and the loss would surface as a model that quietly lost parts.
  */
 export function validateSnapshotUpload(upload: SnapshotUpload): CloudResult<string> {
+  if (
+    !Number.isSafeInteger(upload.bytes) ||
+    upload.bytes < 0 ||
+    !Number.isSafeInteger(upload.revision) ||
+    upload.revision < 0
+  ) {
+    return cloudFailure(
+      'INVALID_ARGUMENT',
+      'Snapshot bytes and revision must be non-negative safe integers.',
+      'Re-serialize the document without changing its revision metadata.',
+    )
+  }
   if (upload.bytes > MAX_SNAPSHOT_BYTES) {
     return cloudFailure(
       'PAYLOAD_TOO_LARGE',
@@ -44,13 +58,32 @@ export function validateSnapshotUpload(upload: SnapshotUpload): CloudResult<stri
       'Re-serialize the document before uploading.',
     )
   }
+  if (upload.chunks.length > MAX_SNAPSHOT_CHUNKS) {
+    return cloudFailure(
+      'PAYLOAD_TOO_LARGE',
+      'The checkpoint has too many chunks.',
+      `Re-chunk at ${SNAPSHOT_CHUNK_BYTES} UTF-8 bytes per chunk.`,
+      { limit: MAX_SNAPSHOT_CHUNKS },
+    )
+  }
+  let total = 0
   for (const chunk of upload.chunks) {
-    if (utf8Bytes(chunk) > MAX_CHUNK_BYTES) {
+    const bytes = utf8Bytes(chunk)
+    total += bytes
+    if (bytes > MAX_CHUNK_BYTES) {
       return cloudFailure(
         'PAYLOAD_TOO_LARGE',
         'One checkpoint chunk exceeded the per-row ceiling.',
         `Re-chunk the document at ${SNAPSHOT_CHUNK_BYTES} UTF-8 bytes per chunk.`,
         { limit: MAX_CHUNK_BYTES },
+      )
+    }
+    if (total > MAX_SNAPSHOT_BYTES) {
+      return cloudFailure(
+        'PAYLOAD_TOO_LARGE',
+        'The actual snapshot bytes exceed the document ceiling.',
+        'Split the model into linked subassemblies, or keep this project local-only.',
+        { limit: MAX_SNAPSHOT_BYTES },
       )
     }
   }

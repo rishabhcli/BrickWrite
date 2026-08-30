@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { ModelProviderUnavailableError, hash32, type Provenance } from '../../src/platform/contracts.ts'
+import { boundedTimeout } from '../http/lifecycle.ts'
+import { ModelProviderUnavailableError, hash32, awaitWithAbort, type Provenance } from '../../src/platform/contracts.ts'
 import { kindForSchema, validatePayload, type PayloadKind } from './schema.ts'
 
 /**
@@ -39,9 +40,7 @@ const DEFAULT_TIMEOUT_MS = 120_000
 
 /** Redacts anything shaped like an Anthropic key from a string bound for a client. */
 export const redact = (text: string): string =>
-  text
-    .replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, 'sk-ant-***')
-    .replace(/\bBearer\s+[A-Za-z0-9._-]{8,}/gi, 'Bearer ***')
+  text.replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, 'sk-ant-***').replace(/\bBearer\s+[A-Za-z0-9._-]{8,}/gi, 'Bearer ***')
 
 export interface CompletionRequest {
   readonly system: string
@@ -95,11 +94,10 @@ export interface MessagesLike {
  * process environment deciding whether the suite passes.
  */
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ProviderConfig {
-  const timeout = Number(env.BRICKWRIGHT_GENERATION_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS)
   return {
     apiKey: env.ANTHROPIC_API_KEY,
     model: env.BRICKWRIGHT_GENERATION_MODEL ?? DEFAULT_MODEL,
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : DEFAULT_TIMEOUT_MS,
+    timeoutMs: boundedTimeout(env.BRICKWRIGHT_GENERATION_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
   }
 }
 
@@ -111,7 +109,7 @@ export class AnthropicGenerationProvider {
 
   constructor(config: ProviderConfig) {
     this.model = config.model ?? DEFAULT_MODEL
-    this.timeoutMs = config.timeoutMs && Number.isFinite(config.timeoutMs) ? config.timeoutMs : DEFAULT_TIMEOUT_MS
+    this.timeoutMs = boundedTimeout(config.timeoutMs, DEFAULT_TIMEOUT_MS)
     if (config.client) {
       this.messages = config.client
       return
@@ -119,8 +117,8 @@ export class AnthropicGenerationProvider {
     const apiKey = config.apiKey?.trim()
     if (!apiKey) {
       throw new ModelProviderUnavailableError(
-        'ANTHROPIC_API_KEY is not set in the API process, so generation cannot reach a model. '
-          + 'Set it in the environment that runs `npm run serve:api`.',
+        'ANTHROPIC_API_KEY is not set in the API process, so generation cannot reach a model. ' +
+          'Set it in the environment that runs `npm run serve:api`.',
       )
     }
     this.messages = new Anthropic({ apiKey, timeout: this.timeoutMs, maxRetries: 1 }).messages as MessagesLike
@@ -144,14 +142,13 @@ export class AnthropicGenerationProvider {
       ])
     }
 
-    const history: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      { role: 'user', content: request.prompt },
-    ]
+    const history: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: request.prompt }]
     let inputTokens = 0
     let outputTokens = 0
     let problems: string[] = []
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      request.signal?.throwIfAborted()
       request.onProgress?.(attempt === 1 ? 'calling model' : 'retrying after a schema violation')
       const message = await this.call(request, history)
       inputTokens += message.usage?.input_tokens ?? 0
@@ -203,6 +200,7 @@ export class AnthropicGenerationProvider {
     request: CompletionRequest,
     history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>,
   ): Promise<AnthropicMessageShape> {
+    request.signal?.throwIfAborted()
     const body = {
       model: this.model,
       max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -223,7 +221,7 @@ export class AnthropicGenerationProvider {
       ...(request.signal ? { signal: request.signal } : {}),
       timeout: this.timeoutMs,
     }
-    return (await this.messages.create(body, options)) as AnthropicMessageShape
+    return (await awaitWithAbort(this.messages.create(body, options), request.signal)) as AnthropicMessageShape
   }
 }
 

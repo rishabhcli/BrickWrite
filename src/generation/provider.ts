@@ -1,16 +1,15 @@
 import {
   ModelProviderUnavailableError,
+  awaitWithAbort,
+  deadlineSignal,
+  readResponseJson,
   type DesignBrief,
   type ModelProvider,
   type ModelRequest,
   type ModelResult,
   type Provenance,
 } from '../platform/contracts'
-import {
-  hexclaveAuthorizationHeader,
-  readNdjsonLines,
-  type AuthorizationHeaderSource,
-} from '../platform'
+import { hexclaveAuthorizationHeader, readNdjsonLines, type AuthorizationHeaderSource } from '../platform'
 
 /**
  * The browser side of the model seam.
@@ -58,7 +57,7 @@ export interface GenerationClientOptions {
 }
 
 const DEFAULT_MODEL = 'claude-sonnet-5'
-const DEFAULT_TIMEOUT_MS = 120_000
+const DEFAULT_TIMEOUT_MS = 180_000
 
 /** Server error codes that mean "no credential", not "something went wrong". */
 const UNAVAILABLE_CODES = new Set(['model_provider_unavailable', 'no_api_key'])
@@ -159,48 +158,48 @@ async function postStream(
     )
   }
 
-  const controller = new AbortController()
-  const abort = () => controller.abort()
-  signal?.addEventListener('abort', abort, { once: true })
-  const timeout = setTimeout(abort, options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  const lifetime = deadlineSignal(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal)
 
   let response: Response
   try {
-    // A supplied fetch is a test/host seam and must not unexpectedly reach the
-    // ambient account service. Hosts that need both provide both explicitly.
-    const authorization = await (
-      options.authorizationHeader ?? (options.fetchImpl ? async () => null : hexclaveAuthorizationHeader)
-    )()
-    response = await fetchImpl(`${options.baseUrl ?? ''}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/x-ndjson',
-        ...(authorization ? { authorization } : {}),
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-  } catch (cause) {
-    clearTimeout(timeout)
-    signal?.removeEventListener('abort', abort)
-    if (signal?.aborted) throw cause
-    throw new ModelProviderUnavailableError(
-      `The generation route at ${options.baseUrl ?? ''}${path} could not be reached: ${describe(cause)}`,
-    )
-  }
+    try {
+      lifetime.signal.throwIfAborted()
+      // A supplied fetch is a test/host seam and must not unexpectedly reach the
+      // ambient account service. Hosts that need both provide both explicitly.
+      const authorization = await awaitWithAbort(
+        (options.authorizationHeader ?? (options.fetchImpl ? async () => null : hexclaveAuthorizationHeader))(),
+        lifetime.signal,
+      )
+      lifetime.signal.throwIfAborted()
+      response = await awaitWithAbort(
+        fetchImpl(`${options.baseUrl ?? ''}${path}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/x-ndjson',
+            ...(authorization ? { authorization } : {}),
+          },
+          body: JSON.stringify(body),
+          signal: lifetime.signal,
+        }),
+        lifetime.signal,
+      )
+    } catch (cause) {
+      if (lifetime.signal.aborted) throw lifetime.signal.reason
+      throw new ModelProviderUnavailableError(
+        `The generation route at ${options.baseUrl ?? ''}${path} could not be reached: ${describe(cause)}`,
+      )
+    }
 
-  try {
     if (!response.ok && response.status !== 200) {
-      const payload = await safeJson(response)
+      const payload = await awaitWithAbort(safeJson(response, lifetime.signal), lifetime.signal)
       const code = typeof payload?.error === 'string' ? payload.error : `http_${response.status}`
       const detail = typeof payload?.detail === 'string' ? payload.detail : `HTTP ${response.status}`
       if (UNAVAILABLE_CODES.has(code)) throw new ModelProviderUnavailableError(detail)
       throw new Error(`Generation request failed (${code}): ${detail}`)
     }
 
-    const events = await readNdjson(response, options.onProgress)
-    const terminal = events.at(-1)
+    const terminal = await readNdjson(response, options.onProgress, lifetime.signal)
     if (!terminal) throw new Error('The generation route closed the stream without sending a result.')
     if (terminal.type === 'error') {
       const code = terminal.error ?? 'unknown_error'
@@ -213,16 +212,17 @@ async function postStream(
     }
     return terminal
   } finally {
-    clearTimeout(timeout)
-    signal?.removeEventListener('abort', abort)
+    lifetime.dispose()
   }
 }
 
 async function readNdjson(
   response: Response,
   onProgress: ((stage: string) => void) | undefined,
-): Promise<GenerationWireEvent[]> {
-  const events: GenerationWireEvent[] = []
+  signal: AbortSignal,
+): Promise<GenerationWireEvent | null> {
+  let terminal: GenerationWireEvent | null = null
+  let requestId: string | undefined
   const consume = (line: string) => {
     const trimmed = line.trim()
     if (!trimmed) return
@@ -233,23 +233,51 @@ async function readNdjson(
       // A malformed line is a protocol failure, not something to guess at.
       throw new Error(`The generation route emitted a line that is not JSON: ${trimmed.slice(0, 120)}`)
     }
-    events.push(parsed)
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      !['accepted', 'progress', 'result', 'error'].includes(parsed.type)
+    ) {
+      throw new Error('The generation route emitted an invalid event.')
+    }
+    if (parsed.type === 'accepted') {
+      if (requestId || typeof parsed.requestId !== 'string' || !parsed.requestId)
+        throw new Error('The generation stream has an invalid start event.')
+      requestId = parsed.requestId
+    }
+    if (parsed.requestId !== undefined && requestId !== undefined && parsed.requestId !== requestId) {
+      throw new Error('The generation stream changed request identity.')
+    }
+    if (parsed.type === 'progress' && typeof parsed.stage !== 'string')
+      throw new Error('The generation stream has invalid progress.')
+    if (parsed.type === 'error' && (typeof parsed.error !== 'string' || typeof parsed.detail !== 'string'))
+      throw new Error('The generation stream has an invalid error.')
+    if (parsed.type === 'result' && parsed.value === undefined)
+      throw new Error('The generation stream has no result value.')
+    if (parsed.type === 'error' || parsed.type === 'result') terminal = parsed
     if (parsed.type === 'progress' && parsed.stage) onProgress?.(parsed.stage)
   }
 
   const body = response.body
   if (!body || typeof body.getReader !== 'function') {
-    for (const line of (await response.text()).split('\n')) consume(line)
-    return events
+    const text = await awaitWithAbort(response.text(), signal)
+    if (new TextEncoder().encode(text).byteLength > 16 * 1024 * 1024)
+      throw new Error('The generation stream exceeded its byte limit.')
+    for (const line of text.split('\n')) {
+      consume(line)
+      if (terminal) break
+    }
+    return terminal
   }
 
-  await readNdjsonLines(body, consume)
-  return events
+  await readNdjsonLines(body, consume, { signal, stopWhen: () => terminal !== null })
+  return terminal
 }
 
-async function safeJson(response: Response): Promise<Record<string, unknown> | null> {
+async function safeJson(response: Response, signal: AbortSignal): Promise<Record<string, unknown> | null> {
   try {
-    return (await response.json()) as Record<string, unknown>
+    return (await readResponseJson(response, signal)) as Record<string, unknown>
   } catch {
     return null
   }

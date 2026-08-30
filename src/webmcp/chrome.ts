@@ -21,6 +21,7 @@ export const CHROME_SURFACES = [
   'transform',
   'selection',
   'timeline',
+  'feedback',
 ] as const
 
 export type ChromeSurface = (typeof CHROME_SURFACES)[number]
@@ -34,6 +35,7 @@ export const CHROME_SURFACE_TARGETS: Record<ChromeSurface, { dock: 'left' | 'rig
   transform: { dock: 'right', section: 'transform' },
   selection: { dock: 'right', section: 'selection' },
   timeline: { dock: 'bottom', section: null },
+  feedback: { dock: 'bottom', section: null },
 }
 
 export interface ChromeDock {

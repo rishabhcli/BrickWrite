@@ -1,7 +1,7 @@
 import { v } from 'convex/values'
-import type { Doc, Id } from './_generated/dataModel'
+import type { Doc } from './_generated/dataModel'
 import { mutation, query, type QueryCtx } from './_generated/server'
-import { authoriseProject, iso, readIdentity, UNAUTHENTICATED } from './model/auth'
+import { authoriseProject, iso, readIdentity, resolveBranch, UNAUTHENTICATED } from './model/auth'
 import { writeAuditEvent } from './model/audit'
 import {
   cloudFailure,
@@ -12,7 +12,10 @@ import {
   type CloudSnapshotRecord,
 } from './model/protocol'
 import { auditRecord, branchRecord } from './model/records'
-import { readSnapshot, writeSnapshot } from './model/snapshots'
+import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/snapshots'
+import { decodeSnapshotUpload } from './model/snapshotValidation'
+import { canonicalJson } from './model/checksum'
+import { isRevision } from './model/history'
 import { snapshotUpload, visibility } from './model/validators'
 
 /**
@@ -108,6 +111,7 @@ export const create = mutation({
     schemaVersion: v.number(),
     catalogVersion: v.string(),
     snapshot: v.optional(snapshotUpload),
+    resumeExisting: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<CloudResult<CloudProjectSummary>> => {
     const identity = await readIdentity(ctx)
@@ -117,6 +121,17 @@ export const create = mutation({
     if (!name) {
       return cloudFailure('INVALID_ARGUMENT', 'A project needs a name.', 'Type a name and retry.')
     }
+    if (!args.localProjectId.trim() || !args.catalogVersion.trim() || args.schemaVersion !== 2) {
+      return cloudFailure(
+        args.schemaVersion !== 2 ? 'SCHEMA_MISMATCH' : 'INVALID_ARGUMENT',
+        'A cloud project needs a document id, catalogue version and supported schema.',
+        'Create the project from a complete schema-2 document.',
+      )
+    }
+    // A typed error commits a Convex mutation. Validate before the first insert,
+    // not after creating the project/branch/owner rows.
+    const seed = args.snapshot ? decodeSnapshotUpload(args.snapshot, args) : undefined
+    if (seed && !seed.ok) return seed
     // Claiming the same local project twice would give one browser two cloud
     // replicas racing to append to different logs.
     const existing = await ctx.db
@@ -127,6 +142,25 @@ export const create = mutation({
       .filter((q) => q.eq(q.field('deletedAt'), undefined))
       .first()
     if (existing) {
+      if (
+        args.resumeExisting &&
+        seed?.ok &&
+        existing.creation?.snapshotGroupId &&
+        existing.creation.name === name &&
+        existing.creation.visibility === (args.visibility ?? 'private')
+      ) {
+        const authorised = await authoriseProject(ctx, existing._id, 'transaction.write')
+        if (!authorised.ok) return authorised
+        const initial = await readSnapshot(ctx, existing.creation.snapshotGroupId, existing._id)
+        if (!initial.ok) return initial
+        // Compare actual documents, not just the non-cryptographic checksum.
+        // Never replace a newer checkpoint or reset the head on a retry.
+        if (canonicalJson(initial.value.document) === canonicalJson(seed.value)) {
+          const branch = await resolveBranch(ctx, existing)
+          if (!branch.ok) return branch
+          return { ok: true, value: await summarise(ctx, existing, authorised.value.role) }
+        }
+      }
       return cloudFailure(
         'NAME_TAKEN',
         'This account already has a cloud copy of that local project.',
@@ -166,6 +200,7 @@ export const create = mutation({
       addedAt: now,
     })
 
+    let initialSnapshotGroupId: string | undefined
     if (args.snapshot) {
       const written = await writeSnapshot(ctx, {
         projectId,
@@ -174,11 +209,18 @@ export const create = mutation({
         upload: args.snapshot,
         createdBySubject: identity.subject,
       })
-      // The whole mutation is one transaction, so throwing here leaves no
-      // half-created project behind — but a typed refusal is more useful than a
-      // stack trace, so the caller is told to retry with a smaller payload.
-      if (!written.ok) return written
+      // All expected refusals were handled before insertion. Unexpected failure
+      // must throw so Convex rolls back every row, not commit a broken shell.
+      if (!written.ok) throw new Error(`Initial checkpoint failed: ${written.error.code}`)
+      initialSnapshotGroupId = written.value
     }
+    await ctx.db.patch(projectId, {
+      creation: {
+        name,
+        visibility: args.visibility ?? 'private',
+        snapshotGroupId: initialSnapshotGroupId,
+      },
+    })
 
     await writeAuditEvent(ctx, {
       projectId,
@@ -189,7 +231,7 @@ export const create = mutation({
 
     const project = await ctx.db.get(projectId)
     if (!project) {
-      return cloudFailure('NOT_FOUND', 'The project vanished during creation.', 'Retry.')
+      throw new Error('The project vanished during creation.')
     }
     return { ok: true, value: await summarise(ctx, project, 'owner') }
   },
@@ -275,13 +317,20 @@ export const saveCheckpoint = mutation({
     const authorised = await authoriseProject(ctx, args.projectId, 'snapshot.write')
     if (!authorised.ok) return authorised
     const { project, identity } = authorised.value
-    const branchId = (args.branchId ?? project.defaultBranchId) as Id<'branches'> | undefined
-    const branch = branchId ? await ctx.db.get(branchId) : null
-    if (!branch || branch.projectId !== project._id) {
+    const resolved = await resolveBranch(ctx, project, args.branchId)
+    if (!resolved.ok) return resolved
+    const branch = resolved.value
+    const valid = decodeSnapshotUpload(args.snapshot, {
+      localProjectId: project.localProjectId,
+      schemaVersion: project.schemaVersion,
+    })
+    if (!valid.ok) return valid
+    if (args.snapshot.revision > branch.headRevision) {
       return cloudFailure(
-        'NOT_FOUND',
-        'That branch does not belong to this project.',
-        'Reload the branch list and retry.',
+        'STALE_DOCUMENT',
+        'A checkpoint cannot precede the transactions that establish its revision.',
+        'Sync the missing transactions before retrying this checkpoint; keep the local copy.',
+        { headRevision: branch.headRevision, branchId: branch._id },
       )
     }
     const written = await writeSnapshot(ctx, {
@@ -314,22 +363,17 @@ export const latestCheckpoint = query({
     const authorised = await authoriseProject(ctx, args.projectId, 'project.read')
     if (!authorised.ok) return authorised
     const project = authorised.value.project
-    const ceiling = args.atRevision ?? Number.MAX_SAFE_INTEGER
-    const rows = await ctx.db
-      .query('snapshots')
-      .withIndex('by_project_kind_revision', (q) =>
-        q.eq('projectId', project._id).eq('kind', 'checkpoint').lte('revision', ceiling),
+    const branch = await resolveBranch(ctx, project, args.branchId)
+    if (!branch.ok) return branch
+    if (args.atRevision !== undefined && !isRevision(args.atRevision)) {
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        'A checkpoint revision must be a non-negative safe integer.',
+        'Choose a stored revision and retry.',
       )
-      .order('desc')
-      .take(256)
-    // Branch-scoped when asked: a conflict fork seeds its own checkpoint at the
-    // divergence revision, and replaying one branch's log onto another
-    // branch's checkpoint would produce a document neither branch has.
-    const newest = rows.find(
-      (row) => row.chunkIndex === 0 && (!args.branchId || row.branchId === args.branchId),
-    )
-    if (!newest) return { ok: true, value: null }
-    return readSnapshot(ctx, newest.groupId, project._id)
+    }
+    const ceiling = Math.min(args.atRevision ?? branch.value.headRevision, branch.value.headRevision)
+    return latestBranchCheckpoint(ctx, project._id, branch.value._id, ceiling)
   },
 })
 
