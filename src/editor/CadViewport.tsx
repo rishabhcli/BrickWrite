@@ -305,19 +305,28 @@ function PlacementController({
   model,
   gridLdu,
   root,
+  dropAt,
   onPreview,
   onPlace,
+  onDropHandled,
 }: {
   request: PlacementRequest
   model: ModelDocument
   gridLdu: number
   root: React.RefObject<THREE.Group | null>
+  /** Client point a catalogue drag was released at, if the part came from a drop. */
+  dropAt?: { clientX: number; clientY: number } | null
   onPreview: (transform: Transform | null) => void
   onPlace: (transform: Transform, legal?: boolean, reason?: string) => void
+  onDropHandled?: (committed: boolean) => void
 }) {
   const { camera, gl, raycaster, pointer } = useThree()
   const resolved = useRef<{ transform: Transform; legal: boolean; reason: string } | null>(null)
   const pressedAt = useRef<{ x: number; y: number } | null>(null)
+  // Committing a drop changes the model, which re-runs the effect below. The
+  // identity of the drop point that was already committed is remembered so the
+  // second pass cannot place the same drop twice.
+  const committedDrop = useRef<{ clientX: number; clientY: number } | null>(null)
 
   useEffect(() => {
     const element = gl.domElement
@@ -380,6 +389,24 @@ function PlacementController({
     // straight into the viewport without moving the mouse first is a normal
     // thing to do, and waiting for a move event made that click do nothing.
     sample()
+
+    // A part dragged out of the catalogue commits where it was released. It is
+    // done here, in the effect that attaches the listeners above, because the
+    // drop handler cannot know when this controller has mounted — it used to
+    // guess at two frames, miss, and leave the part armed under the cursor.
+    if (dropAt && committedDrop.current !== dropAt) {
+      committedDrop.current = dropAt
+      const rect = element.getBoundingClientRect()
+      pointer.set(
+        ((dropAt.clientX - rect.left) / rect.width) * 2 - 1,
+        -((dropAt.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      sample()
+      const landing = resolved.current
+      if (landing) onPlace(landing.transform, landing.legal, landing.reason)
+      onDropHandled?.(Boolean(landing))
+    }
+
     return () => {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerdown', onDown)
@@ -387,7 +414,7 @@ function PlacementController({
       element.style.cursor = ''
       onPreview(null)
     }
-  }, [camera, gl, gridLdu, model, onPlace, onPreview, pointer, raycaster, request, root])
+  }, [camera, dropAt, gl, gridLdu, model, onDropHandled, onPlace, onPreview, pointer, raycaster, request, root])
 
   return null
 }
@@ -706,6 +733,8 @@ interface CadViewportProps {
   renderMode: RenderMode
   /** A catalog part armed for click-to-place, or null when nothing is armed. */
   placement?: PlacementRequest | null
+  dropAt?: { clientX: number; clientY: number } | null
+  onDropHandled?: (committed: boolean) => void
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onSelectMany?: (partIds: string[], additive: boolean) => void
   onClearSelection: () => void
@@ -748,6 +777,8 @@ export function CadViewport({
   cameraResetKey,
   renderMode,
   placement,
+  dropAt,
+  onDropHandled,
   onSelect,
   onSelectMany,
   onClearSelection,
@@ -1273,8 +1304,10 @@ export function CadViewport({
           model={document}
           gridLdu={gridLdu}
           root={root}
+          dropAt={dropAt}
           onPreview={setPlacementPreview}
           onPlace={onPlace}
+          onDropHandled={onDropHandled}
         />
       )}
 

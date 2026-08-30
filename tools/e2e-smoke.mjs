@@ -671,6 +671,48 @@ try {
 
   await page.keyboard.press('v')
 
+  // -- dragging a part out of the catalogue lands it where it was released --
+  // The drop used to arm the part and then replay synthetic pointer events two
+  // frames later, hoping the placement controller had mounted. It had not, so
+  // nothing was placed and the ghost stayed stuck to the cursor — which made
+  // the next click read as a second placement. One drag must commit one part
+  // and put the ghost away.
+  const beforeDrop = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+  }))
+  await page.evaluate(() => {
+    const card = document.querySelector('.part-card:not(.unplaceable)')
+    const canvas = document.querySelector('canvas')
+    const shell = document.querySelector('.viewport-shell')
+    const rect = canvas.getBoundingClientRect()
+    const clientX = Math.round(rect.left + rect.width / 2)
+    const clientY = Math.round(rect.top + rect.height / 2)
+    const dataTransfer = new DataTransfer()
+    const fire = (target, type) =>
+      target.dispatchEvent(new DragEvent(type, { dataTransfer, bubbles: true, cancelable: true, clientX, clientY }))
+    fire(card, 'dragstart')
+    fire(shell, 'dragover')
+    fire(shell, 'drop')
+  })
+  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeDrop.revision, {
+    timeout: 10_000,
+  })
+  const afterDrop = await page.evaluate(() => ({
+    revision: window.brickwright.getDocument().revision,
+    parts: Object.keys(window.brickwright.getDocument().parts).length,
+    armed: Boolean(document.querySelector('.placement-hud')),
+  }))
+  assert(afterDrop.parts === beforeDrop.parts + 1, `A drag-and-drop added ${afterDrop.parts - beforeDrop.parts} parts, not one`)
+  assert(afterDrop.revision === beforeDrop.revision + 1, 'A drag-and-drop did not commit as a single transaction')
+  assert(!afterDrop.armed, 'The placement ghost was still armed after a drop; the next click would place a second part')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
+    beforeDrop.parts,
+    { timeout: 10_000 },
+  )
+
   // -- click-to-place drops a part where the operator is looking ------------
   const beforePlace = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,

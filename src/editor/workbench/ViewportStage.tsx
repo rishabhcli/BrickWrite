@@ -85,6 +85,8 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
         cameraResetKey={workbench.cameraResetKey}
         renderMode={renderMode}
         placement={placement}
+        dropAt={workbench.dropPoint}
+        onDropHandled={workbench.finishDrop}
         onSelect={workbench.handleSelect}
         onSelectMany={workbench.handleSelectMany}
         onClearSelection={() => cadEngine.setSelection([])}

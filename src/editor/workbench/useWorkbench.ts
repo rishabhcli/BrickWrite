@@ -125,6 +125,9 @@ export function useWorkbench() {
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [toast, setToast] = useState<WorkbenchNotice | null>(null)
   const [placement, setPlacement] = useState<PlacementRequest | null>(null)
+  // Where a catalogue drag was released, when the armed part came from a drop.
+  // The viewport commits it from its own mount effect; see `dropPart`.
+  const [dropPoint, setDropPoint] = useState<{ clientX: number; clientY: number } | null>(null)
   const [toolStatus, setToolStatus] = useState({ native: false, toolCount: 0, mode: state.autonomy })
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() => session.status)
   const [modal, setModal] = useState<ModalId>(null)
@@ -479,6 +482,7 @@ export function useWorkbench() {
         ? activeColor
         : (definition.availableColors[0] ?? activeColor)
       setPlacement({ definitionId: definition.canonicalId, color, quarterTurns: 0 })
+      setDropPoint(null)
       setToolRaw('select')
       setConnect(IDLE_CONNECT)
       return true
@@ -598,32 +602,37 @@ export function useWorkbench() {
    * surface the part simply stays armed and one click finishes the job, which is
    * the same fallback a mis-aimed drop deserves.
    */
+  /**
+   * Arm the dropped part and record where it was released.
+   *
+   * This used to replay synthetic pointer events onto the canvas two frames
+   * later, betting that the placement controller had mounted and attached its
+   * listeners by then. It had not: the events landed on nothing, the part was
+   * left armed under the cursor, and the operator's next click read as a second
+   * placement. The drop point is handed to the viewport instead, which commits
+   * it from the same effect that attaches those listeners — so there is no
+   * window in which the events can miss.
+   */
   const dropPart = useCallback(
     (record: Pick<CatalogSearchRecord, 'id' | 'name'>, clientX: number, clientY: number) => {
       if (!armPart(record)) return false
-      const canvas = canvasRef.current
-      if (!canvas) return true
-      const replay = () => {
-        const common = {
-          clientX,
-          clientY,
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          pointerId: 1,
-          pointerType: 'mouse' as const,
-        }
-        canvas.dispatchEvent(new PointerEvent('pointermove', common))
-        canvas.dispatchEvent(new PointerEvent('pointerdown', common))
-        canvas.dispatchEvent(new PointerEvent('pointerup', common))
-      }
-      // Two frames: one for the placement controller to mount, one for its effect
-      // to attach the listeners it resolves against.
-      requestAnimationFrame(() => requestAnimationFrame(replay))
+      setDropPoint({ clientX, clientY })
       return true
     },
     [armPart],
   )
+
+  /**
+   * The viewport has consumed the drop point.
+   *
+   * A drag that landed a part is a finished gesture, so the ghost is put away:
+   * leaving it armed after a drop is what made a drop feel like two placements.
+   * A drag released over nothing stays armed, so the operator can still click.
+   */
+  const finishDrop = useCallback((committed: boolean) => {
+    setDropPoint(null)
+    if (committed) setPlacement(null)
+  }, [])
 
   // -- everyday edits -------------------------------------------------------
   const duplicateSelection = useCallback(() => {
@@ -1038,7 +1047,10 @@ export function useWorkbench() {
     setPlacement((current) => (current ? { ...current, quarterTurns: current.quarterTurns + 1 } : current))
   }, [])
 
-  const cancelPlacement = useCallback(() => setPlacement(null), [])
+  const cancelPlacement = useCallback(() => {
+    setPlacement(null)
+    setDropPoint(null)
+  }, [])
 
   const fitView = useCallback(() => {
     setCameraView('isometric')
@@ -1071,6 +1083,8 @@ export function useWorkbench() {
     setPlacement,
     rotatePlacement,
     cancelPlacement,
+    dropPoint,
+    finishDrop,
     toolStatus,
     sessionStatus,
     modal,
