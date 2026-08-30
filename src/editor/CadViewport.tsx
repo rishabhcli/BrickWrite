@@ -687,6 +687,7 @@ function CameraRig({
       { width, height },
       directions[view],
     )
+    camera.far = fit.far
     const destination = fit.position
     const duration = framed.current ? motion.duration('camera') : 0
     if (duration > 0) {
@@ -736,6 +737,7 @@ function CameraRig({
         latest.current,
         camera.position.clone().sub(controls.current.target),
       )
+      camera.far = fit.far
       camera.position.copy(fit.position)
       if ((camera as THREE.OrthographicCamera).isOrthographicCamera)
         (camera as THREE.OrthographicCamera).zoom = fit.zoom
@@ -770,7 +772,17 @@ function CameraRig({
   }, [camera, size])
 
   return (
-    <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={1} maxDistance={100000} />
+    <OrbitControls
+      ref={controls}
+      makeDefault
+      enableDamping
+      dampingFactor={0.08}
+      minDistance={1}
+      maxDistance={100000}
+      onStart={() => {
+        flight.current = null
+      }}
+    />
   )
 }
 

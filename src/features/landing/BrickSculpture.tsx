@@ -1,6 +1,5 @@
-import { useId, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { usePointerTilt } from './reveal'
-import { useRef } from 'react'
 
 type Brick = { x: number; y: number; z: number; color: number }
 
@@ -44,12 +43,58 @@ export function BrickSculpture({ paused }: { paused: boolean }) {
   const id = useId().replace(/:/g, '')
   usePointerTilt(ref, paused)
 
+  useEffect(() => {
+    const element = ref.current
+    const hero = element?.closest<HTMLElement>('.bw-studio-hero')
+    if (!element || !hero) return
+    if (paused) {
+      element.style.setProperty('--studio-scroll', '0')
+      return
+    }
+    const scroller = document.getElementById('pf-main')
+    const target = scroller ?? window
+    let frame = 0
+    const paint = () => {
+      frame = 0
+      const box = hero.getBoundingClientRect()
+      const top = scroller?.getBoundingClientRect().top ?? 0
+      const progress = Math.max(0, Math.min(1, (top - box.top) / Math.max(1, box.height * 0.85)))
+      element.style.setProperty('--studio-scroll', progress.toFixed(3))
+    }
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(paint)
+    }
+    let inView = true
+    const visibility = () => {
+      element.dataset.inView = String(inView && !document.hidden)
+    }
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver((entries) => {
+            inView = entries.some((entry) => entry.isIntersecting)
+            visibility()
+          })
+    observer?.observe(element)
+    target.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    document.addEventListener('visibilitychange', visibility)
+    paint()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+      target.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [paused])
+
   return (
     <div className="bw-sculpture" ref={ref} data-scattered={scattered}>
       <div className="bw-sculpture-drawing">
         <svg
           className="bw-pavilion"
-          viewBox="-320 -340 640 560"
+          viewBox="-320 -250 640 475"
           role="img"
           aria-label="An isometric brick pavilion with a terracotta arch, ivory stairs, and floating blue and green bricks. A playful illustration of building possibilities."
         >

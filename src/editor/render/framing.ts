@@ -40,5 +40,10 @@ export function boundsFrame(
     camera instanceof THREE.OrthographicCamera
       ? Math.min((camera.right - camera.left) / (2 * halfWidth), (camera.top - camera.bottom) / (2 * halfHeight))
       : camera.zoom
-  return { target, position: target.clone().addScaledVector(back, distance), zoom }
+  return {
+    target,
+    position: target.clone().addScaledVector(back, distance),
+    zoom,
+    far: Math.max(2000, distance * 4 + 50),
+  }
 }

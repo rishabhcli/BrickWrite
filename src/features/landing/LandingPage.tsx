@@ -13,11 +13,10 @@ import './studio.css'
 /**
  * The product front door.
  *
- * The first screen keeps the model, the measured result and the route into the
- * editor visible together. A shorter assembly reel below it earns its extra
- * scroll by showing one continuous material transformation rather than
- * repeating product copy. Every figure still comes from the published demo
- * manifest and every call to action still resolves to an operable surface.
+ * A playful, lightweight SVG sculpture opens the page. The real editable
+ * campus and its measured results follow; the sculpture never impersonates
+ * validated geometry. Every product figure comes from the demo manifest and
+ * every call to action resolves to an operable surface.
  */
 
 setKnownDemoIds(DEMOS.map((demo) => demo.id))
@@ -121,7 +120,13 @@ export function LandingPage() {
           </div>
           <div className="bw-campus-layout">
             <div className="bw-simple-hero-model">
-              <Hero demo={hero} initialStage="validated" autoPlay={!motionPaused} hideBrief />
+              <Hero
+                demo={hero}
+                initialStage="validated"
+                autoPlay={!motionPaused}
+                motionPaused={motionPaused}
+                hideBrief
+              />
             </div>
             <div className="bw-campus-notes">
               <span className="bw-studio-label">THE ILLINOIS MAIN QUAD</span>
@@ -505,7 +510,7 @@ function Colophon() {
   return (
     <footer className="bw-footer bw-shell">
       <span className="bw-footer-wordmark" aria-hidden="true">
-        brickwright<span>®</span>
+        brickwright<span>+</span>
       </span>
       <p>
         Demo assets were generated against catalog {DEMO_MANIFEST.catalogVersion} and rendered offline from compiled

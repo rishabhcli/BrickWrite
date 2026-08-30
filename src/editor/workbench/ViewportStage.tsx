@@ -198,6 +198,7 @@ export function ViewportStage({
           <button
             className="selection-actions-trigger"
             aria-label="Selection actions"
+            disabled={Boolean(placement)}
             aria-expanded={Boolean(contextPoint)}
             onClick={(event) => {
               const rect = event.currentTarget.getBoundingClientRect()
@@ -222,7 +223,9 @@ export function ViewportStage({
         />
       </div>
 
-      {renderMode !== 'beauty' && (
+      {/* Ortho is an editing projection, not a diagnostic overlay. Its pressed
+          toolbar button is enough; a large legend used to obscure the model. */}
+      {renderMode !== 'beauty' && renderMode !== 'orthographic' && (
         <div className="render-legend" role="status">
           <strong>{RENDER_MODE_COPY[renderMode].title}</strong>
           <p>{RENDER_MODE_COPY[renderMode].detail}</p>

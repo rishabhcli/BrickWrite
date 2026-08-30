@@ -57,7 +57,7 @@ function dollyToward(camera: THREE.Camera, target: THREE.Vector3, factor: number
     return
   }
   const offset = camera.position.clone().sub(target)
-  const next = Math.min(400, Math.max(3, offset.length() * factor))
+  const next = Math.min(100000, Math.max(1, offset.length() * factor))
   offset.setLength(next)
   camera.position.copy(target).add(offset)
 }

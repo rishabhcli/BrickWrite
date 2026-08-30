@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { DEMOS } from '../../demos'
 import {
   assertLandingVocabulary,
@@ -123,8 +124,6 @@ describe('the landing page', () => {
     expect(container.querySelector('.bw-landing')?.getAttribute('data-pointer')).toBe('off')
     expect(container.querySelector('.bw-atmosphere')).toBeTruthy()
     expect(container.querySelector('.bw-studs')?.getAttribute('aria-hidden')).toBe('true')
-    // The custom cursor was withdrawn: the page uses the system pointer, so
-    // there is nothing here to assert beyond its absence.
     expect(container.querySelectorAll('.bw-cursor')).toHaveLength(0)
     expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
@@ -144,6 +143,28 @@ describe('the landing page', () => {
     const validated = screen.getByRole('tab', { name: /Validated/ })
     fireEvent.click(validated)
     expect(validated).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('never hides the native pointer, even while pointer effects are active', () => {
+    const css = readFileSync(`${__dirname}/landing.css`, 'utf8') + readFileSync(`${__dirname}/studio.css`, 'utf8')
+    expect(css).not.toMatch(/cursor\s*:\s*none/)
+  })
+
+  it('lets visitors take the sculpture apart and put it back together', () => {
+    const { container } = render(<LandingPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Take it apart/ }))
+    expect(container.querySelector('.bw-sculpture')).toHaveAttribute('data-scattered', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /Put it together/ }))
+    expect(container.querySelector('.bw-sculpture')).toHaveAttribute('data-scattered', 'false')
+  })
+
+  it('offers a page-wide motion pause without hiding any content', () => {
+    const { container } = render(<LandingPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause animations' }))
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
+    expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Resume animations' }))
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'running')
   })
 
   it('lets a visitor scrub the assembly reel without scrolling', () => {
@@ -166,6 +187,8 @@ describe('with reduced motion requested', () => {
     const reveals = container.querySelectorAll('.bw-reveal')
     expect(reveals.length).toBeGreaterThan(0)
     for (const element of reveals) expect(element.getAttribute('data-shown')).toBe('true')
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
+    expect(screen.getByRole('button', { name: 'Reduced motion enabled' })).toBeDisabled()
   })
 
   it('leaves the hero on its evidence-first stage rather than animating through them', async () => {

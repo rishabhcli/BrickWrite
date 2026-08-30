@@ -116,9 +116,11 @@ export function useFilmStage() {
     userLock.current = true
     setStage(next)
     if (record) writeBeat(next)
-    document
-      .querySelector<HTMLElement>(`[data-film-stage="${next}"]`)
-      ?.scrollIntoView?.({ behavior: reduced ? 'auto' : 'smooth', block: 'center', inline: 'nearest' })
+    document.querySelector<HTMLElement>(`[data-film-stage="${next}"]`)?.scrollIntoView?.({
+      behavior: reduced ? 'auto' : 'smooth',
+      block: window.matchMedia?.('(max-width: 899px)').matches ? 'start' : 'center',
+      inline: 'nearest',
+    })
   }
 
   useEffect(() => {
@@ -207,9 +209,11 @@ export function useFilmStage() {
       userLock.current = true
       setStage(beat)
       requestAnimationFrame(() => {
-        document
-          .querySelector<HTMLElement>(`[data-film-stage="${beat}"]`)
-          ?.scrollIntoView?.({ behavior: 'auto', block: 'center', inline: 'nearest' })
+        document.querySelector<HTMLElement>(`[data-film-stage="${beat}"]`)?.scrollIntoView?.({
+          behavior: 'auto',
+          block: window.matchMedia?.('(max-width: 899px)').matches ? 'start' : 'center',
+          inline: 'nearest',
+        })
       })
     }
     return () => window.removeEventListener('keydown', onKey)
@@ -256,7 +260,7 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
     const scroller = document.getElementById('pf-main')
     // `.pf-frame__body` is both the scroller and Chromium's containing block
     // for the fixed landing chrome. Add its scroll position back, then remove
-    // its 56px top-bar offset so the software crosshair stays at clientY.
+    // its top-bar offset so the decorative lamp follows the pointer on scroll.
     const scrollOffset = () => (scroller ? scroller.scrollTop - scroller.getBoundingClientRect().top : window.scrollY)
     const paintScrollOffset = () => {
       const offset = scrollOffset()
@@ -296,32 +300,10 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
     const onMove = (event: PointerEvent) => {
       targetX = event.clientX
       targetY = event.clientY
-      root.style.setProperty('--bw-cur-x', `${targetX.toFixed(1)}px`)
-      root.style.setProperty('--bw-cur-y', `${targetY.toFixed(1)}px`)
       if (!armed) {
         armed = true
         setLive(true)
       }
-      const hot = magnets().some((magnet) => {
-        const box = magnet.getBoundingClientRect()
-        return (
-          event.clientX >= box.left - 8 &&
-          event.clientX <= box.right + 8 &&
-          event.clientY >= box.top - 8 &&
-          event.clientY <= box.bottom + 8
-        )
-      })
-      const stageBox = root
-        .querySelector('.bw-simple-hero-model .bw-stage, .bw-film-stage .bw-stage')
-        ?.getBoundingClientRect()
-      const orbit = Boolean(
-        stageBox &&
-        event.clientX >= stageBox.left &&
-        event.clientX <= stageBox.right &&
-        event.clientY >= stageBox.top &&
-        event.clientY <= stageBox.bottom,
-      )
-      root.dataset.cursor = hot ? 'hot' : orbit ? 'orbit' : 'draw'
       if (!running) {
         running = true
         frame = requestAnimationFrame(tick)
@@ -331,7 +313,6 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
     const onLeave = () => {
       armed = false
       setLive(false)
-      root.dataset.cursor = 'draw'
       for (const magnet of magnets()) {
         magnet.style.setProperty('--bw-mag-x', '0px')
         magnet.style.setProperty('--bw-mag-y', '0px')

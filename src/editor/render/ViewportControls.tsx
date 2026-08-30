@@ -907,6 +907,7 @@ export function ViewportControls(props: ViewportControlsProps) {
           latest.current.size,
           direction,
         )
+        active.far = fit.far
         const centre = fit.target
         active.position.copy(fit.position)
         active.lookAt(centre)

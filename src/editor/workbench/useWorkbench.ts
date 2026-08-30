@@ -788,6 +788,13 @@ export function useWorkbench() {
     setPlacement((current) => (current && !current.movingPartId ? { ...current, color: activeColor } : current))
   }, [activeColor])
 
+  useEffect(() => {
+    if (placement?.movingPartId && !state.document.parts[placement.movingPartId]) {
+      setPlacement(null)
+      setDropPoint(null)
+    }
+  }, [placement?.movingPartId, state.document.parts])
+
   // Transient tools and hidden ids belong to a document, not to the next opened project.
   useEffect(() => {
     setPlacement(null)

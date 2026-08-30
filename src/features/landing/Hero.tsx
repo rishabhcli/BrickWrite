@@ -43,6 +43,8 @@ export interface HeroProps {
   onStageChange?: (stage: HeroStage) => void
   /** Timer-driven playback. Scroll storytelling turns this off once the visitor moves. */
   autoPlay?: boolean
+  /** A visitor's page-wide pause also disables the refinement sweep. */
+  motionPaused?: boolean
   /** Hide the brief quote; the landing film already tells that story in type. */
   hideBrief?: boolean
   /**
@@ -58,10 +60,12 @@ export function Hero({
   stage: stageProp,
   onStageChange,
   autoPlay = true,
+  motionPaused = false,
   hideBrief = false,
   scrub,
 }: HeroProps) {
-  const reduced = useReducedMotion()
+  const prefersReduced = useReducedMotion()
+  const reduced = prefersReduced || motionPaused
   const stageRef = useRef<HTMLDivElement | null>(null)
   const visible = useOnScreen(stageRef, '120px')
   const [internalStage, setInternalStage] = useState<HeroStage>(initialStage)
@@ -72,6 +76,30 @@ export function Hero({
   const [camera, setCamera] = useState(demo.camera)
   const [auto, setAuto] = useState(autoPlay)
   const [orbitLocked, setOrbitLocked] = useState(false)
+  const [inView, setInView] = useState(false)
+
+  // Preloading is one-shot; playback visibility must not be. Stop work when
+  // this section leaves the screen or the browser tab is in the background.
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element) return
+    let intersecting = typeof IntersectionObserver === 'undefined'
+    const update = () => setInView(intersecting && !document.hidden)
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver((entries) => {
+            intersecting = entries.some((entry) => entry.isIntersecting)
+            update()
+          })
+    observer?.observe(element)
+    document.addEventListener('visibilitychange', update)
+    update()
+    return () => {
+      observer?.disconnect()
+      document.removeEventListener('visibilitychange', update)
+    }
+  }, [])
 
   // Preview geometry is fetched only once the stage is on screen. Two files,
   // together a few tens of kilobytes; the compiled catalog is never touched.
@@ -97,12 +125,12 @@ export function Hero({
   // the visitor has not taken over; every stage is reachable from the track
   // below either way, so the story is never locked behind an animation.
   useEffect(() => {
-    if (reduced || !auto || !autoPlay || !visible || !previews) return
+    if (reduced || !auto || !autoPlay || !inView || !previews) return
     const timer = window.setTimeout(() => {
       commitStage((current) => STAGES[(STAGES.indexOf(current) + 1) % STAGES.length])
     }, DWELL[stage])
     return () => window.clearTimeout(timer)
-  }, [reduced, auto, autoPlay, visible, previews, stage])
+  }, [reduced, auto, autoPlay, inView, previews, stage])
 
   // The refinement sweep. Scroll owns it on the landing film; elsewhere a
   // timer still plays it once per visit. Reduced motion gets a fixed mid-sweep.
@@ -119,6 +147,7 @@ export function Hero({
       setWave(0.55)
       return
     }
+    if (!inView) return
     let frame = 0
     const started = performance.now()
     const tick = (now: number) => {
@@ -128,7 +157,7 @@ export function Hero({
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [stage, reduced, scrub])
+  }, [stage, reduced, scrub, inView])
 
   useEffect(() => {
     trackLanding({ name: 'landing.hero_stage_advanced', stage })

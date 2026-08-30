@@ -3,6 +3,10 @@
 ## Everyday workflow
 
 - Pick a part from the library to place repeatedly; **R** turns the preview and **Escape** cancels it. The card’s **+** adds immediately. Changing colour updates the armed preview.
+- **M** picks up the selected brick for click-to-reseat. Its original pose is only ghosted, not deleted: a legal click creates one move transaction; **Escape** puts it back without an edit. Use the gizmo for multi-part moves.
+- **B** builds another of the selected brick with the same colour and full orientation. **Keep building** chooses continuous or single placement; the rotation buttons and **Shift+R** turn the held brick backwards. **Done** leaves placement mode.
+- Right-click a part, open **Selection actions**, or press **Shift+F10** in the canvas for a keyboard-navigable menu of part operations. Right-drag still pans.
+- Placement ghosts remain visible in red when blocked, with a reason and live coordinates. Previews ignore their own meshes, check collisions with hidden parts, and reject ground snaps below the floor. Enter observes the same legality as clicking.
 - **G** opens Move and its exact transform controls; **R** opens Rotate when no part is armed. These tools also work in orthographic projection.
 - Use the viewport’s quick controls for six camera directions, parallel projection, framing, grid increments and connector snapping. Front/back/side are true elevation views, not elevated perspectives.
 - **Ctrl/Cmd+C**, **X**, **V** copy, cut and paste parts. This is an **editor-local clipboard**, not the operating system’s text clipboard. It lasts while the editor remains mounted. Copies preserve relative poses and colours. Repeated paste finds a clear lane beside the model; the first paste after a cut restores the original location when possible. Kernel constraints still apply.
@@ -16,6 +20,7 @@
 - Translation snapping applies to the **movement delta**, keeping an already seated part’s off-grid height intact. Escape during a drag restores the starting pose without a transaction.
 - In Move/Rotate, arrows nudge horizontally and Page Up/Down raise/lower; Shift takes a coarser step. Axis locks affect nudges. In Select, arrows orbit and Page Up/Down zoom. **+/-** zoom in either mode, including orthographic.
 - **Ground** / **Shift+D** puts the selection’s lowest measured point on the ground, preserving its internal arrangement. Collisions, connector requirements and hard project constraints can refuse the operation.
+- Camera fitting accounts for all eight bounds corners and the viewport aspect ratio. **F** keeps the current viewing direction; resizing docks preserves framing without resetting the orbit.
 - **Ctrl/Cmd+A** selects visible parts, respecting hidden/isolation state. **H** hides, **Shift+H** restores visibility, **F** frames the model and **Shift+F** focuses selection without temporarily hiding other parts.
 
 ## Regression checks
