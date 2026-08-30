@@ -127,6 +127,7 @@ describe('published entry point', () => {
   it('names a function reference for every deployment module', () => {
     expect(Object.keys(cloud.refs).sort()).toEqual([
       'comments',
+      'discovery',
       'invitations',
       'members',
       'presence',

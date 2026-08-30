@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { listOverflow } from './model/discovery'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server'
@@ -47,7 +48,9 @@ export const list = query({
       .query('invitations')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
       .order('desc')
-      .take(100)
+      .take(101)
+    const overflow = listOverflow(rows.length, 100, 'discovery:invitations')
+    if (overflow) return overflow
     return { ok: true, value: rows.map(invitationRecord) }
   },
 })

@@ -39,6 +39,12 @@ export {
   SNAPSHOT_CHUNK_BYTES,
   cloudFailure,
   cloudSuccess,
+  DEFAULT_DISCOVERY_PAGE_SIZE,
+  MAX_DISCOVERY_PAGE_SIZE,
+  type CloudPage,
+  type CloudPageRequest,
+  type ProjectPageRequest,
+  type CommentPageRequest,
   type AddCommentArgs,
   type AppendTransactionArgs,
   type AppendTransactionValue,
@@ -73,6 +79,7 @@ export {
 } from './protocol'
 
 export { readCompleteHistory } from './history'
+export { collectCloudPages } from './pagination'
 export { transactionBatch, sendTransactionBatch } from './batches'
 export { validateTransactionPayload } from '../../convex/model/transactionValidation'
 

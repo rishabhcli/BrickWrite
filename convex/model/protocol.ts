@@ -38,6 +38,8 @@ export type CloudErrorCode =
   | 'INCOMPLETE_SNAPSHOT'
   /** The requested branch cannot be replayed completely to its advertised head. */
   | 'INCOMPLETE_HISTORY'
+  /** A list could not be read completely; never contains a successful partial value. */
+  | 'INCOMPLETE_LIST'
   | 'CHECKSUM_MISMATCH'
   | 'NAME_TAKEN'
   // The remaining codes are produced by the client transport only. The server
@@ -80,6 +82,31 @@ export const cloudFailure = (
 ): CloudFailure => ({ ok: false, error: { code, message, repair, details } })
 
 export const cloudSuccess = <T>(value: T): CloudResult<T> => ({ ok: true, value })
+
+/**
+ * A type alias rather than an interface on purpose.
+ *
+ * The Convex client constrains a query's arguments to `Record<string, unknown>`,
+ * and TypeScript gives an implicit index signature to type aliases but not to
+ * interfaces — so declaring this as an interface made it, and every intersection
+ * built on it, unassignable at all six paged read sites.
+ */
+export type CloudPageRequest = {
+  cursor?: string | null
+  limit?: number
+}
+
+export interface CloudPage<T> {
+  items: T[]
+  /** Opaque continuation, bound to the caller and query/filter scope. */
+  cursor: string | null
+  done: boolean
+}
+
+export type ProjectPageRequest = CloudPageRequest & { projectId: string }
+export type CommentPageRequest = ProjectPageRequest & { status?: 'open' | 'resolved'; partId?: string }
+export const DEFAULT_DISCOVERY_PAGE_SIZE = 50
+export const MAX_DISCOVERY_PAGE_SIZE = 100
 
 // ---------------------------------------------------------------------------
 // Limits

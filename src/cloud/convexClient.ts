@@ -1,7 +1,9 @@
 import { ConvexClient } from 'convex/browser'
 import type { FunctionReference } from 'convex/server'
 import { refs } from './functionRefs'
+import { collectCloudPages } from './pagination'
 import type {
+  CloudPage, CloudPageRequest, ProjectPageRequest, CommentPageRequest,
   AddCommentArgs,
   AppendTransactionArgs,
   AppendTransactionValue,
@@ -181,6 +183,25 @@ export const classifyTransportFailure = (cause: unknown): CloudErrorShape => {
 export class ConvexCloudBackend implements CloudBackend {
   constructor(private readonly client: ConvexClient) {}
 
+  readProjectsPage(args: CloudPageRequest = {}): Promise<CloudResult<CloudPage<CloudProjectSummary>>> {
+    return this.ask(refs.discovery.projects, args)
+  }
+  readBranchesPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudBranchRecord>>> {
+    return this.ask(refs.discovery.branches, args)
+  }
+  readVersionsPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudVersionRecord>>> {
+    return this.ask(refs.discovery.versions, args)
+  }
+  readMembersPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudMemberRecord>>> {
+    return this.ask(refs.discovery.members, args)
+  }
+  readInvitationsPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudInvitationRecord>>> {
+    return this.ask(refs.discovery.invitations, args)
+  }
+  readCommentsPage(args: CommentPageRequest): Promise<CloudResult<CloudPage<CloudCommentRecord>>> {
+    return this.ask(refs.discovery.comments, args)
+  }
+
   private async ask<Args extends Record<string, unknown>, Value>(
     reference: FunctionReference<'query', 'public', Args, CloudResult<Value>>,
     args: Args,
@@ -204,7 +225,8 @@ export class ConvexCloudBackend implements CloudBackend {
   }
 
   listProjects(): Promise<CloudResult<CloudProjectSummary[]>> {
-    return this.ask(refs.projects.list, {})
+    return collectCloudPages(request => this.readProjectsPage(request), row => row.projectId).then(result =>
+      result.ok ? { ok: true, value: result.value.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) } : result)
   }
   getProject(args: { projectId: string }): Promise<CloudResult<CloudProjectSummary>> {
     return this.ask(refs.projects.get, args)
@@ -264,7 +286,7 @@ export class ConvexCloudBackend implements CloudBackend {
   }
 
   listBranches(args: { projectId: string }): Promise<CloudResult<CloudBranchRecord[]>> {
-    return this.ask(refs.projects.branches, args)
+    return collectCloudPages(request => this.readBranchesPage({ ...args, ...request }), row => row.branchId)
   }
   createBranch(args: CreateBranchArgs): Promise<CloudResult<CloudBranchRecord>> {
     return this.tell(refs.versions.createBranch, args)
@@ -288,14 +310,14 @@ export class ConvexCloudBackend implements CloudBackend {
     return this.tell(refs.versions.create, args)
   }
   listVersions(args: { projectId: string }): Promise<CloudResult<CloudVersionRecord[]>> {
-    return this.ask(refs.versions.list, args)
+    return collectCloudPages(request => this.readVersionsPage({ ...args, ...request }), row => row.versionId)
   }
   versionDocument(args: { projectId: string; versionId: string }): Promise<CloudResult<CloudSnapshotRecord>> {
     return this.ask(refs.versions.document, args)
   }
 
   listMembers(args: { projectId: string }): Promise<CloudResult<CloudMemberRecord[]>> {
-    return this.ask(refs.members.list, args)
+    return collectCloudPages(request => this.readMembersPage({ ...args, ...request }), row => row.memberId)
   }
   myRole(args: { projectId: string }): Promise<CloudResult<CloudRole | null>> {
     return this.ask(refs.members.myRole, args)
@@ -311,7 +333,7 @@ export class ConvexCloudBackend implements CloudBackend {
     return this.tell(refs.members.remove, args)
   }
   listInvitations(args: { projectId: string }): Promise<CloudResult<CloudInvitationRecord[]>> {
-    return this.ask(refs.invitations.list, args)
+    return collectCloudPages(request => this.readInvitationsPage({ ...args, ...request }), row => row.invitationId)
   }
   createInvitation(args: {
     projectId: string
@@ -336,10 +358,12 @@ export class ConvexCloudBackend implements CloudBackend {
   }
 
   listComments(args: { projectId: string; status?: 'open' | 'resolved' }): Promise<CloudResult<CloudCommentRecord[]>> {
-    return this.ask(refs.comments.list, args)
+    return collectCloudPages(request => this.readCommentsPage({ ...args, ...request }), row => row.commentId).then(result =>
+      result.ok ? { ok: true, value: result.value.sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : result)
   }
   commentsForPart(args: { projectId: string; partId: string }): Promise<CloudResult<CloudCommentRecord[]>> {
-    return this.ask(refs.comments.forPart, args)
+    return collectCloudPages(request => this.readCommentsPage({ ...args, ...request }), row => row.commentId).then(result =>
+      result.ok ? { ok: true, value: result.value.sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : result)
   }
   addComment(args: AddCommentArgs): Promise<CloudResult<CloudCommentRecord>> {
     return this.tell(refs.comments.add, args)

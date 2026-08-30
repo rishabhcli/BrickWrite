@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { listOverflow } from './model/discovery'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
@@ -40,11 +41,13 @@ export const list = query({
           .withIndex('by_project_status', (q) =>
             q.eq('projectId', projectId).eq('status', args.status as 'open' | 'resolved'),
           )
-          .take(500)
+          .take(501)
       : await ctx.db
           .query('comments')
           .withIndex('by_project_created', (q) => q.eq('projectId', projectId))
-          .take(500)
+          .take(501)
+    const overflow = listOverflow(rows.length, 500, 'discovery:comments')
+    if (overflow) return overflow
     return {
       ok: true,
       value: rows.sort((a, b) => a.createdAt - b.createdAt).map(commentRecord),
@@ -63,7 +66,9 @@ export const forPart = query({
       .withIndex('by_project_anchor', (q) =>
         q.eq('projectId', authorised.value.project._id).eq('anchor.partId', args.partId),
       )
-      .take(200)
+      .take(201)
+    const overflow = listOverflow(rows.length, 200, 'discovery:comments')
+    if (overflow) return overflow
     return { ok: true, value: rows.sort((a, b) => a.createdAt - b.createdAt).map(commentRecord) }
   },
 })

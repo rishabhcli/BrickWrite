@@ -6,6 +6,7 @@ import { readBranchHistory, verifyHistoryRecord } from '../../../convex/model/hi
 import { redactAuditDetail } from '../../../convex/model/redaction'
 import type { Transaction } from '../../cad/types'
 import {
+  type CloudPage, type CloudPageRequest, type ProjectPageRequest, type CommentPageRequest,
   MAX_COMMENT_BYTES,
   MAX_TRANSACTION_BYTES,
   PRESENCE_TTL_MS,
@@ -671,6 +672,48 @@ class FakeConvexBackend implements CloudBackend {
 
   private authorise(projectId: string, capability: Capability) {
     return this.db.authorise(this.identity, projectId, capability)
+  }
+
+  /** Fixture pagination only. Actual index/cursor behavior is tested against
+   * Convex handlers in discovery.integration.test.ts, not this array double. */
+  private async page<T>(result: CloudResult<T[]>, args: CloudPageRequest, query: string): Promise<CloudResult<CloudPage<T>>> {
+    if (!result.ok) return result
+    const limit = args.limit ?? 50
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      return fail('INVALID_ARGUMENT', 'Invalid page size.', 'Use 1 to 100 records.')
+    const scope = JSON.stringify([query, this.identity?.subject])
+    let offset = 0
+    if (args.cursor != null) {
+      try {
+        const cursor = JSON.parse(args.cursor)
+        if (cursor.scope !== scope || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw new Error()
+        offset = cursor.offset
+      } catch { return fail('INVALID_ARGUMENT', 'Invalid cursor scope.', 'Restart the list.') }
+    }
+    const items = result.value.slice(offset, offset + limit)
+    const done = offset + items.length >= result.value.length
+    return { ok: true, value: { items, done, cursor: done ? null : JSON.stringify({ scope, offset: offset + items.length }) } }
+  }
+
+  async readProjectsPage(args: CloudPageRequest = {}) {
+    return this.page(await this.listProjects(), args, 'projects')
+  }
+  async readBranchesPage(args: ProjectPageRequest) {
+    return this.page(await this.listBranches(args), args, `branches:${args.projectId}`)
+  }
+  async readVersionsPage(args: ProjectPageRequest) {
+    return this.page(await this.listVersions(args), args, `versions:${args.projectId}`)
+  }
+  async readMembersPage(args: ProjectPageRequest) {
+    return this.page(await this.listMembers(args), args, `members:${args.projectId}`)
+  }
+  async readInvitationsPage(args: ProjectPageRequest) {
+    return this.page(await this.listInvitations(args), args, `invitations:${args.projectId}`)
+  }
+  async readCommentsPage(args: CommentPageRequest) {
+    const result = await this.listComments(args)
+    return this.page(result.ok ? { ok: true, value: result.value.filter(row => args.partId === undefined || row.anchor.partId === args.partId) } : result,
+      args, JSON.stringify(['comments', args.projectId, args.status, args.partId]))
   }
 
   // -- projects ------------------------------------------------------------

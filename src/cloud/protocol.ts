@@ -1,4 +1,5 @@
 import type {
+  CloudPage, CloudPageRequest, ProjectPageRequest, CommentPageRequest,
   AddCommentArgs,
   AppendTransactionArgs,
   AppendTransactionValue,
@@ -42,6 +43,7 @@ import type {
  */
 
 export type {
+  CloudPage, CloudPageRequest, ProjectPageRequest, CommentPageRequest,
   BatchTransaction,
   AddCommentArgs,
   AppendTransactionArgs,
@@ -76,6 +78,7 @@ export type {
 } from '../../convex/model/protocol'
 
 export {
+  DEFAULT_DISCOVERY_PAGE_SIZE, MAX_DISCOVERY_PAGE_SIZE,
   cloudFailure,
   cloudSuccess,
   MAX_COMMENT_BYTES,
@@ -88,6 +91,13 @@ export {
 } from '../../convex/model/protocol'
 
 export interface CloudBackend {
+  // Bounded incremental discovery for agents and large collections.
+  readProjectsPage(args?: CloudPageRequest): Promise<CloudResult<CloudPage<CloudProjectSummary>>>
+  readBranchesPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudBranchRecord>>>
+  readVersionsPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudVersionRecord>>>
+  readMembersPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudMemberRecord>>>
+  readInvitationsPage(args: ProjectPageRequest): Promise<CloudResult<CloudPage<CloudInvitationRecord>>>
+  readCommentsPage(args: CommentPageRequest): Promise<CloudResult<CloudPage<CloudCommentRecord>>>
   // -- projects ------------------------------------------------------------
   listProjects(): Promise<CloudResult<CloudProjectSummary[]>>
   getProject(args: { projectId: string }): Promise<CloudResult<CloudProjectSummary>>

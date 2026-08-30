@@ -1,5 +1,6 @@
 import { makeFunctionReference } from 'convex/server'
 import type {
+  CloudPage, CloudPageRequest, ProjectPageRequest, CommentPageRequest,
   AddCommentArgs,
   AppendTransactionArgs,
   AppendTransactionValue,
@@ -54,6 +55,14 @@ const m = <Args extends Record<string, unknown>, Result>(name: string) =>
   makeFunctionReference<'mutation', Args, Result>(name)
 
 export const refs = {
+  discovery: {
+    projects: q<CloudPageRequest, CloudResult<CloudPage<CloudProjectSummary>>>('discovery:projects'),
+    branches: q<ProjectPageRequest, CloudResult<CloudPage<CloudBranchRecord>>>('discovery:branches'),
+    versions: q<ProjectPageRequest, CloudResult<CloudPage<CloudVersionRecord>>>('discovery:versions'),
+    members: q<ProjectPageRequest, CloudResult<CloudPage<CloudMemberRecord>>>('discovery:members'),
+    invitations: q<ProjectPageRequest, CloudResult<CloudPage<CloudInvitationRecord>>>('discovery:invitations'),
+    comments: q<CommentPageRequest, CloudResult<CloudPage<CloudCommentRecord>>>('discovery:comments'),
+  },
   projects: {
     list: q<Empty, CloudResult<CloudProjectSummary[]>>('projects:list'),
     get: q<{ projectId: string }, CloudResult<CloudProjectSummary>>('projects:get'),

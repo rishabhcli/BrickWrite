@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { listOverflow } from './model/discovery'
 import type { Doc } from './_generated/dataModel'
 import { mutation, query, type QueryCtx } from './_generated/server'
 import { authoriseProject, iso, readIdentity, resolveBranch, UNAUTHENTICATED } from './model/auth'
@@ -68,7 +69,10 @@ export const list = query({
     const memberships = await ctx.db
       .query('members')
       .withIndex('by_subject', (q) => q.eq('subject', identity.subject))
-      .take(200)
+      .take(201)
+
+    const overflow = listOverflow(memberships.length, 200, 'discovery:projects')
+    if (overflow) return overflow
 
     const summaries: CloudProjectSummary[] = []
     for (const membership of memberships) {
@@ -98,7 +102,9 @@ export const branches = query({
     const rows = await ctx.db
       .query('branches')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
-      .take(64)
+      .take(65)
+    const overflow = listOverflow(rows.length, 64, 'discovery:branches')
+    if (overflow) return overflow
     return { ok: true, value: rows.map(branchRecord) }
   },
 })

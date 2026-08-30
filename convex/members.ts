@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { listOverflow } from './model/discovery'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
@@ -31,7 +32,9 @@ export const list = query({
     const rows = await ctx.db
       .query('members')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
-      .take(200)
+      .take(201)
+    const overflow = listOverflow(rows.length, 200, 'discovery:members')
+    if (overflow) return overflow
     return { ok: true, value: rows.map(memberRecord) }
   },
 })
