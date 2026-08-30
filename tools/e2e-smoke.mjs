@@ -111,6 +111,29 @@ async function sampleContrast(page, samples) {
 }
 
 /** Same detector as `tools/e2e/renderer.mjs` — widen waits, never drop assertions. */
+/**
+ * Camera, snap, render, delivery and help moved behind the Workspace trigger
+ * when the tool rail was cut to four modes, so anything under it has to be
+ * revealed before it can be clicked. Activating an item closes the popover and
+ * hands focus back to the trigger, which is where a modal opened from in here
+ * returns focus on close.
+ */
+async function closeWorkspace(page) {
+  const popover = page.getByRole('dialog', { name: 'Workspace actions' })
+  if (!(await popover.count())) return
+  await page.keyboard.press('Escape')
+  await popover.waitFor({ state: 'hidden' })
+}
+
+async function openWorkspace(page) {
+  const popover = page.getByRole('dialog', { name: 'Workspace actions' })
+  // The trigger toggles, so a blind click would close a popover that is already
+  // showing. Callers reveal the menu before every group they drive.
+  if (await popover.count()) return
+  await page.getByRole('button', { name: 'Workspace' }).click()
+  await popover.waitFor()
+}
+
 const SOFTWARE_RASTERISER = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i
 let onCpu = false
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, onCpu ? Math.max(ms, 400) : ms))
@@ -387,21 +410,22 @@ try {
   await page.waitForTimeout(150)
 
   // -- keyboard command map is a real modal, not decorative chrome ----------
-  const shortcutsButton = page.getByRole('button', { name: 'Keyboard shortcuts' })
-  const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()
-  await shortcutsButton.click()
+  const workspaceTrigger = page.getByRole('button', { name: 'Workspace' })
+  const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
   const shortcutDialog = page.getByRole('dialog', { name: 'Work at the speed of thought' })
   await shortcutDialog.waitFor()
   await page.keyboard.press('g')
   assert(
-    (await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()) === activeToolBeforeModal,
+    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()) === activeToolBeforeModal,
     'A keyboard shortcut mutated the CAD tool while the command map was modal',
   )
   await page.keyboard.press('Escape')
   await shortcutDialog.waitFor({ state: 'hidden' })
   assert(
-    await shortcutsButton.evaluate((node) => document.activeElement === node),
-    'Closing the command map did not restore focus',
+    await workspaceTrigger.evaluate((node) => document.activeElement === node),
+    'Closing the command map did not restore focus to the control that opened it',
   )
   await page.keyboard.press('?')
   await shortcutDialog.waitFor()
@@ -409,9 +433,9 @@ try {
   await shortcutDialog.waitFor({ state: 'hidden' })
 
   // -- the Command Deck is the human face of the WebMCP capability registry -
-  const commandButton = page.getByRole('button', { name: 'Command deck' })
-  const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()
-  await commandButton.click()
+  const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Command deck' }).click()
   const commandDialog = page.getByRole('dialog', { name: 'Command Deck' })
   await commandDialog.waitFor()
   // Parity is the Command Deck's entire claim, so it is checked against the
@@ -440,7 +464,7 @@ try {
   )
   await page.keyboard.press('g')
   assert(
-    (await page.locator('.primary-tools .tool-button[aria-pressed="true"]').textContent()) === toolBeforeCommand,
+    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()) === toolBeforeCommand,
     'A viewport shortcut leaked through the modal Command Deck',
   )
   await commandDialog.getByPlaceholder('Find a command…').fill('project')
@@ -453,8 +477,8 @@ try {
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
   assert(
-    await commandButton.evaluate((node) => document.activeElement === node),
-    'Closing the Command Deck did not restore focus',
+    await workspaceTrigger.evaluate((node) => document.activeElement === node),
+    'Closing the Command Deck did not restore focus to the control that opened it',
   )
 
   // -- dynamic WebMCP surface ------------------------------------------------
@@ -495,12 +519,12 @@ try {
     'render_capture did not return viewport pixels',
   )
 
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
   assert(
     await page.evaluate(() => window.brickwright.tools.has('build_apply')),
     'Build mode did not register write tools',
   )
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
   assert(
     !(await page.evaluate(() => window.brickwright.tools.has('build_apply'))),
     'Leaving Build mode did not revoke write tools',
@@ -736,7 +760,6 @@ try {
   // shown back in the field exactly as it was stored.
   await revealChrome(page, 'transform')
   const numericX = page.locator('.dock-right').getByLabel('X in LDraw units')
-  const numericY = page.locator('.dock-right').getByLabel('Y in LDraw units')
   await numericX.waitFor({ timeout: 5_000 })
   const beforeNumeric = await modelState()
   const numericTarget = await page.evaluate(
@@ -777,27 +800,12 @@ try {
   )
   workflow.numericTransform = numericResult
 
-  // Lift it clear of the build. LDraw is Y-down, so this is 200 LDU up, well
-  // outside the connector solver's search radius — the part is now genuinely
-  // detached, which is the state Connect exists for.
-  const beforeLift = await modelState()
-  const liftTarget = await page.evaluate(
-    (id) => window.brickwright.getDocument().parts[id].transform.position[1] - 200,
-    subjectId,
-  )
-  await numericY.fill(String(liftTarget))
-  await numericY.press('Enter')
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeLift.revision, {
-    timeout: 10_000,
-  })
-  const detachedEdges = await page.evaluate(
-    (id) =>
-      Object.values(window.brickwright.getDocument().connections).filter(
-        (edge) => edge.a.partId === id || edge.b.partId === id,
-      ).length,
-    subjectId,
-  )
-  assert(detachedEdges === 0, `Lifting the part clear left ${detachedEdges} connections behind`)
+  // Connect used to be handed a part lifted 200 LDU into the air. The kernel
+  // now refuses any transform that would leave a part hovering, and every
+  // reachable seat in this document clutches, so a zero-connection part is no
+  // longer a state the editor can be driven into. Connect is exercised on the
+  // brick as placed instead — it still has to move it and seat it, which is
+  // what the commit below asserts against the kernel's own connection graph.
 
   // mate via Connect: an explicit two-stage interaction with a reviewed preview.
   await page.locator('.primary-tools .tool-button', { hasText: 'Connect' }).click()
@@ -935,16 +943,65 @@ try {
 
   // array. The control is parameterised rather than a fixed guess, so the run
   // states its own copies, axis and spacing.
+  // Array needs clear neighbours. The subject is seated inside the assembly, so
+  // every ground offset from it collides, and the kernel refuses copies that
+  // would hover instead of resting. A brick is dropped on open baseplate and
+  // arrayed there, which is where a builder would run it anyway.
+  await page.locator('[data-catalog-search]').fill('3005')
+  await page.waitForFunction(() => document.querySelectorAll('.part-card').length > 0, null, { timeout: 10_000 })
+  const beforeArraySeat = await modelState()
+  await page.locator('[data-catalog-search]').press('ArrowDown')
+  await page.locator('[data-catalog-search]').press('Enter')
+  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  await page.locator('canvas').click({
+    position: {
+      x: Math.max(canvasCentre.x - 300, 8),
+      y: Math.min(canvasCentre.y + 170, canvasBox.height - 8),
+    },
+  })
+  await page.waitForFunction(
+    (parts) => Object.keys(window.brickwright.getDocument().parts).length > parts,
+    beforeArraySeat.parts,
+    { timeout: 10_000 },
+  )
+  await page.keyboard.press('Escape')
+  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
+  await page.locator('[data-catalog-search]').fill('')
+
   const beforeArray = await modelState()
   await page.locator('.dock-right').getByRole('button', { name: 'Array' }).click()
   await page.locator('.array-control').waitFor({ timeout: 5_000 })
   await page.locator('.array-control').getByLabel('Array copies').fill('3')
-  await page.locator('.array-control').getByLabel('Array axis').selectOption('y')
-  await page.locator('.array-control').getByRole('button', { name: 'ARRAY' }).click()
-  await page.waitForFunction(
-    (parts) => Object.keys(window.brickwright.getDocument().parts).length > parts,
-    beforeArray.parts,
-    { timeout: 10_000 },
+  // The kernel refuses copies that would hover — "offset along the ground so
+  // copies rest or clutch" — so the run walks the ground axes and reports the
+  // one it used rather than hard-coding a direction that happens to be clear.
+  // A refusal leaves the part count alone, so the kernel's own notice is read
+  // back instead of letting the wait expire into a bare timeout.
+  let arrayOutcome = null
+  let arrayAxis = null
+  for (const axis of ['x', 'z']) {
+    await page.locator('.array-control').getByLabel('Array axis').selectOption(axis)
+    await page.locator('.array-control').getByRole('button', { name: 'ARRAY' }).click()
+    let outcome = null
+    for (let tick = 0; tick < 40 && !outcome; tick += 1) {
+      outcome = await page.evaluate((parts) => {
+        if (Object.keys(window.brickwright.getDocument().parts).length > parts) return { ok: true }
+        const toast = document.querySelector('.toast')?.textContent?.trim()
+        return toast ? { ok: false, toast } : null
+      }, beforeArray.parts)
+      if (!outcome) await page.waitForTimeout(200)
+    }
+    arrayOutcome = outcome
+    arrayAxis = axis
+    if (outcome?.ok) break
+    await page
+      .locator('.toast')
+      .waitFor({ state: 'hidden', timeout: 15_000 })
+      .catch(() => {})
+  }
+  assert(
+    arrayOutcome?.ok,
+    `The three-copy array did not commit on any ground axis (last was ${arrayAxis}): ${JSON.stringify(arrayOutcome)}`,
   )
   const afterArray = await modelState()
   assert(
@@ -952,7 +1009,7 @@ try {
     `A three-copy array added ${afterArray.parts - beforeArray.parts} parts`,
   )
   assert(afterArray.revision === beforeArray.revision + 1, 'The array was not a single transaction')
-  workflow.array = afterArray
+  workflow.array = { ...afterArray, axis: arrayAxis }
 
   // isolate: view state, never a document edit.
   await revealChrome(page, 'selection')
@@ -993,6 +1050,10 @@ try {
   // The bottom band used to swap the sequence out for history the moment
   // anything was edited, so the steps vanished exactly when a builder needed
   // them. They are now separate views, and STEPS is reachable at any time.
+  // The bottom dock is collapsed until it is asked for, so the timeline surface
+  // is revealed through the same bus the agent uses before it is driven.
+  await revealChrome(page, 'timeline')
+  await page.locator('.timeline-switch').waitFor({ timeout: 10_000 })
   await page.locator('.timeline-switch button', { hasText: 'STEPS' }).click()
   const stepCards = await page.locator('.step-card').count()
   assert(
@@ -1001,14 +1062,64 @@ try {
   )
 
   // -- manual placement uses the same bus, and undo stays monotonic ---------
+  // Quick-add seats the part on whatever is selected, so the kernel turns it
+  // down when that anchor has no free stud the identity can take, and refuses
+  // an unanchored add outright because this document caps the envelope at
+  // 10 x 14 studs. Neither is a fault, so the run walks anchors and identities
+  // until one seats — the same way the Connect stage walks its targets — and
+  // reports the last refusal if none of them do.
   const beforeAdd = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
   }))
-  await page.locator('.part-card').first().locator('.part-add').click()
-  await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeAdd.revision, {
-    timeout: 10_000,
-  })
+  const addCards = page.locator('.part-card:not(.unplaceable)')
+  const addCandidates = Math.min(await addCards.count(), 4)
+  let addOutcome = null
+  for (const offset of [
+    [0, 0],
+    [0, -90],
+    [90, -40],
+    [-90, -40],
+    [0, 80],
+  ]) {
+    if (addOutcome?.ok) break
+    await page.locator('canvas').click({
+      position: {
+        x: Math.min(Math.max(canvasCentre.x + offset[0], 8), canvasBox.width - 8),
+        y: Math.min(Math.max(canvasCentre.y + offset[1], 8), canvasBox.height - 8),
+      },
+    })
+    await page.waitForTimeout(220)
+    const anchored = await page.evaluate(
+      () => (document.querySelector('.viewport-title-block p')?.textContent ?? 'No selection') !== 'No selection',
+    )
+    if (!anchored) continue
+    for (let index = 0; index < addCandidates && !addOutcome?.ok; index += 1) {
+      await addCards.nth(index).locator('.part-add').click()
+      let outcome = null
+      for (let tick = 0; tick < 25 && !outcome; tick += 1) {
+        outcome = await page.evaluate((revision) => {
+          if (window.brickwright.getDocument().revision > revision) return { ok: true }
+          const toast = document.querySelector('.toast')?.textContent?.trim()
+          return toast
+            ? { ok: false, toast, anchor: document.querySelector('.viewport-title-block p')?.textContent ?? null }
+            : null
+        }, beforeAdd.revision)
+        if (!outcome) await page.waitForTimeout(200)
+      }
+      addOutcome = outcome
+      if (!outcome?.ok) {
+        await page
+          .locator('.toast')
+          .waitFor({ state: 'hidden', timeout: 15_000 })
+          .catch(() => {})
+      }
+    }
+  }
+  assert(
+    addOutcome?.ok,
+    `No catalog identity could be seated on any anchor the viewport offered: ${JSON.stringify(addOutcome)}`,
+  )
   const afterAdd = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
@@ -1050,7 +1161,8 @@ try {
     revision: window.brickwright.getDocument().revision,
     name: window.brickwright.getDocument().name,
   }))
-  await commandButton.click()
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Command deck' }).click()
   await commandDialog.getByRole('button', { name: /Rename project/ }).click()
   await commandDialog.getByLabel('Project name').fill('Human + Agent Survey Rover')
   await commandDialog.getByRole('button', { name: 'RUN COMMAND' }).click()
@@ -1069,7 +1181,7 @@ try {
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
 
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
   const agentParity = await page.evaluate(async () => {
     const model = window.brickwright.getDocument()
     const help = await window.brickwright.invoke('capabilities_help', { capability: 'rename_document' })
@@ -1107,7 +1219,7 @@ try {
     parityUndo.revision === beforeParity.revision + 4,
     'Human/agent edits and their undos did not remain monotonic',
   )
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
 
   // -- the collision kernel confirms against triangles, not just boxes -------
   // A 45°-rotated brick's axis-aligned box is far larger than the brick, so a
@@ -1145,6 +1257,9 @@ try {
   await page.locator('.proposal-overlay').waitFor({ state: 'detached' })
 
   // -- export round-trips the exact document -------------------------------
+  // Delivery moved into the Workspace popover with camera, snap and render, so
+  // the menu is revealed before the export controls are driven.
+  await openWorkspace(page)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /EXPORT LDR/i }).click()
   const download = await downloadPromise
@@ -1155,6 +1270,7 @@ try {
 
   // The delivery menu exposes the richer outputs without taking the direct LDR
   // action away from the toolbar.
+  await openWorkspace(page)
   await page.getByRole('button', { name: 'More export options' }).click()
   const mpdPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /Assembly MPD/i }).click()
@@ -1186,6 +1302,8 @@ try {
     'Build guide omitted the build-order verification claim',
   )
   await page.locator('.export-panel > header').getByRole('button', { name: 'Close deliverables' }).click()
+  // Put the menu away again; left open it covers the docks the run drives next.
+  await closeWorkspace(page)
 
   await revealChrome(page, 'inspector')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
@@ -1229,7 +1347,7 @@ try {
   )
   assert(articulation.joints.joints[0].family === 'hinge', 'Expected the drivable joint to be the hinge')
 
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
 
   const driven = await page.evaluate(async (hatchId) => {
     const model = window.brickwright.getDocument()
@@ -1313,7 +1431,7 @@ try {
   // a wall placed brick-by-brick by a language model has stacked seams and
   // unbonded courses. The generators do the bricklaying and the kernel checks
   // the result, so what is asserted here is the *quality* of what came back.
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'build' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
   const generated = await page.evaluate(async () => {
     const mutate = async (action, args) => {
       const r = await window.brickwright.invoke('action_mutate', {
@@ -1487,15 +1605,22 @@ try {
     const before = await sample()
 
     const model = window.brickwright.getDocument()
+    const origins = Object.values(model.parts).map((part) => part.transform.position)
+    // The kernel refuses parts that would hover, so the batch is laid out flat
+    // on the ground the rest of the build already rests on, one identity so
+    // every copy shares a bottom face, and clear of the model in X so nothing
+    // collides. It stays beside the build, which the camera refit keeps in
+    // frame, so the counters still describe geometry that is genuinely drawn.
+    const groundY = Math.max(...origins.map((origin) => origin[1]))
+    const clearX = Math.max(...origins.map((origin) => origin[0])) + 200
+    const baseZ = Math.min(...origins.map((origin) => origin[2]))
     const operations = []
     for (let index = 0; index < 400; index += 1) {
       operations.push({
         op: 'add',
-        definitionId: index % 2 === 0 ? '3024' : '3005',
+        definitionId: '3024',
         color: index % 2 === 0 ? 15 : 4,
-        // Kept close to the model so the camera refit leaves it on screen and
-        // the counters describe geometry that is genuinely being drawn.
-        position: [(index % 20) * 20 - 200, -120 - Math.floor(index / 20) * 8, Math.floor(index / 20) * 20 - 200],
+        position: [clearX + (index % 20) * 20, groundY, baseZ + Math.floor(index / 20) * 20],
       })
     }
     const preflight = await window.brickwright.invoke('build_preflight', {
@@ -1538,7 +1663,7 @@ try {
   )
   // Undo the stress batch so the reload check sees the real project.
   await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
-  await page.locator('.autonomy-switch').getByRole('button', { name: 'propose' }).click()
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
 
   // -- the project survives a reload ---------------------------------------
   // Every committed transaction is appended to IndexedDB, so reopening the page
@@ -1680,17 +1805,27 @@ try {
 
   await shot('state-transform')
 
+  await revealChrome(page, 'timeline')
+  await page.locator('.timeline-switch').waitFor({ timeout: 10_000 })
   await page.locator('.timeline-switch button', { hasText: 'HISTORY' }).click()
   await shot('state-timeline-history')
   await page.locator('.timeline-switch button', { hasText: 'STEPS' }).click()
 
-  await page.selectOption('.render-picker select', 'connections')
+  // Render mode sits in the Workspace popover with camera and snap now. The
+  // menu is put away again before each shot so the artifact frames the
+  // viewport rather than the menu that selected the mode.
+  const setRenderMode = async (mode) => {
+    await openWorkspace(page)
+    await page.getByLabel('Viewport render mode').selectOption(mode)
+    await closeWorkspace(page)
+  }
+  await setRenderMode('connections')
   await page.waitForTimeout(300)
   await shot('state-render-connections')
-  await page.selectOption('.render-picker select', 'exploded')
+  await setRenderMode('exploded')
   await page.waitForTimeout(400)
   await shot('state-render-exploded')
-  await page.selectOption('.render-picker select', 'beauty')
+  await setRenderMode('beauty')
   await page.waitForTimeout(200)
 
   // The inspector's validation report, which is also the last existing
@@ -1799,9 +1934,19 @@ try {
 
   // -- keyboard reachability ------------------------------------------------
   // Tab from the very top of the document and record what it can reach.
-  await page.locator('.brand-lockup').click({ position: { x: 4, y: 4 } })
+  // The brand lockup is a link home now, so clicking it to park focus at the
+  // top would navigate out of the editor and tab around the marketing shell.
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  // The left dock lists the whole catalogue, so the viewport is a few hundred
+  // tab stops down the document — which is what the skip link exists for. The
+  // walk therefore runs until it has seen both landmarks rather than to a fixed
+  // budget that happens to fit today's palette length.
   const reached = []
-  for (let step = 0; step < 90; step += 1) {
+  const sawRail = () => reached.some((entry) => entry.includes('tool-button'))
+  const sawCanvas = () => reached.some((entry) => entry.startsWith('canvas'))
+  for (let step = 0; step < 600 && !(sawRail() && sawCanvas()); step += 1) {
     await page.keyboard.press('Tab')
     const id = await page.evaluate(() => {
       const node = document.activeElement
@@ -1810,15 +1955,12 @@ try {
     })
     if (id) reached.push(id)
   }
-  assert(reached.length > 20, `Only ${reached.length} controls were reachable by Tab in 60 presses`)
+  assert(reached.length > 20, `Only ${reached.length} controls were reachable by Tab`)
   assert(
-    reached.some((entry) => entry.includes('tool-button')),
-    'The tool rail is not reachable by keyboard',
+    sawRail(),
+    `The tool rail is not reachable by keyboard; Tab reached ${reached.length}: ${reached.slice(0, 14).join(' | ')}`,
   )
-  assert(
-    reached.some((entry) => entry.startsWith('canvas')),
-    'The CAD viewport canvas is not reachable by Tab',
-  )
+  assert(sawCanvas(), `The CAD viewport canvas is not reachable by Tab; ${reached.length} controls were walked`)
   assert(
     reached.some((entry) => entry.startsWith('input')),
     'No text field is reachable by keyboard',
@@ -1906,10 +2048,14 @@ try {
   // status bar, the dock headers, the tool labels and the palette copy.
   // Exclusive dock sheets unmount their bodies, so Transform and Selection
   // are sampled after revealing each surface on its own.
+  // The right dock stays shut until something asks for it, and its section
+  // headers go with it, so one surface is revealed before the shared batch.
+  await revealChrome(page, 'inspector')
+  await page.waitForFunction(() => document.querySelector('.dock-section-toggle h3'), null, { timeout: 10_000 })
   const contrast = await sampleContrast(page, [
     ['.statusbar .status-scope', 4.5],
     ['.statusbar .status-hint', 4.5],
-    ['.dock-section-toggle span', 4.5],
+    ['.dock-section-toggle h3', 4.5],
     ['.tool-button.active span', 4.5],
     ['.part-copy strong', 4.5],
     ['.dock-head .eyebrow', 3],
@@ -2035,8 +2181,11 @@ try {
 
   const roundTripPath = 'artifacts/e2e-roundtrip.ldr'
   await writeFile(roundTripPath, exported, 'utf8')
+  await openWorkspace(page)
   await page.getByRole('button', { name: 'More export options' }).click()
-  await page.locator('.export-panel input[type=file]').setInputFiles(roundTripPath)
+  // Deliverables offers both an LDraw import and a project-JSON one; this round
+  // trip is LDraw, so the input is picked by what it accepts.
+  await page.locator('.export-panel input[type=file][accept*=".ldr"]').setInputFiles(roundTripPath)
   await page.waitForFunction((parts) => Object.keys(window.brickwright.getDocument().parts).length === parts, type1, {
     timeout: 30_000,
   })

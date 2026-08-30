@@ -773,27 +773,44 @@ try {
 
     // Try a few angles: the free arc is a property of the parts, so the test
     // finds one the kernel accepts rather than asserting where it is.
+    //
+    // The obstacle can no longer be a lone plate: the kernel refuses a part left
+    // with no clutch and no ground under it. It goes in as a clutched pair
+    // instead — the plate standing in the arc and one directly beneath it, LDraw
+    // being Y-down — which is the same rule the hinge above is built by.
     let obstacle = null
     let obstacleDegrees = 0
+    const refusals = []
     for (const degrees of [-40, -30, -55, 40, 30]) {
       const current = window.brickwright.getDocument()
       const position = rotateAboutJoint(tip.transform.position, (degrees * Math.PI) / 180)
       const preflight = await window.brickwright.invoke('build_preflight', {
         expectedRevision: current.revision,
         label: 'Renderer acceptance obstacle',
-        operations: [{ op: 'add', definitionId: '3024', color: 4, position }],
+        operations: [
+          { op: 'add', definitionId: '3024', color: 4, position },
+          { op: 'add', definitionId: '3024', color: 4, position: [position[0], position[1] + 8, position[2]] },
+        ],
       })
       const proposalId = preflight?.structuredContent?.id
-      if (!proposalId) continue
+      if (!proposalId) {
+        refusals.push({ degrees, stage: 'preflight', why: JSON.stringify(preflight?.structuredContent).slice(0, 160) })
+        continue
+      }
       const applied = await window.brickwright.invoke('build_apply', { proposalId })
-      if (!applied?.structuredContent?.resultRevision) continue
+      if (!applied?.structuredContent?.resultRevision) {
+        refusals.push({ degrees, stage: 'apply', why: JSON.stringify(applied?.structuredContent).slice(0, 160) })
+        continue
+      }
       const after = window.brickwright.getDocument()
       const known = new Set(Object.keys(current.parts))
-      obstacle = Object.keys(after.parts).find((id) => !known.has(id)) ?? null
+      const added = Object.keys(after.parts).filter((id) => !known.has(id))
+      // The upper plate is the one standing in the arc; the other holds it there.
+      obstacle = added.sort((a, b) => after.parts[a].transform.position[1] - after.parts[b].transform.position[1])[0] ?? null
       obstacleDegrees = degrees
       break
     }
-    if (!obstacle) return { error: 'every candidate obstacle position was refused by the kernel' }
+    if (!obstacle) return { error: `every candidate obstacle position was refused: ${JSON.stringify(refusals)}` }
 
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     const joint =
