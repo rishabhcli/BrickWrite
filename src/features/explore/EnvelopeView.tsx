@@ -12,6 +12,7 @@ import {
   visibleFaces,
   type Camera,
   type Vec,
+  LAYER_LDU,
 } from './projection'
 
 /**
@@ -37,6 +38,14 @@ export interface EnvelopeViewProps {
   stepLimit?: number
   /** Parts in this step are drawn at full strength, the rest washed back. */
   highlightStep?: number
+  /**
+   * Slice the model at this layer, counted in plate heights up from the ground.
+   *
+   * Everything at or below the layer is drawn; everything above it is left out
+   * entirely, the way a slicer preview walks a print. `undefined` draws the
+   * whole model.
+   */
+  layerLimit?: number
   explode?: number
   selectedIndex?: number | null
   onSelectIndex?: (index: number | null) => void
@@ -63,6 +72,7 @@ export function EnvelopeView({
   onCameraChange,
   stepLimit,
   highlightStep,
+  layerLimit,
   explode = 0,
   selectedIndex = null,
   onSelectIndex,
@@ -111,6 +121,11 @@ export function EnvelopeView({
     const basis = cameraBasis(camera)
     const fit = fitScene(preview.boundsLdu, basis, size, { padding: 0.12, zoom: camera.zoom })
     const scene = buildScene(preview, basis, { stepLimit, explode, explodeOffsets: offsets })
+    // LDraw is Y-down, so the ground is the greatest Y the model reaches and a
+    // part's underside is its own greatest Y. Layers count up from there in
+    // plate heights, which is the grain the models are actually built on.
+    const groundY = preview.boundsLdu.max[1]
+    const layerOf = (box: { max: Vec }) => Math.max(0, Math.round((groundY - box.max[1]) / LAYER_LDU))
     const hits: HitTarget[] = []
     const collectHits = Boolean(onSelectIndex)
     // Roughly a stud's radius, so the dimples scale with the model rather than
@@ -120,6 +135,7 @@ export function EnvelopeView({
 
     context.lineJoin = 'round'
     for (const box of scene) {
+      if (layerLimit !== undefined && layerOf(box) > layerLimit) continue
       const color = palette[box.color] ?? { hex: '#8a928d', edge: '#4a5559', alpha: 1 }
       const resolved = wave === undefined ? true : normalisedU(box.centre, basis, preview) <= wave
       const dimmed = highlightStep !== undefined && box.step !== highlightStep
@@ -163,7 +179,7 @@ export function EnvelopeView({
     }
     // Nearest first, so a click lands on the part in front.
     hitsRef.current = hits.reverse()
-  }, [preview, camera, size, stepLimit, highlightStep, explode, selectedIndex, wave, offsets, palette, onSelectIndex])
+  }, [preview, camera, size, stepLimit, highlightStep, layerLimit, explode, selectedIndex, wave, offsets, palette, onSelectIndex])
 
   const orbitBy = useCallback(
     (deltaYaw: number, deltaPitch: number) => {

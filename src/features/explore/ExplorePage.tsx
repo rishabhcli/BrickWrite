@@ -5,7 +5,7 @@ import { hrefFor, navigate, useLandingRoute } from '../landing/navigation'
 import { PlateAtmosphere, StageHud } from '../landing/plate'
 import { usePointerField } from '../landing/reveal'
 import { forkDemo, type ForkOutcome } from './fork'
-import { PART_FIELDS } from './projection'
+import { PART_FIELDS, layerCount } from './projection'
 import './explore.css'
 
 const EnvelopeView = lazy(() => import('./EnvelopeView'))
@@ -125,6 +125,17 @@ export function ExplorePage() {
   const selectedPart = activePreview && selected !== null ? activePreview.parts[selected] : null
   const stepIndexLimit = view === 'before-after' ? undefined : step
 
+  // Layer scrubbing, the way a slicer previews a print: everything at or below
+  // the layer is drawn and everything above it is left out. It reads the model
+  // on the grain it was built on, which for these sets means the seam between
+  // one storey and the next is a real place to stop.
+  const totalLayers = useMemo(() => (activePreview ? layerCount(activePreview) : 1), [activePreview])
+  const [layer, setLayer] = useState<number | null>(null)
+  const layerLimit = layer === null ? undefined : layer
+  useEffect(() => {
+    setLayer(null)
+  }, [demo.id])
+
   const stepName = useMemo(() => {
     const entry = preview?.steps.find((candidate) => candidate.index === step)
     return entry ? entry.name : `Step ${step}`
@@ -193,6 +204,7 @@ export function ExplorePage() {
                   camera={camera}
                   onCameraChange={setCamera}
                   stepLimit={stepIndexLimit}
+                  layerLimit={layerLimit}
                   highlightStep={view === 'solid' && step < totalSteps ? step - 1 : undefined}
                   explode={explode}
                   selectedIndex={selected}
@@ -249,6 +261,23 @@ export function ExplorePage() {
                 />
                 <span className="bw-control-value">
                   {step} / {totalSteps}
+                </span>
+              </label>
+              <label htmlFor="bw-layer">
+                Layer
+                <input
+                  id="bw-layer"
+                  type="range"
+                  min={1}
+                  max={totalLayers}
+                  value={layer ?? totalLayers}
+                  onChange={(event) => {
+                    const next = Number(event.target.value)
+                    setLayer(next >= totalLayers ? null : next)
+                  }}
+                />
+                <span className="bw-control-value">
+                  {layer === null ? `all ${totalLayers}` : `${layer} / ${totalLayers}`}
                 </span>
               </label>
               <label htmlFor="bw-explode">

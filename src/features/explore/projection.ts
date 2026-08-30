@@ -185,6 +185,21 @@ export function pointInPolygon(point: [number, number], polygon: Array<[number, 
 // Scene assembly
 // ---------------------------------------------------------------------------
 
+/** One plate height. Layers are counted on the grain the models are built on. */
+export const LAYER_LDU = 8
+
+/**
+ * How many layers a model is, so a caller can size its scrubber.
+ *
+ * Lives here rather than beside the renderer because the page that draws the
+ * control imports this module directly, while the renderer itself is lazy: the
+ * landing route must not pull a canvas renderer in to size a slider.
+ */
+export function layerCount(preview: DemoPreview): number {
+  const height = preview.boundsLdu.max[1] - preview.boundsLdu.min[1]
+  return Math.max(1, Math.round(height / LAYER_LDU))
+}
+
 export interface SceneBox {
   index: number
   min: Vec
