@@ -72,9 +72,14 @@ describe('the landing page', () => {
     expect(screen.getByRole('link', { name: /Open the editor/ })).toHaveAttribute('href', '/editor')
   })
 
-  it('links three featured demos, with described images sized to avoid layout shift', () => {
+  // The landing features up to three builds, however many the collection holds.
+  // Pinning the number here meant retiring a demo failed the landing tests
+  // rather than the thing they exist to check: that every card it does show
+  // links somewhere real and reserves its space before the image loads.
+  it('links each featured demo, with described images sized to avoid layout shift', () => {
     render(<LandingPage />)
-    for (const demo of DEMOS.slice(0, 3)) {
+    const featured = DEMOS.slice(0, 3)
+    for (const demo of featured) {
       const card = screen.getByRole('link', { name: new RegExp(demo.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
       expect(card).toHaveAttribute('href', hrefFor({ kind: 'explore', demoId: demo.id }))
       const image = within(card).getByRole('img')
@@ -83,7 +88,7 @@ describe('the landing page', () => {
       expect(image.getAttribute('alt')?.length ?? 0).toBeGreaterThan(20)
       expect(image).toHaveAttribute('src', demo.assets.thumbnail.url)
     }
-    expect(screen.getAllByRole('link').filter((link) => link.querySelector('img'))).toHaveLength(3)
+    expect(screen.getAllByRole('link').filter((link) => link.querySelector('img'))).toHaveLength(featured.length)
   })
 
   it('quotes only numbers that came out of a validation run', () => {

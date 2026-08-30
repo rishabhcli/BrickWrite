@@ -100,7 +100,7 @@ const [
 ])
 
 const { catalog, getColor, originForSurface, surfaceAbove, STUD_LDU, PLATE_LDU, BRICK_LDU } = catalogModule
-const { planWall, planEnclosure, planBrickField, planHingedFlap } = assemblyModule
+const { planEnclosure, planBrickField, elementLibrary } = assemblyModule
 const { findCollisions, geometryFromArrays } = collisionModule
 const { getPartBounds } = geometryModule
 const { computeBuildOrder, verifyBuildOrder } = instructionsModule
@@ -398,13 +398,6 @@ function assertOnGrid(definition, position, basis, label) {
   }
 }
 
-/** A part's own underside plane, in its local frame. */
-const underPlaneOf = (definition) => {
-  const seats = definition.connectors.filter(
-    (connector) => connector.family === 'anti-stud' && connector.gender === 'female',
-  )
-  return seats.length ? Math.max(...seats.map((connector) => connector.pos[1])) : 0
-}
 
 const basisFor = (degrees) =>
   degrees % 90 === 0
@@ -974,525 +967,6 @@ const HUMAN = 'human'
 const spec = (fields) => ({ actor: HUMAN, subassemblyId: fields.sub, stepId: 'step_1', ...fields })
 
 /**
- * A brick-built terrace block.
- *
- * Authored almost entirely by the parametric planners, because that is the
- * claim the landing page makes about them: one instruction lays a bonded
- * storey with real window and door frames seated in its openings. Nothing here
- * chooses a part by name — the planners pick from the compiled pack by measured
- * envelope, and the roof, the parapet and the deck are the same call with
- * different arguments.
- */
-function courtyardTerrace(rough) {
-  const build = new Build({
-    subassemblies: [
-      // planEnclosure lays its floor into the same assembly as the walls that
-      // stand on it, so the name says so rather than implying two groups.
-      { id: 'shell', name: 'Deck and shell', accent: '#f7b04a' },
-      { id: 'roof', name: 'Roof slab', accent: '#8bcf65' },
-      { id: 'parapet', name: 'Parapet', accent: '#87f7ff' },
-    ],
-  })
-
-  const width = 20
-  const depth = 14
-  const courses = 6
-  const floorLayers = rough ? 1 : 2
-  const openings = [
-    { atStud: 2, widthStuds: 2, fromCourse: 1, toCourse: 3, element: rough ? undefined : 'window' },
-    { atStud: 8, widthStuds: 4, fromCourse: 0, toCourse: 5, element: rough ? undefined : 'door' },
-    { atStud: 15, widthStuds: 2, fromCourse: 1, toCourse: 3, element: rough ? undefined : 'window' },
-  ]
-
-  const shell = planEnclosure(
-    spec({
-      sub: 'shell',
-      origin: [0, 0, 0],
-      color: C.tan,
-      trimColor: C.white,
-      glassColor: C.transClear,
-      family: 'brick',
-      depthStuds: 1,
-      widthStuds: width,
-      footprintDepthStuds: depth,
-      courses,
-      floor: true,
-      floorLayers,
-      openings,
-    }),
-  )
-  build.addPlan(shell)
-
-  // The deck is laid inside the enclosure plan, so the wall origin — and with
-  // it every level above — moves down by however many plate courses it used.
-  const roofSurface = -(floorLayers * PLATE_LDU + courses * BRICK_LDU)
-  if (rough) return { build, notes: shell.notes, warnings: shell.warnings }
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'roof',
-        origin: [0, roofSurface, 0],
-        color: C.darkBluishGrey,
-        family: 'plate',
-        widthStuds: width,
-        footprintDepthStuds: depth,
-        layers: 2,
-      }),
-    ),
-  )
-
-  const parapetSurface = roofSurface - 2 * PLATE_LDU
-  build.addPlan(
-    planEnclosure(
-      spec({
-        sub: 'parapet',
-        origin: [0, parapetSurface, 0],
-        color: C.darkTan,
-        family: 'brick',
-        depthStuds: 1,
-        widthStuds: width,
-        footprintDepthStuds: depth,
-        courses: 1,
-        floor: false,
-      }),
-    ),
-  )
-
-  return { build, notes: shell.notes, warnings: shell.warnings }
-}
-
-/**
- * A flatbed hauler.
- *
- * Hand-placed, because a vehicle is exactly what the parametric planners do not
- * do: there is no bonded-course problem here, only a chassis that has to sit on
- * its wheels and a cab that has to close. Every vertical position still comes
- * from the parts' own compiled connectors rather than a nominal brick height.
- */
-function ridgelineHauler(rough) {
-  const build = new Build({
-    subassemblies: [
-      { id: 'running', name: 'Running gear', accent: '#6bbbd6' },
-      { id: 'chassis', name: 'Chassis', accent: '#f7b04a' },
-      { id: 'cab', name: 'Cab', accent: '#87f7ff' },
-      { id: 'bed', name: 'Flatbed', accent: '#8bcf65' },
-    ],
-  })
-
-  // Wheels first: they are what the vehicle stands on, so they define ground.
-  // A 2 x 2 wheel brick is one part per axle, which keeps the running gear a
-  // real sub-assembly rather than a pile of hubs with nothing holding an axle.
-  const running = { sub: 'running' }
-  const deck = build.place('3137c01', C.red, 0, -80, 0, running)
-  build.place('3137c01', C.red, 0, 80, 0, running)
-
-  // Chassis, four studs wide and twelve long. Layer one runs fore and aft with
-  // its seam on the centreline; layer two crosses that seam. Without the
-  // crossing the hauler is two half-chassis that merely touch.
-  const chassis = { sub: 'chassis' }
-  const afterFloor = build.row('3795', C.darkBluishGrey, [-20, 20], [-60, 60], deck, { ...chassis, rotY: 90 })
-  const afterLock = rough
-    ? build.row('3031', C.darkBluishGrey, [0], [-80, 80], afterFloor, chassis)
-    : (() => {
-        build.place('3031', C.darkBluishGrey, 0, -80, afterFloor, chassis)
-        return build.place('3035', C.darkBluishGrey, 0, 40, afterFloor, { ...chassis, rotY: 90 })
-      })()
-
-  // Cab: a real windscreen, walls down each side and a closed back, so the
-  // cabin encloses something instead of being a screen leaning on a plate.
-  const cab = { sub: 'cab' }
-  build.place('3823', C.transLightBlue, 0, -90, afterLock, cab)
-  const course1 = build.row('3004', C.orange, [-30, 30], [-60], afterLock, { ...cab, rotY: 90 })
-  build.place('3010', C.orange, 0, -30, afterLock, cab)
-  const course2 = build.row('3004', C.orange, [-30, 30], [-60], course1, { ...cab, rotY: 90 })
-  build.place('3010', C.orange, 0, -30, course1, cab)
-  // One plate ties the windscreen, both side walls and the back wall together.
-  const roof = build.place('3031', C.orange, 0, -60, course2, cab)
-  build.place('87079', C.white, 0, -60, roof, cab)
-
-  // Bed: a tiled load floor between two rails, and a tailboard.
-  const bed = { sub: 'bed' }
-  const railBase = build.row('3004', C.darkBluishGrey, [-30, 30], [0, 40, 80], afterLock, { ...bed, rotY: 90 })
-  build.row('3069b', C.orange, [-30, 30], [0, 40, 80], railBase, { ...bed, rotY: 90 })
-  build.row('3068b', C.lightBluishGrey, [0], [0, 40, 80], afterLock, bed)
-  build.place('3010', C.darkBluishGrey, 0, 110, afterLock, bed)
-
-  return { build, notes: [], warnings: [] }
-} /**
- * A standing heron.
- *
- * The creature demo exists to show the kernel handling something that is not a
- * box: slopes, round bricks and a beak that is a cheese slope, all resting on
- * planes derived from their own connectors. It is also the demo where statics
- * earns its place — a tall, narrow bird either stands or it does not, and the
- * gate refuses to publish one whose centre of mass leaves its base.
- */
-function heronSculpture(rough) {
-  const build = new Build({
-    subassemblies: [
-      { id: 'base', name: 'Base', accent: '#6bbbd6' },
-      { id: 'legs', name: 'Legs', accent: '#f7b04a' },
-      { id: 'body', name: 'Body', accent: '#8bcf65' },
-      { id: 'head', name: 'Head and neck', accent: '#87f7ff' },
-    ],
-  })
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'base',
-        origin: [0, 0, 0],
-        color: C.darkGreen,
-        family: 'plate',
-        widthStuds: 8,
-        footprintDepthStuds: 8,
-        layers: 2,
-      }),
-    ),
-    { sub: 'base' },
-  )
-  const baseTop = -2 * PLATE_LDU
-
-  // Two round-brick columns under the body's centreline, so the load path is
-  // vertical rather than a cantilever the clutch has to hold.
-  const legs = { sub: 'legs' }
-  let left = baseTop
-  let right = baseTop
-  for (let course = 0; course < 3; course += 1) {
-    left = build.place('3062b', C.yellow, 70, 70, left, legs)
-    right = build.place('3062b', C.yellow, 90, 70, right, legs)
-  }
-
-  // The spine plate is what turns two columns into one bird: it spans both legs
-  // and everything above rests on it.
-  const body = { sub: 'body' }
-  const spine = build.place('3034', C.white, 80, 80, left, { ...body, rotY: 90 })
-  const belly = build.row('3003', C.white, [80], [60, 100], spine, body)
-  const back = build.place('3020', C.white, 80, 80, belly, { ...body, rotY: 90 })
-  // The tail starts where the belly ends: a 45° slope is two studs deep, so at
-  // z = 130 it would have run back through the rear body brick.
-  build.row('3040b', C.lightBluishGrey, [70, 90], [150], spine, body)
-  build.place('85984', C.lightBluishGrey, 80, 50, back, { ...body, rotY: 180 })
-
-  const head = { sub: 'head' }
-  if (rough) {
-    // The first candidate puts the head where it looks right and attaches it to
-    // nothing — the usual result of placing parts by coordinate.
-    build.placeAt('3004', C.white, 80, spine - 96, 30, head)
-    build.placeAt('3003', C.white, 80, spine - 120, 20, head)
-    return { build, notes: [], warnings: ['Head placed by coordinate; nothing carries it.'] }
-  }
-
-  let neck = spine
-  for (let course = 0; course < 4; course += 1) neck = build.place('3004', C.white, 80, 30, neck, head)
-  const skull = build.place('3003', C.white, 80, 20, neck, head)
-  build.place('85984', C.orange, 80, 10, skull, { ...head, rotY: 180 })
-  build.row('3070b', C.black, [70, 90], [30], skull, head)
-
-  return { build, notes: [], warnings: [] }
-} /**
- * A shutter bay with a hinge the kernel can drive.
- *
- * `planHingedFlap` builds a joint the connection graph reads as a real revolute
- * — the same one `articulate_joint` moves — so this demo is the one that proves
- * a Brickwright model is a mechanism and not only a shape.
- */
-function shutterBay(rough) {
-  const build = new Build({
-    subassemblies: [
-      { id: 'deck', name: 'Deck', accent: '#6bbbd6' },
-      { id: 'wall', name: 'Back wall', accent: '#f7b04a' },
-      { id: 'shutter', name: 'Shutter', accent: '#87f7ff' },
-      { id: 'trim', name: 'Trim', accent: '#8bcf65' },
-    ],
-  })
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'deck',
-        origin: [0, 0, 0],
-        color: C.lightBluishGrey,
-        family: 'plate',
-        widthStuds: 14,
-        footprintDepthStuds: 10,
-        layers: 2,
-      }),
-    ),
-  )
-  const deckTop = -2 * PLATE_LDU
-
-  build.addPlan(
-    planWall(
-      spec({
-        sub: 'wall',
-        origin: [0, deckTop, 180],
-        color: C.sand,
-        trimColor: C.white,
-        glassColor: C.transClear,
-        family: 'brick',
-        depthStuds: 1,
-        axis: 'x',
-        lengthStuds: 14,
-        courses: 5,
-        openings: [{ atStud: 5, widthStuds: 4, fromCourse: 1, toCourse: 3, element: 'window' }],
-      }),
-    ),
-  )
-
-  if (rough) {
-    // Before the refinement pass the shutter is a slab of plates sitting a
-    // course above the deck with nothing holding it: it looks right and comes
-    // apart in your hands.
-    build.addPlan(
-      planBrickField(
-        spec({
-          sub: 'shutter',
-          origin: [40, deckTop - BRICK_LDU, 20],
-          color: C.orange,
-          family: 'plate',
-          widthStuds: 8,
-          footprintDepthStuds: 4,
-          layers: 1,
-        }),
-      ),
-    )
-    return { build, notes: [], warnings: ['Shutter placed by coordinate; nothing carries it.'] }
-  }
-
-  const flap = planHingedFlap(
-    spec({
-      sub: 'shutter',
-      origin: [40, deckTop, 20],
-      color: C.orange,
-      widthStuds: 8,
-      reachStuds: 2,
-    }),
-  )
-  build.addPlan(flap)
-
-  // Tiles finish the exposed deck either side of the shutter.
-  // Deck strips either side of the shutter's swing, tiled so they read as floor
-  // rather than as unfinished studs.
-  const trim = { sub: 'trim' }
-  build.row('3068b', C.darkBluishGrey, [20], [20, 60, 100, 140], deckTop, trim)
-  build.row('87079', C.darkBluishGrey, [240], [20, 60, 100, 140], deckTop, trim)
-
-  return { build, notes: flap.notes, warnings: flap.warnings }
-}
-
-/**
- * A draughting desk.
- *
- * The product demo: four legs, a cross-braced underframe, a two-layer top and a
- * lower shelf. A single-layer top would pass collision and connectivity and
- * still be wrong — plates side by side in one plane do not clutch each other —
- * which is precisely the difference the rough candidate shows.
- */
-function draughtingDesk(rough) {
-  const build = new Build({
-    subassemblies: [
-      { id: 'legs', name: 'Legs', accent: '#f7b04a' },
-      { id: 'shelf', name: 'Shelf', accent: '#87f7ff' },
-      { id: 'frame', name: 'Underframe', accent: '#6bbbd6' },
-      { id: 'top', name: 'Desktop', accent: '#8bcf65' },
-    ],
-  })
-
-  const legs = { sub: 'legs' }
-  const legX = [10, 230]
-  const legZ = [20, 60]
-  // Two 1 x 2 x 5 bricks per corner: one seam per leg, and the seam is exactly
-  // where the shelf lands.
-  const lower = []
-  for (const x of legX)
-    for (const z of legZ) lower.push(build.place('2454b', C.reddishBrown, x, z, 0, { ...legs, rotY: 90 }))
-  const shelfSurface = lower[0]
-
-  // One layer or two is the whole difference between a shelf and a sheet:
-  // plates side by side in a single plane do not clutch each other at all.
-  const layers = rough ? 1 : 2
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'shelf',
-        origin: [0, shelfSurface, 0],
-        color: C.tan,
-        family: 'plate',
-        widthStuds: 12,
-        footprintDepthStuds: 4,
-        layers,
-      }),
-    ),
-    { sub: 'shelf' },
-  )
-  const shelfTop = shelfSurface - layers * PLATE_LDU
-
-  const upper = []
-  for (const x of legX)
-    for (const z of legZ) upper.push(build.place('2454b', C.reddishBrown, x, z, shelfTop, { ...legs, rotY: 90 }))
-  const deskSurface = upper[0]
-
-  // Rails tie each pair of legs together, so the desktop is carried along its
-  // whole edge instead of at four points.
-  const frame = { sub: 'frame' }
-  const railTop = build.row('6112', C.reddishBrown, [120], [10, 70], deskSurface, frame)
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'top',
-        origin: [0, railTop, 0],
-        color: C.darkTan,
-        family: 'plate',
-        widthStuds: 12,
-        footprintDepthStuds: 4,
-        layers,
-      }),
-    ),
-    { sub: 'top' },
-  )
-
-  if (!rough) {
-    const topSurface = railTop - 2 * PLATE_LDU
-    build.row('87079', C.white, [40, 120, 200], [20, 60], topSurface, { sub: 'top' })
-  }
-
-  return { build, notes: [], warnings: [] }
-} /**
- * A SNOT kiosk.
- *
- * Studs-not-on-top is the technique that separates a stack of bricks from a
- * built model, and it is also the hardest thing to place by hand: the tile on a
- * sideways stud needs a pose the kernel derives from two connector *frames*,
- * not a position guessed from a bounding box. So the facade tiles here are
- * solved by `bestSnapTransform` — the same 6-DOF solver a drag in the editor
- * runs through — and the result is committed at whatever pose it returns.
- */
-function snotKiosk(rough) {
-  const build = new Build({
-    subassemblies: [
-      { id: 'plinth', name: 'Plinth', accent: '#6bbbd6' },
-      { id: 'core', name: 'Core', accent: '#f7b04a' },
-      { id: 'facade', name: 'SNOT facade', accent: '#87f7ff' },
-      { id: 'cap', name: 'Cap', accent: '#8bcf65' },
-    ],
-  })
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'plinth',
-        origin: [0, 0, 0],
-        color: C.darkBluishGrey,
-        family: 'plate',
-        widthStuds: 6,
-        footprintDepthStuds: 6,
-        layers: 2,
-      }),
-    ),
-    { sub: 'plinth' },
-  )
-
-  // Three brick courses. `planBrickField` staggers each row against the one
-  // before it, so the core is bonded in both directions rather than three
-  // sheets of bricks that happen to be stacked.
-  let level = -2 * PLATE_LDU
-  for (let course = 0; course < 3; course += 1) {
-    build.addPlan(
-      planBrickField(
-        spec({
-          sub: 'core',
-          origin: [0, level, 0],
-          color: C.white,
-          family: 'brick',
-          widthStuds: 6,
-          footprintDepthStuds: 6,
-          layers: 1,
-        }),
-      ),
-      { sub: 'core' },
-    )
-    level -= BRICK_LDU
-  }
-
-  // The SNOT course: the front row is bricks whose studs face out of the wall,
-  // the rest of the course is ordinary bonded brickwork, and both are laid at
-  // the same level so the cap above lands on a complete course.
-  const facade = { sub: 'facade' }
-  const snotXs = [20, 60, 100]
-  const snotIds = []
-  for (const x of snotXs) {
-    build.place('11211', C.white, x, 10, level, facade)
-    snotIds.push(build.lastPartId())
-  }
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'core',
-        origin: [0, level, 20],
-        color: C.white,
-        family: 'brick',
-        widthStuds: 6,
-        footprintDepthStuds: 5,
-        layers: 1,
-      }),
-    ),
-    { sub: 'core' },
-  )
-  const capSurface = level - BRICK_LDU
-
-  // Where the studs on the side of those bricks are, read from the compiled
-  // connectors rather than guessed from the envelope. LDCad puts a connector's
-  // axis on its frame's local +Y, so a stud whose axis is horizontal is the
-  // studs-not-on-top one.
-  const snotDefinition = catalog.get('11211')
-  const sideStud = snotDefinition.connectors.find(
-    (connector) =>
-      connector.family === 'stud' &&
-      connector.gender === 'male' &&
-      Math.abs(connector.ori ? connector.ori[4] : 1) < 0.5,
-  )
-  if (!sideStud)
-    throw new Error('11211 no longer carries a horizontal stud connector; the SNOT demo has nothing to face.')
-
-  snotXs.forEach((x, index) => {
-    const studY = level - underPlaneOf(snotDefinition) + sideStud.pos[1]
-    const studZ = 10 + sideStud.pos[2]
-    if (rough) {
-      // The first candidate works out where the tile goes and not which way it
-      // faces: a flat tile at roughly the right point, mating nothing.
-      build.placeAt('3069b', C.orange, x, studY - 4, studZ - 6, { ...facade, offGrid: true })
-      return
-    }
-    build.snap('3069b', C.orange, [x, studY, studZ - 6], {
-      ...facade,
-      radiusLdu: 30,
-      targetPartIds: [snotIds[index]],
-      targetFeatureId: sideStud.id,
-    })
-  })
-
-  build.addPlan(
-    planBrickField(
-      spec({
-        sub: 'cap',
-        origin: [0, capSurface, 0],
-        color: C.darkBluishGrey,
-        family: 'plate',
-        widthStuds: 6,
-        footprintDepthStuds: 6,
-        layers: 2,
-      }),
-    ),
-    { sub: 'cap' },
-  )
-
-  return { build, notes: [], warnings: [] }
-}
-
-/**
  * A display-scale interpretation of the University of Illinois Main Quad.
  *
  * This is intentionally not a single facade enlarged until the piece counter
@@ -2003,7 +1477,265 @@ function illinoisMainQuad(rough) {
   return { build, notes, warnings }
 }
 
+/**
+ * A modular high-rise that comes apart floor by floor.
+ *
+ * The point of this one is not the piece count, it is the seam. Every storey is
+ * its own subassembly sitting on the deck of the one below, exactly the way a
+ * modular building is designed to lift apart in the hand, so the layer scrubber
+ * in the viewer is showing real structure rather than slicing a solid lump at
+ * arbitrary heights. Facades carry real seated window frames chosen from the
+ * compiled catalogue by measured width, which is the single thing that stops a
+ * generated elevation reading as a box with a texture on it.
+ */
+function meridianTower(rough) {
+  const FLOORS = rough ? 4 : 22
+  const WIDTH = 40
+  // A slab tower. The deck between storeys is carried only by the walls at its
+  // perimeter, so the depth is held to the span the collection already proves
+  // safe: go wider and the middle of every floor is unreachable from the ground,
+  // which is exactly what the statics gate refuses.
+  const DEPTH = 12
+  const PLAZA_W = 58
+  const PLAZA_D = 30
+  const OX = 9
+  const OZ = 9
+  const COURSES = 5
+
+  const storeys = Array.from({ length: FLOORS }, (_, index) => ({
+    id: `floor_${String(index + 1).padStart(2, '0')}`,
+    name: `Storey ${index + 1}`,
+    accent: index % 2 === 0 ? '#83e7ee' : '#f7b04a',
+  }))
+
+  const build = new Build({
+    subassemblies: [
+      { id: 'plaza', name: 'Plaza and street deck', accent: '#7f8c9b' },
+      { id: 'lobby', name: 'Lobby', accent: '#8bcf65' },
+      ...storeys,
+      { id: 'crown', name: 'Crown and mast', accent: '#d66b55' },
+    ],
+  })
+
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  // Widths the compiled catalogue actually has frames for. Asking rather than
+  // hard-coding means a catalogue rebuild cannot leave holes where windows were.
+  const windowWidths = [...new Set(elementLibrary('window').map((entry) => entry.widthStuds))].sort((a, b) => a - b)
+  const bay = windowWidths.includes(2) ? 2 : (windowWidths[0] ?? 2)
+
+  // A band of evenly spaced windows along a wall of `lengthStuds`, inset from
+  // the corners so the structure that carries the floor above stays solid.
+  const band = (lengthStuds, doorAt = -1) => {
+    const openings = []
+    for (let at = 3; at + bay < lengthStuds; at += 5) {
+      if (doorAt >= 0 && Math.abs(at - doorAt) < 4) continue
+      openings.push({ atStud: at, widthStuds: bay, fromCourse: 1, toCourse: 2, element: 'window' })
+    }
+    if (doorAt >= 0) openings.push({ atStud: doorAt, widthStuds: 4, fromCourse: 0, toCourse: 5, element: 'door' })
+    return openings
+  }
+
+  const plazaLayers = rough ? 1 : 2
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'plaza',
+        origin: [0, 0, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: PLAZA_W,
+        footprintDepthStuds: PLAZA_D,
+        layers: plazaLayers,
+      }),
+    ),
+    'plaza',
+  )
+  let surface = -plazaLayers * PLATE_LDU
+
+  // People first, so the paving can leave their cells clear: a figure standing
+  // on a smooth tile has nothing to clutch, and one dropped on top of a laid
+  // tile is simply inside it. Both are things the kernel refuses, correctly.
+  const plazaSurface = surface
+  const outsideTower = (x, z) => !(x >= OX - 1 && x < OX + WIDTH + 1 && z >= OZ - 1 && z < OZ + DEPTH + 1)
+  const figures = []
+  for (let index = 0; index < (rough ? 2 : 14); index += 1) {
+    const x = 2 + ((index * 7) % (PLAZA_W - 4))
+    const z = index % 2 === 0 ? 5 : PLAZA_D - 6
+    if (!outsideTower(x, z)) continue
+    figures.push({ x, z, color: index % 3 === 0 ? C.red : index % 3 === 1 ? C.blue : C.yellow })
+  }
+  const takenByFigure = new Set(figures.map((figure) => `${figure.x}:${figure.z}`))
+
+  // Paving, laid one tile at a time. The plaza is editable at the same grain as
+  // the tower rather than being a single painted slab, and the kerb line falls
+  // out of the tile colour rather than being drawn on.
+  for (let x = 0; x < PLAZA_W; x += 1) {
+    for (let z = 0; z < PLAZA_D; z += 1) {
+      if (x >= OX && x < OX + WIDTH && z >= OZ && z < OZ + DEPTH) continue
+      if (takenByFigure.has(`${x}:${z}`)) continue
+      const carriageway = z < 3 || z >= PLAZA_D - 3
+      const kerb = z === 3 || z === PLAZA_D - 4
+      build.place(
+        '3070b',
+        carriageway ? C.darkBluishGrey : kerb ? C.white : C.lightBluishGrey,
+        (x + 0.5) * STUD_LDU,
+        (z + 0.5) * STUD_LDU,
+        plazaSurface,
+        { sub: 'plaza' },
+      )
+    }
+  }
+
+  for (const figure of figures) {
+    build.place('90398', figure.color, (figure.x + 0.5) * STUD_LDU, (figure.z + 0.5) * STUD_LDU, plazaSurface, {
+      sub: 'plaza',
+    })
+  }
+
+  const storeyPalette = [C.sand, C.tan, C.white, C.lightBluishGrey]
+  const raise = (sub, color, courses, openings) => {
+    absorb(
+      planEnclosure(
+        spec({
+          sub,
+          origin: [OX * STUD_LDU, surface, OZ * STUD_LDU],
+          color,
+          trimColor: C.white,
+          glassColor: C.transLightBlue,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: WIDTH,
+          footprintDepthStuds: DEPTH,
+          courses,
+          floor: false,
+          openings,
+        }),
+      ),
+      sub,
+    )
+    surface -= courses * BRICK_LDU
+    // The deck the next storey lifts off. Two cross-bonded layers, because a
+    // floor that comes apart when the storey is picked up is not a floor.
+    absorb(
+      planBrickField(
+        spec({
+          sub,
+          origin: [OX * STUD_LDU, surface, OZ * STUD_LDU],
+          color: C.lightBluishGrey,
+          family: 'plate',
+          widthStuds: WIDTH,
+          footprintDepthStuds: DEPTH,
+          layers: 2,
+        }),
+      ),
+      sub,
+    )
+    surface -= 2 * PLATE_LDU
+  }
+
+  // A double-height lobby, glazed the whole way round.
+  raise('lobby', C.darkBluishGrey, COURSES + 2, band(WIDTH, 11))
+
+  for (const storey of storeys) {
+    raise(storey.id, storeyPalette[storeys.indexOf(storey) % storeyPalette.length], COURSES, band(WIDTH))
+  }
+
+  // Crown: a stepped setback and a mast, so the silhouette resolves instead of
+  // stopping flat where the last storey happens to end.
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'crown',
+        origin: [(OX + 3) * STUD_LDU, surface, (OZ + 3) * STUD_LDU],
+        color: C.darkBluishGrey,
+        trimColor: C.white,
+        glassColor: C.transLightBlue,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: WIDTH - 6,
+        footprintDepthStuds: DEPTH - 6,
+        courses: 3,
+        floor: false,
+        openings: [],
+      }),
+    ),
+    'crown',
+  )
+  surface -= 3 * BRICK_LDU
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'crown',
+        origin: [(OX + 3) * STUD_LDU, surface, (OZ + 3) * STUD_LDU],
+        color: C.lightBluishGrey,
+        family: 'plate',
+        widthStuds: WIDTH - 6,
+        footprintDepthStuds: DEPTH - 6,
+        layers: 2,
+      }),
+    ),
+    'crown',
+  )
+  surface -= 2 * PLATE_LDU
+
+  // A 1 x 1 spans one stud on both axes, so it centres on an odd multiple of
+  // 10 LDU — half a stud off the even grid the walls are laid on.
+  const mastX = (OX + WIDTH / 2) * STUD_LDU + STUD_LDU / 2
+  const mastZ = (OZ + DEPTH / 2) * STUD_LDU + STUD_LDU / 2
+  let mastSurface = surface
+  for (let level = 0; level < 6; level += 1) {
+    mastSurface = build.place('3062b', level % 2 === 0 ? C.white : C.red, mastX, mastZ, mastSurface, { sub: 'crown' })
+  }
+
+  return { build, notes, warnings }
+}
+
 const DEMOS = [
+  {
+    id: 'meridian-tower',
+    title: 'Meridian Tower',
+    discipline: 'Modular architecture',
+    tagline: 'A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.',
+    summary:
+      'Every storey is its own subassembly resting on the deck of the one below, the way a modular building is ' +
+      'designed to come apart in the hand. The facades carry real window frames chosen from the compiled catalogue ' +
+      'by measured width, and the layer scrubber walks the tower a storey at a time because those seams are real.',
+    techniques: [
+      'One subassembly per storey',
+      'Cross-bonded deck between floors',
+      'Seated window frames on every elevation',
+      'Stepped crown and mast',
+    ],
+    refinement:
+      'The massing study stacked the storeys as one continuous shell, so there was no seam to lift and the ' +
+      'facades were blank. The published set separates every floor onto its own two-layer deck and glazes the ' +
+      'elevations with frames the catalogue actually compiles.',
+    camera: { yaw: 38, pitch: 16, zoom: 1.72 },
+    maxPartsPerStep: 72,
+    tensionAllowance: 640,
+    tensionReason:
+      'Two things in this model are held in bearing rather than in clutch, and the statics pass counts both as ' +
+      'tension-carried. The glazing is seated inside its frames, and the middle of each storey deck rests on the ' +
+      'walls below it at the perimeter rather than clutching down into them. Both are how a modular building is ' +
+      'actually assembled; the allowance is bounded so a genuinely floating storey still fails the gate.',
+    hero: false,
+    brief: {
+      prompt:
+        'A twenty-two-storey modular tower on a plaza, where every floor lifts off separately, the elevations carry real windows, and the crown steps back to a mast.',
+      envelopeStuds: [58, null, 30],
+      palette: ['Sand', 'Tan', 'White', 'Light Bluish Grey', 'Dark Bluish Grey'],
+      functions: ['Separable storeys', 'Glazed elevations', 'Verified build sequence'],
+    },
+    author: meridianTower,
+  },
   {
     id: 'illinois-main-quad',
     title: 'Illinois Main Quad campus',
@@ -2049,120 +1781,6 @@ const DEMOS = [
       ],
     },
     author: illinoisMainQuad,
-  },
-  {
-    id: 'courtyard-terrace',
-    title: 'Courtyard terrace',
-    discipline: 'Architecture',
-    tagline: 'A bonded storey, seated windows and a parapet roof, from four parametric calls.',
-    summary:
-      'Every course is offset against the one below, the corners alternate which run goes full length, ' +
-      'and each opening holds a real compiled window or door frame chosen by measured footprint.',
-    techniques: ['Running bond', 'Interlocking corners', 'Seated window and door frames', 'Cross-bonded slab'],
-    refinement:
-      'The first candidate laid a single-layer deck and cut bare holes where the openings are. ' +
-      'Plates side by side in one plane do not clutch, so the deck came apart into loose strips.',
-    camera: { yaw: 38, pitch: 26, zoom: 1 },
-    maxPartsPerStep: 12,
-    hero: false,
-    brief: {
-      prompt:
-        'A terrace block twenty studs by fourteen, six courses high, in tan, with two windows and a door across the front, and a roof you could stand a figure on.',
-      envelopeStuds: [20, null, 14],
-      palette: ['Tan', 'White', 'Dark Bluish Grey', 'Dark Tan'],
-      functions: ['Bonded courses', 'Seated frames', 'Walkable roof'],
-    },
-    author: courtyardTerrace,
-  },
-  {
-    id: 'ridgeline-hauler',
-    title: 'Ridgeline hauler',
-    discipline: 'Vehicle',
-    tagline: 'A flatbed on two real wheel bricks, with a closed cab and a tiled deck.',
-    summary:
-      'The chassis is two plate layers whose seams deliberately miss each other, so the hauler is one ' +
-      'rigid body rather than two halves that happen to touch.',
-    techniques: ['Interlocked chassis', 'Wheel bricks as running gear', 'Tiled load bed'],
-    refinement:
-      'The first candidate locked the chassis with two 4 x 4 plates that left the centreline seam ' +
-      'unbridged, so the front and rear halves were separate components.',
-    camera: { yaw: -34, pitch: 22, zoom: 1 },
-    maxPartsPerStep: 8,
-    author: ridgelineHauler,
-  },
-  {
-    id: 'heron-sculpture',
-    title: 'Heron',
-    discipline: 'Creature',
-    tagline: 'A standing bird whose stability is measured, not assumed.',
-    summary:
-      'Slopes, round bricks and a cheese-slope beak, every one of them resting on a plane derived from ' +
-      'its own compiled connectors rather than a nominal brick height.',
-    techniques: ['Round-brick legs', 'Slope tail and wings', 'Measured tipping margin'],
-    refinement:
-      'The first candidate placed the head by coordinate in front of the body. It rendered perfectly and ' +
-      'the load path from the ground never reached it.',
-    camera: { yaw: 24, pitch: 14, zoom: 1 },
-    maxPartsPerStep: 6,
-    author: heronSculpture,
-  },
-  {
-    id: 'shutter-bay',
-    title: 'Shutter bay',
-    discipline: 'Mechanism',
-    tagline: 'A hinge the connection graph reads as a real revolute joint.',
-    summary:
-      'The shutter is a hinge-brick pair and a plate flap. The kernel records the joint with its freedom, ' +
-      'so the same model can be opened from the inspector or by an agent.',
-    techniques: ['Hinge-brick pair', 'Revolute joint in the graph', 'Seated window'],
-    refinement:
-      'The first candidate laid the shutter as free plates one course above the deck — a slab held by ' +
-      'nothing, which the load-path walk never reaches.',
-    camera: { yaw: -22, pitch: 30, zoom: 1 },
-    maxPartsPerStep: 8,
-    tensionAllowance: 5,
-    tensionReason:
-      'The hinge top plates and the flap they carry hang from the hinge rather than resting on it, ' +
-      'which is what a hinge is. The statics pass reports them as carried in tension and checks that ' +
-      'the clutch assumption covers their mass.',
-    author: shutterBay,
-  },
-  {
-    id: 'draughting-desk',
-    title: 'Draughting desk',
-    discipline: 'Furniture',
-    tagline: 'Four legs, a braced underframe and a top that is a slab rather than a sheet.',
-    summary:
-      'Rails tie the legs at desk height so the top is carried at its edges, and both the shelf and the ' +
-      'desktop are cross-bonded two-layer slabs.',
-    techniques: ['Cross-bonded slab', 'Braced underframe', 'Tiled work surface'],
-    refinement:
-      'The first candidate laid the shelf and the desktop one plate deep. Single-layer plates in one plane ' +
-      'do not clutch each other, so the middle of both surfaces was loose.',
-    camera: { yaw: 42, pitch: 18, zoom: 1 },
-    maxPartsPerStep: 8,
-    author: draughtingDesk,
-  },
-  {
-    id: 'snot-kiosk',
-    title: 'SNOT kiosk',
-    discipline: 'Advanced technique',
-    tagline: 'Facade tiles placed on vertical studs by the 6-DOF connector solver.',
-    summary:
-      'A course of studs-on-side bricks turns the front wall sideways, and every facing tile is posed by ' +
-      '`bestSnapTransform` from the two connector frames — the same solver a drag in the editor uses.',
-    techniques: ['Studs not on top', 'Solved connector frames', 'Cross-bonded cap'],
-    refinement:
-      'The first candidate stopped at the studs-on-side course: the sideways studs were exposed and the ' +
-      'facade was never faced.',
-    camera: { yaw: 12, pitch: 20, zoom: 1 },
-    maxPartsPerStep: 10,
-    tensionAllowance: 3,
-    tensionReason:
-      'The facing tiles hang off vertical studs. That is what studs-not-on-top means, and it is the one ' +
-      'case where clutch is genuinely in tension, so the statics pass measures the load against the ' +
-      'clutch assumption instead of waving it through.',
-    author: snotKiosk,
   },
 ]
 
@@ -2375,8 +1993,14 @@ if (failures.length) {
   process.exit(1)
 }
 
-if (!ONLY.length && results.length < 7) {
-  process.stderr.write(`\nDemo build FAILED — only ${results.length} demo(s) passed every gate; seven are required.\n`)
+// Every demo in DEMOS has to survive every gate. The count used to be pinned at
+// seven, which meant shrinking the collection tripped the build rather than the
+// thing the gate is for: a demo that silently stopped passing.
+if (!ONLY.length && results.length < DEMOS.length) {
+  const failed = DEMOS.filter((demo) => !results.some((entry) => entry.id === demo.id)).map((demo) => demo.id)
+  process.stderr.write(
+    `\nDemo build FAILED — ${results.length} of ${DEMOS.length} demos passed every gate; missing: ${failed.join(', ')}.\n`,
+  )
   await server.close()
   process.exit(1)
 }

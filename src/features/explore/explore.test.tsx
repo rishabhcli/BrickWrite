@@ -33,12 +33,12 @@ afterEach(() => {
 
 describe('the explorer', () => {
   it('opens the demo a deep link names, at the step it names', async () => {
-    window.history.replaceState(null, '', '/explore?demo=heron-sculpture&step=3')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower&step=3')
     render(<ExplorePage />)
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Heron')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Meridian Tower')
     const slider = screen.getByLabelText(/Build step/) as HTMLInputElement
     expect(slider.value).toBe('3')
-    expect(slider.max).toBe(String(getDemo('heron-sculpture')!.validation.steps))
+    expect(slider.max).toBe(String(getDemo('meridian-tower')!.validation.steps))
   })
 
   it('says so when a link names a demo that was never published', () => {
@@ -48,41 +48,41 @@ describe('the explorer', () => {
   })
 
   it('follows the back button between demos', async () => {
-    window.history.replaceState(null, '', '/explore?demo=heron-sculpture')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Heron')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Meridian Tower')
 
     await act(async () => {
-      window.history.pushState(null, '', '/explore?demo=snot-kiosk')
+      window.history.pushState(null, '', '/explore?demo=illinois-main-quad')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('SNOT kiosk')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Illinois Main Quad campus')
 
     await act(async () => {
       window.history.back()
       // jsdom applies history moves synchronously but does not always emit the
       // event, so the assertion drives it rather than racing it.
-      window.history.replaceState(null, '', '/explore?demo=heron-sculpture')
+      window.history.replaceState(null, '', '/explore?demo=meridian-tower')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Heron')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Meridian Tower')
   })
 
   it('scrubs the build sequence into the URL, so the frame is linkable', async () => {
-    window.history.replaceState(null, '', '/explore?demo=courtyard-terrace')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
     const slider = screen.getByLabelText(/Build step/) as HTMLInputElement
     await act(async () => {
       fireEvent.change(slider, { target: { value: '4' } })
     })
-    expect(window.location.search).toBe('?demo=courtyard-terrace&step=4')
+    expect(window.location.search).toBe('?demo=meridian-tower&step=4')
     expect(events.map((entry) => entry.event.name)).toContain('demo.step_scrubbed')
   })
 
   it('shows the report the kernel produced, not a summary of it', () => {
-    window.history.replaceState(null, '', '/explore?demo=courtyard-terrace')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
-    const demo = getDemo('courtyard-terrace')!
+    const demo = getDemo('meridian-tower')!
     const report = screen.getByRole('complementary', { name: 'Model report' })
     const text = report.textContent ?? ''
     expect(text).toContain(String(demo.validation.connectionCount))
@@ -105,7 +105,7 @@ describe('the explorer', () => {
   })
 
   it('describes the model view to a screen reader and lists the sequence as text', () => {
-    window.history.replaceState(null, '', '/explore?demo=heron-sculpture')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
     const sequence = screen.getByRole('region', { name: /Build sequence, as text/ })
     expect(within(sequence).getAllByRole('listitem').length).toBeGreaterThan(0)
@@ -114,7 +114,7 @@ describe('the explorer', () => {
 
 describe('forking a demo', () => {
   it('copies the published snapshot into a local project and leaves the demo untouched', async () => {
-    const demo = getDemo('heron-sculpture')!
+    const demo = getDemo('meridian-tower')!
     const before = digestOf(demo.id)
     const outcome = await forkDemo(demo, { name: 'My heron' })
     expect(outcome.ok).toBe(true)
@@ -128,7 +128,7 @@ describe('forking a demo', () => {
   })
 
   it('hands a signed-in visitor to the registered cloud adapter, with provenance', async () => {
-    const demo = getDemo('snot-kiosk')!
+    const demo = getDemo('illinois-main-quad')!
     const created = vi.fn(async (_input: CloudForkInput) => ({ projectId: 'cloud_1', url: '/projects/cloud_1' }))
     registerCloudProjectAdapter({ id: 'test-adapter', isSignedIn: () => true, createProject: created })
 
@@ -156,7 +156,7 @@ describe('forking a demo', () => {
       isSignedIn: () => false,
       createProject: async () => { throw new Error('must not be called') },
     })
-    const outcome = await forkDemo(getDemo('draughting-desk')!)
+    const outcome = await forkDemo(getDemo('meridian-tower')!)
     expect(outcome.ok && outcome.destination).toBe('local')
   })
 
@@ -166,7 +166,7 @@ describe('forking a demo', () => {
       isSignedIn: () => true,
       createProject: async () => { throw new Error('quota exceeded') },
     })
-    const outcome = await forkDemo(getDemo('shutter-bay')!)
+    const outcome = await forkDemo(getDemo('illinois-main-quad')!)
     expect(outcome.ok).toBe(false)
     if (outcome.ok) return
     expect(outcome.destination).toBe('cloud')
@@ -174,7 +174,7 @@ describe('forking a demo', () => {
   })
 
   it('refuses a snapshot whose bytes do not match the published digest', async () => {
-    const demo = getDemo('heron-sculpture')!
+    const demo = getDemo('meridian-tower')!
     const original = globalThis.fetch
     globalThis.fetch = (async () => new Response('{"parts":{}}', { status: 200 })) as typeof fetch
     try {
@@ -187,7 +187,7 @@ describe('forking a demo', () => {
   })
 
   it('drives the fork from the explorer and offers the editor handoff', async () => {
-    window.history.replaceState(null, '', '/explore?demo=heron-sculpture')
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Edit this build/ })) })
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Copied to a local project/))

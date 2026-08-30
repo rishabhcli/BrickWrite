@@ -47,20 +47,17 @@ beforeAll(() => {
 const publicPath = (url: string) => path.join('public', url.replace(/^\//, ''))
 
 describe('the shipped demo manifest', () => {
-  it('publishes at least seven demos across the disciplines the collection claims', () => {
-    expect(DEMOS.length).toBeGreaterThanOrEqual(7)
-    const disciplines = new Set(DEMOS.map((demo) => demo.discipline))
-    expect(disciplines).toEqual(
-      new Set([
-        'Architecture',
-        'Campus architecture',
-        'Vehicle',
-        'Creature',
-        'Mechanism',
-        'Furniture',
-        'Advanced technique',
-      ]),
-    )
+  // The collection used to pad itself out with seven demos, six of which were
+  // thirty-part abstract shapes. They were removed: a showcase is judged by the
+  // weakest thing in it, not by how many entries it has. What is asserted now is
+  // that everything shipped is a real set, not that some count was reached.
+  it('ships only demos substantial enough to stand as examples', () => {
+    expect(DEMOS.length).toBeGreaterThanOrEqual(1)
+    for (const demo of DEMOS) {
+      const document = readJson<ModelDocument>(publicPath(demo.assets.document.url))
+      expect(Object.keys(document.parts).length).toBeGreaterThan(1000)
+      expect(demo.discipline.length).toBeGreaterThan(0)
+    }
   })
 
   it('names exactly one hero demo, and it carries a brief', () => {

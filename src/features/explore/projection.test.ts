@@ -25,8 +25,14 @@ import {
  */
 
 const ROOT = path.resolve(__dirname, '..', '..', '..')
+// Read whichever demo the manifest ships first rather than naming one: the
+// collection changes, and a projection test should not be the thing that breaks
+// when a demo is retired.
+const manifest = JSON.parse(readFileSync(path.join(ROOT, 'public/demos/manifest.json'), 'utf8')) as {
+  demos: Array<{ assets: { preview: { url: string } } }>
+}
 const preview = JSON.parse(
-  readFileSync(path.join(ROOT, 'public/demos/courtyard-terrace/preview.json'), 'utf8'),
+  readFileSync(path.join(ROOT, 'public', manifest.demos[0].assets.preview.url.replace(/^\//, '')), 'utf8'),
 ) as DemoPreview
 
 const CAMERA: Camera = { yaw: 38, pitch: 26, zoom: 1 }
