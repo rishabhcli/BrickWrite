@@ -274,7 +274,14 @@ ${styles}
 await mkdir(ARTIFACTS, { recursive: true })
 const manifest = JSON.parse(await readFile(path.join(ROOT, 'public/demos/manifest.json'), 'utf8'))
 const heroDemo = manifest.demos.find((demo) => demo.hero) ?? manifest.demos[0]
-const secondDemo = manifest.demos.find((demo) => demo.id !== heroDemo.id)
+// The lightest demo that is not the hero. These checks are about deep links and
+// the fork path, not about render throughput, and the runner has no GPU: when
+// this picked whichever demo happened to be second it landed on an
+// eleven-thousand-piece campus, whose viewport never settled long enough for a
+// click to be considered stable.
+const secondDemo = manifest.demos
+  .filter((demo) => demo.id !== heroDemo.id)
+  .sort((a, b) => a.validation.partCount - b.validation.partCount)[0]
 
 const browser = await chromium.launch({ headless: true })
 const report = { url: SHARED_URL, demos: manifest.demos.length, catalogVersion: manifest.catalogVersion }

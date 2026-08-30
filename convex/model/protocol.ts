@@ -58,14 +58,25 @@ export interface CloudErrorShape {
   details?: unknown
 }
 
-export type CloudResult<T> = { ok: true; value: T } | { ok: false; error: CloudErrorShape }
+/** The failure half of a `CloudResult`, nameable on its own. */
+export type CloudFailure = { ok: false; error: CloudErrorShape }
 
-export const cloudFailure = <T>(
+export type CloudResult<T> = { ok: true; value: T } | CloudFailure
+
+/**
+ * A failure carries no value, so this returns the failure branch rather than the
+ * whole union. That is assignable to `CloudResult<T>` for every T — there was
+ * nothing in the arguments to infer T from, so the union form widened to
+ * `CloudResult<unknown>` and would not return from a function promising a
+ * specific value — and it also lets a caller read `.error` without first
+ * narrowing away an `ok: true` case that can never occur.
+ */
+export const cloudFailure = (
   code: CloudErrorCode,
   message: string,
   repair: string,
   details?: unknown,
-): CloudResult<T> => ({ ok: false, error: { code, message, repair, details } })
+): CloudFailure => ({ ok: false, error: { code, message, repair, details } })
 
 export const cloudSuccess = <T>(value: T): CloudResult<T> => ({ ok: true, value })
 
