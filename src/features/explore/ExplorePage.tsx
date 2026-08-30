@@ -136,6 +136,34 @@ export function ExplorePage() {
     setLayer(null)
   }, [demo.id])
 
+  // Walking the layers upward is the clearest thing this viewer can do with a
+  // model built in separable storeys: it puts the set together in front of you
+  // instead of asking you to drag a slider to understand it. Reduced-motion
+  // callers get the finished model rather than a shortened animation.
+  const [playing, setPlaying] = useState(false)
+  useEffect(() => {
+    if (!playing) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      setLayer(null)
+      setPlaying(false)
+      return
+    }
+    let frame = 0
+    const started = performance.now()
+    const durationMs = 5200
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - started) / durationMs)
+      // Ease out, so the last storeys settle rather than snapping into place.
+      const eased = 1 - (1 - progress) * (1 - progress)
+      const next = Math.max(1, Math.round(eased * totalLayers))
+      setLayer(next >= totalLayers ? null : next)
+      if (progress < 1) frame = requestAnimationFrame(tick)
+      else setPlaying(false)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [playing, totalLayers])
+
   const stepName = useMemo(() => {
     const entry = preview?.steps.find((candidate) => candidate.index === step)
     return entry ? entry.name : `Step ${step}`
@@ -242,6 +270,17 @@ export function ExplorePage() {
                 ))}
               </div>
               <span className="spacer" style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="bw-chip"
+                aria-pressed={playing}
+                onClick={() => {
+                  setLayer(playing ? null : 1)
+                  setPlaying((value) => !value)
+                }}
+              >
+                {playing ? 'Stop' : 'Build it'}
+              </button>
               <button type="button" className="bw-chip" onClick={() => setCamera(demo.camera)}>
                 Reset view
               </button>
@@ -273,6 +312,7 @@ export function ExplorePage() {
                   value={layer ?? totalLayers}
                   onChange={(event) => {
                     const next = Number(event.target.value)
+                    setPlaying(false)
                     setLayer(next >= totalLayers ? null : next)
                   }}
                 />

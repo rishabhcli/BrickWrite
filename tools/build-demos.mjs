@@ -1698,7 +1698,217 @@ function meridianTower(rough) {
   return { build, notes, warnings }
 }
 
+/**
+ * A terrace of five modular shopfronts, the other shape a town block comes in.
+ *
+ * Same rule as the tower: every storey of every building is its own
+ * subassembly, so the block comes apart building by building and floor by
+ * floor rather than being one welded lump. The street itself is laid a tile at
+ * a time — carriageway, kerb and pavement fall out of the tile colour rather
+ * than being drawn on — which is what makes the ground plane editable at the
+ * same grain as the buildings standing on it.
+ */
+function harbourStreet(rough) {
+  const UNITS = rough ? 2 : 5
+  const UNIT_W = 14
+  const DEPTH = 12
+  const COURSES = 5
+  const STOREYS = rough ? 2 : 3
+  const SITE_W = UNITS * UNIT_W + 6
+  const SITE_D = 34
+  const ROW_Z = 16
+
+  const units = Array.from({ length: UNITS }, (_, index) => ({
+    id: `unit_${index + 1}`,
+    name: `Shopfront ${index + 1}`,
+    accent: ['#d66b55', '#f7b04a', '#77b96a', '#83e7ee', '#d6a85d'][index % 5],
+  }))
+
+  const build = new Build({
+    subassemblies: [
+      { id: 'street', name: 'Street, kerb and pavement', accent: '#7f8c9b' },
+      ...units,
+    ],
+  })
+
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  const windowWidths = [...new Set(elementLibrary('window').map((entry) => entry.widthStuds))].sort((a, b) => a - b)
+  const bay = windowWidths.includes(2) ? 2 : (windowWidths[0] ?? 2)
+  const shopfront = (lengthStuds, doorAt) => {
+    const openings = []
+    for (let at = 2; at + bay < lengthStuds; at += 4) {
+      if (doorAt >= 0 && Math.abs(at - doorAt) < 5) continue
+      openings.push({ atStud: at, widthStuds: bay, fromCourse: 1, toCourse: 2, element: 'window' })
+    }
+    // The frame has to fit the storey it is cut into: a door reaching past the
+    // top course pokes through the deck above and the kernel counts that, twice,
+    // as a collision and as a break in the build order.
+    if (doorAt >= 0)
+      openings.push({ atStud: doorAt, widthStuds: 4, fromCourse: 0, toCourse: COURSES - 1, element: 'door' })
+    return openings
+  }
+
+  const groundLayers = rough ? 1 : 2
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'street',
+        origin: [0, 0, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: SITE_W,
+        footprintDepthStuds: SITE_D,
+        layers: groundLayers,
+      }),
+    ),
+    'street',
+  )
+  const groundSurface = -groundLayers * PLATE_LDU
+
+  const onTerrace = (x, z) => x >= 3 && x < 3 + UNITS * UNIT_W && z >= ROW_Z && z < ROW_Z + DEPTH
+  const figures = []
+  for (let index = 0; index < (rough ? 2 : 18); index += 1) {
+    const x = 1 + ((index * 5) % (SITE_W - 2))
+    const z = index % 3 === 0 ? 12 : index % 3 === 1 ? 13 : ROW_Z + DEPTH + 1
+    if (onTerrace(x, z) || z >= SITE_D - 1) continue
+    figures.push({ x, z, color: [C.red, C.blue, C.yellow, C.green, C.white][index % 5] })
+  }
+  const taken = new Set(figures.map((figure) => `${figure.x}:${figure.z}`))
+
+  // Inset by a stud: the base field fills its outer corners with round plates
+  // whose studs a flat tile cannot sit down onto, and the exposed border reads
+  // as the edge of the plate anyway.
+  for (let x = 1; x < SITE_W - 1; x += 1) {
+    for (let z = 1; z < SITE_D - 1; z += 1) {
+      if (onTerrace(x, z) || taken.has(`${x}:${z}`)) continue
+      const carriageway = z < 9
+      const kerb = z === 9
+      build.place(
+        '3070b',
+        carriageway ? C.black : kerb ? C.white : C.lightBluishGrey,
+        (x + 0.5) * STUD_LDU,
+        (z + 0.5) * STUD_LDU,
+        groundSurface,
+        { sub: 'street' },
+      )
+    }
+  }
+
+  for (const figure of figures) {
+    build.place('90398', figure.color, (figure.x + 0.5) * STUD_LDU, (figure.z + 0.5) * STUD_LDU, groundSurface, {
+      sub: 'street',
+    })
+  }
+
+  const facades = [C.reddishBrown, C.sand, C.darkTan, C.white, C.tan]
+  units.forEach((unit, index) => {
+    const x = 3 + index * UNIT_W
+    let surface = groundSurface
+    for (let storey = 0; storey < STOREYS; storey += 1) {
+      absorb(
+        planEnclosure(
+          spec({
+            sub: unit.id,
+            origin: [x * STUD_LDU, surface, ROW_Z * STUD_LDU],
+            color: facades[index % facades.length],
+            trimColor: C.white,
+            glassColor: C.transLightBlue,
+            family: 'brick',
+            depthStuds: 1,
+            widthStuds: UNIT_W,
+            footprintDepthStuds: DEPTH,
+            courses: COURSES,
+            floor: false,
+            openings: storey === 0 ? shopfront(UNIT_W, 5) : shopfront(UNIT_W, -1),
+          }),
+        ),
+        unit.id,
+      )
+      surface -= COURSES * BRICK_LDU
+      absorb(
+        planBrickField(
+          spec({
+            sub: unit.id,
+            origin: [x * STUD_LDU, surface, ROW_Z * STUD_LDU],
+            color: C.lightBluishGrey,
+            family: 'plate',
+            widthStuds: UNIT_W,
+            footprintDepthStuds: DEPTH,
+            layers: 2,
+          }),
+        ),
+        unit.id,
+      )
+      surface -= 2 * PLATE_LDU
+    }
+    // A parapet, so the roofline is a roofline and not a cut.
+    absorb(
+      planEnclosure(
+        spec({
+          sub: unit.id,
+          origin: [x * STUD_LDU, surface, ROW_Z * STUD_LDU],
+          color: C.darkBluishGrey,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: UNIT_W,
+          footprintDepthStuds: DEPTH,
+          courses: 1,
+          floor: false,
+          openings: [],
+        }),
+      ),
+      unit.id,
+    )
+  })
+
+  return { build, notes, warnings }
+}
+
 const DEMOS = [
+  {
+    id: 'harbour-street',
+    title: 'Harbour Street',
+    discipline: 'Modular architecture',
+    tagline: 'A terrace of five shopfronts on a tiled street, every building and every floor separable.',
+    summary:
+      'Five modular units, three storeys each, standing on a street laid one tile at a time. Every storey is its ' +
+      'own subassembly, so a building lifts out of the terrace and a floor lifts off the building. Shopfronts get ' +
+      'doors and glazing at street level; the floors above are glazed the whole way along.',
+    techniques: [
+      'One subassembly per storey, per unit',
+      'Tiled carriageway, kerb and pavement',
+      'Seated shopfront doors and glazing',
+      'Parapet roofline',
+    ],
+    refinement:
+      'The first candidate laid the terrace as one continuous shell on a painted ground plane, so nothing came ' +
+      'apart and the street was a texture. The published set separates every unit and every floor, and lays the ' +
+      'road surface as individual tiles.',
+    camera: { yaw: 34, pitch: 26, zoom: 1.12 },
+    maxPartsPerStep: 72,
+    tensionAllowance: 480,
+    tensionReason:
+      'Glazing is seated inside its frames and each storey deck rests on the walls below it at the perimeter ' +
+      'rather than clutching down into them. The statics pass counts both as tension-carried; the allowance is ' +
+      'bounded so a genuinely unsupported storey still fails.',
+    hero: false,
+    brief: {
+      prompt:
+        'A street of five modular shops with flats above, on a tiled road with kerbs and pavement, where every building and every floor can be lifted off separately.',
+      envelopeStuds: [76, null, 34],
+      palette: ['Reddish Brown', 'Sand', 'Dark Tan', 'White', 'Tan'],
+      functions: ['Separable units and storeys', 'Glazed shopfronts', 'Verified build sequence'],
+    },
+    author: harbourStreet,
+  },
   {
     id: 'meridian-tower',
     title: 'Meridian Tower',

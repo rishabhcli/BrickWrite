@@ -25,6 +25,295 @@ export const DEMO_MANIFEST: DemoManifest = {
   ],
   "demos": [
     {
+      "id": "harbour-street",
+      "title": "Harbour Street",
+      "discipline": "Modular architecture",
+      "tagline": "A terrace of five shopfronts on a tiled street, every building and every floor separable.",
+      "summary": "Five modular units, three storeys each, standing on a street laid one tile at a time. Every storey is its own subassembly, so a building lifts out of the terrace and a floor lifts off the building. Shopfronts get doors and glazing at street level; the floors above are glazed the whole way along.",
+      "techniques": [
+        "One subassembly per storey, per unit",
+        "Tiled carriageway, kerb and pavement",
+        "Seated shopfront doors and glazing",
+        "Parapet roofline"
+      ],
+      "showcase": null,
+      "refinement": "The first candidate laid the terrace as one continuous shell on a painted ground plane, so nothing came apart and the street was a texture. The published set separates every unit and every floor, and lays the road surface as individual tiles.",
+      "hero": false,
+      "tensionAllowance": 480,
+      "tensionReason": "Glazing is seated inside its frames and each storey deck rests on the walls below it at the perimeter rather than clutching down into them. The statics pass counts both as tension-carried; the allowance is bounded so a genuinely unsupported storey still fails.",
+      "brief": {
+        "prompt": "A street of five modular shops with flats above, on a tiled road with kerbs and pavement, where every building and every floor can be lifted off separately.",
+        "envelopeStuds": [
+          76,
+          null,
+          34
+        ],
+        "palette": [
+          "Reddish Brown",
+          "Sand",
+          "Dark Tan",
+          "White",
+          "Tan"
+        ],
+        "functions": [
+          "Separable units and storeys",
+          "Glazed shopfronts",
+          "Verified build sequence"
+        ]
+      },
+      "camera": {
+        "yaw": 34,
+        "pitch": 26,
+        "zoom": 1.12
+      },
+      "documentId": "demo_harbour_street",
+      "roughDocumentId": "demo_harbour_street_rough",
+      "schemaVersion": 2,
+      "catalogVersion": "2026-07",
+      "authoredAt": "2026-07-01T00:00:00.000Z",
+      "assets": {
+        "document": {
+          "url": "/demos/harbour-street/document.json",
+          "bytes": 4842290,
+          "sha256": "9f0d4dcc85ec4dcfcfd9f8ee38c991b3b2406063c8106e822418be4e0ca830d8",
+          "contentType": "application/json"
+        },
+        "rough": {
+          "url": "/demos/harbour-street/rough.json",
+          "bytes": 1215617,
+          "sha256": "1b804ded72d2992279fb9b7c1d310275e5581f41b0a5d749f55a3c3b890bdbfb",
+          "contentType": "application/json"
+        },
+        "preview": {
+          "url": "/demos/harbour-street/preview.json",
+          "bytes": 166108,
+          "sha256": "86836e87f4872c39a8e2fa80cc772c39b5d7bbfaa19552765f08c0225a56ee2f",
+          "contentType": "application/json"
+        },
+        "roughPreview": {
+          "url": "/demos/harbour-street/rough-preview.json",
+          "bytes": 60746,
+          "sha256": "11df9ce5b90374152a2e83d422f1a0e8a7a87ec3713e33a961710a27c6e5ebcb",
+          "contentType": "application/json"
+        },
+        "thumbnail": {
+          "url": "/demos/harbour-street/thumb.png",
+          "bytes": 31706,
+          "sha256": "368a026e75c0a01a4873d273b93f09ddf5d283c00a3bc5ea7a0c75e9f30fb5a7",
+          "contentType": "image/png"
+        },
+        "social": {
+          "url": "/demos/harbour-street/social.png",
+          "bytes": 54298,
+          "sha256": "e7e9ea716b6e82fb0876ebcfa7f43b28d21521b9525392231b1ae5c9a4fba0af",
+          "contentType": "image/png"
+        }
+      },
+      "validation": {
+        "revision": 1,
+        "partCount": 3041,
+        "connectionCount": 10882,
+        "collisionCount": 0,
+        "unverifiedCollisions": 0,
+        "componentCount": 1,
+        "disconnectedPartCount": 0,
+        "virtualColorCount": 24,
+        "weakAttachmentCount": 1623,
+        "healthy": true,
+        "boundsLdu": {
+          "min": [
+            0,
+            -452,
+            0
+          ],
+          "max": [
+            1520,
+            0,
+            680
+          ],
+          "size": [
+            1520,
+            452,
+            680
+          ]
+        },
+        "footprintStuds": [
+          76,
+          34
+        ],
+        "heightPlates": 56.5,
+        "steps": 45,
+        "buildOrderVerified": true,
+        "buildOrderWarnings": [],
+        "statics": {
+          "massGrams": 3611.92,
+          "massLabel": "3.61 kg",
+          "measuredParts": 3041,
+          "unmeasuredParts": 0,
+          "coverage": 1,
+          "supportLabel": "76.0 × 34.0 studs",
+          "tippingMarginLdu": 276.35,
+          "restingParts": 213,
+          "stable": true,
+          "overloadedGroups": 0,
+          "unsupportedParts": 70,
+          "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
+          "clutchGramsPerStud": 100
+        }
+      },
+      "roughValidation": {
+        "revision": 1,
+        "partCount": 1091,
+        "connectionCount": 2496,
+        "collisionCount": 0,
+        "unverifiedCollisions": 0,
+        "componentCount": 34,
+        "disconnectedPartCount": 673,
+        "virtualColorCount": 5,
+        "weakAttachmentCount": 712,
+        "healthy": true,
+        "boundsLdu": {
+          "min": [
+            0,
+            -308,
+            0
+          ],
+          "max": [
+            680,
+            0,
+            680
+          ],
+          "size": [
+            680,
+            308,
+            680
+          ]
+        },
+        "footprintStuds": [
+          34,
+          34
+        ],
+        "heightPlates": 38.5,
+        "steps": 42,
+        "buildOrderVerified": true,
+        "buildOrderWarnings": [
+          "33 parts begin a new independent island: they attach to nothing placed earlier, so each starts a separately-built subassembly."
+        ],
+        "statics": {
+          "massGrams": 976.37,
+          "massLabel": "976 g",
+          "measuredParts": 1091,
+          "unmeasuredParts": 0,
+          "coverage": 1,
+          "supportLabel": "34.0 × 34.0 studs",
+          "tippingMarginLdu": 278.66,
+          "restingParts": 763,
+          "stable": true,
+          "overloadedGroups": 0,
+          "unsupportedParts": 16,
+          "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
+          "clutchGramsPerStud": 100
+        }
+      },
+      "delta": {
+        "partsAdded": 1950,
+        "connectionsAdded": 8386,
+        "componentsBefore": 34,
+        "componentsAfter": 1,
+        "loosePartsBefore": 673,
+        "loosePartsAfter": 0,
+        "collisionsBefore": 0,
+        "collisionsAfter": 0,
+        "unsupportedBefore": 16,
+        "unsupportedAfter": 70,
+        "stableBefore": true,
+        "stableAfter": true,
+        "massBeforeGrams": 976.37,
+        "massAfterGrams": 3611.92,
+        "stepsBefore": 42,
+        "stepsAfter": 45
+      },
+      "bill": [
+        {
+          "definitionId": "3070b",
+          "name": "Tile 1 x 1 with Groove",
+          "count": 1510
+        },
+        {
+          "definitionId": "3004",
+          "name": "Brick 1 x 2",
+          "count": 250
+        },
+        {
+          "definitionId": "3008",
+          "name": "Brick 1 x 8",
+          "count": 210
+        },
+        {
+          "definitionId": "3010",
+          "name": "Brick 1 x 4",
+          "count": 140
+        },
+        {
+          "definitionId": "4282",
+          "name": "Plate 2 x 16",
+          "count": 132
+        },
+        {
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 107
+        },
+        {
+          "definitionId": "3005",
+          "name": "Brick 1 x 1",
+          "count": 100
+        },
+        {
+          "definitionId": "3020",
+          "name": "Plate 2 x 4",
+          "count": 92
+        },
+        {
+          "definitionId": "3832",
+          "name": "Plate 2 x 10",
+          "count": 91
+        },
+        {
+          "definitionId": "3795",
+          "name": "Plate 2 x 6",
+          "count": 90
+        },
+        {
+          "definitionId": "60592",
+          "name": "Window 1 x 2 x 2 Flat Front",
+          "count": 70
+        },
+        {
+          "definitionId": "60601",
+          "name": "Glass for Window 1 x 2 x 2 Flat",
+          "count": 70
+        }
+      ],
+      "distinctParts": 23,
+      "planWarnings": [
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole."
+      ],
+      "provenance": {
+        "generator": "tools/build-demos.mjs",
+        "kernel": "src/cad — validation, collision, instructions, statics, snapping, assembly, raster",
+        "catalogVersion": "2026-07",
+        "catalogManifestGeneratedAt": "2026-08-27T23:25:07.690Z",
+        "catalogPartsHash": "sha256:4f2a281c35d129addc81554fe6d690da61eccc0d4e77a5b9ef8eccfe6e71b6fb",
+        "renderer": "src/cad/raster.ts — offline software rasterizer, no browser",
+        "authoredAt": "2026-07-01T00:00:00.000Z"
+      }
+    },
+    {
       "id": "meridian-tower",
       "title": "Meridian Tower",
       "discipline": "Modular architecture",
