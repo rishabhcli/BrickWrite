@@ -5,7 +5,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AppShell } from './platform/AppShell'
 import { registerRoute } from './platform/routes'
-import './styles.css'
 
 /**
  * Boot sequence.

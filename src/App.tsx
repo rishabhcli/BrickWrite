@@ -1,5 +1,9 @@
 import { lazy } from 'react'
 import { Workbench } from './editor/workbench'
+// The cockpit's stylesheet, 169 KiB of it, loads with the cockpit. It used to
+// load from the entry module, which put the whole editor's CSS in front of the
+// landing page's first paint.
+import './styles.css'
 
 // Contributions register optional workbench surfaces and can arrive after the
 // core CAD cockpit paints. Keeping them behind lazy boundaries removes the
