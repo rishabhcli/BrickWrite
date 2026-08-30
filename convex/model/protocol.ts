@@ -1,5 +1,6 @@
 import type { ModelDocument, Transaction } from '../../src/cad/types'
 import type { CloudRole } from './capabilities'
+import type { InvitationDeliveryStatus } from './invitationLifecycle'
 
 /**
  * The wire contract between the browser and the Convex data plane.
@@ -229,7 +230,10 @@ export interface CloudInvitationRecord {
   email: string
   role: Exclude<CloudRole, 'owner'>
   status: 'pending' | 'accepted' | 'revoked' | 'expired'
-  deliveryStatus: 'pending' | 'sent' | 'not-configured' | 'failed'
+  deliveryStatus: InvitationDeliveryStatus
+  deliveryAttempts?: number
+  /** Earliest safe retry time for a pending invitation; absent after acceptance by the endpoint. */
+  deliveryRetryAt?: string
   /** Why delivery is in that state — never a fabricated success. */
   deliveryReason?: string
   invitedBySubject: string
@@ -369,6 +373,12 @@ export type CreateBranchArgs = {
    * local tail replays onto it exactly as it was authored.
    */
   atRevision?: number
+  /**
+   * Conflict recovery only: atomically seed the exact divergence checkpoint.
+   * Repeating the same key, creator, parent, name, revision and seed returns the
+   * existing branch, even after its head advances. A changed request is refused.
+   */
+  recovery?: { key: string; snapshot: SnapshotUpload }
 }
 
 export type CreateVersionArgs = {

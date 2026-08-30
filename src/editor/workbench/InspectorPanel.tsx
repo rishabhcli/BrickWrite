@@ -3,7 +3,6 @@ import {
   Check,
   ChevronsLeft,
   ChevronsRight,
-  CircleAlert,
   Lock,
   RotateCcw,
   RotateCw,
@@ -11,20 +10,9 @@ import {
   Unlock,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { describeSize, getColor, STUD_LDU } from '../../cad/catalog'
+import { describeSize, getColor } from '../../cad/catalog'
 import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../../cad/math'
-import {
-  ABS_GRAMS_PER_LDU3,
-  analyseStatics,
-  CLUTCH_FAMILY_WEIGHT,
-  DEFAULT_CLUTCH_GRAMS,
-  describeMass,
-  describeSupport,
-  MASS_BASIS,
-  hangingArmIssues,
-  MIN_RESISTING_ARM_LDU,
-  type StaticsReport,
-} from '../../cad/statics'
+import type { ModelHealthIssue } from '../../cad/modelHealth'
 import type {
   EngineSnapshot,
   PartDefinition,
@@ -32,25 +20,10 @@ import type {
   Transform,
 } from '../../cad/types'
 import { Slot } from './ExtensionRegistry'
+import { ModelHealthPanel } from './ModelHealthPanel'
 
 /** How many observed colours the inspector shows before offering the rest. */
 const INSPECTOR_SWATCH_LIMIT = 18
-
-/** Placeholder while the validate tab is closed, so nothing is computed for it. */
-const EMPTY_STATICS: StaticsReport = {
-  mass: { grams: 0, measuredParts: 0, unmeasuredParts: 0, centreLdu: [0, 0, 0] },
-  support: null,
-  overloaded: [],
-  unsupportedPartIds: [],
-  assumptions: {
-    clutchGramsPerStud: DEFAULT_CLUTCH_GRAMS,
-    densityGramsPerLdu3: ABS_GRAMS_PER_LDU3,
-    massBasis: MASS_BASIS,
-    minResistingArmLdu: MIN_RESISTING_ARM_LDU,
-    clutchFamilyWeights: CLUTCH_FAMILY_WEIGHT,
-  },
-  coverage: 1,
-}
 
 function NumberField({ label, value, suffix, onCommit }: { label: string; value: number; suffix: string; onCommit: (value: number) => void }) {
   return (
@@ -76,8 +49,13 @@ interface InspectorPanelProps {
   state: EngineSnapshot
   selectedPart?: PartInstance
   definition?: PartDefinition
+  view?: InspectorView
+  activeHealthIssueId?: string | null
   /** Joints the current selection can drive; empty for a rigid assembly. */
   articulation: ArticulationControl[]
+  onViewChange?: (view: InspectorView) => void
+  onActiveHealthIssue?: (issueId: string) => void
+  onFocusHealthIssue?: (issue: ModelHealthIssue, mode: 'select' | 'frame' | 'isolate') => void
   onTransform: (partId: string, transform: Transform) => void
   onRecolor: (color: number) => void
   onProtect: (protect: boolean) => void
@@ -85,19 +63,31 @@ interface InspectorPanelProps {
   onArticulate: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
 }
 
+export type InspectorView = 'object' | 'validate'
+
 export function InspectorPanel({
   state,
   selectedPart,
   definition,
+  view,
+  activeHealthIssueId,
   articulation,
+  onViewChange,
+  onActiveHealthIssue,
+  onFocusHealthIssue,
   onTransform,
   onRecolor,
   onProtect,
   onSelectIds,
   onArticulate,
 }: InspectorPanelProps) {
-  const [tab, setTab] = useState<'object' | 'validate'>('object')
+  const [localView, setLocalView] = useState<InspectorView>('object')
   const [allColors, setAllColors] = useState(false)
+  const tab = view ?? localView
+  const setTab = (next: InspectorView) => {
+    setLocalView(next)
+    onViewChange?.(next)
+  }
   const report = state.validation
   const displayRotation = useMemo(
     () => (selectedPart ? eulerDegreesFromBasis(selectedPart.transform.basis) : ([0, 0, 0] as const)),
@@ -112,16 +102,6 @@ export function InspectorPanel({
       ? [...head.slice(0, INSPECTOR_SWATCH_LIMIT - 1), selectedPart.color]
       : head
   }, [allColors, definition, selectedPart])
-  const dimensions = report.bounds.size.map((value) => value / STUD_LDU)
-  // Only while the tab is open, and only then. Statics walks the whole
-  // connection graph — 164 ms on a 1,464-part model — so computing it on every
-  // commit put it on the edit path, which is exactly where it must not be.
-  const showStatics = tab === 'validate'
-  const statics = useMemo(
-    () => (showStatics ? analyseStatics(state.document) : EMPTY_STATICS),
-    [showStatics, state.document],
-  )
-  const arms = hangingArmIssues(statics.overloaded)
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
       <div className="inspector-tabs" role="tablist">
@@ -341,106 +321,13 @@ export function InspectorPanel({
           </div>
         )
       ) : (
-        <div className="validation-view inspector-scroll">
-          <div className={`validation-hero ${report.healthy ? 'pass' : 'warn'}`}>
-            <div>{report.healthy ? <ShieldCheck size={25} /> : <CircleAlert size={25} />}</div>
-            <span className="eyebrow">LIVE KERNEL REPORT</span>
-            <h3>{report.healthy ? 'Geometry is clean' : 'Review build warnings'}</h3>
-            <p>Deterministic checks at revision {report.revision}</p>
-          </div>
-          <section className="validation-list">
-            {/* Certainty is surfaced, not folded away: a verdict reached from
-                bounding boxes alone must not read the same as a triangle-exact
-                one. */}
-            <ValidationRow
-              label="Collisions"
-              value={
-                report.collisions.length
-                  ? `${report.collisions.length} found${report.unverifiedCollisions ? ` · ${report.unverifiedCollisions} unverified` : ''}`
-                  : 'None'
-              }
-              status={report.collisions.length ? (report.unverifiedCollisions === report.collisions.length ? 'warn' : 'fail') : 'pass'}
-              onClick={() => onSelectIds(report.collisions.flatMap((item) => [item.partA, item.partB]))}
-            />
-            <ValidationRow label="Connections" value={`${report.connectionCount} mated`} status="pass" />
-            <ValidationRow label="Loose groups" value={report.componentCount <= 1 ? 'None' : String(report.componentCount - 1)} status={report.componentCount <= 1 ? 'pass' : 'warn'} onClick={() => onSelectIds(report.disconnectedPartIds)} />
-            <ValidationRow label="Colour evidence" value={report.virtualColors.length ? `${report.virtualColors.length} virtual` : 'All observed'} status={report.virtualColors.length ? 'warn' : 'pass'} onClick={() => onSelectIds(report.virtualColors.map((item) => item.partId))} />
-            <ValidationRow label="Dimensions" value={`${dimensions[0].toFixed(1)} × ${dimensions[2].toFixed(1)} studs`} status="pass" />
-          </section>
-
-          {/* Statics answers what collision cannot: does it stand up, and what
-              is holding it together. Recomputed only while this tab is open,
-              because it walks the connection graph. */}
-          <section className="validation-list statics-list">
-            <header className="statics-header">
-              <span className="eyebrow">STATIC ANALYSIS</span>
-              <em title={statics.assumptions.massBasis}>measured mass</em>
-            </header>
-            <ValidationRow
-              label="Mass"
-              value={statics.mass.measuredParts ? describeMass(statics.mass.grams) : 'nothing measured'}
-              status={statics.coverage >= 0.999 ? 'pass' : 'warn'}
-            />
-            <ValidationRow
-              label="Balance"
-              value={statics.support
-                ? statics.support.stable
-                  ? `stable · ${(statics.support.marginLdu / STUD_LDU).toFixed(1)} studs of margin`
-                  : 'centre of mass is outside the footprint'
-                : 'nothing resting'}
-              status={statics.support ? (statics.support.stable ? 'pass' : 'fail') : 'warn'}
-            />
-            <ValidationRow
-              label="Footprint"
-              value={describeSupport(statics.support)}
-              status="pass"
-            />
-            <ValidationRow
-              label="Reaches the ground"
-              value={statics.unsupportedPartIds.length ? `${statics.unsupportedPartIds.length} part(s) do not` : 'every part'}
-              status={statics.unsupportedPartIds.length ? 'warn' : 'pass'}
-              onClick={statics.unsupportedPartIds.length ? () => onSelectIds(statics.unsupportedPartIds) : undefined}
-            />
-            <ValidationRow
-              label="Clutch load"
-              value={statics.overloaded.length ? `${statics.overloaded.length} over ${statics.assumptions.clutchGramsPerStud} g/stud` : 'within assumption'}
-              status={statics.overloaded.length ? 'fail' : 'pass'}
-              onClick={statics.overloaded.length ? () => onSelectIds(statics.overloaded.flatMap((item) => item.partIds)) : undefined}
-            />
-            <ValidationRow
-              label="Leverage"
-              value={arms.length ? `${arms.length} hanging arm(s)` : 'no bending moment past the attachment'}
-              status={arms.length ? 'fail' : 'pass'}
-              onClick={arms.length ? () => onSelectIds(arms.flatMap((item) => item.hangingPartIds)) : undefined}
-            />
-            {statics.coverage < 0.999 && (
-              <p className="statics-note">
-                {statics.mass.unmeasuredParts} part{statics.mass.unmeasuredParts === 1 ? '' : 's'} have no compiled volume, so they are
-                excluded from the mass rather than estimated.
-              </p>
-            )}
-          </section>
-          <section className="constraint-list">
-            <header><span>DESIGN CONSTRAINTS</span><em>{report.constraints.length}</em></header>
-            {report.constraints.map((constraint) => (
-              <div className="constraint-row" key={constraint.id}>
-                <span className={`check-state ${constraint.status}`}>{constraint.status === 'pass' ? <Check size={11} /> : <CircleAlert size={11} />}</span>
-                <div><strong>{constraint.label}</strong><small>{constraint.message}</small></div>
-              </div>
-            ))}
-          </section>
-        </div>
+        <ModelHealthPanel
+          state={state}
+          activeIssueId={activeHealthIssueId}
+          onActiveIssue={onActiveHealthIssue}
+          onFocusIssue={onFocusHealthIssue ?? ((issue) => onSelectIds([...issue.partIds]))}
+        />
       )}
     </aside>
-  )
-}
-
-function ValidationRow({ label, value, status, onClick }: { label: string; value: string; status: 'pass' | 'warn' | 'fail'; onClick?: () => void }) {
-  return (
-    <button className="validation-row" onClick={onClick} disabled={!onClick}>
-      <span className={`check-state ${status}`}>{status === 'pass' ? <Check size={11} /> : <CircleAlert size={11} />}</span>
-      <strong>{label}</strong>
-      <em>{value}</em>
-    </button>
   )
 }

@@ -32,8 +32,12 @@
     "convex/model/checksum.ts",
     "convex/model/limits.ts",
     "convex/model/snapshotValidation.ts",
+    "convex/model/cadSchema.ts",
+    "convex/model/storageJson.ts",
+    "convex/model/transactionValidation.ts",
     "convex/model/history.ts",
     "convex/model/protocol.ts",
+    "convex/model/invitationLifecycle.ts",
     "convex/model/redaction.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/__tests__"]

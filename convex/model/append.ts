@@ -4,6 +4,7 @@ import { writeAuditEvent } from './audit'
 import { authoriseProject, resolveBranch } from './auth'
 import { canonicalJson, checksumOfText, utf8Bytes } from './checksum'
 import { verifyHistoryRecord } from './history'
+import { storageJsonProblem } from './storageJson'
 import {
   cloudFailure,
   MAX_TRANSACTION_BYTES,
@@ -67,6 +68,7 @@ function validateTransaction(
       'INVALID_ARGUMENT',
       replayable.error.message,
       'Re-derive the complete transaction from the engine; its id, revisions and patch must match the request.',
+      replayable.error.details,
     )
   }
   return { ok: true, value: { bytes, digest } }
@@ -93,6 +95,13 @@ export async function appendTransactionBatch(
       { limit: MAX_TRANSACTION_BATCH_COUNT },
     )
   }
+  const problem = storageJsonProblem(args)
+  if (problem)
+    return cloudFailure(
+      'INVALID_ARGUMENT',
+      `The transaction batch contains ${problem}.`,
+      'Send finite, bounded JSON data from the CAD engine; no edits were stored.',
+    )
   const totalBytes = utf8Bytes(canonicalJson(args))
   if (totalBytes > MAX_TRANSACTION_BATCH_BYTES) {
     return cloudFailure(
@@ -147,6 +156,7 @@ export async function appendTransactionBatch(
     if (existing) {
       if (
         existing.checksum !== valid.value.digest ||
+        canonicalJson(existing.payload) !== canonicalJson(entry.transaction) ||
         existing.baseRevision !== entry.baseRevision ||
         existing.resultRevision !== entry.resultRevision ||
         existing.schemaVersion !== entry.schemaVersion ||

@@ -322,6 +322,12 @@ export class ConvexCloudBackend implements CloudBackend {
     // an internal Convex action, so nothing in this bundle ever sends an email.
     return this.tell(refs.invitations.create, args)
   }
+  retryInvitationDelivery(args: {
+    projectId: string
+    invitationId: string
+  }): Promise<CloudResult<CloudInvitationRecord>> {
+    return this.tell(refs.invitations.retryDelivery, args)
+  }
   revokeInvitation(args: { projectId: string; invitationId: string }): Promise<CloudResult<{ revoked: boolean }>> {
     return this.tell(refs.invitations.revoke, args)
   }

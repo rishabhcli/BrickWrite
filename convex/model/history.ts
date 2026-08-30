@@ -1,4 +1,5 @@
 import { canonicalJson, checksumOf, utf8Bytes } from './checksum'
+import { validateTransactionPayload } from './transactionValidation'
 import {
   cloudFailure,
   type CloudBranchRecord,
@@ -39,6 +40,12 @@ export function verifyHistoryRecord(
   base: number,
 ): CloudResult<true> {
   const transaction = record.transaction
+  const shape = validateTransactionPayload(transaction)
+  if (!shape.ok)
+    return incompleteHistory(shape.error.message, {
+      ...(shape.error.details as object),
+      expectedRevision: base + 1,
+    })
   if (
     !isRevision(base) ||
     !isRevision(record.resultRevision) ||
@@ -62,35 +69,6 @@ export function verifyHistoryRecord(
       `Transaction at revision ${base + 1} failed its checksum.`,
       'Keep the local copy and restore a complete saved version; this log cannot safely be replayed.',
     )
-  }
-  // Unknown mutation kinds are silently ignored by the kernel's switch. They
-  // must not turn an unsupported stored patch into a successful partial replay.
-  for (const mutation of transaction.patch.forward) {
-    if (!mutation || typeof mutation !== 'object') return incompleteHistory('A stored patch is malformed.')
-    switch (mutation.kind) {
-      case 'document-name':
-        if (typeof mutation.value !== 'string') return incompleteHistory('A stored name patch is malformed.')
-        break
-      case 'part':
-      case 'subassembly':
-      case 'connection':
-        if (
-          typeof mutation.id !== 'string' ||
-          ['__proto__', 'constructor', 'prototype'].includes(mutation.id) ||
-          (mutation.value !== null && (typeof mutation.value !== 'object' || mutation.value.id !== mutation.id))
-        ) {
-          return incompleteHistory('A stored entity patch is malformed.')
-        }
-        break
-      case 'steps':
-      case 'notes':
-      case 'constraints':
-      case 'modules':
-        if (!Array.isArray(mutation.value)) return incompleteHistory('A stored collection patch is malformed.')
-        break
-      default:
-        return incompleteHistory('A stored patch uses an unsupported mutation kind.')
-    }
   }
   return { ok: true, value: true }
 }

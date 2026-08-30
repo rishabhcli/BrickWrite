@@ -57,7 +57,7 @@ Ten tables. Every access path used by a query is indexed.
 | `snapshots` | Checkpoint and version documents, chunked below the 1 MiB document cap | `by_group`, `by_project_kind_revision`, `by_project_revision` |
 | `versions` | Immutable labelled points, pointing at a snapshot group | `by_project_created`, `by_project_revision`, `by_project_label` |
 | `members` | Subject → role. The only authorisation source | `by_project`, `by_project_subject`, `by_subject` |
-| `invitations` | Email, token, status, delivery status and reason | `by_project`, `by_token`, `by_email_status` |
+| `invitations` | Email, token, lifecycle, delivery generation/lease and reason | `by_project`, `by_token`, `by_email_status`, `by_project_email_status_expiry` |
 | `presence` | Ephemeral cursors, selection, follow target, expiry | `by_project_expiry`, `by_project_session`, `by_project_subject` |
 | `comments` | Body plus a `{partId, revision, poseChecksum}` anchor | `by_project_created`, `by_project_status`, `by_project_anchor` |
 | `auditEvents` | Action, actor subject, timestamp, redacted scalar detail | `by_project_at`, `by_actor_at` |
@@ -103,9 +103,11 @@ members:remove        mutation  leaving is always allowed
 
 invitations:list             query           gated on `member.invite` — it carries emails
 invitations:create           mutation        schedules delivery
+invitations:retryDelivery    mutation        owner-only retry on the same invitation
 invitations:revoke           mutation
 invitations:accept           mutation        by token, redeemed by the invitee's own identity
-invitations:deliveryContext  internalQuery   email + token; no public URL
+invitations:deliveryContext  internalQuery   retired unleased read; always null
+invitations:claimDelivery    internalMutation atomic generation claim before token read
 invitations:markDelivery     internalMutation
 invitations:deliver          internalAction  the only place an email is sent
 
@@ -292,15 +294,19 @@ script) and is consumed by `src/hexclave/client.ts`, not by this workstream.
 |---|---|---|
 | `HEXCLAVE_JWKS_ISSUER` | yes | `convex/auth.config.ts` trusts no issuer, so every function answers `UNAUTHENTICATED`. A closed door, not an open one. |
 | `HEXCLAVE_PROJECT_ID` | yes | as above — it is the token audience |
-| `INVITATION_EMAIL_ENDPOINT` | for invitation email | invitations are stored with `deliveryStatus: 'not-configured'` and a reason naming the missing variables. Nothing reports a send that did not happen. |
-| `INVITATION_EMAIL_TOKEN` | for invitation email | as above |
-| `INVITATION_LINK_ORIGIN` | for invitation email | as above |
+| `HEXCLAVE_SECRET_SERVER_KEY` | for native invitation email | invitation delivery is `not-configured`, unless a custom adapter is configured |
+| `INVITATION_EMAIL_ENDPOINT` | optional custom adapter override | native Hexclave email is used when both override variables are empty |
+| `INVITATION_EMAIL_TOKEN` | required with a custom adapter | a partial override is `not-configured`; no silent fallback |
+| `INVITATION_LINK_ORIGIN` | for invitation email | delivery is `not-configured`; no provider request is made |
 
-The delivery contract is an outbound `POST` from the `invitations:deliver`
-internal action, with `Authorization: Bearer $INVITATION_EMAIL_TOKEN` and body
-`{ to, subject, projectName, role, invitationUrl }`. Point it at the Hexclave
-emails app or any transactional provider. It is an internal action, so it has no
-public URL and the credential never enters the browser bundle.
+The default delivery action submits transactional email directly through
+Hexclave, including for invitees without an account. The custom adapter
+override retains the Bearer-authenticated POST body
+`{ to, subject, projectName, role, invitationUrl }`; this generic payload is not
+Hexclave's native API format. Delivery credentials stay server-side; invitation
+tokens are excluded from owner-facing records.
+See [invitation lifecycle](../cloud-invitation-lifecycle.md) for the complete
+configuration, retry, expiry, acceptance, and compatibility contract.
 
 ## Deployment steps — a human has to run these
 
@@ -334,10 +340,11 @@ public URL and the credential never enters the browser bundle.
 
 4. **Optionally configure invitation email.**
    ```
-   npx convex env set INVITATION_EMAIL_ENDPOINT https://…
-   npx convex env set INVITATION_EMAIL_TOKEN    …
-   npx convex env set INVITATION_LINK_ORIGIN    https://…
+   npx convex env set HEXCLAVE_SECRET_SERVER_KEY …
+   npx convex env set INVITATION_LINK_ORIGIN https://…
    ```
+   Enable a working production mail sender in the Hexclave environment.
+   Set both custom adapter variables instead only when overriding native email.
 
 5. **Apply the integration diff above** and wire `attachCloudSync` into the
    shell.

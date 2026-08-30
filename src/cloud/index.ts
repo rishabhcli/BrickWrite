@@ -33,6 +33,8 @@ export {
   MAX_COMMENT_BYTES,
   MAX_SNAPSHOT_BYTES,
   MAX_TRANSACTION_BYTES,
+  MAX_TRANSACTION_BATCH_BYTES,
+  MAX_TRANSACTION_BATCH_COUNT,
   PRESENCE_TTL_MS,
   SNAPSHOT_CHUNK_BYTES,
   cloudFailure,
@@ -40,6 +42,9 @@ export {
   type AddCommentArgs,
   type AppendTransactionArgs,
   type AppendTransactionValue,
+  type AppendTransactionsArgs,
+  type AppendTransactionsValue,
+  type BatchTransaction,
   type CloudAuditRecord,
   type CloudBackend,
   type CloudBranchRecord,
@@ -68,6 +73,8 @@ export {
 } from './protocol'
 
 export { readCompleteHistory } from './history'
+export { transactionBatch, sendTransactionBatch } from './batches'
+export { validateTransactionPayload } from '../../convex/model/transactionValidation'
 
 export { attachCloudSync, settled, type AttachCloudSyncOptions, type CloudSyncHandle } from './attach'
 

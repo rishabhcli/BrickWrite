@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
 import { createShowcaseDocument } from '../cad/sample'
 import { WebMcpAdapter } from './adapter'
+import { resetChrome, setChromeRevealHandler, setModelHealthHandler, setProposalReviewHandler } from './chrome'
 
 describe('WebMCP adapter', () => {
   const adapter = new WebMcpAdapter()
@@ -12,6 +13,7 @@ describe('WebMCP adapter', () => {
   })
   afterEach(() => {
     adapter.stop()
+    resetChrome()
     cadEngine.replaceDocument(createShowcaseDocument())
   })
 
@@ -69,6 +71,75 @@ describe('WebMCP adapter', () => {
       count: expect.any(Number),
     })
     expect((result?.structuredContent as { count: number }).count).toBeGreaterThan(1)
+  })
+
+  it('puts every successful agent preflight into the human review surface', async () => {
+    cadEngine.setAutonomy('propose')
+    adapter.start()
+    const part = Object.values(cadEngine.getDocument().parts)[0]
+    const focused: string[] = []
+    setChromeRevealHandler(() => undefined)
+    setProposalReviewHandler((proposalId) => {
+      if (proposalId) focused.push(proposalId)
+      return { activeProposalId: proposalId ?? null, found: Boolean(proposalId), pending: 1 }
+    })
+
+    const result = await window.brickwright?.invoke('build_preflight', {
+      label: 'Review the selected colour evidence',
+      expectedRevision: cadEngine.getDocument().revision,
+      operations: [{ op: 'recolor', partId: part.id, color: part.color }],
+    })
+
+    expect(result?.structuredContent).toMatchObject({ id: expect.any(String), status: 'pending' })
+    expect(focused).toEqual([(result?.structuredContent as { id: string }).id])
+    expect(cadEngine.getSnapshot().transactions).toHaveLength(0)
+  })
+
+  it('hands an agent validation scan to the exact human Model Health issue without mutating', async () => {
+    const document = createShowcaseDocument()
+    document.constraints = [{
+      id: 'health_palette',
+      kind: 'palette',
+      label: 'Health palette',
+      value: [999],
+      hard: true,
+    }]
+    cadEngine.replaceDocument(document)
+    adapter.start()
+    const focused: Array<string | undefined> = []
+    setChromeRevealHandler(() => undefined)
+    setModelHealthHandler((issueId) => {
+      focused.push(issueId)
+      return {
+        activeIssueId: issueId ?? null,
+        found: Boolean(issueId),
+        revision: cadEngine.getDocument().revision,
+        blockers: 1,
+        warnings: 0,
+        selectedPartIds: [],
+        truncated: false,
+      }
+    })
+    const revision = cadEngine.getDocument().revision
+
+    const result = await window.brickwright?.invoke('validate_model', {})
+
+    expect(result?.structuredContent).toMatchObject({
+      health: {
+        ready: false,
+        blockers: expect.any(Number),
+        issues: expect.arrayContaining([
+          expect.objectContaining({ id: 'constraint:health_palette', severity: 'blocker' }),
+        ]),
+      },
+      focused: {
+        activeIssueId: 'constraint:health_palette',
+        revealed: { surface: 'health', section: 'inspector' },
+      },
+    })
+    expect(focused).toEqual(['constraint:health_palette'])
+    expect(cadEngine.getDocument().revision).toBe(revision)
+    expect(cadEngine.getSnapshot().transactions).toHaveLength(0)
   })
 
   it('executes agent actions through the same planner, engine and transaction history', async () => {

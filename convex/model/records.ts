@@ -1,3 +1,4 @@
+import { invitationRetryAt } from './invitationLifecycle'
 import type { Doc } from '../_generated/dataModel'
 import { iso } from './auth'
 import type {
@@ -92,9 +93,19 @@ export const invitationRecord = (row: Doc<'invitations'>): CloudInvitationRecord
   projectId: row.projectId,
   email: row.email,
   role: row.role,
-  status: row.status,
+  status: row.status === 'pending' && row.expiresAt <= Date.now() ? 'expired' : row.status,
   deliveryStatus: row.deliveryStatus,
-  deliveryReason: row.deliveryReason,
+  deliveryAttempts: row.deliveryAttempts ?? 0,
+  deliveryRetryAt:
+    row.status === 'pending' && row.expiresAt > Date.now() && !['queued', 'sent'].includes(row.deliveryStatus)
+      ? iso(invitationRetryAt(row))
+      : undefined,
+  // Older workers persisted arbitrary provider error text. Do not publish
+  // legacy payloads that may contain access tokens or endpoint credentials.
+  deliveryReason:
+    row.deliveryGeneration === undefined
+      ? 'Legacy delivery record. Inbox delivery has not been verified.'
+      : row.deliveryReason,
   invitedBySubject: row.invitedBySubject,
   createdAt: iso(row.createdAt),
   expiresAt: iso(row.expiresAt),

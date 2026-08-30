@@ -86,6 +86,7 @@ export const LAYOUT_PRESETS: Record<
 export const DEFAULT_SECTIONS: Record<string, boolean> = {
   palette: true,
   colors: true,
+  'model.explorer': false,
   selection: true,
   transform: false,
   inspector: false,

@@ -155,6 +155,17 @@ function ClaimedMembers({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     }
   }, [backend, documentId, link.cloudProjectId, nonce, store])
 
+  // Refresh only while an attempt/cooldown can still change without another
+  // operator action. Stop polling once delivery finishes or a retry is due.
+  useEffect(() => {
+    if (!api.online) return
+    const waiting = invitations?.some(invitation => invitation.status === 'pending' &&
+      invitation.deliveryRetryAt && Date.parse(invitation.deliveryRetryAt) > Date.now())
+    if (!waiting) return
+    const timer = setTimeout(() => refresh(), 5_000)
+    return () => clearTimeout(timer)
+  }, [api.online, invitations, nonce])
+
   const run = useCallback(
     async (key: string, work: () => Promise<SurfaceNotice | null>) => {
       setBusy(key)
@@ -230,6 +241,16 @@ function ClaimedMembers({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               : 'That collaborator was already absent.',
           }
         : noticeFor(result.error, 'Collaborator not removed')
+    })
+
+  const retryDelivery = (invitation: CloudInvitationRecord) =>
+    run(`invite:${invitation.invitationId}`, async () => {
+      const result = await store.retryInvitationDelivery(documentId, invitation.invitationId)
+      return result.ok ? {
+        tone: 'neutral',
+        title: result.value.deliveryStatus === 'sending' ? 'Delivery is already in progress' : 'Delivery retry queued',
+        detail: result.value.deliveryReason ?? 'The same invitation link will be retried. An earlier unconfirmed request may already have sent an email.',
+      } : noticeFor(result.error, 'Delivery retry refused')
     })
 
   const revoke = (invitation: CloudInvitationRecord) =>
@@ -429,6 +450,14 @@ function ClaimedMembers({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
                     <span className="bw-cloud-project-meta">Delivery: {invitation.deliveryStatus}{invitation.deliveryReason ? ` · ${invitation.deliveryReason}` : ''}</span>
                     {invitation.status === 'pending' && !expired && (
                       <div className="bw-cloud-actions">
+                        {!['queued', 'sent'].includes(invitation.deliveryStatus) && (
+                          <button type="button" className="bw-cloud-btn"
+                            disabled={busy === `invite:${invitation.invitationId}` || Boolean(invitation.deliveryRetryAt && Date.parse(invitation.deliveryRetryAt) > Date.now())}
+                            title={invitation.deliveryRetryAt && Date.parse(invitation.deliveryRetryAt) > Date.now()
+                              ? `Retry available ${formatWhen(invitation.deliveryRetryAt)}`
+                              : 'Retry the same link. A previous unconfirmed request may already have sent an email.'}
+                            onClick={() => void retryDelivery(invitation)}>Retry delivery</button>
+                        )}
                         <button type="button" className="bw-cloud-btn" data-variant="danger" disabled={busy === `invite:${invitation.invitationId}`} onClick={() => void revoke(invitation)}>Revoke</button>
                       </div>
                     )}

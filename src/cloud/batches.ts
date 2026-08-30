@@ -9,6 +9,8 @@ import {
   type CloudResult,
 } from './protocol'
 import { canonicalJson, utf8Bytes } from './serialize'
+import { validateTransactionPayload } from '../../convex/model/transactionValidation'
+import { storageJsonProblem } from '../../convex/model/storageJson'
 
 type Target = Pick<AppendTransactionsArgs, 'projectId' | 'branchId'>
 
@@ -28,6 +30,12 @@ export function transactionBatch(
   const count = supportsBatch ? MAX_TRANSACTION_BATCH_COUNT : 1
   for (const entry of entries) {
     if (batch.transactions.length >= count) break
+    // Do not recursively serialize corrupt local data. A bad first entry still
+    // makes progress to the typed validator; a bad later entry stays queued.
+    if (storageJsonProblem(entry)) {
+      if (!batch.transactions.length) batch.transactions.push(entry)
+      break
+    }
     const added = utf8Bytes(canonicalJson(entry)) + (batch.transactions.length ? 1 : 0)
     if (batch.transactions.length && bytes + added > MAX_TRANSACTION_BATCH_BYTES) break
     batch.transactions.push(entry)
@@ -83,6 +91,21 @@ function verifyReceipt(
   return { ok: true, value }
 }
 
+function verifiedResult(
+  args: AppendTransactionsArgs,
+  result: CloudResult<AppendTransactionsValue>,
+): CloudResult<AppendTransactionsValue> {
+  if (result?.ok === true) return verifyReceipt(args, result.value)
+  if (
+    result?.ok === false &&
+    typeof result.error?.code === 'string' &&
+    typeof result.error.message === 'string' &&
+    typeof result.error.repair === 'string'
+  )
+    return result
+  return receiptFailure()
+}
+
 /** No retry or scalar fallback after ambiguous transport failure: keep ids and
  * let the existing outbox backoff/claim retry decide when to send again. */
 export async function sendTransactionBatch(
@@ -92,6 +115,10 @@ export async function sendTransactionBatch(
   try {
     if (!args.transactions.length)
       return cloudFailure('INVALID_ARGUMENT', 'There are no edits to send.', 'Queue a transaction first.')
+    for (const entry of args.transactions) {
+      const shape = validateTransactionPayload(entry.transaction)
+      if (!shape.ok) return shape
+    }
     if (args.transactions.length > 1) {
       if (!backend.appendTransactions)
         return cloudFailure(
@@ -100,7 +127,7 @@ export async function sendTransactionBatch(
           'Use one transaction per request for this host.',
         )
       const result = await backend.appendTransactions(args)
-      return result.ok ? verifyReceipt(args, result.value) : result
+      return verifiedResult(args, result)
     }
     const entry = args.transactions[0]
     const result = await backend.appendTransaction({
@@ -108,7 +135,7 @@ export async function sendTransactionBatch(
       ...(args.branchId !== undefined ? { branchId: args.branchId } : {}),
       ...entry,
     })
-    if (!result.ok) return result
+    if (result.ok !== true) return verifiedResult(args, result)
     return verifyReceipt(args, {
       branchId: result.value.branchId,
       headRevision: result.value.headRevision,

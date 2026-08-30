@@ -1,3 +1,4 @@
+import { invitationRetryAt, type InvitationDeliveryStatus } from '../../../convex/model/invitationLifecycle'
 import { roleAllows, type Capability, type CloudRole } from '../../../convex/model/capabilities'
 import { canonicalJson, checksumOfText, utf8Bytes } from '../../../convex/model/checksum'
 import { decodeSnapshotUpload } from '../../../convex/model/snapshotValidation'
@@ -89,6 +90,8 @@ interface BranchRow {
   baseRevision: number
   forkedFromBranchId?: string
   kind: 'main' | 'named' | 'conflict'
+  recoveryKey?: string
+  recoverySnapshotGroupId?: string
   createdBySubject: string
   createdAt: number
   updatedAt: number
@@ -170,7 +173,11 @@ interface InvitationRow {
   createdAt: number
   expiresAt: number
   status: 'pending' | 'accepted' | 'revoked' | 'expired'
-  deliveryStatus: 'pending' | 'sent' | 'not-configured' | 'failed'
+  deliveryStatus: InvitationDeliveryStatus
+  deliveryGeneration?: number
+  deliveryAttempts?: number
+  deliveryRequestedAt?: number
+  deliveryStartedAt?: number
   deliveryReason?: string
   acceptedBySubject?: string
   acceptedAt?: number
@@ -576,8 +583,10 @@ export class FakeConvexDeployment {
       projectId: row.projectId,
       email: row.email,
       role: row.role,
-      status: row.status,
+      status: row.status === 'pending' && row.expiresAt <= this.stamp() ? 'expired' : row.status,
       deliveryStatus: row.deliveryStatus,
+      deliveryAttempts: row.deliveryAttempts ?? 0,
+      deliveryRetryAt: row.status === 'pending' && row.expiresAt > this.stamp() && !['queued', 'sent'].includes(row.deliveryStatus) ? this.iso(invitationRetryAt(row)) : undefined,
       deliveryReason: row.deliveryReason,
       invitedBySubject: row.invitedBySubject,
       createdAt: this.iso(row.createdAt),
@@ -1139,16 +1148,59 @@ class FakeConvexBackend implements CloudBackend {
     if (!name) {
       return fail('INVALID_ARGUMENT', 'A branch needs a name.', 'Name the branch and retry.')
     }
+    const parent = this.db.branch(project, args.fromBranchId)
+    if (!parent.ok) return parent
+    const recovery = args.recovery
+    if (
+      recovery &&
+      (args.kind !== 'conflict' ||
+        args.atRevision === undefined ||
+        !/^[A-Za-z0-9_-]{16,128}$/.test(recovery.key) ||
+        recovery.snapshot.revision !== args.atRevision)
+    )
+      return fail(
+        'INVALID_ARGUMENT',
+        'Recovery needs a stable key and an exact checkpoint.',
+        'Retry the original request.',
+      )
+    const seed = recovery
+      ? decodeSnapshotUpload(recovery.snapshot, {
+          localProjectId: project.localProjectId,
+          schemaVersion: project.schemaVersion,
+        })
+      : undefined
+    if (seed && !seed.ok) return seed
+    if (recovery && seed?.ok) {
+      const existing = this.db.branches.find(
+        (row) =>
+          row.projectId === project._id &&
+          row.createdBySubject === identity.subject &&
+          row.recoveryKey === recovery.key,
+      )
+      if (existing) {
+        if (
+          existing.kind !== 'conflict' ||
+          existing.name !== name ||
+          existing.forkedFromBranchId !== parent.value._id ||
+          existing.baseRevision !== args.atRevision ||
+          !existing.recoverySnapshotGroupId
+        )
+          return fail('INVALID_ARGUMENT', 'This key identifies another fork.', 'Retry the original request.')
+        const original = this.db.readSnapshot(existing.recoverySnapshotGroupId, project._id)
+        if (!original.ok) return original
+        if (canonicalJson(original.value.document) !== canonicalJson(seed.value))
+          return fail('INVALID_ARGUMENT', 'This key identifies another checkpoint.', 'Retry the original request.')
+        return { ok: true, value: this.db.branchRecord(existing) }
+      }
+    }
     const clash = this.db.branches.find((row) => row.projectId === project._id && row.name === name)
     if (clash) {
       return fail('NAME_TAKEN', 'This project already has a branch with that name.', 'Choose another name.', {
         branchId: clash._id,
       })
     }
-    const parent = this.db.branch(project, args.fromBranchId)
-    if (!parent.ok) return parent
     const at = args.atRevision ?? parent.value.headRevision
-    if (at < 0 || at > parent.value.headRevision) {
+    if (!Number.isSafeInteger(at) || at < 0 || at > parent.value.headRevision) {
       return fail(
         'INVALID_ARGUMENT',
         `A branch cannot fork at revision ${at}; ${parent.value.name} runs to ${parent.value.headRevision}.`,
@@ -1183,11 +1235,25 @@ class FakeConvexBackend implements CloudBackend {
       forkedFromBranchId: parent.value._id,
       kind,
       createdBySubject: identity.subject,
+      recoveryKey: recovery?.key,
       createdAt: now,
       updatedAt: now,
     }
     this.db.branches.push(branch)
-    if (parentCheckpoint) {
+    if (recovery) {
+      const seeded = this.db.writeSnapshot({
+        projectId: project._id,
+        branchId: branch._id,
+        kind: 'checkpoint',
+        createdBySubject: identity.subject,
+        upload: recovery.snapshot,
+      })
+      if (!seeded.ok) {
+        this.db.branches.pop()
+        return seeded
+      }
+      branch.recoverySnapshotGroupId = seeded.value
+    } else if (parentCheckpoint) {
       const chunks = this.db.snapshots.filter((row) => row.groupId === parentCheckpoint.groupId)
       if (chunks.length !== parentCheckpoint.chunkCount) {
         this.db.branches.pop()
@@ -1472,17 +1538,17 @@ class FakeConvexBackend implements CloudBackend {
     if (!authorised.ok) return authorised
     const { project, identity } = authorised.value
     const email = args.email.trim().toLowerCase()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return fail('INVALID_ARGUMENT', 'That does not look like an email address.', 'Check the address and retry.')
     }
     const duplicate = this.db.invitations.find(
-      (row) => row.projectId === project._id && row.email === email && row.status === 'pending',
+      (row) => row.projectId === project._id && row.email === email && row.status === 'pending' && row.expiresAt > this.db.stamp(),
     )
     if (duplicate) {
       return fail(
         'NAME_TAKEN',
         'That address already has a pending invitation to this project.',
-        'Revoke the existing invitation before sending another.',
+        'Retry delivery for the existing invitation, or revoke it before creating another.',
         { invitationId: duplicate._id },
       )
     }
@@ -1500,12 +1566,38 @@ class FakeConvexBackend implements CloudBackend {
       // No delivery endpoint exists in-process, so the honest answer is the
       // same one the deployment gives with the variables unset.
       deliveryStatus: 'not-configured',
+      deliveryGeneration: 0,
+      deliveryAttempts: 1,
+      deliveryRequestedAt: now,
       deliveryReason:
-        'Email delivery is not configured on this deployment: INVITATION_EMAIL_ENDPOINT, INVITATION_EMAIL_TOKEN, INVITATION_LINK_ORIGIN unset.',
+        'Email delivery is not configured in this in-process backend (no Hexclave or INVITATION_EMAIL_ENDPOINT transport); no external request was made.',
     }
     this.db.invitations.push(invitation)
     this.db.audit(project._id, identity.subject, 'invitation.create', { role: args.role })
     return { ok: true, value: this.db.invitationRecord(invitation) }
+  }
+
+  async retryInvitationDelivery(args: { projectId: string; invitationId: string }): Promise<CloudResult<CloudInvitationRecord>> {
+    const offline = this.guard<CloudInvitationRecord>()
+    if (offline) return offline
+    const auth = this.authorise(args.projectId, 'member.invite')
+    if (!auth.ok) return auth
+    const row = this.db.invitations.find(row => row._id === args.invitationId && row.projectId === args.projectId)
+    if (!row) return fail('NOT_FOUND', 'That invitation is not available.', 'Reload the invitations.')
+    const now = this.db.stamp()
+    if (row.status !== 'pending' || row.expiresAt <= now || ['queued', 'sent'].includes(row.deliveryStatus))
+      return fail('INVALID_ARGUMENT', 'Only a pending unexpired invitation can be retried.', 'Create a new invitation if needed.')
+    if (now < invitationRetryAt(row)) {
+      if (['pending', 'sending'].includes(row.deliveryStatus)) return { ok: true, value: this.db.invitationRecord(row) }
+      return fail('INVALID_ARGUMENT', 'Wait before retrying delivery.', 'Retry after the cooldown.')
+    }
+    row.deliveryGeneration = (row.deliveryGeneration ?? 0) + 1
+    row.deliveryStatus = 'pending'
+    row.deliveryRequestedAt = now
+    row.deliveryStartedAt = undefined
+    row.deliveryReason = 'Delivery retry is queued. A previous unconfirmed request may already have sent an email.'
+    this.db.audit(args.projectId, auth.value.identity.subject, 'invitation.retryDelivery', { generation: row.deliveryGeneration, role: row.role })
+    return { ok: true, value: this.db.invitationRecord(row) }
   }
 
   async revokeInvitation(args: {
@@ -1523,6 +1615,7 @@ class FakeConvexBackend implements CloudBackend {
     }
     if (invitation.status !== 'pending') return { ok: true, value: { revoked: false } }
     invitation.status = 'revoked'
+    if (['pending', 'sending'].includes(invitation.deliveryStatus)) invitation.deliveryStatus = 'cancelled'
     this.db.audit(project._id, identity.subject, 'invitation.revoke', { role: invitation.role })
     return { ok: true, value: { revoked: true } }
   }
@@ -1534,6 +1627,11 @@ class FakeConvexBackend implements CloudBackend {
     if (offline) return offline
     if (!this.identity) return { ok: false, error: UNAUTHENTICATED }
     const invitation = this.db.invitations.find((row) => row.token === args.token)
+    if (invitation?.status === 'accepted' && invitation.acceptedBySubject === this.identity.subject) {
+      const project = this.db.project(invitation.projectId)
+      const member = this.db.membership(invitation.projectId, this.identity.subject)
+      if (project && member) return { ok: true, value: { projectId: project._id, role: member.role } }
+    }
     if (!invitation || invitation.status !== 'pending') {
       return fail(
         'NOT_FOUND',
@@ -1541,7 +1639,7 @@ class FakeConvexBackend implements CloudBackend {
         'Ask the project owner to send a fresh invitation.',
       )
     }
-    if (invitation.expiresAt < this.db.stamp()) {
+    if (invitation.expiresAt <= this.db.stamp()) {
       invitation.status = 'expired'
       return fail('NOT_FOUND', 'That invitation has expired.', 'Ask the project owner to send a fresh invitation.')
     }
@@ -1556,6 +1654,7 @@ class FakeConvexBackend implements CloudBackend {
     const now = this.db.stamp()
     const existing = this.db.membership(project._id, this.identity.subject)
     invitation.status = 'accepted'
+    if (['pending', 'sending'].includes(invitation.deliveryStatus)) invitation.deliveryStatus = 'cancelled'
     invitation.acceptedBySubject = this.identity.subject
     invitation.acceptedAt = now
     if (existing) return { ok: true, value: { projectId: project._id, role: existing.role } }

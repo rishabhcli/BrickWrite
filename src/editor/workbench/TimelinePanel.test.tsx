@@ -37,6 +37,37 @@ function ConnectedTimeline({ workbench, initialView }: { workbench: Workbench; i
   )
 }
 
+function ReviewHarness({ activeProposalId }: { activeProposalId: string }) {
+  const workbench = useWorkbench()
+  return (
+    <TimelinePanel
+      state={workbench.state}
+      playbackStep={workbench.playbackStep}
+      view="review"
+      activeProposalId={activeProposalId}
+      onActiveProposal={() => undefined}
+      onPlayStep={workbench.setPlaybackStep}
+      onSequence={workbench.regenerateBuildOrder}
+      onAccept={workbench.acceptProposal}
+      onReject={workbench.rejectProposal}
+      onSelectIds={(ids) => cadEngine.setSelection(ids)}
+    />
+  )
+}
+
+function createReviewProposal() {
+  const snapshot = cadEngine.getSnapshot()
+  const part = Object.values(snapshot.document.parts)[0]
+  const result = cadEngine.preflight(
+    'Review the cockpit finish',
+    [{ type: 'part.recolor' as const, partId: part.id, color: part.color }],
+    'agent',
+    snapshot.document.revision,
+  )
+  if (!result.ok) throw new Error(result.error.message)
+  return { proposal: result.value, part }
+}
+
 describe('shared feedback inbox', () => {
   it('opens every anchored handoff and selects its exact model scope', () => {
     render(<FeedbackHarness />)
@@ -94,5 +125,57 @@ describe('shared feedback inbox', () => {
         resolved: true,
       },
     ])
+  })
+})
+
+describe('shared proposal review', () => {
+  it('shows measured operation and validation evidence before commit', () => {
+    const { proposal, part } = createReviewProposal()
+    render(<ReviewHarness activeProposalId={proposal.id} />)
+
+    expect(screen.getByRole('heading', { name: 'Change review' })).toBeVisible()
+    expect(screen.getByText('READY TO COMMIT')).toBeVisible()
+    expect(screen.getByText('Appearance and access')).toBeVisible()
+    expect(screen.getByText('Kernel preflight is clear to commit.')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: /INSPECT 1/ }))
+    expect(cadEngine.getSnapshot().selection).toEqual([part.id])
+  })
+
+  it('accepts a reviewed ghost as one real human transaction', () => {
+    const { proposal } = createReviewProposal()
+    const before = cadEngine.getDocument().revision
+    render(<ReviewHarness activeProposalId={proposal.id} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /ACCEPT/ }))
+
+    expect(cadEngine.getDocument().revision).toBe(before + 1)
+    expect(cadEngine.getSnapshot().proposals).toHaveLength(0)
+    expect(cadEngine.getSnapshot().transactions.at(-1)).toMatchObject({
+      author: 'human',
+      label: 'Review the cockpit finish',
+    })
+  })
+
+  it('disables acceptance when measured preflight evidence is blocked', () => {
+    const { proposal } = createReviewProposal()
+    const ids = Object.keys(proposal.previewDocument.parts)
+    proposal.validation = {
+      ...proposal.validation,
+      healthy: false,
+      collisions: [{
+        id: 'review_collision',
+        partA: ids[0],
+        partB: ids[1],
+        overlapLdu: [2, 2, 2],
+        message: 'Blocked in review',
+        certainty: 'exact',
+      }],
+    }
+    render(<ReviewHarness activeProposalId={proposal.id} />)
+
+    expect(screen.getByText('COMMIT BLOCKED')).toBeVisible()
+    expect(screen.getByText('1 collision in the preview.')).toBeVisible()
+    expect((screen.getByRole('button', { name: /ACCEPT/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

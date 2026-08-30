@@ -1,23 +1,27 @@
 import {
+  AlertTriangle,
   Box,
   Check,
   CheckCircle2,
   CircleDot,
   Clock3,
   Crosshair,
+  Eye,
   ListOrdered,
   MessageSquareText,
   PenLine,
   Play,
   Send,
+  ShieldCheck,
   Sparkles,
   Square,
   X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { BuilderNote, EngineSnapshot, Transaction } from '../../cad/types'
+import type { BuilderNote, EngineSnapshot, Proposal, Transaction } from '../../cad/types'
+import { summariseProposal, type ProposalReviewSummary } from './proposalReview'
 
-export type TimelineView = 'steps' | 'history' | 'feedback'
+export type TimelineView = 'steps' | 'history' | 'feedback' | 'review'
 
 interface TimelineProps {
   state: EngineSnapshot
@@ -26,6 +30,8 @@ interface TimelineProps {
   /** Controlled so `workspace_reveal({ surface: "feedback" })` opens the exact same inbox a human sees. */
   view?: TimelineView
   onViewChange?: (view: TimelineView) => void
+  activeProposalId?: string | null
+  onActiveProposal?: (id: string) => void
   onAccept: (id: string) => void
   onReject: (id: string) => void
   onSelectIds: (ids: string[]) => void
@@ -169,6 +175,119 @@ function FeedbackComposer({
   )
 }
 
+const signed = (value: number) => `${value > 0 ? '+' : ''}${value}`
+
+function ProposalQueueCard({
+  proposal,
+  summary,
+  active,
+  onOpen,
+}: {
+  proposal: Proposal
+  summary: ProposalReviewSummary
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`review-queue-card ${active ? 'active' : ''} ${summary.ready ? 'ready' : 'blocked'}`}
+      aria-pressed={active}
+      onClick={onOpen}
+      title={`Review ${proposal.label}`}
+    >
+      <header>
+        <Sparkles size={12} />
+        <span>{proposal.author === 'agent' ? 'AGENT PREFLIGHT' : 'HUMAN PREFLIGHT'}</span>
+        <em>r{proposal.baseRevision}</em>
+      </header>
+      <strong>{proposal.label}</strong>
+      <div>
+        <span>{proposal.operations.length} ops</span>
+        <span>{signed(summary.partDelta)} parts</span>
+        <span className={summary.ready ? 'pass' : 'fail'}>{summary.ready ? 'READY' : `${summary.blockers.length} BLOCKED`}</span>
+      </div>
+      <footer>
+        <i>{active ? 'VIEWING GHOST' : 'OPEN REVIEW'}</i>
+        {summary.ready ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
+      </footer>
+    </button>
+  )
+}
+
+function ProposalReviewInspector({
+  proposal,
+  summary,
+  onInspect,
+  onAccept,
+  onReject,
+}: {
+  proposal: Proposal | null
+  summary: ProposalReviewSummary | null
+  onInspect: (ids: string[]) => void
+  onAccept: (id: string) => void
+  onReject: (id: string) => void
+}) {
+  if (!proposal || !summary) {
+    return (
+      <aside className="review-inspector empty" aria-label="Proposal review details">
+        <ShieldCheck size={18} />
+        <strong>Review queue clear</strong>
+        <span>Agent preflights will appear here before anything reaches shared history.</span>
+      </aside>
+    )
+  }
+
+  const primaryIssue = summary.blockers[0] ?? summary.warnings[0] ?? 'Kernel preflight is clear to commit.'
+  return (
+    <aside className={`review-inspector ${summary.ready ? 'ready' : 'blocked'}`} aria-label="Proposal review details">
+      <header>
+        <span>{summary.ready ? <ShieldCheck size={13} /> : <AlertTriangle size={13} />}</span>
+        <div>
+          <small>{summary.ready ? 'READY TO COMMIT' : 'COMMIT BLOCKED'}</small>
+          <strong>{proposal.label}</strong>
+        </div>
+        <em>{proposal.id.slice(-6)}</em>
+      </header>
+      <div className="review-metrics" aria-label="Proposal metric changes">
+        <div><span>PARTS</span><strong>{signed(summary.partDelta)}</strong></div>
+        <div><span>CONN</span><strong>{signed(summary.connectionDelta)}</strong></div>
+        <div><span>ISLANDS</span><strong>{signed(summary.componentDelta)}</strong></div>
+        <div className={summary.collisionDelta > 0 ? 'bad' : ''}><span>HITS</span><strong>{signed(summary.collisionDelta)}</strong></div>
+      </div>
+      <div className="review-operation-groups">
+        {summary.groups.slice(0, 4).map((group) => (
+          <span key={group.id}>{group.label}<em>{group.count}</em></span>
+        ))}
+      </div>
+      <p className="review-verdict">{primaryIssue}</p>
+      <footer>
+        <button
+          type="button"
+          className="review-inspect"
+          disabled={!summary.selectablePartIds.length}
+          onClick={() => onInspect([...summary.selectablePartIds])}
+          title={summary.selectablePartIds.length ? 'Select existing parts touched by this proposal' : 'This proposal only adds new ghost parts'}
+        >
+          <Eye size={11} /> INSPECT {summary.selectablePartIds.length || summary.addedPartIds.length}
+        </button>
+        <button type="button" className="review-reject" onClick={() => onReject(proposal.id)}>
+          <X size={11} /> REJECT
+        </button>
+        <button
+          type="button"
+          className="review-accept"
+          disabled={!summary.ready}
+          onClick={() => onAccept(proposal.id)}
+          title={summary.ready ? 'Commit this preflight as one shared transaction' : primaryIssue}
+        >
+          <Check size={11} /> ACCEPT
+        </button>
+      </footer>
+    </aside>
+  )
+}
+
 /**
  * The shared bottom band: build order, edit history, and the human-agent inbox.
  *
@@ -182,6 +301,8 @@ export function TimelinePanel({
   playbackStep,
   view,
   onViewChange,
+  activeProposalId,
+  onActiveProposal,
   onAccept,
   onReject,
   onSelectIds,
@@ -195,7 +316,7 @@ export function TimelinePanel({
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const requestedView = view ?? localView
-  const showing: TimelineView = state.proposals.length ? 'history' : requestedView
+  const showing: TimelineView = requestedView
   const setView = (next: TimelineView) => {
     setLocalView(next)
     onViewChange?.(next)
@@ -212,15 +333,31 @@ export function TimelinePanel({
     ? null
     : (visibleNotes.find((note) => note.id === selectedNoteId) ?? visibleNotes[0] ?? null)
 
-  const title = showing === 'steps' ? 'Build sequence' : showing === 'history' ? 'Edit history' : 'Feedback inbox'
+  const activeProposal = state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
+  const proposalSummaries = useMemo(
+    () => new Map(state.proposals.map((proposal) => [proposal.id, summariseProposal(proposal, state)])),
+    [state],
+  )
+  const activeProposalSummary = activeProposal ? (proposalSummaries.get(activeProposal.id) ?? null) : null
+
+  const title =
+    showing === 'steps'
+      ? 'Build sequence'
+      : showing === 'history'
+        ? 'Edit history'
+        : showing === 'review'
+          ? 'Change review'
+          : 'Feedback inbox'
   const summary =
     showing === 'feedback'
       ? `${openNotes.length} open · ${state.document.notes.length} total`
+      : showing === 'review'
+        ? `${state.proposals.length} pending · document r${state.document.revision}`
       : `${state.document.steps.length} steps · ${state.validation.partCount} pcs`
 
   return (
     <section
-      className={`timeline ${showing === 'feedback' ? 'feedback-open' : ''}`}
+      className={`timeline ${showing === 'feedback' ? 'feedback-open' : ''} ${showing === 'review' ? 'review-open' : ''} ${state.proposals.length ? 'has-proposals' : ''}`}
       aria-label="Build history, sequence, and feedback"
     >
       <div className="timeline-label">
@@ -246,6 +383,16 @@ export function TimelinePanel({
           >
             <Clock3 size={11} /> HISTORY <em>{state.transactions.length}</em>
           </button>
+          {state.proposals.length > 0 && (
+            <button
+              role="tab"
+              aria-selected={showing === 'review'}
+              className={showing === 'review' ? 'active' : ''}
+              onClick={() => setView('review')}
+            >
+              <Sparkles size={11} /> REVIEW <em>{state.proposals.length}</em>
+            </button>
+          )}
           <button
             role="tab"
             aria-selected={showing === 'feedback'}
@@ -301,30 +448,28 @@ export function TimelinePanel({
         )}
       </div>
       <div className="timeline-track">
-        {showing === 'history' ? (
+        {showing === 'review' ? (
           <>
-            {state.proposals.map((proposal) => (
-              <article className="proposal-card" key={proposal.id}>
-                <div className="proposal-glow" />
-                <header>
-                  <Sparkles size={13} />
-                  <span>CODEX PROPOSAL</span>
-                  <em>r{proposal.baseRevision}</em>
-                </header>
-                <strong>{proposal.label}</strong>
-                <p>
-                  {proposal.operations.length} operations · {proposal.validation.collisions.length} collisions
-                </p>
-                <footer>
-                  <button onClick={() => onAccept(proposal.id)}>
-                    <Check size={12} /> Accept
-                  </button>
-                  <button onClick={() => onReject(proposal.id)}>
-                    <X size={12} /> Reject
-                  </button>
-                </footer>
-              </article>
-            ))}
+            {state.proposals.length === 0 && (
+              <div className="timeline-empty">
+                No preflights are waiting. Agent proposals appear here as measured ghosts before they can become edits.
+              </div>
+            )}
+            {state.proposals.map((proposal) => {
+              const proposalSummary = proposalSummaries.get(proposal.id)!
+              return (
+                <ProposalQueueCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  summary={proposalSummary}
+                  active={activeProposal?.id === proposal.id}
+                  onOpen={() => onActiveProposal?.(proposal.id)}
+                />
+              )
+            })}
+          </>
+        ) : showing === 'history' ? (
+          <>
             {latestTransactions.length === 0 && (
               <div className="timeline-empty">
                 Nothing has been edited yet. Every change you or the agent makes lands here as one atomic, reversible
@@ -404,7 +549,15 @@ export function TimelinePanel({
           </>
         )}
       </div>
-      {showing === 'feedback' ? (
+      {showing === 'review' ? (
+        <ProposalReviewInspector
+          proposal={activeProposal}
+          summary={activeProposalSummary}
+          onInspect={onSelectIds}
+          onAccept={onAccept}
+          onReject={onReject}
+        />
+      ) : showing === 'feedback' ? (
         <FeedbackComposer
           key={selectedNote?.id ?? 'new'}
           note={selectedNote}

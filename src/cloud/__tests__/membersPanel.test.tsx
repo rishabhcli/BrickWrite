@@ -2,7 +2,7 @@
 // imported here as well as in the shared setup file, and is idempotent.
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalProjectStore, type MirroredProjectStore } from '../projectStore'
 import { SIGNED_OUT_IDENTITY } from '../runtime'
 import { refusalReason } from '../permissions'
@@ -17,7 +17,7 @@ import {
   type UiHarness,
 } from './uiHarness'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 const OPEN = 'doc_ui'
 
@@ -165,5 +165,93 @@ describe('Members panel — claimed project', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Invite' }))
     await waitFor(() => expect(screen.getByText(/Invited new@example.test/)).toBeInTheDocument())
     expect(screen.getByTestId('cloud-members-panel').textContent).toMatch(/not configured/i)
+  })
+})
+
+describe('Members panel — delivery retries', () => {
+  async function failedInvitation(harness: UiHarness) {
+    const store = await claimOpenProject(harness)
+    const created = await store.createInvitation(OPEN, 'retry@example.test', 'editor')
+    if (!created.ok) throw new Error(created.error.message)
+    const row = harness.deployment.invitations.find(row => row._id === created.value.invitationId)!
+    row.expiresAt = Date.now() + 86_400_000
+    row.deliveryRequestedAt = 0 // completed cooldown in both the UI and fake server clock
+    row.deliveryStatus = 'failed'
+    row.deliveryReason = 'The email request failed. Delivery is not confirmed.'
+    return row
+  }
+
+  it('retries a failed delivery on the same invitation instead of minting another link', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    const row = await failedInvitation(harness)
+    const token = row.token
+    await mount(harness)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry delivery' }))
+    await screen.findByText('Delivery retry queued')
+    expect(row.deliveryStatus).toBe('pending')
+    expect(row.deliveryGeneration).toBe(1)
+    expect(row.token).toBe(token)
+    expect(harness.deployment.invitations).toHaveLength(1)
+  })
+
+  it('disables retry during the cooldown and explains when it becomes available', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    const row = await failedInvitation(harness)
+    row.deliveryRequestedAt = Date.now()
+    await mount(harness)
+    const retry = await screen.findByRole('button', { name: 'Retry delivery' })
+    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('title', expect.stringContaining('Retry available'))
+    expect(await screen.findByRole('button', { name: 'Revoke' })).toBeEnabled()
+  })
+
+  it('does not offer retry after the endpoint accepted the invitation', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    const row = await failedInvitation(harness)
+    row.deliveryStatus = 'queued'
+    row.deliveryReason = 'The email endpoint accepted the invitation. Inbox delivery is not confirmed.'
+    await mount(harness)
+    await screen.findByText(/Inbox delivery is not confirmed/)
+    expect(screen.queryByRole('button', { name: 'Retry delivery' })).not.toBeInTheDocument()
+  })
+
+  it('enables retry when the cooldown elapses without a manual page refresh', async () => {
+    vi.useFakeTimers()
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    const row = await failedInvitation(harness)
+    row.deliveryRequestedAt = Date.now()
+    await mount(harness)
+    expect(screen.getByRole('button', { name: 'Retry delivery' })).toBeDisabled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000) })
+    expect(screen.getByRole('button', { name: 'Retry delivery' })).toBeEnabled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('refreshes an in-flight attempt and stops polling when submission finishes', async () => {
+    vi.useFakeTimers()
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
+    const row = await failedInvitation(harness)
+    row.deliveryStatus = 'sending'
+    row.deliveryStartedAt = Date.now()
+    await mount(harness)
+    expect(screen.getByRole('button', { name: 'Retry delivery' })).toBeDisabled()
+    row.deliveryStatus = 'queued'
+    row.deliveryReason = 'Hexclave accepted the invitation. Inbox delivery is not confirmed.'
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(screen.getByText(/Hexclave accepted the invitation/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry delivery' })).not.toBeInTheDocument()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps a refused retry visible instead of claiming it was queued', async () => {
+    const harness = makeUiHarness({ configured: true, identity: SIGNED_IN,
+      wrapBackend: backend => overrideBackend(backend, { retryInvitationDelivery: async () => ({ ok: false,
+        error: { code: 'FORBIDDEN', message: 'Your role no longer permits invitations.', repair: 'Reload access.' } }) }) })
+    await failedInvitation(harness)
+    await mount(harness)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry delivery' }))
+    await screen.findByText('Delivery retry refused')
+    expect(screen.getByText(/Your role no longer permits/)).toBeInTheDocument()
+    expect(screen.queryByText('Delivery retry queued')).not.toBeInTheDocument()
   })
 })

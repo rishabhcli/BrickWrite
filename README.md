@@ -200,6 +200,21 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   Interrupted claims can resume the exact original upload without duplicating edits or
   overwriting newer work. Humans and agents share the same authenticated save contract.
   See [cloud save integrity](docs/cloud-save-integrity.md).
+- **Atomic batched cloud sync** — claims and offline catch-up send up to 50 edits
+  per request, preserving every human/agent transaction. Failed batches save no
+  partial history, and lost acknowledgements retry without duplicate edits.
+  See [batched synchronization](docs/cloud-batched-sync.md).
+- **Validated transaction histories** — cloud saves and reads check complete
+  edit/undo shapes and change-tracking metadata, not just checksums. Malformed
+  history is refused without partial writes or silent local-history replacement.
+  See [transaction integrity](docs/cloud-transaction-integrity.md).
+- **Retry-safe conflict recovery.** Interrupted uploads resume on the same seeded
+  fork, preserving original human and agent edits without duplicate branches.
+  See [conflict recovery](docs/cloud-conflict-recovery.md).
+- **Recoverable collaboration invitations** — native Hexclave email, bounded
+  delivery attempts, owner retry controls, and retry-safe acceptance give humans
+  and agents the same truthful status and recovery contract. Expired invitations
+  no longer block replacements. See [invitation lifecycle](docs/cloud-invitation-lifecycle.md).
 - **Enforced agent contract** — one Zod declaration produces both the JSON Schema each tool
   advertises and the validation the gateway applies, so they cannot drift. Errors pass through
   a single redactor that strips credentials, signed URLs, blobs and filesystem paths and never

@@ -156,6 +156,10 @@ export interface CloudBackend {
     email: string
     role: Exclude<CloudRole, 'owner'>
   }): Promise<CloudResult<CloudInvitationRecord>>
+  retryInvitationDelivery(args: {
+    projectId: string
+    invitationId: string
+  }): Promise<CloudResult<CloudInvitationRecord>>
   revokeInvitation(args: { projectId: string; invitationId: string }): Promise<CloudResult<{ revoked: boolean }>>
   acceptInvitation(args: { token: string }): Promise<CloudResult<{ projectId: string; role: string }>>
 

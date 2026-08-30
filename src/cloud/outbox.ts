@@ -1,7 +1,9 @@
 import type { StorageDriver } from '../cad/persistence'
 import type { ModelDocument, Transaction } from '../cad/types'
+import { validateTransactionPayload } from '../../convex/model/transactionValidation'
 import {
   cloudFailure,
+  MAX_TRANSACTION_BATCH_COUNT,
   type CloudBackend,
   type CloudErrorShape,
   type CloudResult,
@@ -413,6 +415,7 @@ export class Outbox {
     let revision = first.payload.transaction.baseRevision
     for (const entry of this.entries) {
       if (
+        candidates.length >= MAX_TRANSACTION_BATCH_COUNT ||
         entry.payload.kind !== 'transaction' ||
         entry.projectId !== first.projectId ||
         entry.localProjectId !== first.localProjectId ||
@@ -420,8 +423,7 @@ export class Outbox {
         entry.catalogVersion !== first.catalogVersion ||
         entry.parked ||
         entry.nextAttemptAt > this.now() ||
-        entry.payload.transaction.baseRevision !== revision ||
-        transactionChecksum(entry.payload.transaction) !== entry.checksum
+        entry.payload.transaction.baseRevision !== revision
       )
         break
       const transaction = entry.payload.transaction
@@ -439,6 +441,19 @@ export class Outbox {
     }
     if (!candidates.length) return { verdict: await this.send(first), sent: [first] }
     const batch = transactionBatch({ projectId: first.projectId }, payloads, true)
+    for (const [index, entry] of batch.transactions.entries()) {
+      const shape = validateTransactionPayload(entry.transaction)
+      if (!shape.ok) {
+        if (index === 0) return { verdict: shape, sent: [first] }
+        batch.transactions = batch.transactions.slice(0, index)
+        break
+      }
+    }
+    // Hash only the bounded prefix we will actually send, not the entire outbox
+    // again for every network round trip. A corrupt later item stays queued.
+    const corrupt = batch.transactions.findIndex((entry) => transactionChecksum(entry.transaction) !== entry.checksum)
+    if (corrupt === 0) return { verdict: await this.send(first), sent: [first] }
+    if (corrupt > 0) batch.transactions = batch.transactions.slice(0, corrupt)
     const result = await sendTransactionBatch(this.backend, batch)
     // A definitive data refusal wrote nothing. Send just the first edit to
     // isolate a bad later entry, rather than blaming/discarding a valid head.
@@ -465,6 +480,8 @@ export class Outbox {
     }
 
     const transaction = entry.payload.transaction
+    const shape = validateTransactionPayload(transaction)
+    if (!shape.ok) return shape
     // The checksum is verified before the entry is sent, not after: an entry
     // that changed while it sat in storage must not be presented to the
     // deployment as the transaction the operator committed.

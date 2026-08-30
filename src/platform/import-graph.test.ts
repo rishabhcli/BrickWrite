@@ -134,6 +134,7 @@ describe('client bundle cannot reach a server secret', () => {
   it('never reaches a server-only module', () => {
     const serverModules = graph.files.filter((file) => /(^|\/)server\//.test(file))
     expect(serverModules, `server modules reachable from the client entry: ${serverModules.join(', ')}`).toEqual([])
+    expect(graph.files).not.toContain('convex/model/invitationDelivery.ts')
   })
 
   it('never reads a server secret', () => {

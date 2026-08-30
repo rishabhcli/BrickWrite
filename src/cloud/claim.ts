@@ -5,6 +5,7 @@ import { canonicalJson, snapshotUploadFor, transactionChecksum } from './seriali
 import { verifyHistoryRecord } from '../../convex/model/history'
 import { sendTransactionBatch, transactionBatch } from './batches'
 import { decodeSnapshotUpload } from '../../convex/model/snapshotValidation'
+import { validateTransactionPayload } from '../../convex/model/transactionValidation'
 
 /**
  * Claiming a local project into the cloud.
@@ -71,6 +72,9 @@ export async function claimLocalProject(args: ClaimArgs): Promise<CloudResult<Cl
   let expectedHead = checkpoint.revision
   for (const entry of log) {
     const transaction = entry.transaction
+    // Validate before computing a recursive checksum of local extension data.
+    const shape = validateTransactionPayload(transaction)
+    if (!shape.ok) return shape
     const validEntry = verifyHistoryRecord(
       {
         transaction,

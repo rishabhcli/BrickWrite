@@ -360,9 +360,11 @@ describe('safe claim retries (real Convex functions and local store)', () => {
   })
 
   it.each(['before', 'after'])(
-    'resumes a partial log upload when failure occurs %s commit, without duplicate revisions',
+    'resumes a legacy scalar log upload when failure occurs %s commit, without duplicate revisions',
     async (failure) => {
       const h = setup()
+      // A host without the additive batch API must retain safe scalar recovery.
+      Object.defineProperty(h.backend, 'appendTransactions', { value: undefined })
       const history = placements(h.base, ['first', 'second', 'third'])
       await h.local.saveCheckpoint(h.base)
       for (const txn of history.transactions) value(await h.local.appendTransaction(h.base.id, txn))

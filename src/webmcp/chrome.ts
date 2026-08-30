@@ -20,7 +20,10 @@ export const CHROME_SURFACES = [
   'inspector',
   'transform',
   'selection',
+  'model',
+  'health',
   'timeline',
+  'review',
   'feedback',
 ] as const
 
@@ -34,7 +37,10 @@ export const CHROME_SURFACE_TARGETS: Record<ChromeSurface, { dock: 'left' | 'rig
   inspector: { dock: 'right', section: 'inspector' },
   transform: { dock: 'right', section: 'transform' },
   selection: { dock: 'right', section: 'selection' },
+  model: { dock: 'right', section: 'model.explorer' },
+  health: { dock: 'right', section: 'inspector' },
   timeline: { dock: 'bottom', section: null },
+  review: { dock: 'bottom', section: null },
   feedback: { dock: 'bottom', section: null },
 }
 
@@ -60,8 +66,68 @@ export interface ChromeReveal {
 
 export type ChromeRevealHandler = (surface: ChromeSurface) => void
 
+export type WorkspaceFocusMode = 'select' | 'frame' | 'isolate'
+
+export interface WorkspaceFocusRequest {
+  readonly partIds?: readonly string[]
+  readonly subassemblyId?: string
+  readonly mode: WorkspaceFocusMode
+}
+
+export interface WorkspaceFocusResolution {
+  readonly requestedCount: number
+  readonly matchedCount: number
+  /** Bounded evidence for the caller; a large assembly can still be selected in full. */
+  readonly selectedPartIds: readonly string[]
+  readonly missingPartIds: readonly string[]
+  readonly subassemblyFound: boolean | null
+  readonly truncated: boolean
+}
+
+export interface WorkspaceFocusReceipt extends WorkspaceFocusResolution {
+  readonly applied: boolean
+  readonly mode: WorkspaceFocusMode
+  readonly revealed: ChromeReveal
+}
+
+export type WorkspaceFocusHandler = (request: WorkspaceFocusRequest) => WorkspaceFocusResolution
+
+export interface ProposalReviewResolution {
+  readonly activeProposalId: string | null
+  readonly found: boolean
+  readonly pending: number
+}
+
+export interface ProposalReviewReceipt extends ProposalReviewResolution {
+  readonly applied: boolean
+  readonly revealed: ChromeReveal
+}
+
+export type ProposalReviewHandler = (proposalId?: string) => ProposalReviewResolution
+
+export interface ModelHealthResolution {
+  readonly activeIssueId: string | null
+  readonly found: boolean
+  readonly revision: number
+  readonly blockers: number
+  readonly warnings: number
+  /** Bounded receipt only; the mounted workbench may select the complete issue scope. */
+  readonly selectedPartIds: readonly string[]
+  readonly truncated: boolean
+}
+
+export interface ModelHealthReceipt extends ModelHealthResolution {
+  readonly applied: boolean
+  readonly revealed: ChromeReveal
+}
+
+export type ModelHealthHandler = (issueId?: string) => ModelHealthResolution
+
 let snapshot: ChromeSnapshot | null = null
 let revealHandler: ChromeRevealHandler | null = null
+let focusHandler: WorkspaceFocusHandler | null = null
+let proposalReviewHandler: ProposalReviewHandler | null = null
+let modelHealthHandler: ModelHealthHandler | null = null
 
 export function publishChrome(next: ChromeSnapshot | null): void {
   snapshot = next
@@ -75,6 +141,18 @@ export function setChromeRevealHandler(handler: ChromeRevealHandler | null): voi
   revealHandler = handler
 }
 
+export function setWorkspaceFocusHandler(handler: WorkspaceFocusHandler | null): void {
+  focusHandler = handler
+}
+
+export function setProposalReviewHandler(handler: ProposalReviewHandler | null): void {
+  proposalReviewHandler = handler
+}
+
+export function setModelHealthHandler(handler: ModelHealthHandler | null): void {
+  modelHealthHandler = handler
+}
+
 export function revealChrome(surface: ChromeSurface): ChromeReveal {
   const target = CHROME_SURFACE_TARGETS[surface]
   if (revealHandler) revealHandler(surface)
@@ -86,6 +164,65 @@ export function revealChrome(surface: ChromeSurface): ChromeReveal {
   }
 }
 
+/**
+ * Put exact model entities under the shared human/agent cursor.
+ *
+ * This changes selection and viewport chrome only; it never writes the CAD
+ * document or advances its revision. The mounted workbench resolves ids so the
+ * tool and the model map cannot disagree about what is actually visible.
+ */
+export function focusWorkspace(request: WorkspaceFocusRequest): WorkspaceFocusReceipt {
+  const revealed = revealChrome('model')
+  const resolution = focusHandler?.(request) ?? {
+    requestedCount: request.partIds?.length ?? 0,
+    matchedCount: 0,
+    selectedPartIds: [],
+    missingPartIds: request.partIds ?? [],
+    subassemblyFound: request.subassemblyId ? false : null,
+    truncated: false,
+  }
+  return {
+    ...resolution,
+    applied: Boolean(focusHandler),
+    mode: request.mode,
+    revealed,
+  }
+}
+
+/** Open the measured change-review surface and choose one pending ghost. */
+export function focusProposalReview(proposalId?: string): ProposalReviewReceipt {
+  const revealed = revealChrome('review')
+  const resolution = proposalReviewHandler?.(proposalId) ?? {
+    activeProposalId: null,
+    found: false,
+    pending: 0,
+  }
+  return {
+    ...resolution,
+    applied: Boolean(proposalReviewHandler),
+    revealed,
+  }
+}
+
+/** Open the exact deterministic issue a human sees in the Model Health navigator. */
+export function focusModelHealth(issueId?: string): ModelHealthReceipt {
+  const revealed = revealChrome('health')
+  const resolution = modelHealthHandler?.(issueId) ?? {
+    activeIssueId: null,
+    found: false,
+    revision: 0,
+    blockers: 0,
+    warnings: 0,
+    selectedPartIds: [],
+    truncated: false,
+  }
+  return {
+    ...resolution,
+    applied: Boolean(modelHealthHandler),
+    revealed,
+  }
+}
+
 /** Open the matching dock section, then attach the compact reveal receipt. */
 export function withChromeReveal<T extends object>(surface: ChromeSurface, payload: T): T & { revealed: ChromeReveal } {
   return { ...payload, revealed: revealChrome(surface) }
@@ -94,6 +231,7 @@ export function withChromeReveal<T extends object>(surface: ChromeSurface, paylo
 /** Right-dock sections that compete for the same 300px column. Opening one closes the others. */
 export const DOCK_FOCUS_SECTIONS = [
   'selection',
+  'model.explorer',
   'transform',
   'inspector',
   'connect',
@@ -142,4 +280,7 @@ export function applyChromeReveal<T extends {
 export function resetChrome(): void {
   snapshot = null
   revealHandler = null
+  focusHandler = null
+  proposalReviewHandler = null
+  modelHealthHandler = null
 }

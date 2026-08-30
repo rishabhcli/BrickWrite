@@ -4,7 +4,7 @@ import type { Id } from './_generated/dataModel'
 import { authoriseProject, resolveBranch } from './model/auth'
 import { type AppendTransactionValue, type CloudResult, type CloudTransactionRecord } from './model/protocol'
 import { branchRecord, transactionRecord } from './model/records'
-import { readBranchHistory } from './model/history'
+import { readBranchHistory, verifyHistoryRecord } from './model/history'
 import { appendTransactionBatch } from './model/append'
 
 const transactionInput = {
@@ -23,7 +23,7 @@ export const append = mutation({
   handler: async (ctx, { projectId, branchId, ...transaction }): Promise<CloudResult<AppendTransactionValue>> => {
     const result = await appendTransactionBatch(ctx, {
       projectId,
-      ...(branchId ? { branchId } : {}),
+      ...(branchId !== undefined ? { branchId } : {}),
       transactions: [transaction],
     })
     if (!result.ok) return result
@@ -73,7 +73,12 @@ export const listSince = query({
       )
       .order('asc')
       .take(Math.min(Math.max(args.limit ?? 500, 1), 2000))
-    return { ok: true, value: rows.map(transactionRecord) }
+    const records = rows.map(transactionRecord)
+    for (const record of records) {
+      const valid = verifyHistoryRecord(record, record.baseRevision)
+      if (!valid.ok) return valid
+    }
+    return { ok: true, value: records }
   },
 })
 
@@ -137,6 +142,9 @@ export const findByClientId = query({
           .eq('clientTransactionId', args.clientTransactionId),
       )
       .unique()
-    return { ok: true, value: row ? transactionRecord(row) : null }
+    if (!row) return { ok: true, value: null }
+    const record = transactionRecord(row)
+    const valid = verifyHistoryRecord(record, record.baseRevision)
+    return valid.ok ? { ok: true, value: record } : valid
   },
 })

@@ -16,6 +16,7 @@ import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
 import { createId } from '../cad/ids'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
+import { inspectModelHealth } from '../cad/modelHealth'
 import { analyseStatics, DEFAULT_CLUTCH_GRAMS, describeSupport } from '../cad/statics'
 import { connectedComponent, findWeakAttachments } from '../cad/validation'
 import {
@@ -32,7 +33,7 @@ import {
   toolProfileHash,
 } from './contract'
 import { json, resultOf, revisionProperty, schema } from './gateway'
-import { CHROME_SURFACES, readChrome, revealChrome } from './chrome'
+import { CHROME_SURFACES, focusModelHealth, focusProposalReview, focusWorkspace, readChrome, revealChrome } from './chrome'
 import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
 import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
 import { intelligenceReadTools } from './surfaces/intelligence'
@@ -45,6 +46,24 @@ type ToolDefinition = ModelContextToolDefinition
 
 const WorkspaceRevealSchema = z.object({
   surface: z.enum(CHROME_SURFACES),
+})
+
+const WorkspaceFocusSchema = z
+  .object({
+    partIds: z.array(z.string().min(1).max(160)).min(1).max(200).optional(),
+    subassemblyId: z.string().min(1).max(160).optional(),
+    mode: z.enum(['select', 'frame', 'isolate']).default('frame'),
+  })
+  .refine((request) => Boolean(request.partIds) !== Boolean(request.subassemblyId), {
+    message: 'Pass exactly one of partIds or subassemblyId.',
+  })
+
+const ProposalReviewFocusSchema = z.object({
+  proposalId: z.string().min(1).max(160).optional(),
+})
+
+const ModelHealthFocusSchema = z.object({
+  issueId: z.string().min(1).max(240).optional(),
 })
 
 const ApplySchema = z.object({
@@ -99,6 +118,20 @@ const readTools: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
     execute: () => {
       const state = cadEngine.getSnapshot()
+      const modelSurface = Object.values(state.document.parts).reduce(
+        (summary, part) => {
+          if (part.provenance === 'agent') summary.agentAuthored += 1
+          if (part.protected) summary.protected += 1
+          return summary
+        },
+        {
+          assemblies: Object.keys(state.document.subassemblies).length,
+          parts: state.validation.partCount,
+          selected: state.selection.length,
+          agentAuthored: 0,
+          protected: 0,
+        },
+      )
       return json({
         ...profileContext(),
         project: { id: state.document.id, name: state.document.name, catalogVersion: state.document.catalogVersion },
@@ -138,6 +171,25 @@ const readTools: ToolDefinition[] = [
             resolved: state.document.notes.filter((note) => note.status === 'resolved').length,
             total: state.document.notes.length,
           },
+          model: modelSurface,
+          review: {
+            pending: state.proposals.length,
+            blocked: state.proposals.filter((proposal) =>
+              proposal.baseRevision !== state.document.revision
+              || proposal.validation.collisions.length > 0
+              || proposal.validation.constraints.some((constraint) => constraint.status === 'fail'),
+            ).length,
+          },
+          health: {
+            kernelBlockers:
+              state.validation.collisions.filter((collision) => collision.certainty !== 'unknown').length
+              + state.validation.constraints.filter((constraint) => constraint.status === 'fail').length,
+            advisories:
+              state.validation.unverifiedCollisions
+              + (state.validation.componentCount > 1 ? 1 : 0)
+              + (state.validation.virtualColors.length ? 1 : 0),
+            fullScan: 'call validate_model',
+          },
         },
         chrome: readChrome(),
       })
@@ -147,7 +199,7 @@ const readTools: ToolDefinition[] = [
     name: 'workspace_reveal',
     description:
       'Open a workbench dock section so a human can see what the agent is working on. '
-      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, timeline, feedback. '
+      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, timeline, review, feedback. '
       + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
     annotations: { readOnlyHint: true },
@@ -156,6 +208,67 @@ const readTools: ToolDefinition[] = [
         const request = WorkspaceRevealSchema.parse(input)
         return json({
           ...revealChrome(request.surface),
+          chrome: readChrome(),
+        })
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
+      }
+    },
+  },
+  {
+    name: 'proposal_review_focus',
+    description:
+      'Open the shared measured change-review queue and focus one pending kernel proposal. '
+      + 'Does not accept, reject, or mutate the document. Omit proposalId to show the newest preflight.',
+    inputSchema: jsonSchemaOf(ProposalReviewFocusSchema),
+    annotations: { readOnlyHint: true },
+    execute: (input) => {
+      try {
+        const request = ProposalReviewFocusSchema.parse(input)
+        return json({
+          ...profileContext(),
+          ...focusProposalReview(request.proposalId),
+          chrome: readChrome(),
+        })
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
+      }
+    },
+  },
+  {
+    name: 'model_health_focus',
+    description:
+      'Open the shared Model Health navigator and focus one exact deterministic issue. '
+      + 'Omit issueId to open the highest-severity current issue. This changes only selection, camera, and inspector chrome.',
+    inputSchema: jsonSchemaOf(ModelHealthFocusSchema),
+    annotations: { readOnlyHint: true },
+    execute: (input) => {
+      try {
+        const request = ModelHealthFocusSchema.parse(input)
+        return json({
+          ...profileContext(),
+          ...focusModelHealth(request.issueId),
+          chrome: readChrome(),
+        })
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
+      }
+    },
+  },
+  {
+    name: 'workspace_focus',
+    description:
+      'Select and reveal exact placed parts or one subassembly in the shared Model Map. '
+      + 'Modes select, frame, and isolate change only ephemeral UI state; the CAD document and revision are untouched. '
+      + 'Use this to hand visual context to the human after scene_query or part_inspect.',
+    inputSchema: jsonSchemaOf(WorkspaceFocusSchema),
+    annotations: { readOnlyHint: true },
+    execute: (input) => {
+      try {
+        const request = WorkspaceFocusSchema.parse(input)
+        return json({
+          ...profileContext(),
+          ...focusWorkspace(request),
           chrome: readChrome(),
         })
       } catch (cause) {
@@ -318,10 +431,35 @@ const readTools: ToolDefinition[] = [
   },
   {
     name: 'validate_model',
-    description: 'Run deterministic collision, connectivity, dimensions, palette, and piece-count validation on the current CAD document.',
+    description:
+      'Run deterministic collision, connectivity, grounding, dimensions, palette, piece-count, balance, and clutch-load analysis. '
+      + 'Opens the same Model Health navigator a human uses and focuses its highest-severity issue.',
     inputSchema: schema({}),
     annotations: { readOnlyHint: true },
-    execute: () => json(cadEngine.getSnapshot().validation),
+    execute: () => {
+      const state = cadEngine.getSnapshot()
+      const health = inspectModelHealth(state.document, state.validation)
+      const focused = focusModelHealth(health.issues[0]?.id)
+      return json({
+        ...state.validation,
+        health: {
+          revision: health.revision,
+          ready: health.ready,
+          blockers: health.blockers,
+          warnings: health.warnings,
+          notices: health.notices,
+          metrics: health.metrics,
+          checks: health.checks,
+          issues: health.issues.map((issue) => ({
+            ...issue,
+            partIds: issue.partIds.slice(0, 200),
+            totalParts: issue.partIds.length,
+            truncated: issue.partIds.length > 200,
+          })),
+        },
+        focused,
+      })
+    },
   },
   {
     name: 'builder_feedback_get',
@@ -497,9 +635,14 @@ const proposalTools: ToolDefinition[] = [
       try {
         const request = PreflightSchema.parse(input)
         assertExpectations(request, profileContext())
-        return resultOf(
-          cadEngine.preflight(request.label, parseOperations(request.operations, document), 'agent', request.expectedRevision),
+        const result = cadEngine.preflight(
+          request.label,
+          parseOperations(request.operations, document),
+          'agent',
+          request.expectedRevision,
         )
+        if (result.ok) focusProposalReview(result.value.id)
+        return resultOf(result)
       } catch (cause) {
         return json(toErrorEnvelope(cause, { currentRevision: document.revision }))
       }

@@ -4,7 +4,13 @@ import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 
 const root = path.resolve(process.argv[2] ?? 'dist')
-const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 100 * 1024 * 1024)
+// 160 MiB. Raised from 100 when the demo collection was rebuilt around a few
+// large sets instead of many toy ones: each set ships ~10-15 MiB, almost all of
+// it the stored connection graph, and the catalogue alone is ~69 MiB. Unlike the
+// file-count and single-file ceilings below, this one tracks no platform limit —
+// Pages publishes no aggregate-byte limit — so it is ours to set against how big
+// a deploy we are willing to push and wait on.
+const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 160 * 1024 * 1024)
 const fileBudget = Number(process.env.DIST_FILE_COUNT_BUDGET ?? 16_000)
 const largestBudget = Number(process.env.DIST_SINGLE_FILE_BUDGET_BYTES ?? 20 * 1024 * 1024)
 const shippedHeadBudget = Number(process.env.DIST_SHIPPED_HEAD_BUDGET_BYTES ?? 220 * 1024)

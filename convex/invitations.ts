@@ -7,6 +7,8 @@ import { authoriseProject, readIdentity, UNAUTHENTICATED } from './model/auth'
 import { cloudFailure, type CloudInvitationRecord, type CloudResult } from './model/protocol'
 import { invitationRecord } from './model/records'
 import { assignableRole } from './model/validators'
+import { sendInvitationEmail } from './model/invitationDelivery'
+import { invitationRetryAt } from './model/invitationLifecycle'
 
 /**
  * Invitations — the only place an email address is stored, and the only place
@@ -44,6 +46,7 @@ export const list = query({
     const rows = await ctx.db
       .query('invitations')
       .withIndex('by_project', (q) => q.eq('projectId', authorised.value.project._id))
+      .order('desc')
       .take(100)
     return { ok: true, value: rows.map(invitationRecord) }
   },
@@ -57,28 +60,31 @@ export const create = mutation({
     const { project, identity } = authorised.value
 
     const email = args.email.trim().toLowerCase()
-    if (!EMAIL_SHAPE.test(email)) {
+    if (email.length > 254 || !EMAIL_SHAPE.test(email)) {
       return cloudFailure(
         'INVALID_ARGUMENT',
         'That does not look like an email address.',
         'Check the address and retry.',
       )
     }
-    const pending = await ctx.db
+    const now = Date.now()
+    // Scope before limiting; an address invited to many other projects must
+    // not bypass duplicate detection. Expired rows never block a replacement.
+    const duplicate = await ctx.db
       .query('invitations')
-      .withIndex('by_email_status', (q) => q.eq('email', email).eq('status', 'pending'))
-      .take(32)
-    const duplicate = pending.find((row) => row.projectId === project._id)
+      .withIndex('by_project_email_status_expiry', (q) =>
+        q.eq('projectId', project._id).eq('email', email).eq('status', 'pending').gt('expiresAt', now),
+      )
+      .first()
     if (duplicate) {
       return cloudFailure(
         'NAME_TAKEN',
         'That address already has a pending invitation to this project.',
-        'Revoke the existing invitation before sending another.',
+        'Retry delivery for the existing invitation, or revoke it before creating another.',
         { invitationId: duplicate._id },
       )
     }
 
-    const now = Date.now()
     const invitationId = await ctx.db.insert('invitations', {
       projectId: project._id,
       email,
@@ -89,8 +95,11 @@ export const create = mutation({
       expiresAt: now + INVITATION_TTL_MS,
       status: 'pending',
       deliveryStatus: 'pending',
+      deliveryGeneration: 0,
+      deliveryAttempts: 0,
+      deliveryRequestedAt: now,
     })
-    await ctx.scheduler.runAfter(0, internal.invitations.deliver, { invitationId })
+    await ctx.scheduler.runAfter(0, internal.invitations.deliver, { invitationId, generation: 0 })
     await writeAuditEvent(ctx, {
       projectId: project._id,
       actorSubject: identity.subject,
@@ -120,7 +129,15 @@ export const revoke = mutation({
       )
     }
     if (invitation.status !== 'pending') return { ok: true, value: { revoked: false } }
-    await ctx.db.patch(invitation._id, { status: 'revoked' })
+    await ctx.db.patch(invitation._id, {
+      status: 'revoked',
+      ...(['pending', 'sending'].includes(invitation.deliveryStatus)
+        ? {
+            deliveryStatus: 'cancelled' as const,
+            deliveryReason: 'The invitation was revoked before delivery completed.',
+          }
+        : {}),
+    })
     await writeAuditEvent(ctx, {
       projectId: project._id,
       actorSubject: identity.subject,
@@ -148,6 +165,17 @@ export const accept = mutation({
       .query('invitations')
       .withIndex('by_token', (q) => q.eq('token', args.token))
       .unique()
+    // A dropped acceptance response must be retryable by the same identity,
+    // but never restore a removed member or their previous (higher) role.
+    if (invitation?.status === 'accepted' && invitation.acceptedBySubject === identity.subject) {
+      const project = await ctx.db.get(invitation.projectId)
+      const member = await ctx.db
+        .query('members')
+        .withIndex('by_project_subject', (q) => q.eq('projectId', invitation.projectId).eq('subject', identity.subject))
+        .unique()
+      if (project && project.deletedAt === undefined && member)
+        return { ok: true, value: { projectId: project._id, role: member.role } }
+    }
     if (!invitation || invitation.status !== 'pending') {
       return cloudFailure(
         'NOT_FOUND',
@@ -155,8 +183,13 @@ export const accept = mutation({
         'Ask the project owner to send a fresh invitation.',
       )
     }
-    if (invitation.expiresAt < Date.now()) {
-      await ctx.db.patch(invitation._id, { status: 'expired' })
+    if (invitation.expiresAt <= Date.now()) {
+      await ctx.db.patch(invitation._id, {
+        status: 'expired',
+        ...(['pending', 'sending'].includes(invitation.deliveryStatus)
+          ? { deliveryStatus: 'cancelled' as const, deliveryReason: 'The invitation expired.' }
+          : {}),
+      })
       return cloudFailure(
         'NOT_FOUND',
         'That invitation has expired.',
@@ -174,9 +207,7 @@ export const accept = mutation({
 
     const existing = await ctx.db
       .query('members')
-      .withIndex('by_project_subject', (q) =>
-        q.eq('projectId', project._id).eq('subject', identity.subject),
-      )
+      .withIndex('by_project_subject', (q) => q.eq('projectId', project._id).eq('subject', identity.subject))
       .unique()
     const now = Date.now()
     if (existing) {
@@ -184,6 +215,12 @@ export const accept = mutation({
       // which is how a stale viewer invitation could otherwise demote an editor.
       await ctx.db.patch(invitation._id, {
         status: 'accepted',
+        ...(['pending', 'sending'].includes(invitation.deliveryStatus)
+          ? {
+              deliveryStatus: 'cancelled' as const,
+              deliveryReason: 'The invitation was accepted before delivery completed.',
+            }
+          : {}),
         acceptedBySubject: identity.subject,
         acceptedAt: now,
       })
@@ -199,6 +236,12 @@ export const accept = mutation({
     })
     await ctx.db.patch(invitation._id, {
       status: 'accepted',
+      ...(['pending', 'sending'].includes(invitation.deliveryStatus)
+        ? {
+            deliveryStatus: 'cancelled' as const,
+            deliveryReason: 'The invitation was accepted before delivery completed.',
+          }
+        : {}),
       acceptedBySubject: identity.subject,
       acceptedAt: now,
     })
@@ -212,127 +255,168 @@ export const accept = mutation({
   },
 })
 
+/** Explicit, owner-authorized retry. A queued/sending retry is idempotent while
+ * its lease is fresh; failed attempts and expired leases get a new generation. */
+export const retryDelivery = mutation({
+  args: { projectId: v.string(), invitationId: v.string() },
+  handler: async (ctx, args): Promise<CloudResult<CloudInvitationRecord>> => {
+    const auth = await authoriseProject(ctx, args.projectId, 'member.invite')
+    if (!auth.ok) return auth
+    const invitation = await ctx.db.get(args.invitationId as Id<'invitations'>)
+    if (!invitation || invitation.projectId !== auth.value.project._id)
+      return cloudFailure('NOT_FOUND', 'That invitation is not available in this project.', 'Reload the invitations.')
+    const now = Date.now()
+    if (invitation.status !== 'pending' || invitation.expiresAt <= now)
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        'Only an unexpired, pending invitation can be retried.',
+        'Create a fresh invitation if access is still needed.',
+      )
+    if (['queued', 'sent'].includes(invitation.deliveryStatus))
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        'The email endpoint already accepted this invitation.',
+        'Check delivery before creating a replacement invitation.',
+      )
+    const retryAt = invitationRetryAt(invitation)
+    if (now < retryAt) {
+      if (['pending', 'sending'].includes(invitation.deliveryStatus))
+        return { ok: true, value: invitationRecord(invitation) }
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        'Wait briefly before retrying invitation delivery.',
+        'Retry after the cooldown shown for this invitation.',
+        { retryAt: new Date(retryAt).toISOString() },
+      )
+    }
+    const generation = (invitation.deliveryGeneration ?? 0) + 1
+    await ctx.db.patch(invitation._id, {
+      deliveryGeneration: generation,
+      deliveryStatus: 'pending',
+      deliveryRequestedAt: now,
+      deliveryStartedAt: undefined,
+      deliveryCompletedAt: undefined,
+      deliveryReason: 'Delivery retry is queued. A previous unconfirmed request may already have sent an email.',
+    })
+    await ctx.scheduler.runAfter(0, internal.invitations.deliver, { invitationId: invitation._id, generation })
+    await writeAuditEvent(ctx, {
+      projectId: invitation.projectId,
+      actorSubject: auth.value.identity.subject,
+      action: 'invitation.retryDelivery',
+      detail: { generation, role: invitation.role },
+    })
+    const updated = await ctx.db.get(invitation._id)
+    if (!updated) throw new Error('Invitation vanished during retry.')
+    return { ok: true, value: invitationRecord(updated) }
+  },
+})
+
+type DeliveryContext = { email: string; token: string; role: string; projectName: string }
+
+/** Retired unleased read. Keep the old function signature during rollout, but
+ * do not release any more tokens to workers that cannot claim atomically.
+ * Previously scheduled deliver actions can still claim legacy rows below. */
+export const deliveryContext = internalQuery({
+  args: { invitationId: v.id('invitations') },
+  handler: async (): Promise<null> => null,
+})
+
+/** Only one action can claim a scheduled generation. Duplicate scheduler runs,
+ * stale actions, expired invites and deleted projects do not reach the provider. */
+export const claimDelivery = internalMutation({
+  args: { invitationId: v.id('invitations'), generation: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<(DeliveryContext & { generation: number }) | null> => {
+    const row = await ctx.db.get(args.invitationId)
+    if (
+      !row ||
+      row.status !== 'pending' ||
+      row.deliveryStatus !== 'pending' ||
+      (row.deliveryGeneration ?? 0) !== (args.generation ?? 0)
+    )
+      return null
+    const project = await ctx.db.get(row.projectId)
+    if (!project || project.deletedAt !== undefined || row.expiresAt <= Date.now()) {
+      await ctx.db.patch(row._id, {
+        deliveryStatus: 'cancelled',
+        deliveryReason: 'The invitation or project is no longer available.',
+        ...(row.expiresAt <= Date.now() ? { status: 'expired' as const } : {}),
+      })
+      return null
+    }
+    const generation = row.deliveryGeneration ?? 0
+    await ctx.db.patch(row._id, {
+      deliveryGeneration: generation,
+      deliveryStatus: 'sending',
+      deliveryStartedAt: Date.now(),
+      deliveryAttempts: (row.deliveryAttempts ?? 0) + 1,
+      deliveryReason: 'Submitting the invitation to the email endpoint.',
+    })
+    return { generation, email: row.email, token: row.token, role: row.role, projectName: project.name }
+  },
+})
+
+/** Guard completion with the generation and current lifecycle. An old worker
+ * cannot overwrite a retry, revocation or acceptance. Legacy unleased replies
+ * are ignored rather than claiming delivery for another worker. */
 export const markDelivery = internalMutation({
   args: {
     invitationId: v.id('invitations'),
-    deliveryStatus: v.union(
-      v.literal('sent'),
-      v.literal('not-configured'),
-      v.literal('failed'),
-    ),
+    generation: v.optional(v.number()),
+    deliveryStatus: v.union(v.literal('queued'), v.literal('sent'), v.literal('not-configured'), v.literal('failed')),
     deliveryReason: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<null> => {
-    const invitation = await ctx.db.get(args.invitationId)
-    if (!invitation) return null
-    await ctx.db.patch(args.invitationId, {
+    const row = await ctx.db.get(args.invitationId)
+    if (
+      !row ||
+      args.generation === undefined ||
+      row.deliveryGeneration !== args.generation ||
+      row.status !== 'pending' ||
+      row.deliveryStatus !== 'sending'
+    )
+      return null
+    const project = await ctx.db.get(row.projectId)
+    if (!project || project.deletedAt !== undefined || row.expiresAt <= Date.now()) {
+      await ctx.db.patch(row._id, {
+        deliveryStatus: 'cancelled',
+        deliveryReason: 'The invitation or project is no longer available.',
+        ...(row.expiresAt <= Date.now() ? { status: 'expired' as const } : {}),
+      })
+      return null
+    }
+    await ctx.db.patch(row._id, {
       deliveryStatus: args.deliveryStatus,
       deliveryReason: args.deliveryReason,
+      deliveryCompletedAt: Date.now(),
     })
     return null
   },
 })
 
-/**
- * The material `deliver` needs to compose the message.
- *
- * Internal only. It returns an email address and a live invitation token, so it
- * must never become reachable from a browser.
- */
-export const deliveryContext = internalQuery({
-  args: { invitationId: v.id('invitations') },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ email: string; token: string; role: string; projectName: string } | null> => {
-    const invitation = await ctx.db.get(args.invitationId)
-    if (!invitation) return null
-    const project = await ctx.db.get(invitation.projectId)
-    return {
-      email: invitation.email,
-      token: invitation.token,
-      role: invitation.role,
-      projectName: project?.name ?? 'a Brickwright project',
-    }
-  },
-})
-
-/**
- * Sends the invitation email.
- *
- * Internal, so it has no public URL and the browser cannot reach it. Delivery
- * is an outbound POST to whatever transactional endpoint the deployment is
- * configured with:
- *
- *   INVITATION_EMAIL_ENDPOINT  absolute https URL
- *   INVITATION_EMAIL_TOKEN     bearer credential for that endpoint
- *   INVITATION_LINK_ORIGIN     origin the accept link is built against
- *
- * The body is `{ to, subject, invitationUrl, projectName, role }`. Wiring that
- * to the Hexclave emails app, or to any other provider, is a deployment step —
- * see `docs/integration/cloud-projects.md`. With the variables unset the
- * invitation is honestly marked `not-configured`; nothing here ever reports a
- * send it did not make.
- */
+/** Hexclave transactional email by default, with the existing custom endpoint
+ * as an explicit override. No user account is manufactured to send mail, and
+ * HTTP acceptance is explicitly not an inbox-delivery guarantee. */
 export const deliver = internalAction({
-  args: { invitationId: v.id('invitations') },
+  args: { invitationId: v.id('invitations'), generation: v.optional(v.number()) },
   handler: async (ctx, args): Promise<null> => {
-    const endpoint = process.env.INVITATION_EMAIL_ENDPOINT
-    const token = process.env.INVITATION_EMAIL_TOKEN
-    const origin = process.env.INVITATION_LINK_ORIGIN
-
-    const context = await ctx.runQuery(internal.invitations.deliveryContext, {
-      invitationId: args.invitationId,
-    })
+    const context = await ctx.runMutation(internal.invitations.claimDelivery, args)
     if (!context) return null
-
-    if (!endpoint || !token || !origin) {
-      const missing = [
-        endpoint ? null : 'INVITATION_EMAIL_ENDPOINT',
-        token ? null : 'INVITATION_EMAIL_TOKEN',
-        origin ? null : 'INVITATION_LINK_ORIGIN',
-      ]
-        .filter((name): name is string => name !== null)
-        .join(', ')
-      await ctx.runMutation(internal.invitations.markDelivery, {
-        invitationId: args.invitationId,
-        deliveryStatus: 'not-configured',
-        deliveryReason: `Email delivery is not configured on this deployment: ${missing} unset.`,
-      })
-      return null
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          to: context.email,
-          subject: `You have been invited to a Brickwright project`,
-          projectName: context.projectName,
-          role: context.role,
-          invitationUrl: `${origin.replace(/\/$/, '')}/invite/${context.token}`,
-        }),
-      })
-      if (!response.ok) {
-        await ctx.runMutation(internal.invitations.markDelivery, {
-          invitationId: args.invitationId,
-          deliveryStatus: 'failed',
-          deliveryReason: `The delivery endpoint answered ${response.status}.`,
-        })
-        return null
-      }
-      await ctx.runMutation(internal.invitations.markDelivery, {
-        invitationId: args.invitationId,
-        deliveryStatus: 'sent',
-      })
-    } catch (cause: unknown) {
-      await ctx.runMutation(internal.invitations.markDelivery, {
-        invitationId: args.invitationId,
-        deliveryStatus: 'failed',
-        deliveryReason: cause instanceof Error ? cause.message : String(cause),
-      })
-    }
+    const result = await sendInvitationEmail({
+      ...context,
+      invitationId: args.invitationId,
+      endpoint: process.env.INVITATION_EMAIL_ENDPOINT,
+      credential: process.env.INVITATION_EMAIL_TOKEN,
+      origin: process.env.INVITATION_LINK_ORIGIN,
+      hexclaveProjectId: process.env.HEXCLAVE_PROJECT_ID,
+      hexclaveSecretServerKey: process.env.HEXCLAVE_SECRET_SERVER_KEY,
+      hexclaveApiOrigin: process.env.HEXCLAVE_API_URL_SERVER || process.env.HEXCLAVE_API_URL || undefined,
+    })
+    await ctx.runMutation(internal.invitations.markDelivery, {
+      invitationId: args.invitationId,
+      generation: context.generation,
+      deliveryStatus: result.status,
+      deliveryReason: result.reason,
+    })
     return null
   },
 })

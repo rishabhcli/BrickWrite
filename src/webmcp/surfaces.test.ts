@@ -15,7 +15,13 @@ import type { RefinementRunner } from '../refinement/session'
 import type { SearchReport } from '../refinement/search'
 import { WebMcpAdapter } from './adapter'
 import { peekPreparedPublication } from './surfaces/shareHost'
-import { resetChrome, setChromeRevealHandler } from './chrome'
+import {
+  resetChrome,
+  setChromeRevealHandler,
+  setModelHealthHandler,
+  setProposalReviewHandler,
+  setWorkspaceFocusHandler,
+} from './chrome'
 
 const ARMCHAIR = 'A green armchair 6 x 6 studs, 6 studs tall, at most 90 pieces'
 
@@ -173,6 +179,9 @@ describe('WebMCP surface inventory', () => {
     'refinement_analyse',
     'share_prepare',
     'workspace_reveal',
+    'workspace_focus',
+    'proposal_review_focus',
+    'model_health_focus',
   ]
   const inspectHidden = ['generation_apply', 'project_open', 'refinement_apply', 'share_fork_to_project']
   const proposeOnly = ['generation_preview', 'refinement_select']
@@ -211,6 +220,13 @@ describe('WebMCP surface inventory', () => {
       project: { id: cadEngine.getDocument().id },
       share: { slug: null, contentHash: null },
       feedback: { open: 1, resolved: 0, total: 1 },
+      model: {
+        assemblies: Object.keys(cadEngine.getDocument().subassemblies).length,
+        parts: cadEngine.getSnapshot().validation.partCount,
+        selected: 0,
+      },
+      review: { pending: 0, blocked: 0 },
+      health: { kernelBlockers: 0, fullScan: 'call validate_model' },
     })
     expect(workspace.chrome).toBeNull()
   })
@@ -245,6 +261,92 @@ describe('WebMCP surface inventory', () => {
       dock: 'bottom',
       section: null,
     })
+  })
+
+  it('lets an agent focus exact model context in the same map a human uses', async () => {
+    adapter.start()
+    const partIds = Object.keys(cadEngine.getDocument().parts).slice(0, 2)
+    const seen: Array<{ partIds?: readonly string[]; mode: string }> = []
+    setChromeRevealHandler(() => undefined)
+    setWorkspaceFocusHandler((request) => {
+      seen.push(request)
+      return {
+        requestedCount: request.partIds?.length ?? 0,
+        matchedCount: request.partIds?.length ?? 0,
+        selectedPartIds: request.partIds ?? [],
+        missingPartIds: [],
+        subassemblyFound: null,
+        truncated: false,
+      }
+    })
+
+    const revision = cadEngine.getDocument().revision
+    const focused = await invoke('workspace_focus', { partIds, mode: 'isolate' })
+
+    expect(seen).toEqual([{ partIds, mode: 'isolate' }])
+    expect(focused).toMatchObject({
+      applied: true,
+      mode: 'isolate',
+      matchedCount: 2,
+      selectedPartIds: partIds,
+      revealed: { surface: 'model', dock: 'right', section: 'model.explorer' },
+    })
+    expect(cadEngine.getDocument().revision).toBe(revision)
+  })
+
+  it('lets an agent focus a pending ghost without accepting or rejecting it', async () => {
+    adapter.start()
+    const seen: Array<string | undefined> = []
+    setChromeRevealHandler(() => undefined)
+    setProposalReviewHandler((proposalId) => {
+      seen.push(proposalId)
+      return { activeProposalId: proposalId ?? null, found: true, pending: 2 }
+    })
+    const revision = cadEngine.getDocument().revision
+
+    const focused = await invoke('proposal_review_focus', { proposalId: 'proposal_exact' })
+
+    expect(seen).toEqual(['proposal_exact'])
+    expect(focused).toMatchObject({
+      applied: true,
+      activeProposalId: 'proposal_exact',
+      found: true,
+      pending: 2,
+      revealed: { surface: 'review', dock: 'bottom', section: null },
+    })
+    expect(cadEngine.getDocument().revision).toBe(revision)
+    expect(cadEngine.getSnapshot().transactions).toHaveLength(0)
+  })
+
+  it('lets an agent focus the same exact Model Health issue a human navigates', async () => {
+    adapter.start()
+    const seen: Array<string | undefined> = []
+    setChromeRevealHandler(() => undefined)
+    setModelHealthHandler((issueId) => {
+      seen.push(issueId)
+      return {
+        activeIssueId: issueId ?? null,
+        found: issueId === 'collision:pair_a_b',
+        revision: cadEngine.getDocument().revision,
+        blockers: 1,
+        warnings: 0,
+        selectedPartIds: ['part_0001', 'part_0002'],
+        truncated: false,
+      }
+    })
+    const revision = cadEngine.getDocument().revision
+
+    const focused = await invoke('model_health_focus', { issueId: 'collision:pair_a_b' })
+
+    expect(seen).toEqual(['collision:pair_a_b'])
+    expect(focused).toMatchObject({
+      applied: true,
+      activeIssueId: 'collision:pair_a_b',
+      selectedPartIds: ['part_0001', 'part_0002'],
+      revealed: { surface: 'health', dock: 'right', section: 'inspector' },
+    })
+    expect(cadEngine.getDocument().revision).toBe(revision)
+    expect(cadEngine.getSnapshot().transactions).toHaveLength(0)
   })
 })
 

@@ -1,9 +1,10 @@
-import { Blocks, Boxes, Check, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
+import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { exportLDraw, downloadText } from '../../cad/ldraw'
 import { cadEngine } from '../../cad/engine'
 import type { SharedMutationId } from '../../cad/capabilities'
+import { inspectModelHealth, type ModelHealthIssue } from '../../cad/modelHealth'
 import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
 import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
@@ -20,7 +21,8 @@ import {
 } from './ExtensionRegistry'
 import { CommandPalette } from './CommandPalette'
 import { ConnectPanel } from './ConnectPanel'
-import { InspectorPanel } from './InspectorPanel'
+import { InspectorPanel, type InspectorView } from './InspectorPanel'
+import { ModelExplorerPanel } from './ModelExplorerPanel'
 import { PalettePanel } from './PalettePanel'
 import { SelectionPanel } from './SelectionPanel'
 import { StatusBar } from './StatusBar'
@@ -52,9 +54,13 @@ import {
   applyDockFocus,
   applyExclusiveDock,
   CHROME_SURFACE_TARGETS,
+  focusProposalReview,
   publishChrome,
   revealChrome,
   setChromeRevealHandler,
+  setModelHealthHandler,
+  setProposalReviewHandler,
+  setWorkspaceFocusHandler,
 } from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
@@ -101,6 +107,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
   const [timelineView, setTimelineView] = useState<TimelineView>('steps')
+  const [activeProposalId, setActiveProposalId] = useState<string | null>(null)
+  const [inspectorView, setInspectorView] = useState<InspectorView>('object')
+  const [activeHealthIssueId, setActiveHealthIssueId] = useState<string | null>(null)
   const saveInput = useRef<HTMLInputElement>(null)
 
   const layout = useMemo(() => clampLayout(rawLayout, viewport), [rawLayout, viewport])
@@ -117,6 +126,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     cameraView: workbench.cameraView,
     activeColor: workbench.activeColor,
   }
+  const workbenchRef = useRef(workbench)
+  workbenchRef.current = workbench
+  const activeProposalRef = useRef(activeProposalId)
+  activeProposalRef.current = activeProposalId
+  const inspectorViewRef = useRef(inspectorView)
+  inspectorViewRef.current = inspectorView
 
   const updateLayout = useCallback((next: WorkbenchLayout) => {
     setRawLayout(next)
@@ -136,6 +151,34 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       preset: null,
     })
   }, [rawLayout, timelineView, updateLayout])
+
+  // A new preflight is an explicit handoff that needs a decision. Bring the
+  // measured review queue on screen, but do not keep stealing the dock after
+  // the operator deliberately changes tabs.
+  const previousProposalCount = useRef(workbench.state.proposals.length)
+  useEffect(() => {
+    const proposals = workbench.state.proposals
+    const before = previousProposalCount.current
+    previousProposalCount.current = proposals.length
+    if (!proposals.length) {
+      setActiveProposalId(null)
+      if (timelineView === 'review') setTimelineView('history')
+      return
+    }
+    if (!proposals.some((proposal) => proposal.id === activeProposalRef.current)) {
+      setActiveProposalId(proposals.at(-1)!.id)
+    }
+    if (proposals.length <= before) return
+    setActiveProposalId(proposals.at(-1)!.id)
+    setTimelineView('review')
+    if (rawLayout.bottom.collapsed || rawLayout.bottom.size < 220) {
+      updateLayout({
+        ...rawLayout,
+        bottom: { ...rawLayout.bottom, collapsed: false, size: Math.max(220, rawLayout.bottom.size) },
+        preset: null,
+      })
+    }
+  }, [rawLayout, timelineView, updateLayout, workbench.state.proposals])
 
   const resizeDock = useCallback(
     (dock: DockId, size: number) => {
@@ -177,6 +220,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     const enteredConnect = before.tool !== 'connect' && workbench.tool === 'connect'
     previousContext.current = { selection, tool: workbench.tool }
     if (!enteredSelection && !enteredConnect) return
+    // Model Map is itself a selection workspace. Replacing it with the generic
+    // Selection sheet after its first row click would make browsing feel like
+    // navigation that closes itself.
+    if (
+      enteredSelection
+      && (
+        layoutRef.current.sections['model.explorer'] === true
+        || (layoutRef.current.sections.inspector === true && inspectorViewRef.current === 'validate')
+      )
+    ) return
     const next = enteredConnect
       ? applyDockFocus(
           { ...layoutRef.current, right: { ...layoutRef.current.right, collapsed: false } },
@@ -219,6 +272,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       // agent revealing the inbox must land on the same notes the human sees,
       // not merely open the bottom band on whichever tab was last active.
       if (surface === 'feedback') setTimelineView('feedback')
+      if (surface === 'review') setTimelineView('review')
+      if (surface === 'health') setInspectorView('validate')
       const next = applyChromeReveal(layoutRef.current, surface)
       pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
       updateLayout(next)
@@ -231,6 +286,68 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         sections: { ...next.sections },
         ...chromeViewRef.current,
       })
+    })
+    setWorkspaceFocusHandler((request) => {
+      const snapshot = cadEngine.getSnapshot()
+      const assembly = request.subassemblyId
+        ? snapshot.document.subassemblies[request.subassemblyId]
+        : undefined
+      const requested = assembly?.partIds ?? request.partIds ?? []
+      const matched = requested.filter((id) => Boolean(snapshot.document.parts[id]))
+      const missing = requested.filter((id) => !snapshot.document.parts[id])
+      // The focus tool already chose Model Map as the shared visual context.
+      // Prevent the generic 0 -> N selection affordance below from immediately
+      // replacing it with the Selection sheet on the next render.
+      previousContext.current = { ...previousContext.current, selection: matched.length }
+      cadEngine.setSelection(matched)
+      if (matched.length && request.mode === 'frame') workbenchRef.current.focusSelection()
+      if (matched.length && request.mode === 'isolate') workbenchRef.current.isolateSelection()
+      return {
+        requestedCount: requested.length,
+        matchedCount: matched.length,
+        selectedPartIds: matched.slice(0, 200),
+        missingPartIds: missing.slice(0, 200),
+        subassemblyFound: request.subassemblyId ? Boolean(assembly) : null,
+        truncated: matched.length > 200 || missing.length > 200,
+      }
+    })
+    setProposalReviewHandler((proposalId) => {
+      const proposals = cadEngine.getSnapshot().proposals
+      const proposal = proposalId
+        ? proposals.find((candidate) => candidate.id === proposalId)
+        : proposals.at(-1)
+      if (proposal) setActiveProposalId(proposal.id)
+      setTimelineView('review')
+      return {
+        activeProposalId: proposal?.id ?? null,
+        found: Boolean(proposal),
+        pending: proposals.length,
+      }
+    })
+    setModelHealthHandler((issueId) => {
+      const snapshot = cadEngine.getSnapshot()
+      const health = inspectModelHealth(snapshot.document, snapshot.validation)
+      const issue = issueId
+        ? health.issues.find((candidate) => candidate.id === issueId)
+        : health.issues[0]
+      setInspectorView('validate')
+      setActiveHealthIssueId(issue?.id ?? null)
+      const partIds = issue?.partIds.filter((id) => Boolean(snapshot.document.parts[id])) ?? []
+      // Health is the intended selection workspace. Keep the generic selection
+      // affordance from replacing it after this exact diagnostic focus.
+      previousContext.current = { ...previousContext.current, selection: partIds.length }
+      cadEngine.setSelection([...partIds])
+      if (partIds.length) workbenchRef.current.focusSelection()
+      if (issue?.kind === 'collision') workbenchRef.current.setRenderMode('violations')
+      return {
+        activeIssueId: issue?.id ?? null,
+        found: Boolean(issue),
+        revision: health.revision,
+        blockers: health.blockers,
+        warnings: health.warnings,
+        selectedPartIds: partIds.slice(0, 200),
+        truncated: partIds.length > 200,
+      }
     })
     const search = typeof window === 'undefined' ? location.search : window.location.search
     const query = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
@@ -262,7 +379,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       syncAddressBar()
     }
     void run()
-    return () => setChromeRevealHandler(null)
+    return () => {
+      setChromeRevealHandler(null)
+      setWorkspaceFocusHandler(null)
+      setProposalReviewHandler(null)
+      setModelHealthHandler(null)
+    }
   }, [location.hash, location.pathname, location.search, navigate, updateLayout])
 
   useEffect(() => {
@@ -385,7 +507,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         } else if (workbench.playbackStep !== null) workbench.setPlaybackStep(null)
         else if (visibilityActive(workbench.visibility)) workbench.showEverything()
         else {
-          const proposal = cadEngine.getSnapshot().proposals[0]
+          const proposals = cadEngine.getSnapshot().proposals
+          const proposal = proposals.find((candidate) => candidate.id === activeProposalRef.current) ?? proposals[0]
           if (proposal) cadEngine.rejectProposal(proposal.id)
           workbench.setTool('select')
           workbench.setRenderMode('beauty')
@@ -394,7 +517,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       }
 
       if (event.key === 'Enter' && !isTypingTarget(event.target)) {
-        const proposal = cadEngine.getSnapshot().proposals[0]
+        const proposals = cadEngine.getSnapshot().proposals
+        const proposal = proposals.find((candidate) => candidate.id === activeProposalRef.current) ?? proposals[0]
         if (proposal) {
           event.preventDefault()
           workbench.acceptProposal(proposal.id)
@@ -523,7 +647,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           onDoubleClick={() => toggleDock('left')}
         />
 
-        <ViewportStage workbench={workbench} />
+        <ViewportStage
+          workbench={workbench}
+          activeProposalId={activeProposalId}
+          onReviewProposal={(proposalId) => {
+            setActiveProposalId(proposalId)
+            focusProposalReview(proposalId)
+          }}
+        />
 
         <DockSplitter
           dock="right"
@@ -539,6 +670,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             <div className="dock-head">
               <span className="eyebrow">INSPECT</span>
               <nav className="dock-jump" aria-label="Jump to inspector section">
+                <button type="button" onClick={() => revealChrome('model')}>
+                  Model
+                </button>
+                <button type="button" onClick={() => revealChrome('health')}>
+                  Health
+                </button>
                 <button type="button" onClick={() => revealChrome(state.selection.length ? 'selection' : 'inspector')}>
                   {state.selection.length ? 'Selection' : 'Details'}
                 </button>
@@ -572,6 +709,17 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                   <ConnectPanel workbench={workbench} />
                 </DockSection>
               )}
+              <DockSection
+                id="model.explorer"
+                title="Model map"
+                icon={<Boxes size={11} />}
+                badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
+                open={rightSectionOpen('model.explorer')}
+                grow={rightSectionOpen('model.explorer')}
+                onToggle={() => toggleSection('model.explorer')}
+              >
+                <ModelExplorerPanel workbench={workbench} />
+              </DockSection>
               <DockSection
                 id="selection"
                 title="Selection"
@@ -610,8 +758,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
               />
               <DockSection
                 id="inspector"
-                title="Inspector"
-                icon={<SlidersHorizontal size={11} />}
+                title={inspectorView === 'validate' ? 'Model health' : 'Inspector'}
+                icon={inspectorView === 'validate' ? <CircleAlert size={11} /> : <SlidersHorizontal size={11} />}
                 open={rightSectionOpen('inspector')}
                 grow={rightSectionOpen('inspector')}
                 onToggle={() => toggleSection('inspector')}
@@ -620,7 +768,19 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                   state={state}
                   selectedPart={workbench.selectedPart}
                   definition={workbench.selectedDefinition}
+                  view={inspectorView}
+                  activeHealthIssueId={activeHealthIssueId}
                   articulation={workbench.articulation}
+                  onViewChange={setInspectorView}
+                  onActiveHealthIssue={setActiveHealthIssueId}
+                  onFocusHealthIssue={(issue: ModelHealthIssue, mode) => {
+                    const ids = issue.partIds.filter((id) => Boolean(cadEngine.getDocument().parts[id]))
+                    previousContext.current = { ...previousContext.current, selection: ids.length }
+                    cadEngine.setSelection([...ids])
+                    if (mode === 'frame' && ids.length) workbench.focusSelection()
+                    if (mode === 'isolate' && ids.length) workbench.isolateSelection()
+                    if (issue.kind === 'collision') workbench.setRenderMode('violations')
+                  }}
                   onArticulate={workbench.driveJoint}
                   onTransform={workbench.handleTransform}
                   onRecolor={workbench.recolorSelection}
@@ -635,6 +795,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         {layout.bottom.collapsed ? (
           <button className="dock-bar" onClick={() => toggleDock('bottom')} aria-label="Show the build timeline">
             <Boxes size={12} /> BUILD SEQUENCE · {state.document.steps.length} steps · {state.transactions.length} edits
+            {state.proposals.length > 0 && (
+              <em className="review-badge">
+                {state.proposals.length} review{state.proposals.length === 1 ? '' : 's'} pending
+              </em>
+            )}
             {state.document.notes.some((note) => note.status === 'open') && (
               <em>
                 {state.document.notes.filter((note) => note.status === 'open').length} handoff
@@ -649,6 +814,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             playbackStep={workbench.playbackStep}
             view={timelineView}
             onViewChange={setTimelineView}
+            activeProposalId={activeProposalId}
+            onActiveProposal={setActiveProposalId}
             onPlayStep={workbench.setPlaybackStep}
             onAccept={workbench.acceptProposal}
             onReject={workbench.rejectProposal}

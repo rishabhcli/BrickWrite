@@ -26,9 +26,10 @@ import {
 import { claimLocalProject, type ClaimOutcome } from './claim'
 import { Outbox, type SyncState } from './outbox'
 import { executeConflictFork, planRebase, type ConflictFork, type ScopeOverlap } from './rebase'
-import { snapshotUploadFor, transactionChecksum } from './serialize'
+import { canonicalJson, snapshotUploadFor, transactionChecksum } from './serialize'
 import { readCompleteHistory } from './history'
 import { incompleteHistory } from '../../convex/model/history'
+import { validateTransactionPayload } from '../../convex/model/transactionValidation'
 
 /**
  * One project interface, two implementations.
@@ -136,6 +137,7 @@ export interface ProjectStore {
     email: string,
     role: Exclude<CloudRole, 'owner'>,
   ): Promise<CloudResult<CloudInvitationRecord>>
+  retryInvitationDelivery(projectId: string, invitationId: string): Promise<CloudResult<CloudInvitationRecord>>
   revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>>
 
   listComments(projectId: string): Promise<CloudResult<CloudCommentRecord[]>>
@@ -347,6 +349,9 @@ export class LocalProjectStore implements ProjectStore {
     return localOnly('Invitations')
   }
   async createInvitation(): Promise<CloudResult<CloudInvitationRecord>> {
+    return localOnly('Invitations')
+  }
+  async retryInvitationDelivery(): Promise<CloudResult<CloudInvitationRecord>> {
     return localOnly('Invitations')
   }
   async revokeInvitation(): Promise<CloudResult<{ revoked: boolean }>> {
@@ -630,6 +635,9 @@ export class CloudProjectStore implements ProjectStore {
     return this.backend.createInvitation({ projectId: this.resolveId(projectId), email, role })
   }
 
+  retryInvitationDelivery(projectId: string, invitationId: string): Promise<CloudResult<CloudInvitationRecord>> {
+    return this.backend.retryInvitationDelivery({ projectId: this.resolveId(projectId), invitationId })
+  }
   revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>> {
     return this.backend.revokeInvitation({ projectId: this.resolveId(projectId), invitationId })
   }
@@ -735,6 +743,20 @@ export interface DivergenceOutcome {
 export class MirroredProjectStore implements ProjectStore {
   readonly kind = 'mirrored' as const
   readonly links: ProjectLinks
+  private readonly localChanges = new Map<string, Promise<void>>()
+
+  /** Serialize only local writes/finalization, never wait on fork uploads here. */
+  private withLocalChange<T>(projectId: string, change: () => Promise<T>): Promise<T> {
+    const result = (this.localChanges.get(projectId) ?? Promise.resolve()).then(change)
+    const settled = result.then(
+      () => {},
+      () => {},
+    )
+    this.localChanges.set(projectId, settled)
+    return result.finally(() => {
+      if (this.localChanges.get(projectId) === settled) this.localChanges.delete(projectId)
+    })
+  }
 
   constructor(
     readonly local: LocalProjectStore,
@@ -793,53 +815,58 @@ export class MirroredProjectStore implements ProjectStore {
    * the sync state rather than as a failed edit, because the edit did not fail.
    */
   async appendTransaction(projectId: string, transaction: Transaction): Promise<CloudResult<AppendOutcome>> {
-    const local = await this.local.appendTransaction(projectId, transaction)
-    if (!local.ok) return local
+    return this.withLocalChange(projectId, async () => {
+      const local = await this.local.appendTransaction(projectId, transaction)
+      if (!local.ok) return local
 
-    const link = await this.links.get(projectId)
-    if (link && local.value.applied) {
-      const checkpoint = await this.local.readCheckpoint(projectId)
-      if (checkpoint) {
-        const queued = await this.outbox.queueTransaction(link.cloudProjectId, checkpoint.document, transaction)
-        if (!queued.ok) {
-          return { ok: true, value: { ...local.value, syncError: queued.error } }
+      const link = await this.links.get(projectId)
+      if (link && local.value.applied) {
+        const checkpoint = await this.local.readCheckpoint(projectId)
+        if (checkpoint) {
+          const queued = await this.outbox.queueTransaction(link.cloudProjectId, checkpoint.document, transaction)
+          if (!queued.ok) {
+            return { ok: true, value: { ...local.value, syncError: queued.error } }
+          }
         }
       }
-    }
-    return local
+      return local
+    })
   }
 
   async saveCheckpoint(document: ModelDocument): Promise<CloudResult<CheckpointOutcome>> {
-    const local = await this.local.saveCheckpoint(document)
-    if (!local.ok) return local
-    const link = await this.links.get(document.id)
-    if (link) {
-      const queued = await this.outbox.queueCheckpoint(link.cloudProjectId, document)
-      if (!queued.ok) return { ok: true, value: { ...local.value, syncError: queued.error } }
-    }
-    return local
+    return this.withLocalChange(document.id, async () => {
+      const local = await this.local.saveCheckpoint(document)
+      if (!local.ok) return local
+      const link = await this.links.get(document.id)
+      if (link) {
+        const queued = await this.outbox.queueCheckpoint(link.cloudProjectId, document)
+        if (!queued.ok) return { ok: true, value: { ...local.value, syncError: queued.error } }
+      }
+      return local
+    })
   }
 
   async deleteProject(projectId: string): Promise<CloudResult<{ deleted: boolean }>> {
-    const link = await this.links.get(projectId)
-    const local = await this.local.deleteProject(projectId)
-    if (!local.ok) return local
-    if (link) {
-      await this.outbox.clearProject(link.cloudProjectId)
-      await this.links.remove(projectId)
-      // The cloud delete is a soft delete on the deployment, and a failure here
-      // must not resurrect the local copy the operator just removed, so it is
-      // reported through the sync state rather than by failing the delete.
-      await this.backend.deleteProject({ projectId: link.cloudProjectId })
-    }
+    const { local, link } = await this.withLocalChange(projectId, async () => {
+      const link = await this.links.get(projectId)
+      const local = await this.local.deleteProject(projectId)
+      if (local.ok && link) {
+        await this.outbox.clearProject(link.cloudProjectId)
+        await this.links.remove(projectId)
+      }
+      return { local, link }
+    })
+    // Network latency must not hold the local-write lock.
+    if (local.ok && link) await this.backend.deleteProject({ projectId: link.cloudProjectId })
     return local
   }
 
   async renameProject(projectId: string, name: string): Promise<CloudResult<StoredProjectSummary>> {
-    const local = await this.local.renameProject(projectId, name)
-    if (!local.ok) return local
-    const link = await this.links.get(projectId)
-    if (link) await this.backend.renameProject({ projectId: link.cloudProjectId, name })
+    const { local, link } = await this.withLocalChange(projectId, async () => ({
+      local: await this.local.renameProject(projectId, name),
+      link: await this.links.get(projectId),
+    }))
+    if (local.ok && link) await this.backend.renameProject({ projectId: link.cloudProjectId, name })
     return local
   }
 
@@ -850,8 +877,12 @@ export class MirroredProjectStore implements ProjectStore {
   ): Promise<CloudResult<ClaimOutcome>> {
     const existing = await this.links.get(localProjectId)
     if (existing) {
-      return cloudFailure('NAME_TAKEN', 'This local project is already linked to a cloud copy.',
-        'Open or sync the linked project instead of claiming it again.', { projectId: existing.cloudProjectId })
+      return cloudFailure(
+        'NAME_TAKEN',
+        'This local project is already linked to a cloud copy.',
+        'Open or sync the linked project instead of claiming it again.',
+        { projectId: existing.cloudProjectId },
+      )
     }
     const claimed = await claimLocalProject({
       local: this.local,
@@ -949,60 +980,110 @@ export class MirroredProjectStore implements ProjectStore {
       .sort((a, b) => a.resultRevision - b.resultRevision)
       .map((entry) => entry.transaction)
 
+    // Never let incomplete touched/undo data drive a disjoint-rebase decision
+    // or clear the queue. Keep the original local log available for recovery.
+    let localRevision = checkpoint.revision
+    const localIds = new Set<string>()
+    for (const transaction of localTail) {
+      const valid = validateTransactionPayload(transaction)
+      if (!valid.ok) return incompleteHistory(valid.error.message, valid.error.details)
+      if (
+        transaction.baseRevision !== localRevision ||
+        transaction.resultRevision !== localRevision + 1 ||
+        localIds.has(transaction.id)
+      )
+        return incompleteHistory('The local history has a revision gap or duplicate transaction id.')
+      localRevision += 1
+      localIds.add(transaction.id)
+    }
     const plan = planRebase({
       base: checkpoint.document,
       localTail,
       remoteTail: remote.value.transactions.map((record) => record.transaction),
     })
 
+    const checkpointJson = canonicalJson(checkpoint.document)
+    const tailJson = localTail.map((transaction) => canonicalJson(transaction))
+    const finish = (change: () => Promise<CloudResult<DivergenceOutcome>>) =>
+      this.withLocalChange(localProjectId, async () => {
+        const currentCheckpoint = await this.local.readCheckpoint(localProjectId)
+        const currentLink = await this.links.get(localProjectId)
+        const currentTail = (await this.local.readLog(localProjectId))
+          .filter((entry) => entry.resultRevision > checkpoint.revision)
+          .sort((a, b) => a.resultRevision - b.resultRevision)
+        if (
+          !currentCheckpoint ||
+          currentCheckpoint.revision !== checkpoint.revision ||
+          canonicalJson(currentCheckpoint.document) !== checkpointJson ||
+          currentLink?.cloudProjectId !== link.value.cloudProjectId ||
+          currentLink?.branchId !== link.value.branchId ||
+          currentTail.length !== tailJson.length ||
+          currentTail.some((entry, index) => canonicalJson(entry.transaction) !== tailJson[index])
+        ) {
+          return cloudFailure(
+            'STALE_DOCUMENT',
+            'The local project changed during recovery; its newer work is retained.',
+            'Retry recovery from the current local history. Any completed fork is already safe in the cloud.',
+          )
+        }
+        return change()
+      })
+
     if (plan.kind === 'up-to-date') return { ok: true, value: { kind: 'up-to-date' } }
 
     if (plan.kind === 'fast-forward') {
-      await this.outbox.clearProject(link.value.cloudProjectId)
-      await this.local.replaceHistory(checkpoint.document, plan.adopted)
-      await this.links.put({ ...link.value, syncedRevision: plan.headRevision })
-      return { ok: true, value: { kind: 'fast-forward', document: plan.document } }
+      return finish(async () => {
+        await this.outbox.clearProject(link.value.cloudProjectId)
+        await this.local.replaceHistory(checkpoint.document, plan.adopted)
+        await this.links.put({ ...link.value, syncedRevision: plan.headRevision })
+        return { ok: true, value: { kind: 'fast-forward', document: plan.document } }
+      })
     }
 
     if (plan.kind === 'rebase') {
-      // The queued entries carry the pre-rebase revisions and would now be
-      // refused forever, so they are replaced rather than left to fail.
-      await this.outbox.clearProject(link.value.cloudProjectId)
-      await this.local.replaceHistory(checkpoint.document, [...plan.adoptedRemote, ...plan.rebased])
-      for (const transaction of plan.rebased) {
-        const queued = await this.outbox.queueTransaction(link.value.cloudProjectId, checkpoint.document, transaction)
-        if (!queued.ok) return queued
-      }
-      return {
-        ok: true,
-        value: { kind: 'rebase', document: plan.document, rebased: plan.rebased },
-      }
+      return finish(async () => {
+        // The queued entries carry the pre-rebase revisions and would now be
+        // refused forever, so they are replaced rather than left to fail.
+        await this.outbox.clearProject(link.value.cloudProjectId)
+        await this.local.replaceHistory(checkpoint.document, [...plan.adoptedRemote, ...plan.rebased])
+        for (const transaction of plan.rebased) {
+          const queued = await this.outbox.queueTransaction(link.value.cloudProjectId, checkpoint.document, transaction)
+          if (!queued.ok) return queued
+        }
+        return {
+          ok: true,
+          value: { kind: 'rebase', document: plan.document, rebased: plan.rebased },
+        }
+      })
     }
 
     const fork = await executeConflictFork(this.backend, {
       projectId: link.value.cloudProjectId,
+      fromBranchId: remote.value.branchId,
       plan,
     })
     if (!fork.ok) return fork
-    // The parked pre-fork tail has already been materialised on the conflict
-    // branch. Leaving it queued would resend it to main and recreate the same
-    // stale-document conflict immediately.
-    await this.outbox.clearProject(link.value.cloudProjectId)
-    // Both histories now exist. The local copy adopts the cloud's main branch,
-    // because that is the one everybody else is on; the operator's own tail is
-    // not lost, it is on the conflict branch and one click away.
-    await this.local.replaceHistory(checkpoint.document, plan.remoteTail)
-    await this.links.put({ ...link.value, syncedRevision: plan.remoteDocument.revision })
-    return {
-      ok: true,
-      value: {
-        kind: 'conflict-fork',
-        fork: fork.value,
-        document: plan.remoteDocument,
-        remoteDocument: plan.remoteDocument,
-        overlap: plan.overlap,
-      },
-    }
+    return finish(async () => {
+      // The parked pre-fork tail has already been materialised on the conflict
+      // branch. Leaving it queued would resend it to main and recreate the same
+      // stale-document conflict immediately.
+      await this.outbox.clearProject(link.value.cloudProjectId)
+      // Both histories now exist. The local copy adopts its selected cloud branch;
+      // the operator's own tail is
+      // not lost, it is on the conflict branch and one click away.
+      await this.local.replaceHistory(checkpoint.document, plan.remoteTail)
+      await this.links.put({ ...link.value, syncedRevision: plan.remoteDocument.revision })
+      return {
+        ok: true,
+        value: {
+          kind: 'conflict-fork',
+          fork: fork.value,
+          document: plan.remoteDocument,
+          remoteDocument: plan.remoteDocument,
+          overlap: plan.overlap,
+        },
+      }
+    })
   }
 
   private async cloudDelegate<T>(
@@ -1079,6 +1160,9 @@ export class MirroredProjectStore implements ProjectStore {
     return this.cloudDelegate(projectId, (id) => this.cloud.createInvitation(id, email, role))
   }
 
+  retryInvitationDelivery(projectId: string, invitationId: string): Promise<CloudResult<CloudInvitationRecord>> {
+    return this.cloudDelegate(projectId, (id) => this.cloud.retryInvitationDelivery(id, invitationId))
+  }
   revokeInvitation(projectId: string, invitationId: string): Promise<CloudResult<{ revoked: boolean }>> {
     return this.cloudDelegate(projectId, (id) => this.cloud.revokeInvitation(id, invitationId))
   }

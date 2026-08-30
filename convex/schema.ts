@@ -71,6 +71,9 @@ export default defineSchema({
     forkedFromBranchId: v.optional(v.id('branches')),
     kind: v.union(v.literal('main'), v.literal('named'), v.literal('conflict')),
     createdBySubject: v.string(),
+    /** Immutable recovery receipt; retries never replace this seed or the head. */
+    recoveryKey: v.optional(v.string()),
+    recoverySnapshotGroupId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     /**
@@ -91,7 +94,8 @@ export default defineSchema({
     ),
   })
     .index('by_project', ['projectId'])
-    .index('by_project_name', ['projectId', 'name']),
+    .index('by_project_name', ['projectId', 'name'])
+    .index('by_recovery', ['projectId', 'createdBySubject', 'recoveryKey']),
 
   transactions: defineTable({
     projectId: v.id('projects'),
@@ -209,14 +213,21 @@ export default defineSchema({
     createdAt: v.number(),
     expiresAt: v.number(),
     status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked'), v.literal('expired')),
-    deliveryStatus: v.union(v.literal('pending'), v.literal('sent'), v.literal('not-configured'), v.literal('failed')),
+    deliveryStatus: v.union(v.literal('pending'), v.literal('sending'), v.literal('queued'), v.literal('sent'), v.literal('not-configured'), v.literal('failed'), v.literal('cancelled')),
+    /** Delivery attempt identity, unrelated to the invitation's access token. */
+    deliveryGeneration: v.optional(v.number()),
+    deliveryAttempts: v.optional(v.number()),
+    deliveryRequestedAt: v.optional(v.number()),
+    deliveryStartedAt: v.optional(v.number()),
+    deliveryCompletedAt: v.optional(v.number()),
     deliveryReason: v.optional(v.string()),
     acceptedBySubject: v.optional(v.string()),
     acceptedAt: v.optional(v.number()),
   })
     .index('by_project', ['projectId'])
     .index('by_token', ['token'])
-    .index('by_email_status', ['email', 'status']),
+    .index('by_email_status', ['email', 'status'])
+    .index('by_project_email_status_expiry', ['projectId', 'email', 'status', 'expiresAt']),
 
   /**
    * Ephemeral collaborator state.

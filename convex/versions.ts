@@ -16,6 +16,7 @@ import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/che
 import { isRevision } from './model/history'
 import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
 import { snapshotUpload } from './model/validators'
+import { decodeSnapshotUpload } from './model/snapshotValidation'
 
 /**
  * Versions, branches and merge proposals.
@@ -138,6 +139,7 @@ export const createBranch = mutation({
     kind: v.optional(v.union(v.literal('named'), v.literal('conflict'))),
     fromBranchId: v.optional(v.string()),
     atRevision: v.optional(v.number()),
+    recovery: v.optional(v.object({ key: v.string(), snapshot: snapshotUpload })),
   },
   handler: async (ctx, args): Promise<CloudResult<CloudBranchRecord>> => {
     const authorised = await authoriseProject(ctx, args.projectId, 'branch.create')
@@ -146,6 +148,66 @@ export const createBranch = mutation({
     const name = args.name.trim()
     if (!name) {
       return cloudFailure('INVALID_ARGUMENT', 'A branch needs a name.', 'Name the branch and retry.')
+    }
+    const parentResult = await resolveBranch(ctx, project, args.fromBranchId)
+    if (!parentResult.ok) return parentResult
+    const parent = parentResult.value
+
+    const recovery = args.recovery
+    if (
+      recovery &&
+      (args.kind !== 'conflict' ||
+        args.atRevision === undefined ||
+        !/^[A-Za-z0-9_-]{16,128}$/.test(recovery.key) ||
+        recovery.snapshot.revision !== args.atRevision)
+    ) {
+      return cloudFailure(
+        'INVALID_ARGUMENT',
+        'Recovery needs a stable key and an exact conflict-fork checkpoint.',
+        'Retry with the original divergence revision, key and checkpoint.',
+      )
+    }
+    // Validate before any writes: typed refusals do not roll back mutations.
+    const seed = recovery
+      ? decodeSnapshotUpload(recovery.snapshot, {
+          localProjectId: project.localProjectId,
+          schemaVersion: project.schemaVersion,
+        })
+      : undefined
+    if (seed && !seed.ok) return seed
+    if (recovery && seed?.ok) {
+      const existing = await ctx.db
+        .query('branches')
+        .withIndex('by_recovery', (q) =>
+          q.eq('projectId', project._id).eq('createdBySubject', identity.subject).eq('recoveryKey', recovery.key),
+        )
+        .unique()
+      if (existing) {
+        if (
+          existing.kind !== 'conflict' ||
+          existing.name !== name ||
+          existing.forkedFromBranchId !== parent._id ||
+          existing.baseRevision !== args.atRevision ||
+          !existing.recoverySnapshotGroupId
+        ) {
+          return cloudFailure(
+            'INVALID_ARGUMENT',
+            'This recovery key already identifies a different fork.',
+            'Retry the original request; do not reuse recovery keys for different work.',
+          )
+        }
+        const original = await readSnapshot(ctx, existing.recoverySnapshotGroupId, project._id)
+        if (!original.ok) return original
+        // Full content comparison, not a checksum or the latest mutable checkpoint.
+        if (canonicalJson(original.value.document) !== canonicalJson(seed.value)) {
+          return cloudFailure(
+            'INVALID_ARGUMENT',
+            'This recovery key was created with a different checkpoint.',
+            'Keep both local copies and retry the original recovery request.',
+          )
+        }
+        return { ok: true, value: branchRecord(existing) }
+      }
     }
     const clash = await ctx.db
       .query('branches')
@@ -156,9 +218,6 @@ export const createBranch = mutation({
         branchId: clash._id,
       })
     }
-    const parentResult = await resolveBranch(ctx, project, args.fromBranchId)
-    if (!parentResult.ok) return parentResult
-    const parent = parentResult.value
 
     // A fork defaults to the parent's head. A conflict fork names an earlier
     // revision — where the two histories diverged — so the tail that lost the
@@ -175,7 +234,9 @@ export const createBranch = mutation({
 
     // Validate before inserting anything: returning a typed error from a
     // Convex mutation commits earlier writes; it does not roll them back.
-    const source = await latestBranchCheckpoint(ctx, project._id, parent._id, at)
+    const source = recovery
+      ? { ok: true as const, value: null }
+      : await latestBranchCheckpoint(ctx, project._id, parent._id, at)
     if (!source.ok) return source
     if (!source.value && (args.kind ?? 'named') !== 'conflict') {
       return cloudFailure(
@@ -194,10 +255,22 @@ export const createBranch = mutation({
       forkedFromBranchId: parent._id,
       kind: args.kind ?? 'named',
       createdBySubject: identity.subject,
+      recoveryKey: recovery?.key,
       createdAt: now,
       updatedAt: now,
     })
-    if (source.value) {
+    if (recovery) {
+      const seeded = await writeSnapshot(ctx, {
+        projectId: project._id,
+        branchId,
+        kind: 'checkpoint',
+        createdBySubject: identity.subject,
+        upload: recovery.snapshot,
+      })
+      // Unexpected failures throw so branch, chunks and receipt roll back together.
+      if (!seeded.ok) throw new Error(`Recovery checkpoint failed: ${seeded.error.code}`)
+      await ctx.db.patch(branchId, { recoverySnapshotGroupId: seeded.value })
+    } else if (source.value) {
       const snapshot = source.value
       const text = canonicalJson(snapshot.document)
       const seeded = await writeSnapshot(ctx, {

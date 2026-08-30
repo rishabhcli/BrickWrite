@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react'
+import { Check, Eye, X } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { searchCatalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
@@ -42,9 +42,24 @@ const RENDER_MODE_COPY: Record<Exclude<RenderMode, 'beauty'>, { title: string; d
   },
 }
 
-export function ViewportStage({ workbench }: { workbench: Workbench }) {
+export function ViewportStage({
+  workbench,
+  activeProposalId,
+  onReviewProposal,
+}: {
+  workbench: Workbench
+  activeProposalId?: string | null
+  onReviewProposal?: (proposalId: string) => void
+}) {
   const { state, renderMode, placement, placementDefinition } = workbench
   const [dragOver, setDragOver] = useState(false)
+  const activeProposal = state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
+  const pendingProposalIds = new Set(state.proposals.map((proposal) => proposal.id))
+  const visibleProposals = activeProposal
+    ? workbench.viewportProposals.filter(
+        (proposal) => proposal.id === activeProposal.id || !pendingProposalIds.has(proposal.id),
+      )
+    : workbench.viewportProposals
 
   const pickStarter = useCallback(() => {
     const first = searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0]
@@ -78,7 +93,7 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
       <CadViewport
         document={workbench.renderedDocument}
         selection={state.selection}
-        proposals={workbench.viewportProposals}
+        proposals={visibleProposals}
         tool={workbench.tool}
         gridLdu={workbench.gridLdu}
         cameraView={workbench.cameraView}
@@ -166,13 +181,16 @@ export function ViewportStage({ workbench }: { workbench: Workbench }) {
         </div>
       )}
 
-      {state.proposals.length > 0 && (
+      {activeProposal && (
         <div className="proposal-overlay">
           <span className="proposal-pulse" />
-          <div><small>GHOST PROPOSAL</small><strong>{state.proposals[0].label}</strong></div>
-          <em>{state.proposals[0].operations.length} edits</em>
-          <button onClick={() => workbench.acceptProposal(state.proposals[0].id)}><Check size={13} /> Accept</button>
-          <button onClick={() => workbench.rejectProposal(state.proposals[0].id)} aria-label="Reject proposal"><X size={13} /></button>
+          <div><small>GHOST PROPOSAL</small><strong>{activeProposal.label}</strong></div>
+          <em>{activeProposal.operations.length} edits</em>
+          {onReviewProposal && (
+            <button onClick={() => onReviewProposal(activeProposal.id)}><Eye size={13} /> Review</button>
+          )}
+          <button onClick={() => workbench.acceptProposal(activeProposal.id)}><Check size={13} /> Accept</button>
+          <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal"><X size={13} /></button>
         </div>
       )}
 

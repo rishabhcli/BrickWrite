@@ -116,6 +116,9 @@ export const refs = {
       { projectId: string; email: string; role: Exclude<CloudRole, 'owner'> },
       CloudResult<CloudInvitationRecord>
     >('invitations:create'),
+    retryDelivery: m<{ projectId: string; invitationId: string }, CloudResult<CloudInvitationRecord>>(
+      'invitations:retryDelivery',
+    ),
     revoke: m<{ projectId: string; invitationId: string }, CloudResult<{ revoked: boolean }>>('invitations:revoke'),
     accept: m<{ token: string }, CloudResult<{ projectId: string; role: string }>>('invitations:accept'),
   },

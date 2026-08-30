@@ -69,6 +69,7 @@ const RUNTIME_EXPORTS = [
   'snapshotUploadFor',
   'documentChecksum',
   'transactionChecksum',
+  'validateTransactionPayload',
   'poseChecksumOf',
   'canonicalJson',
   'checksumOf',

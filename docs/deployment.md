@@ -143,6 +143,35 @@ used to resume an exact interrupted claim. Existing rows are preserved without
 migration; ambiguous or legacy retries remain explicit refusals. See
 [cloud save integrity](cloud-save-integrity.md) for validation and retry boundaries.
 
+Batched synchronization also needs Convex deployed first: the new frontend calls
+`transactions:appendBatch` for claims and offline catch-up. The endpoint needs no
+schema migration and preserves the old single-edit API. Deploying only the
+frontend leaves multi-edit uploads retrying until that endpoint is available;
+local work is retained. See [batched sync](cloud-batched-sync.md) for batch limits,
+atomicity and acknowledgement recovery.
+
+Transaction integrity adds shared structural validation to saves, history reads,
+outbox sends and conflict recovery. Deploy both Convex and frontend for full
+coverage; no API or schema migration is needed. Existing malformed logs are
+refused, not rewritten or deleted. See [transaction integrity](cloud-transaction-integrity.md)
+for compatibility, recovery and validation boundaries.
+
+Deploy the additive `branches.by_recovery` index and optional recovery receipt
+fields with `versions:createBranch` before releasing the retry-safe recovery
+client. Existing branches require no backfill. See
+[conflict recovery](cloud-conflict-recovery.md) for restart, authorization and
+local-finalization boundaries.
+
+Invitation delivery requires backend-first rollout of the optional delivery
+metadata/statuses, `invitations.by_project_email_status_expiry`, and
+`invitations:retryDelivery`. Existing tokens and rows need no backfill. Native
+Hexclave email uses the Convex deployment's `HEXCLAVE_PROJECT_ID`,
+`HEXCLAVE_SECRET_SERVER_KEY`, and `INVITATION_LINK_ORIGIN`; these secrets must
+never be bundled into Vite. Existing custom endpoint variables remain an
+explicit override. Provider acceptance is reported as queued, not as verified
+inbox delivery. See [invitation lifecycle](cloud-invitation-lifecycle.md) for
+configuration, retry ambiguity, and legacy-worker boundaries.
+
 `convex/auth.config.ts` reads `HEXCLAVE_PROJECT_ID` from the *deployment*
 environment and throws when it is absent, so a deployment cannot come up
 accepting tokens for an accidental project. Set it before the first push:
@@ -193,12 +222,19 @@ domain list.
 ## Distribution budgets
 
 `npm run build` ends with `tools/check-dist-budget.mjs`. It fails before deploy
-when `dist/` exceeds 100 MiB total, 16,000 files, or 20 MiB for one file. The
+when `dist/` exceeds 160 MiB total, 16,000 files, or 20 MiB for one file. The
 file-count and single-file budgets deliberately retain headroom below
 Cloudflare Pages' current Free-plan limits of 20,000 files and 25 MiB per file;
 the total-size ceiling is Brickwright's own delivery/operability budget because
 Pages publishes no aggregate-byte limit. Override values only for a deliberate,
 reviewed migration using the `DIST_*` variables documented in `.env.example`.
+
+The total was raised from 100 MiB when the demo collection was rebuilt around a
+few large sets rather than many small ones. Each set ships 10-15 MiB and the
+catalogue alone is ~69 MiB. Nearly all of a set's bytes are its stored
+connection graph — the tower's is 10.9 MiB of an 11.2 MiB document, against 1.1
+MiB of parts — so the cheapest future saving is there rather than in the
+collection's size.
 
 ## Rollback
 
