@@ -73,7 +73,6 @@ export function ProjectsPage() {
         <section className="bw-projects-hero" aria-labelledby="bw-dashboard-title">
           <div className="bw-projects-header">
             <div className="bw-projects-header-title">
-              <span className="bw-eyebrow accent">{projects.length} saved</span>
               <h1 className="bw-display x2" id="bw-dashboard-title">
                 Models
               </h1>
@@ -128,7 +127,6 @@ export function ProjectsPage() {
 
         <section className="bw-projects-list-section" aria-labelledby="bw-saved-title">
           <div className="bw-section-head">
-            <span className="bw-section-index">This browser</span>
             <h2 className="bw-display x3" id="bw-saved-title">
               Saved
             </h2>

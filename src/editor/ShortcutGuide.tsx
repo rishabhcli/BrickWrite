@@ -70,7 +70,7 @@ export function ShortcutGuide({
         }}
       >
         <header>
-          <div><span className="eyebrow">COMMAND MAP</span><h2 id="shortcut-title">Work at the speed of thought</h2></div>
+          <div><h2 id="shortcut-title">Keyboard</h2></div>
           <button ref={close} onClick={onClose} aria-label="Close keyboard shortcuts"><X size={15} /></button>
         </header>
         <div className="shortcut-groups">

@@ -37,6 +37,7 @@ const refuse = (reason: string): CommandOutcome => ({ ran: false, reason })
 export function disabledReason(commandId: string, workbench: Workbench): string | null {
   const { state } = workbench
   const selected = state.selection.length
+  if (['edit.reposition', 'edit.build-another'].includes(commandId) && selected !== 1) return 'Select one part first.'
   const needsSelection = [
     'edit.clone',
     'edit.delete',
@@ -100,6 +101,8 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'tool.connect': () => run(() => w.setTool('connect')),
 
     // Edit ----------------------------------------------------------------
+    'edit.reposition': () => (w.pickUpSelection() ? ok : refuse('Select one part to pick up.')),
+    'edit.build-another': () => (w.pickUpSelection(true) ? ok : refuse('Select one part to repeat.')),
     'edit.undo': () => (w.state.canUndo ? { ran: w.replayHistory('undo') } : refuse('Nothing to undo.')),
     'edit.redo': () => (w.state.canRedo ? { ran: w.replayHistory('redo') } : refuse('Nothing to redo.')),
     'edit.clone': () => editSelection(w.duplicateSelection),
@@ -108,7 +111,8 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'edit.paste': () => (w.clipboard ? { ran: w.pasteSelection() } : refuse('Copy or cut parts in this editor first.')),
     'edit.ground': () => ({ ran: w.groundSelection() }),
     'edit.delete': () => editSelection(w.deleteSelection),
-    'edit.quarter-turn': () => editSelection(() => w.rotateSelection(90)),
+    'edit.quarter-turn': () =>
+      w.placement ? run(() => w.rotatePlacement(-1)) : editSelection(() => w.rotateSelection(90)),
     'edit.mirror': () => editSelection(() => w.runSharedMutation('mirror_selection', { axisLdu: 0 })),
     'edit.array': () => run(() => w.setModal('core:command-deck:linear_array')),
     'edit.protect': () => editSelection(w.toggleProtectSelection),

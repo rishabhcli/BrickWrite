@@ -73,9 +73,7 @@ export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
       <section ref={guide as RefObject<HTMLElement>} className="welcome-guide" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
         <header>
           <div>
-            <span className="eyebrow">AGENT-NATIVE BRICK CAD</span>
-            <h2 id="welcome-title">Build something real</h2>
-            <p>Four things worth knowing before the first brick.</p>
+            <h2 id="welcome-title">Before the first brick</h2>
           </div>
           <button onClick={onClose} aria-label="Close the welcome guide"><X size={15} /></button>
         </header>

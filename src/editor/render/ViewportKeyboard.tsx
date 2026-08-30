@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect } from 'react'
 import * as THREE from 'three'
 import { findArticulatedJoints } from '../../cad/articulation'
 import type { ModelDocument, Transform } from '../../cad/types'
+import type { ResolvedPlacement } from '../../cad/placement'
 import type { EditorTool } from '../CadViewport'
 import { resolveVisibility, type VisibilityState } from './visibility'
 import { createSectionPlane, offsetPlaneAlongNormal, type SectionPlane } from './sectionPlanes'
@@ -22,12 +23,12 @@ interface ViewportKeyboardProps {
   gridLdu: number
   visibility: VisibilityState
   sectionPlanes: readonly SectionPlane[]
-  placementPreview: Transform | null
+  placementPreview: ResolvedPlacement | null
   placing: boolean
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onTransform: (partId: string, transform: Transform) => void
   onNudgeSelection?: (dx: number, dz: number, dy?: number) => void
-  onPlace?: (transform: Transform) => void
+  onPlace?: (transform: Transform, legal?: boolean, reason?: string) => void
   onJointNudge?: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
   onSectionPlanesChange: (next: readonly SectionPlane[]) => void
 }
@@ -175,7 +176,8 @@ export function ViewportKeyboard({
           if (report.partId) onSelect(report.partId, false, false)
         }
       } else if (command.kind === 'place') {
-        if (placementPreview && onPlace) onPlace(placementPreview)
+        if (placementPreview && onPlace)
+          onPlace(placementPreview.transform, placementPreview.legal, placementPreview.reason)
       } else if (command.kind === 'act') {
         const focused = selection[selection.length - 1]
         if (focused) onSelect(focused, false, false)

@@ -23,169 +23,17 @@
 .bw-landing > .bw-studs {
   z-index: 0;
 }
-.bw-landing > .bw-cursor {
-  z-index: 120;
+.bw-landing > /* The operating-system pointer is always visible. Decorative effects never
+   replace it: fixed overlays can be clipped by the application's scroller. */
+.bw-landing {
+  cursor: auto;
 }
-
-.bw-landing > .bw-studs {
-  background-position: 0 calc(var(--bw-film-t, 0) * 40px);
+.bw-landing a,
+.bw-landing button {
+  cursor: pointer;
 }
-
-.bw-landing .bw-orb-a {
-  translate: 0 calc(var(--bw-film-t, 0) * -72px);
-}
-.bw-landing .bw-orb-b {
-  translate: 0 calc(var(--bw-film-t, 0) * 48px);
-}
-
-.bw-landing .bw-studs::after {
-  content: '';
-  position: absolute;
-  --bw-clutch-size: min(36rem, 80vw);
-  width: var(--bw-clutch-size);
-  height: var(--bw-clutch-size);
-  left: var(--bw-ptr-x);
-  top: var(--bw-ptr-y);
-  transform: translate(-50%, -50%);
-  background-image: radial-gradient(circle at center, rgba(131, 231, 238, 0.55) 1.15px, transparent 1.45px);
-  background-size: 26px 26px;
-  background-position: calc(var(--bw-clutch-size) / 2 - var(--bw-ptr-x))
-    calc(var(--bw-clutch-size) / 2 - var(--bw-ptr-y));
-  mask-image: radial-gradient(circle, #000 10%, transparent 72%);
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-.bw-landing[data-pointer='live'] .bw-studs::after {
-  opacity: 0.85;
-}
-
-.bw-cursor {
-  position: fixed;
-  left: var(--bw-cur-x, var(--bw-ptr-x));
-  /* `#pf-main` is the scroll container. In Chromium a fixed descendant of
-     that composited surface still uses its scrolling containing block, so the
-     current scroll offset is added back to keep the crosshair under the real
-     hardware pointer instead of letting it disappear above the page. */
-  top: calc(var(--bw-cur-y, var(--bw-ptr-y)) + var(--bw-scroll-y, 0px));
-  width: 30px;
-  height: 30px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 240;
-  opacity: 0;
-  filter: drop-shadow(0 1px 2px #000) drop-shadow(0 0 8px rgba(245, 163, 63, 0.95));
-  transition:
-    width 0.18s var(--bw-spring),
-    height 0.18s var(--bw-spring),
-    opacity 0.2s ease,
-    transform 0.18s var(--bw-spring);
-}
-.bw-landing[data-pointer='live'] .bw-cursor {
-  opacity: 1;
-}
-.bw-landing[data-cursor='hot'] .bw-cursor {
-  width: 44px;
-  height: 44px;
-}
-.bw-landing[data-cursor='orbit'] .bw-cursor {
-  width: 34px;
-  height: 34px;
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-.bw-cursor-ghost {
-  left: var(--bw-ptr-x);
-  top: var(--bw-ptr-y);
-  width: 26px;
-  height: 26px;
-  opacity: 0 !important;
-}
-.bw-landing[data-pointer='live'] .bw-cursor-ghost {
-  opacity: 0.28 !important;
-}
-.bw-landing[data-cursor='hot'] .bw-cursor-ghost,
-.bw-landing[data-cursor='orbit'] .bw-cursor-ghost {
-  width: 26px;
-  height: 26px;
-  transform: translate(-50%, -50%);
-}
-.bw-cursor > i {
-  position: absolute;
-  width: 11px;
-  height: 11px;
-  border-color: #ffb24f;
-  border-style: solid;
-  border-width: 0;
-}
-.bw-cursor > i:nth-child(1) {
-  left: 0;
-  top: 0;
-  border-top-width: 2px;
-  border-left-width: 2px;
-}
-.bw-cursor > i:nth-child(2) {
-  right: 0;
-  top: 0;
-  border-top-width: 2px;
-  border-right-width: 2px;
-}
-.bw-cursor > i:nth-child(3) {
-  left: 0;
-  bottom: 0;
-  border-bottom-width: 2px;
-  border-left-width: 2px;
-}
-.bw-cursor > i:nth-child(4) {
-  right: 0;
-  bottom: 0;
-  border-bottom-width: 2px;
-  border-right-width: 2px;
-}
-.bw-cursor::before {
-  content: '';
-  position: absolute;
-  inset: 7px;
-  border: 1px solid rgba(255, 251, 240, 0.92);
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.72),
-    0 0 9px rgba(255, 255, 255, 0.35);
-}
-.bw-cursor > span {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  background: #ffd28c;
-  box-shadow:
-    0 0 0 1px #3a1d00,
-    0 0 12px 3px rgba(245, 163, 63, 0.95);
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-.bw-landing[data-cursor='hot'] .bw-cursor > span {
-  width: 8px;
-  height: 8px;
-  background: var(--bw-orange);
-}
-.bw-landing[data-cursor='orbit'] .bw-cursor > span {
-  background: var(--bw-cyan);
-  box-shadow:
-    0 0 0 1px #04262a,
-    0 0 12px 3px rgba(131, 231, 238, 0.9);
-}
-.bw-landing[data-cursor='orbit'] .bw-cursor > i {
-  border-color: #8ff7ff;
-}
-@media (hover: hover) and (pointer: fine) {
-  .bw-landing[data-pointer='live'],
-  .bw-landing[data-pointer='live'] * {
-    cursor: none !important;
-  }
-  .bw-landing[data-pointer='live'] :focus-visible {
-    cursor: auto !important;
-  }
+.bw-landing button:disabled {
+  cursor: not-allowed;
 }
 
 body:has(.bw-landing) #pf-main {
@@ -763,10 +611,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   }
   .bw-gate-track [data-clone],
   .bw-bill-track [data-clone] {
-    display: none;
-  }
-  .bw-cursor,
-  .bw-cursor-ghost {
     display: none;
   }
   .bw-landing[data-pointer='live'],

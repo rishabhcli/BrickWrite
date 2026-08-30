@@ -347,7 +347,7 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
           <div className="command-deck-identity">
             <span className="command-glyph"><Command size={18} /></span>
             <div>
-              <span className="eyebrow">UNIFIED CONTROL PLANE / REV {state.document.revision}</span>
+              <span className="eyebrow">REV {state.document.revision}</span>
               <h2 id="command-deck-title">Command Deck</h2>
             </div>
           </div>

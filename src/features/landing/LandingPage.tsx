@@ -1,11 +1,14 @@
-import { useEffect, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { DEMOS, DEMO_MANIFEST, heroDemo, type DemoEntry } from '../../demos'
 import { setKnownDemoIds, trackLanding } from './analytics'
 import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
 import { CountUp, PlateAtmosphere } from './plate'
 import { FILM_STAGES, useFilmStage, usePointerField, usePointerTilt, useReveal } from './reveal'
+import { useReducedMotion } from '../explore/motion'
+import { BrickSculpture } from './BrickSculpture'
 import './landing.css'
+import './studio.css'
 
 /**
  * The product front door.
@@ -22,7 +25,10 @@ setKnownDemoIds(DEMOS.map((demo) => demo.id))
 export function LandingPage() {
   const hero = heroDemo()
   const showcase = hero.showcase
-  const pointer = usePointerField<HTMLDivElement>()
+  const reduced = useReducedMotion()
+  const [paused, setPaused] = useState(false)
+  const motionPaused = reduced || paused
+  const pointer = usePointerField<HTMLDivElement>(motionPaused)
 
   useEffect(() => {
     trackLanding({ name: 'landing.viewed' })
@@ -32,96 +38,118 @@ export function LandingPage() {
   return (
     <div
       ref={pointer.ref}
-      className="bw-surface bw-landing bw-landing-simple"
+      className="bw-surface bw-landing bw-landing-simple bw-studio"
+      data-motion={motionPaused ? 'paused' : 'running'}
       data-pointer={pointer.live ? 'live' : 'off'}
     >
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
-      <div className="bw-cursor" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-        <span />
-      </div>
-      <div className="bw-cursor bw-cursor-ghost" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
-
       <div id="bw-main">
-        <section className="bw-simple-hero" aria-labelledby="bw-hero-title">
-          <HeroScatter />
-          <div className="bw-simple-hero-copy">
-            <span className="bw-eyebrow accent bw-flagship-kicker">
-              Flagship set / {hero.validation.partCount.toLocaleString()} verified pieces
+        <section className="bw-studio-hero" aria-labelledby="bw-hero-title">
+          <div className="bw-studio-topline">
+            <span>
+              <i aria-hidden="true" /> A NEW SPACE FOR YOUR NEXT BIG IDEA
             </span>
-            <h1 className="bw-display x1" id="bw-hero-title">
-              Rebuild the
+            <button
+              type="button"
+              className="bw-motion-toggle"
+              disabled={reduced}
+              aria-pressed={motionPaused}
+              aria-label={reduced ? 'Reduced motion enabled' : paused ? 'Resume animations' : 'Pause animations'}
+              onClick={() => setPaused((value) => !value)}
+            >
+              <span aria-hidden="true">{motionPaused ? '▷' : 'Ⅱ'}</span>
+              {reduced ? 'Reduced motion' : motionPaused ? 'Motion off' : 'Motion on'}
+            </button>
+          </div>
+          <div className="bw-studio-intro">
+            <div className="bw-studio-copy">
+              <h1 id="bw-hero-title">
+                Small bricks.
+                <br />
+                <em>Big possibilities.</em>
+              </h1>
+              <p className="bw-studio-description">
+                That thing in your head? Let’s build it.
+                <br />
+                An open canvas for brick-built worlds. Imagine, experiment, and make every piece click.
+              </p>
+              <div className="bw-hero-actions">
+                <a
+                  className="bw-button primary"
+                  href={hrefFor({ kind: 'editor', blank: true })}
+                  onClick={link({ kind: 'editor', blank: true }, () => {
+                    trackLanding({ name: 'landing.cta_selected', cta: 'start-blank' })
+                    trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
+                  })}
+                >
+                  Start building <span aria-hidden="true">↗</span>
+                </a>
+                <a
+                  className="bw-studio-text-link"
+                  href={hrefFor({ kind: 'describe' })}
+                  onClick={link({ kind: 'describe' }, () =>
+                    trackLanding({ name: 'landing.cta_selected', cta: 'describe-build' }),
+                  )}
+                >
+                  Describe an idea <span aria-hidden="true">↗</span>
+                </a>
+              </div>
+              <p className="bw-studio-footnote">IN YOUR BROWSER. OUT OF THE ORDINARY.</p>
+            </div>
+            <BrickSculpture paused={motionPaused} />
+          </div>
+          <div className="bw-studio-baseline">
+            <a href="#bw-campus-title" className="bw-scroll-cue">
+              <span aria-hidden="true">↓</span> A little imagination goes a long way
+            </a>
+            <span>REAL PARTS. REAL CONNECTIONS. YOUR WORLD.</span>
+          </div>
+        </section>
+
+        <section className="bw-campus-section" aria-labelledby="bw-campus-title">
+          <div className="bw-campus-heading">
+            <span className="bw-studio-label">01 / BUILT HERE, BRICK BY BRICK</span>
+            <h2 id="bw-campus-title">
+              A whole campus.
               <br />
-              <em>whole campus.</em>
-            </h1>
-            <p className="bw-lede">
-              The Illinois Main Quad is a complete, editable campus set: {hero.validation.partCount.toLocaleString()}{' '}
-              catalog-backed pieces, {showcase?.landmarkCount ?? 7} landmarks, {showcase?.characterCount ?? 21} brick
-              characters and {hero.validation.steps} verified build steps across a {hero.validation.footprintStuds[0]} ×{' '}
-              {hero.validation.footprintStuds[1]}-stud site.
+              <em>Not a single shortcut.</em>
+            </h2>
+            <p>
+              From a little “what if” to {hero.validation.partCount.toLocaleString()} pieces. Explore the Illinois Main
+              Quad, then make it your own.
             </p>
-            <div className="bw-hero-actions">
+          </div>
+          <div className="bw-campus-layout">
+            <div className="bw-simple-hero-model">
+              <Hero demo={hero} initialStage="validated" autoPlay={!motionPaused} hideBrief />
+            </div>
+            <div className="bw-campus-notes">
+              <span className="bw-studio-label">THE ILLINOIS MAIN QUAD</span>
+              <p className="bw-campus-big-number">
+                {showcase?.landmarkCount ?? 7}
+                <span>
+                  landmarks.
+                  <br />
+                  One extraordinary little world.
+                </span>
+              </p>
+              <p>
+                {showcase?.characterCount ?? 21} brick characters. {hero.validation.steps} verified build steps. A{' '}
+                {hero.validation.footprintStuds[0]} × {hero.validation.footprintStuds[1]}-stud site you can orbit,
+                inspect, and edit.
+              </p>
               <a
-                className="bw-button primary bw-magnet"
+                className="bw-button primary"
                 href={hrefFor({ kind: 'explore', demoId: hero.id })}
                 onClick={link({ kind: 'explore', demoId: hero.id }, () =>
                   trackLanding({ name: 'demo.viewed', demoId: hero.id, surface: 'landing' }),
                 )}
               >
-                Explore the campus{' '}
-                <span className="bw-key" aria-hidden="true">
-                  &rarr;
-                </span>
+                Explore the campus <span aria-hidden="true">↗</span>
               </a>
-              <a
-                className="bw-button"
-                href={hrefFor({ kind: 'editor', blank: true })}
-                onClick={link({ kind: 'editor', blank: true }, () => {
-                  trackLanding({ name: 'landing.cta_selected', cta: 'start-blank' })
-                  trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
-                })}
-              >
-                Start building{' '}
-                <span className="bw-key" aria-hidden="true">
-                  &rarr;
-                </span>
-              </a>
-              <a
-                className="bw-button ghost"
-                href={hrefFor({ kind: 'describe' })}
-                onClick={link({ kind: 'describe' }, () =>
-                  trackLanding({ name: 'landing.cta_selected', cta: 'describe-build' }),
-                )}
-              >
-                Describe an idea
-              </a>
+              <span className="bw-campus-caption">Not a video. Try dragging the model.</span>
             </div>
-            <p className="bw-simple-trust">
-              One connected ModelDocument · zero collisions · 100% measured mass · no prerecorded animation.
-            </p>
-          </div>
-
-          <div className="bw-simple-hero-model">
-            {/* The four stages — brief, candidate, refinement, validated — are the
-                product in one moment: an idea typed in, a candidate proposed,
-                refined, and signed off by the kernel. `autoPlay` was off, which
-                left a still render beside a wall of text explaining what the
-                still render was.
-
-                It opens on the validated set so the first thing painted is the
-                finished, measured model, then replays how it got there. Motion
-                is gated on `prefers-reduced-motion`, stops the moment a visitor
-                takes the stage track over, and only runs while on screen. */}
-            <Hero demo={hero} initialStage="validated" hideBrief />
           </div>
         </section>
 
@@ -309,28 +337,6 @@ function AssemblyFilm({ demo }: { demo: DemoEntry }) {
   )
 }
 
-function HeroScatter() {
-  return (
-    <div className="bw-hero-scatter" aria-hidden="true">
-      {HERO_FRAGMENTS.map((fragment) => (
-        <span
-          key={fragment.id}
-          style={
-            {
-              '--bw-fragment-x': `${fragment.x}%`,
-              '--bw-fragment-y': `${fragment.y}%`,
-              '--bw-fragment-size': `${fragment.size}px`,
-              '--bw-fragment-width': `${Math.round(fragment.size * 1.72)}px`,
-              '--bw-fragment-delay': `${fragment.delay}ms`,
-              '--bw-fragment-travel': `${fragment.travel}px`,
-            } as CSSProperties
-          }
-        />
-      ))}
-    </div>
-  )
-}
-
 interface AssemblyBrick {
   id: string
   kind: 'building' | 'path' | 'site'
@@ -367,15 +373,6 @@ const ASSEMBLY_BRICKS: AssemblyBrick[] = Array.from({ length: 8 * 12 }, (_, inde
   }
 })
 
-const HERO_FRAGMENTS = Array.from({ length: 18 }, (_, index) => ({
-  id: index,
-  x: ((index * 47) % 112) - 6,
-  y: ((index * 31) % 94) + 3,
-  size: 10 + ((index * 7) % 4) * 5,
-  delay: index * -420,
-  travel: 18 + ((index * 13) % 46),
-}))
-
 function ProofStrip({ demo }: { demo: DemoEntry }) {
   const validation = demo.validation
   return (
@@ -407,9 +404,11 @@ function FeaturedBuilds() {
       <div className="bw-shell">
         <div className="bw-section-head bw-section-head-split">
           <div>
-            <span className="bw-section-index">Built and checked</span>
+            <span className="bw-studio-label">03 / THE BUILD COLLECTION</span>
             <h2 className="bw-display x2" id="bw-demos-title">
-              {DEMOS.length === 1 ? 'One flagship set.' : `One flagship. ${DEMOS.length - 1} more, built the same way.`}
+              A few worlds.
+              <br />
+              <em>Endless starting points.</em>
             </h2>
           </div>
           <a className="bw-button ghost" href={hrefFor({ kind: 'explore' })} onClick={link({ kind: 'explore' })}>
@@ -477,9 +476,11 @@ function ClosingSection() {
   return (
     <section className="bw-section bw-section-close bw-simple-close" aria-labelledby="bw-close-title">
       <div className="bw-shell bw-close">
-        <span className="bw-eyebrow accent">Your turn</span>
+        <span className="bw-studio-label">NO INSTRUCTIONS FOR YOUR IMAGINATION.</span>
         <h2 className="bw-display x1 bw-close-mark" id="bw-close-title">
-          Build at city scale.
+          Your next big thing.
+          <br />
+          <em>Starts small.</em>
         </h2>
         <div className="bw-hero-actions">
           <a
@@ -504,6 +505,9 @@ function ClosingSection() {
 function Colophon() {
   return (
     <footer className="bw-footer bw-shell">
+      <span className="bw-footer-wordmark" aria-hidden="true">
+        brickwright<span>®</span>
+      </span>
       <p>
         Demo assets were generated against catalog {DEMO_MANIFEST.catalogVersion} and rendered offline from compiled
         LDraw geometry.

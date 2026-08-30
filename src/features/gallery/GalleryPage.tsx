@@ -123,9 +123,7 @@ export default function GalleryPage({
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div className="bw-gallery-head">
-        <span className="bw-eyebrow accent">Published</span>
         <h1 className="bw-display x2">Gallery</h1>
-        <p className="bw-lede">Validated revisions only.</p>
       </div>
 
       <div className="bw-gallery-controls">

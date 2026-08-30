@@ -20,7 +20,8 @@ import {
   type VisibilityReport,
 } from './controlSurface'
 import { DerivedRunner, graphOf } from './derived'
-import { documentRayFromCanvas, lduDirectionToScene, lduToScene, MODEL_ROOT_SCALE, projectLdu } from './frame'
+import { documentRayFromCanvas, lduDirectionToScene, lduToScene, projectLdu } from './frame'
+import { boundsFrame } from './framing'
 import { IdPass, OcclusionCycle } from './idPass'
 import { PickRegistry } from './ids'
 import {
@@ -897,20 +898,20 @@ export function ViewportControls(props: ViewportControlsProps) {
           Math.max(...measured.map((entry) => entry.max[1])),
           Math.max(...measured.map((entry) => entry.max[2])),
         ]
-        const centre = lduToScene([(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2])
-        const extent = Math.max(8, Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * MODEL_ROOT_SCALE)
-        // Framing is a jump rather than a flight: this is the entry point an
-        // agent and a test call, and both want the camera where they asked for
-        // it by the time the call returns.
         const active = latest.current.camera
         const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
         const direction = active.position.clone().sub(orbit?.target ?? new THREE.Vector3())
-        if (direction.lengthSq() < 0.001) direction.set(0.86, 0.64, 1)
-        active.position.copy(centre.clone().add(direction.normalize().multiplyScalar(extent * 2.4)))
+        const fit = boundsFrame(
+          active as THREE.PerspectiveCamera | THREE.OrthographicCamera,
+          { min, max },
+          latest.current.size,
+          direction,
+        )
+        const centre = fit.target
+        active.position.copy(fit.position)
         active.lookAt(centre)
         if ((active as THREE.OrthographicCamera).isOrthographicCamera) {
-          const { width, height } = latest.current.size
-          ;(active as THREE.OrthographicCamera).zoom = Math.max(1, Math.min(width, height) / (extent * 1.9))
+          ;(active as THREE.OrthographicCamera).zoom = fit.zoom
         }
         if (orbit?.target) {
           orbit.target.copy(centre)

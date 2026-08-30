@@ -73,6 +73,22 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
 
   // Edit -------------------------------------------------------------------
   {
+    id: 'edit.reposition',
+    title: 'Pick up and reposition',
+    group: 'edit',
+    detail: 'Pick up one selected part, then click a surface to reseat it. Escape leaves it untouched.',
+    defaultChord: 'm',
+    keywords: 'move place relocate',
+  },
+  {
+    id: 'edit.build-another',
+    title: 'Build another like this',
+    group: 'edit',
+    detail: 'Place another of the selected part, with the same colour and orientation.',
+    defaultChord: 'b',
+    keywords: 'repeat stamp duplicate',
+  },
+  {
     id: 'edit.undo',
     title: 'Undo',
     group: 'edit',
@@ -243,7 +259,7 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
     id: 'view.fit',
     title: 'Frame the model',
     group: 'view',
-    detail: 'Reset to isometric and fit everything on screen.',
+    detail: 'Fit the model while keeping the current viewing direction.',
     defaultChord: 'f',
   },
   {

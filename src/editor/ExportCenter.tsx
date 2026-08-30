@@ -165,8 +165,8 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
       {open && (
         <div ref={panel as RefObject<HTMLDivElement>} className="export-panel" role="dialog" aria-modal="true" aria-label="Deliverables">
           <header>
-            <div><span className="eyebrow">DELIVERABLES</span><strong>Take the build with you</strong></div>
-            <button onClick={() => setOpen(false)} aria-label="Close deliverables"><X size={13} /></button>
+            <div><strong>Export</strong></div>
+            <button onClick={() => setOpen(false)} aria-label="Close export"><X size={13} /></button>
           </header>
 
           <div className={`release-readiness ${ready ? 'ready' : 'review'}`}>

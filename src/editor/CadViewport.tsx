@@ -16,7 +16,7 @@ import type { ArticulatedJoint } from '../cad/articulation'
 import { catalog } from '../cad/catalog'
 import { getPartBounds } from '../cad/geometry'
 import { canonicalTransform } from '../cad/math'
-import { resolvePlacement, type PlacementRequest } from '../cad/placement'
+import { resolvePlacement, type PlacementRequest, type ResolvedPlacement } from '../cad/placement'
 import { findSnapCandidates, getWorldConnectors } from '../cad/snapping'
 import type { Bounds, CadOperation, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
 import { poseRefusal, validateDocument } from '../cad/validation'
@@ -42,6 +42,7 @@ import {
   sceneMatrix,
   sceneToLdu,
 } from './render/frame'
+import { boundsFrame } from './render/framing'
 import { registerPickable, unregisterPickable } from './render/idPass'
 import { PickRegistry } from './render/ids'
 import { MotionController, MOTION_DURATIONS, playbackStepAt, staggeredProgress, turntableAngle } from './render/motion'
@@ -327,7 +328,7 @@ function PlacementController({
   root: React.RefObject<THREE.Group | null>
   /** Client point a catalogue drag was released at, if the part came from a drop. */
   dropAt?: { clientX: number; clientY: number } | null
-  onPreview: (transform: Transform | null) => void
+  onPreview: (placement: ResolvedPlacement | null) => void
   onPlace: (transform: Transform, legal?: boolean, reason?: string) => boolean | void
   onDropHandled?: (committed: boolean) => void
 }) {
@@ -348,7 +349,19 @@ function PlacementController({
       if (!root.current) return
       raycaster.setFromCamera(pointer, camera)
       const hits = raycaster.intersectObject(root.current, true)
-      const surface = hits.find((entry) => entry.object.visible && (entry.object as THREE.Mesh).isMesh)
+      // Ghosts, proposals and helper meshes must never become placement surfaces.
+      // In particular, raycasting our own preview caused a ghost to jump back to
+      // the ground as soon as it had appeared over a stud.
+      const surface = hits.find((entry) => {
+        const id = partIdOf(entry.object, entry.instanceId)
+        return (
+          entry.object.visible &&
+          (entry.object as THREE.Mesh).isMesh &&
+          id &&
+          model.parts[id] &&
+          id !== request.movingPartId
+        )
+      })
       let point: Vec3 | null = null
       let partId: string | null = null
       if (surface) {
@@ -371,7 +384,7 @@ function PlacementController({
         return
       }
       resolved.current = { transform: placement.transform, legal: placement.legal, reason: placement.reason }
-      onPreview(placement.legal ? placement.transform : null)
+      onPreview(placement)
       element.style.cursor = placement.legal ? 'crosshair' : 'not-allowed'
     }
 
@@ -384,6 +397,7 @@ function PlacementController({
       sample()
     }
     const onDown = (event: PointerEvent) => {
+      if (event.button !== 0) return
       onMove(event)
       pressedAt.current = { x: event.clientX, y: event.clientY }
     }
@@ -393,6 +407,7 @@ function PlacementController({
       // An orbit drag is not a placement. Only a click that stayed put commits.
       if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
       if (event.button !== 0) return
+      onMove(event)
       if (resolved.current) onPlace(resolved.current.transform, resolved.current.legal, resolved.current.reason)
     }
 
@@ -658,8 +673,6 @@ function CameraRig({
       (current.min[1] + current.max[1]) / 2,
       (current.min[2] + current.max[2]) / 2,
     ])
-    const extent = Math.max(...current.size.map((amount) => amount * MODEL_ROOT_SCALE), 8)
-    const distance = Math.max(24, extent * 2.05)
     const directions: Record<CameraView, THREE.Vector3> = {
       isometric: new THREE.Vector3(0.86, 0.64, 1),
       front: new THREE.Vector3(0, 0, 1),
@@ -668,7 +681,13 @@ function CameraRig({
       right: new THREE.Vector3(1, 0, 0),
       top: new THREE.Vector3(0, 1, 0.001),
     }
-    const destination = center.clone().add(directions[view].normalize().multiplyScalar(distance))
+    const fit = boundsFrame(
+      camera as THREE.PerspectiveCamera | THREE.OrthographicCamera,
+      current,
+      { width, height },
+      directions[view],
+    )
+    const destination = fit.position
     const duration = framed.current ? motion.duration('camera') : 0
     if (duration > 0) {
       flight.current = {
@@ -689,7 +708,7 @@ function CameraRig({
       }
     }
     if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
-      ;(camera as THREE.OrthographicCamera).zoom = Math.max(8, Math.min(width, height) / (extent * 1.9))
+      ;(camera as THREE.OrthographicCamera).zoom = fit.zoom
     }
     camera.updateProjectionMatrix()
     // An empty document has nothing to frame yet, so the opening frame is still
@@ -711,10 +730,15 @@ function CameraRig({
         (current.min[1] + current.max[1]) / 2,
         (current.min[2] + current.max[2]) / 2,
       ])
-      const extent = Math.max(...current.size.map((amount) => amount * MODEL_ROOT_SCALE), 8)
-      camera.position.copy(
-        center.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(Math.max(24, extent * 2.05))),
+      const fit = boundsFrame(
+        camera as THREE.PerspectiveCamera | THREE.OrthographicCamera,
+        current,
+        latest.current,
+        camera.position.clone().sub(controls.current.target),
       )
+      camera.position.copy(fit.position)
+      if ((camera as THREE.OrthographicCamera).isOrthographicCamera)
+        (camera as THREE.OrthographicCamera).zoom = fit.zoom
       camera.lookAt(center)
       camera.updateProjectionMatrix()
       controls.current.target.copy(center)
@@ -724,8 +748,29 @@ function CameraRig({
     return () => cancelAnimationFrame(raf)
   }, [camera, hasParts])
 
+  const previousSize = useRef(size)
+  useEffect(() => {
+    const previous = previousSize.current
+    previousSize.current = size
+    if (!previous.width || !previous.height || !controls.current) return
+    if (previous.width === size.width && previous.height === size.height) return
+    flight.current = null
+    if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+      ;(camera as THREE.OrthographicCamera).zoom *=
+        Math.min(size.width, size.height) / Math.min(previous.width, previous.height)
+    } else {
+      const direction = camera.position.clone().sub(controls.current.target)
+      const before = boundsFrame(camera as THREE.PerspectiveCamera, latest.current.bounds, previous, direction)
+      const after = boundsFrame(camera as THREE.PerspectiveCamera, latest.current.bounds, size, direction)
+      const ratio = after.position.distanceTo(after.target) / before.position.distanceTo(before.target)
+      camera.position.sub(controls.current.target).multiplyScalar(ratio).add(controls.current.target)
+    }
+    camera.updateProjectionMatrix()
+    controls.current.update()
+  }, [camera, size])
+
   return (
-    <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={3} maxDistance={400} />
+    <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={1} maxDistance={100000} />
   )
 }
 
@@ -751,6 +796,9 @@ interface CadViewportProps {
   renderMode: RenderMode
   /** A catalog part armed for click-to-place, or null when nothing is armed. */
   placement?: PlacementRequest | null
+  /** Full physical model, including temporarily hidden parts, for collision truth. */
+  placementDocument?: ModelDocument
+  onPlacementPreview?: (placement: ResolvedPlacement | null) => void
   dropAt?: { clientX: number; clientY: number } | null
   onDropHandled?: (committed: boolean) => void
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
@@ -796,6 +844,8 @@ export function CadViewport({
   cameraResetKey,
   renderMode,
   placement,
+  placementDocument,
+  onPlacementPreview,
   dropAt,
   onDropHandled,
   onSelect,
@@ -831,7 +881,22 @@ export function CadViewport({
 
   /** Pose being dragged right now, shown live instead of waiting for the commit. */
   const [dragPreview, setDragPreview] = useState<ReadonlyMap<string, Transform> | null>(null)
-  const [placementPreview, setPlacementPreview] = useState<Transform | null>(null)
+  const [placementPreview, setPlacementPreview] = useState<ResolvedPlacement | null>(null)
+  const reportPlacement = useCallback(
+    (preview: ResolvedPlacement | null) => {
+      setPlacementPreview(preview)
+      onPlacementPreview?.(preview)
+    },
+    [onPlacementPreview],
+  )
+  const placementModel = useMemo(() => {
+    const model = placementDocument ?? document
+    if (!placement?.movingPartId) return model
+    return {
+      ...model,
+      parts: Object.fromEntries(Object.entries(model.parts).filter(([id]) => id !== placement.movingPartId)),
+    }
+  }, [document, placementDocument, placement?.movingPartId])
   const [overlay, setOverlay] = useState<OverlayState>({ marquee: null, lasso: null, sweep: null })
   const [jointPreview, setJointPreview] = useState<Map<string, Transform> | null>(null)
   const [activeJointEdge, setActiveJointEdge] = useState<string | null>(null)
@@ -964,11 +1029,12 @@ export function CadViewport({
 
   const appearanceFor = useCallback(
     (partId: string): PartAppearance => {
+      if (partId === placement?.movingPartId) return 'ghost'
       if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
       if (renderMode === 'silhouette') return 'silhouette'
       return selected.has(partId) ? 'selected' : 'solid'
     },
-    [invalidIds, renderMode, selected],
+    [invalidIds, renderMode, selected, placement?.movingPartId],
   )
 
   // Framing follows what is drawn, so exploding the model reframes onto the
@@ -1253,8 +1319,12 @@ export function CadViewport({
           ))}
 
           {placement && placementDefinition && placementPreview && (
-            <group matrixAutoUpdate={false} matrix={sceneMatrix(placementPreview)}>
-              <PartVisual definition={placementDefinition} colorCode={placement.color} appearance="ghost" />
+            <group matrixAutoUpdate={false} matrix={sceneMatrix(placementPreview.transform)}>
+              <PartVisual
+                definition={placementDefinition}
+                colorCode={placement.color}
+                appearance={placementPreview.legal ? 'ghost' : 'invalid'}
+              />
             </group>
           )}
 
@@ -1344,11 +1414,11 @@ export function CadViewport({
         {placement && onPlace && (
           <PlacementController
             request={placement}
-            model={document}
+            model={placementModel}
             gridLdu={gridLdu}
             root={root}
             dropAt={dropAt}
-            onPreview={setPlacementPreview}
+            onPreview={reportPlacement}
             onPlace={onPlace}
             onDropHandled={onDropHandled}
           />

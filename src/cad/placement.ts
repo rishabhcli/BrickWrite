@@ -1,13 +1,8 @@
 import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './catalog'
 import { partPoseCollides } from './collisionGate'
 import { getDocumentBounds, getPartBounds, snapLdu } from './geometry'
-import {
-  approachOccupancy,
-  bestSnapTransform,
-  findSnapCandidates,
-  type SnapCandidate,
-  type SnapSolverOptions,
-} from './snapping'
+import { multiplyMat3 } from './math'
+import { approachOccupancy, findSnapCandidates, type SnapCandidate, type SnapSolverOptions } from './snapping'
 import type { Bounds, ModelDocument, PartInstance, Transform, Vec3 } from './types'
 import { poseRefusal } from './validation'
 
@@ -38,6 +33,10 @@ export interface PlacementRequest {
   readonly color: number
   /** Quarter turns applied by the operator while the ghost follows the cursor. */
   readonly quarterTurns: number
+  /** Reuse an existing part's full orientation, not only its yaw. */
+  readonly basis?: Transform['basis']
+  /** A reseat previews without deleting or cloning the original part. */
+  readonly movingPartId?: string
 }
 
 export interface PlacementHit {
@@ -260,12 +259,14 @@ export function resolvePlacement(
     surfaceY = studs ?? getPartBounds(target).min[1]
   }
 
-  const cursor: Transform = {
+  let cursor: Transform = {
     position: [snapLdu(hit.point[0], gridLdu), originForSurface(definition, surfaceY), snapLdu(hit.point[2], gridLdu)],
-    basis: rotatedBasis(request.quarterTurns),
+    basis: request.basis
+      ? multiplyMat3(rotatedBasis(request.quarterTurns), request.basis)
+      : rotatedBasis(request.quarterTurns),
   }
-  const candidate: PartInstance = {
-    id: '__placement__',
+  const initialCandidate: PartInstance = {
+    id: request.movingPartId ?? '__placement__',
     definitionId: definition.canonicalId,
     color: request.color,
     transform: cursor,
@@ -274,6 +275,13 @@ export function resolvePlacement(
     provenance: 'human',
     protected: false,
   }
+  // For a sideways/tilted part, its catalogue underside is no longer the
+  // underside in world space. Ground its measured, rotated geometry instead.
+  if (request.basis) {
+    const box = getPartBounds({ ...initialCandidate, transform: { ...cursor, position: [0, 0, 0] } })
+    cursor = { ...cursor, position: [cursor.position[0], surfaceY - box.max[1], cursor.position[2]] }
+  }
+  const candidate = { ...initialCandidate, transform: cursor }
   const minRadius = Math.max(8, gridLdu)
   let accepted: Transform | null = null
   let blockedByCollision = false
@@ -293,15 +301,21 @@ export function resolvePlacement(
     accepted = mate.transform
     blockedByCollision = mate.blockedByCollision
   } else {
-    accepted = bestSnapTransform(candidate, model, cursor, { radiusLdu: minRadius })
-    if (accepted && partPoseCollides(model, { ...candidate, transform: accepted })) {
-      accepted = null
+    // Ground placement must not snap to an underside beneath the ground, and
+    // a blocked first candidate must not hide a later usable one.
+    for (const entry of findSnapCandidates(candidate, model, cursor, { radiusLdu: minRadius })) {
+      const seated = { ...candidate, transform: entry.transform }
+      if (getPartBounds(seated).max[1] > 0.05 || partPoseCollides(model, seated)) continue
+      accepted = entry.transform
+      break
     }
   }
   const mated = accepted !== null
-  const legal = mated || !target
+  const groundCollision = !target && !mated && partPoseCollides(model, candidate)
+  const legal = mated || (!target && !groundCollision)
   let reason: PlacementReason
   if (mated) reason = 'mated'
+  else if (groundCollision) reason = 'collision'
   else if (!target) reason = 'ground'
   else if (blockedByCollision) reason = 'collision'
   else {

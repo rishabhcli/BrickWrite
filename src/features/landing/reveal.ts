@@ -229,14 +229,14 @@ export function useFilmStage() {
  * leave the lamp parked — a wandering highlight on a phone is not craft,
  * it is a fingerprint smudge.
  */
-export function usePointerField<T extends HTMLElement>() {
+export function usePointerField<T extends HTMLElement>(paused = false) {
   const ref = useRef<T | null>(null)
   const reduced = useReducedMotion()
   const [live, setLive] = useState(false)
 
   useEffect(() => {
     const root = ref.current
-    if (!root || reduced || typeof window === 'undefined' || !window.matchMedia) {
+    if (!root || reduced || paused || typeof window === 'undefined' || !window.matchMedia) {
       setLive(false)
       return
     }
@@ -348,7 +348,7 @@ export function usePointerField<T extends HTMLElement>() {
       scroller?.removeEventListener('scroll', paintScrollOffset)
       document.documentElement.removeEventListener('mouseleave', onLeave)
     }
-  }, [reduced])
+  }, [reduced, paused])
 
   return { ref, live }
 }
@@ -357,12 +357,12 @@ export function usePointerField<T extends HTMLElement>() {
  * Apple / Linear card tilt: the tile leans a few degrees toward the pointer
  * and the thumbnail drifts with it. Reduced motion and coarse pointers skip it.
  */
-export function usePointerTilt(ref: { current: HTMLElement | null }) {
+export function usePointerTilt(ref: { current: HTMLElement | null }, paused = false) {
   const reduced = useReducedMotion()
 
   useEffect(() => {
     const element = ref.current
-    if (!element || reduced || typeof window === 'undefined' || !window.matchMedia) return
+    if (!element || reduced || paused || typeof window === 'undefined' || !window.matchMedia) return
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
 
     const onMove = (event: PointerEvent) => {
@@ -384,5 +384,5 @@ export function usePointerTilt(ref: { current: HTMLElement | null }) {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerleave', onLeave)
     }
-  }, [reduced, ref])
+  }, [reduced, ref, paused])
 }

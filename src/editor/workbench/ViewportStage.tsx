@@ -1,6 +1,9 @@
-import { Check, Eye, X } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { Check, ChevronDown, Eye, X } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
 import { searchCatalog } from '../../cad/catalog'
+import type { ResolvedPlacement } from '../../cad/placement'
+import { PlacementBar } from './PlacementBar'
+import { PartContextMenu } from './PartContextMenu'
 import { cadEngine } from '../../cad/engine'
 import { CadViewport, type RenderMode } from '../CadViewport'
 import { Slot } from './ExtensionRegistry'
@@ -58,6 +61,16 @@ export function ViewportStage({
 }) {
   const { state, renderMode, placement, placementDefinition } = workbench
   const [dragOver, setDragOver] = useState(false)
+  const [preview, setPreview] = useState<ResolvedPlacement | null>(null)
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  const closeContext = useCallback(
+    (focusCanvas = true) => {
+      setContextPoint(null)
+      if (focusCanvas) requestAnimationFrame(() => workbench.canvasRef.current?.focus({ preventScroll: true }))
+    },
+    [workbench.canvasRef],
+  )
   const activeProposal =
     state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
   const pendingProposalIds = new Set(state.proposals.map((proposal) => proposal.id))
@@ -91,6 +104,30 @@ export function ViewportStage({
       className={`viewport-shell ${dragOver ? 'drag-target' : ''}`}
       aria-label="Three-dimensional CAD viewport"
       data-render-mode={renderMode}
+      onPointerDownCapture={(event) => {
+        pointerStart.current = { x: event.clientX, y: event.clientY }
+      }}
+      onContextMenu={(event) => {
+        if (!(event.target instanceof HTMLCanvasElement)) return
+        event.preventDefault()
+        if (placement) return
+        const start = pointerStart.current
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return
+        const rect = event.target.getBoundingClientRect()
+        const hit = window.__brickwrightRenderer?.pick(event.clientX - rect.left, event.clientY - rect.top)
+        if (hit?.partId && !state.selection.includes(hit.partId)) cadEngine.setSelection([hit.partId])
+        if (!hit?.partId) cadEngine.setSelection([])
+        setContextPoint({ x: event.clientX, y: event.clientY })
+      }}
+      onKeyDownCapture={(event) => {
+        if (!(event.target instanceof HTMLCanvasElement) || placement) return
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault()
+          event.stopPropagation()
+          const rect = event.target.getBoundingClientRect()
+          setContextPoint({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+        }
+      }}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('application/x-brickwright-part')) return
         event.preventDefault()
@@ -111,6 +148,8 @@ export function ViewportStage({
         cameraResetKey={workbench.cameraResetKey}
         renderMode={renderMode}
         placement={placement}
+        placementDocument={state.document}
+        onPlacementPreview={setPreview}
         dropAt={workbench.dropPoint}
         onDropHandled={workbench.finishDrop}
         onSelect={workbench.handleSelect}
@@ -155,7 +194,22 @@ export function ViewportStage({
         <i />
       </div>
       <div className="viewport-title-block">
-        <p>{workbench.selectionLabel}</p>
+        {state.selection.length ? (
+          <button
+            className="selection-actions-trigger"
+            aria-label="Selection actions"
+            aria-expanded={Boolean(contextPoint)}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              setContextPoint({ x: rect.left, y: rect.bottom + 6 })
+            }}
+          >
+            {workbench.selectedDefinition?.name ?? `${state.selection.length} parts selected`}
+            <ChevronDown size={12} />
+          </button>
+        ) : (
+          <p>No selection</p>
+        )}
       </div>
       <ViewportQuickControls workbench={workbench} />
       <div className="viewport-metrics">
@@ -186,21 +240,8 @@ export function ViewportStage({
         </div>
       )}
 
-      {placement && placementDefinition && (
-        <div className="placement-hud" role="status">
-          <span className="placement-pulse" />
-          <div>
-            <small>PLACING</small>
-            <strong>{placementDefinition.name}</strong>
-          </div>
-          <p>
-            Click in the viewport to drop it · <kbd>R</kbd> turn · <kbd>Esc</kbd> cancel
-          </p>
-          <button onClick={workbench.cancelPlacement} aria-label="Cancel placement">
-            <X size={13} />
-          </button>
-        </div>
-      )}
+      {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
+      {contextPoint && <PartContextMenu workbench={workbench} point={contextPoint} onClose={closeContext} />}
 
       {dragOver && (
         <div className="viewport-droptarget" role="status">

@@ -130,6 +130,7 @@ export function useWorkbench() {
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [toast, setToast] = useState<WorkbenchNotice | null>(null)
   const [placement, setPlacement] = useState<PlacementRequest | null>(null)
+  const [repeatPlacement, setRepeatPlacement] = usePersistentState('placement.repeat.v1', true)
   const [clipboard, setClipboard] = useState<PartClipboard | null>(null)
   // Where a catalogue drag was released, when the armed part came from a drop.
   // The viewport commits it from its own mount effect; see `dropPart`.
@@ -552,17 +553,54 @@ export function useWorkbench() {
       }
       const definition = catalog.get(placement.definitionId)
       if (!definition) return false
+      if (placement.movingPartId) {
+        const original = cadEngine.getDocument().parts[placement.movingPartId]
+        if (!original) {
+          setPlacement(null)
+          return false
+        }
+        const pose = canonicalisePose(transform)
+        if (
+          !posesEqual(original.transform, pose) &&
+          !commitTransforms('Reposition part', [{ type: 'part.transform', partId: original.id, transform: pose }])
+        )
+          return false
+        setPlacement(null)
+        setDropPoint(null)
+        cadEngine.setSelection([original.id])
+        return true
+      }
       const part = buildPartAt(definition, canonicalisePose(transform))
       if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
         cadEngine.setSelection([part.id])
-        // Staying armed is what makes building a wall bearable: the operator keeps
-        // clicking, and each click lands another brick.
+        if (!repeatPlacement) setPlacement(null)
         return true
       }
       return false
     },
-    [buildPartAt, dispatch, placement],
+    [buildPartAt, commitTransforms, dispatch, placement, repeatPlacement],
   )
+
+  /** Pick up a placed brick, or use it as the palette for another of the same. */
+  const pickUpSelection = useCallback((copy = false) => {
+    const snapshot = cadEngine.getSnapshot()
+    if (snapshot.selection.length !== 1) return false
+    const part = snapshot.document.parts[snapshot.selection[0]]
+    if (!part) return false
+    setActiveColor(part.color)
+    setPlacement({
+      definitionId: part.definitionId,
+      color: part.color,
+      basis: part.transform.basis,
+      quarterTurns: 0,
+      ...(copy ? {} : { movingPartId: part.id }),
+    })
+    setToolRaw('select')
+    setConnect(IDLE_CONNECT)
+    setDropPoint(null)
+    requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }))
+    return true
+  }, [])
 
   /**
    * Immediate add, used by the palette's `+` button and by keyboard flows.
@@ -747,7 +785,7 @@ export function useWorkbench() {
   }, [commitTransforms])
 
   useEffect(() => {
-    setPlacement((current) => (current ? { ...current, color: activeColor } : current))
+    setPlacement((current) => (current && !current.movingPartId ? { ...current, color: activeColor } : current))
   }, [activeColor])
 
   // Transient tools and hidden ids belong to a document, not to the next opened project.
@@ -1133,8 +1171,8 @@ export function useWorkbench() {
       : 'Click a part · shift-drag to box select'
   }, [connect.stage, gridLdu, placement, state.selection.length, tool])
 
-  const rotatePlacement = useCallback(() => {
-    setPlacement((current) => (current ? { ...current, quarterTurns: current.quarterTurns + 1 } : current))
+  const rotatePlacement = useCallback((direction = 1) => {
+    setPlacement((current) => (current ? { ...current, quarterTurns: current.quarterTurns + direction } : current))
   }, [])
 
   const cancelPlacement = useCallback(() => {
@@ -1143,8 +1181,9 @@ export function useWorkbench() {
   }, [])
 
   const fitView = useCallback(() => {
-    setCameraView('isometric')
-    setCameraResetKey((value) => value + 1)
+    if (!window.__brickwrightRenderer?.frameParts(Object.keys(cadEngine.getDocument().parts))) {
+      setCameraResetKey((value) => value + 1)
+    }
   }, [])
 
   return {
@@ -1172,6 +1211,9 @@ export function useWorkbench() {
     placementDefinition,
     setPlacement,
     rotatePlacement,
+    repeatPlacement,
+    setRepeatPlacement,
+    pickUpSelection,
     cancelPlacement,
     dropPoint,
     finishDrop,

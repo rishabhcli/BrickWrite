@@ -223,7 +223,7 @@ try {
   // -- first run explains itself, once ---------------------------------------
   // A dense CAD console that opens with no orientation is a usability defect,
   // and one that reopens every session is a different one. Both are asserted.
-  const welcome = page.getByRole('dialog', { name: 'Build something real' })
+  const welcome = page.getByRole('dialog', { name: 'Before the first brick' })
   await welcome.waitFor({ timeout: 10_000 })
   await page.getByRole('button', { name: 'Start building' }).click()
   await welcome.waitFor({ state: 'hidden' })
@@ -414,7 +414,7 @@ try {
   const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()
   await openWorkspace(page)
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
-  const shortcutDialog = page.getByRole('dialog', { name: 'Work at the speed of thought' })
+  const shortcutDialog = page.getByRole('dialog', { name: 'Keyboard' })
   await shortcutDialog.waitFor()
   await page.keyboard.press('g')
   assert(
@@ -1343,7 +1343,7 @@ try {
     guide.includes('every part after the first step attaches'),
     'Build guide omitted the build-order verification claim',
   )
-  await page.locator('.export-panel > header').getByRole('button', { name: 'Close deliverables' }).click()
+  await page.locator('.export-panel > header').getByRole('button', { name: 'Close export' }).click()
   // Put the menu away again; left open it covers the docks the run drives next.
   await closeWorkspace(page)
 
