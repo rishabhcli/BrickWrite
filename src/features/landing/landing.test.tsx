@@ -123,8 +123,9 @@ describe('the landing page', () => {
     expect(container.querySelector('.bw-landing')?.getAttribute('data-pointer')).toBe('off')
     expect(container.querySelector('.bw-atmosphere')).toBeTruthy()
     expect(container.querySelector('.bw-studs')?.getAttribute('aria-hidden')).toBe('true')
-    expect(container.querySelectorAll('.bw-cursor')).toHaveLength(2)
-    expect(container.querySelector('.bw-cursor > span')).toBeTruthy()
+    // The custom cursor was withdrawn: the page uses the system pointer, so
+    // there is nothing here to assert beyond its absence.
+    expect(container.querySelectorAll('.bw-cursor')).toHaveLength(0)
     expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-reticle')).toBeTruthy()

@@ -48,7 +48,8 @@ export function LandingPage() {
         <section className="bw-studio-hero" aria-labelledby="bw-hero-title">
           <div className="bw-studio-topline">
             <span>
-              <i aria-hidden="true" /> A NEW SPACE FOR YOUR NEXT BIG IDEA
+              <i aria-hidden="true" /> {hero.validation.partCount.toLocaleString()} pieces · {hero.validation.steps}{' '}
+              verified build steps
             </span>
             <button
               type="button"
@@ -65,14 +66,12 @@ export function LandingPage() {
           <div className="bw-studio-intro">
             <div className="bw-studio-copy">
               <h1 id="bw-hero-title">
-                Small bricks.
+                Rebuild the
                 <br />
-                <em>Big possibilities.</em>
+                <em>whole campus.</em>
               </h1>
               <p className="bw-studio-description">
-                That thing in your head? Let’s build it.
-                <br />
-                An open canvas for brick-built worlds. Imagine, experiment, and make every piece click.
+                Every piece is a real LDraw part. Nothing lands unless it clutches something already standing.
               </p>
               <div className="bw-hero-actions">
                 <a
