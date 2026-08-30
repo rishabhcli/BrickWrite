@@ -19,7 +19,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { cadEngine } from '../../cad/engine'
 import type { RenderMode } from '../CadViewport'
 import { ExportCenter } from '../ExportCenter'
@@ -50,6 +50,16 @@ export function Toolbar({
   const chord = (id: string) => formatChord(shortcuts[id])
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const menuRoot = useRef<HTMLDivElement>(null)
+  const workspaceTrigger = useRef<HTMLButtonElement>(null)
+
+  // Closing the popover destroys whichever item was activated, so the caret has
+  // to be handed back to the trigger first. A modal opened from in here reads
+  // `document.activeElement` when it mounts to know where to return focus on
+  // close; without this it would capture `<body>` and strand a keyboard user.
+  const closeWorkspace = useCallback(() => {
+    workspaceTrigger.current?.focus()
+    setWorkspaceOpen(false)
+  }, [])
 
   useEffect(() => {
     if (!workspaceOpen) return
@@ -57,7 +67,7 @@ export function Toolbar({
       if (!menuRoot.current?.contains(event.target as Node)) setWorkspaceOpen(false)
     }
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setWorkspaceOpen(false)
+      if (event.key === 'Escape') closeWorkspace()
     }
     window.addEventListener('pointerdown', dismiss)
     window.addEventListener('keydown', escape)
@@ -65,7 +75,7 @@ export function Toolbar({
       window.removeEventListener('pointerdown', dismiss)
       window.removeEventListener('keydown', escape)
     }
-  }, [workspaceOpen])
+  }, [workspaceOpen, closeWorkspace])
 
   return (
     <nav className="toolrail toolrail-simple" aria-label="CAD tools">
@@ -163,6 +173,7 @@ export function Toolbar({
       <div className="workspace-menu" ref={menuRoot}>
         <button
           type="button"
+          ref={workspaceTrigger}
           className={`workspace-trigger ${workspaceOpen ? 'active' : ''}`}
           aria-expanded={workspaceOpen}
           aria-haspopup="dialog"
@@ -250,7 +261,7 @@ export function Toolbar({
                   label="Command deck"
                   detail={chord('project.command-deck')}
                   onClick={() => {
-                    setWorkspaceOpen(false)
+                    closeWorkspace()
                     workbench.setModal('core:command-deck')
                   }}
                 />
@@ -259,7 +270,7 @@ export function Toolbar({
                   label="Keyboard shortcuts"
                   detail={chord('help.shortcuts')}
                   onClick={() => {
-                    setWorkspaceOpen(false)
+                    closeWorkspace()
                     workbench.setModal('core:shortcuts')
                   }}
                 />

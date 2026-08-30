@@ -62,7 +62,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
     setOpen('none')
     setConfirmDelete(null)
   }, [])
-  const panel = useFocusTrap(open !== 'none', { onEscape: close, restoreTo: trigger })
+  const panel = useFocusTrap(open !== 'none', { onEscape: close, restoreTo: trigger, key: open })
 
   // The field tracks the document, so an agent rename or an undo is reflected
   // rather than leaving a stale value the operator might re-commit.

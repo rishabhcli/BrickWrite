@@ -37,6 +37,16 @@ export interface FocusTrapOptions {
    * answer whenever the trap was opened by a button.
    */
   restoreTo?: RefObject<HTMLElement | null>
+  /**
+   * Identity of the container being trapped.
+   *
+   * A trap that stays active while its dialog swaps one panel for another —
+   * the project menu moving from Projects to Licences — would otherwise keep
+   * its listeners on the panel that just unmounted, leaving Escape and Tab
+   * bound to a detached node. Pass whatever names the current panel and the
+   * trap re-binds when it changes.
+   */
+  key?: string | number
 }
 
 /**
@@ -46,7 +56,7 @@ export interface FocusTrapOptions {
  */
 export function useFocusTrap(
   active: boolean,
-  { onEscape, restoreTo }: FocusTrapOptions = {},
+  { onEscape, restoreTo, key }: FocusTrapOptions = {},
 ): RefObject<HTMLElement | null> {
   const containerRef = useRef<HTMLElement | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
@@ -96,7 +106,7 @@ export function useFocusTrap(
       const target = restoreTo?.current ?? previouslyFocused.current
       if (target && target.isConnected) target.focus()
     }
-  }, [active, restoreTo])
+  }, [active, restoreTo, key])
 
   return containerRef
 }
