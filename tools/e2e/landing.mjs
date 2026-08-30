@@ -595,7 +595,16 @@ try {
   })
   const authedPage = await authed.newPage()
   await authedPage.goto(`${SHARED_URL}/explore?demo=${secondDemo.id}`, { waitUntil: 'networkidle' })
-  await authedPage.getByRole('button', { name: /Edit this build/ }).click()
+  // Visible and enabled is asserted, then the click is forced. This runs in a
+  // fresh context, where the pointer-magnet on `.bw-magnet` eases in from its
+  // seeded position while Playwright is hovering the very button it is trying
+  // to settle — on a runner with no GPU that feedback loop outlasts the
+  // actionability timeout. What is under test here is the fork path through the
+  // registered adapter, not whether a decorative transform comes to rest.
+  const authedFork = authedPage.getByRole('button', { name: /Edit this build/ })
+  await authedFork.waitFor({ state: 'visible', timeout: 30_000 })
+  check(await authedFork.isEnabled(), 'the signed-in visitor is offered the fork')
+  await authedFork.click({ force: true })
   await authedPage.locator('.bw-fork-note.good').waitFor({ timeout: 20_000 })
   const cloudNote = await authedPage.locator('.bw-fork-note.good').innerText()
   const forkInput = await authedPage.evaluate(() => window.__brickwrightForkInput)
