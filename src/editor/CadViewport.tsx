@@ -1,12 +1,21 @@
-import { ContactShadows, GizmoHelper, GizmoViewport, Grid, OrbitControls, OrthographicCamera, PerspectiveCamera, TransformControls } from '@react-three/drei'
+import {
+  ContactShadows,
+  GizmoHelper,
+  GizmoViewport,
+  Grid,
+  OrbitControls,
+  OrthographicCamera,
+  PerspectiveCamera,
+  TransformControls,
+} from '@react-three/drei'
 import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { ArticulatedJoint } from '../cad/articulation'
 import { catalog } from '../cad/catalog'
-import { getPartBounds, snapTransformPosition } from '../cad/geometry'
-import { canonicalTransform, eulerDegreesFromBasis, IDENTITY_BASIS } from '../cad/math'
+import { getPartBounds } from '../cad/geometry'
+import { canonicalTransform } from '../cad/math'
 import { resolvePlacement, type PlacementRequest } from '../cad/placement'
 import { findSnapCandidates, getWorldConnectors } from '../cad/snapping'
 import type { Bounds, CadOperation, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
@@ -15,7 +24,12 @@ import { EDGE_RENDER_BUDGET, INDIVIDUAL_SELECTION_LIMIT, PartBatch, planBatches,
 import { createStudioEnvironment, type EnvironmentName } from './environment'
 import { PartVisual, setTransmissionEnabled, TRANSMISSION_DRAW_BUDGET, type PartAppearance } from './PartVisual'
 import { BlockingMarker, JointManipulators, SectionManipulators } from './render/Manipulators'
-import { canvasPointOf, ViewportControls, type OverlayState, type ViewportControlsHandle } from './render/ViewportControls'
+import {
+  canvasPointOf,
+  ViewportControls,
+  type OverlayState,
+  type ViewportControlsHandle,
+} from './render/ViewportControls'
 import { ViewportKeyboard } from './render/ViewportKeyboard'
 import type { RendererControlSurface } from './render/controlSurface'
 import {
@@ -36,11 +50,10 @@ import type { SectionPlane } from './render/sectionPlanes'
 import type { SweepResult } from './render/sweep'
 import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
 import {
-  applyRigidMotion,
-  planRotateSelection,
-  planTranslateSelection,
-  resolvePivot,
-  snapPosition,
+  DEFAULT_MANIPULATION,
+  manipulationPose,
+  planGizmoTransforms,
+  type ManipulationOptions,
 } from './workbench/transform'
 
 export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
@@ -139,9 +152,11 @@ function SelectionManipulator({
   onPreview,
   onCommitPart,
   onCommitGroup,
+  preferences,
 }: {
   parts: readonly PartInstance[]
   tool: 'move' | 'rotate'
+  preferences: ManipulationOptions
   gridLdu: number
   document: ModelDocument
   onPreview: (preview: ReadonlyMap<string, Transform> | null) => void
@@ -149,18 +164,12 @@ function SelectionManipulator({
   onCommitGroup: (operations: CadOperation[]) => void
 }) {
   const part = parts[0]
-  const grouped = parts.length > 1
-  const startPose = useMemo(() => {
-    if (!grouped || !parts.length) return parts[0]!.transform
-    return { position: resolvePivot(parts, 'centre'), basis: IDENTITY_BASIS }
-  }, [grouped, parts])
+  const startPose = useMemo(() => manipulationPose(parts, preferences), [parts, preferences])
   const [proxy, setProxy] = useState<THREE.Object3D | null>(null)
-  const controls = useRef<{ getHelper?: () => THREE.Object3D } & THREE.Object3D | null>(null)
+  const controls = useRef<({ getHelper?: () => THREE.Object3D; reset?: () => void } & THREE.Object3D) | null>(null)
   const dragging = useRef(false)
-  const latestPart = useRef<Transform | null>(null)
-  const latestGroup = useRef<CadOperation[] | null>(null)
-  const lastSnapKey = useRef('')
-  const { camera, size } = useThree()
+  const latest = useRef<CadOperation[]>([])
+  const { camera, size, gl } = useThree()
 
   useEffect(() => {
     const probe = () => {
@@ -177,9 +186,11 @@ function SelectionManipulator({
       })
       if (box.isEmpty()) return { attached: true, screenPixels: 0 }
       const corners: THREE.Vector3[] = []
-      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
-        corners.push(new THREE.Vector3(x, y, z).project(camera))
-      }
+      for (const x of [box.min.x, box.max.x])
+        for (const y of [box.min.y, box.max.y])
+          for (const z of [box.min.z, box.max.z]) {
+            corners.push(new THREE.Vector3(x, y, z).project(camera))
+          }
       const xs = corners.map((corner) => ((corner.x + 1) / 2) * size.width)
       const ys = corners.map((corner) => ((1 - corner.y) / 2) * size.height)
       const origin = proxy.getWorldPosition(new THREE.Vector3()).project(camera)
@@ -190,61 +201,63 @@ function SelectionManipulator({
       }
     }
     ;(window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo = probe
-    return () => { delete (window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo }
+    return () => {
+      delete (window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo
+    }
   }, [camera, proxy, size.height, size.width])
 
-  useEffect(() => {
-    if (!proxy || dragging.current) return
+  const resetProxy = useCallback(() => {
+    if (!proxy) return
     ROOT_MATRIX.clone().multiply(sceneMatrix(startPose)).decompose(proxy.position, proxy.quaternion, proxy.scale)
     proxy.updateMatrixWorld(true)
-  }, [proxy, startPose, tool])
+  }, [proxy, startPose])
 
-  const readPose = useCallback((): Transform => {
-    proxy!.updateMatrixWorld(true)
-    return documentTransformOf(ROOT_MATRIX_INVERSE.clone().multiply(proxy!.matrixWorld))
-  }, [proxy])
+  useEffect(() => {
+    if (!dragging.current) resetProxy()
+  }, [resetProxy, tool])
 
-  const resolvePart = useCallback(
-    (raw: Transform): Transform => {
-      if (!part) return raw
-      if (tool === 'rotate') return raw
-      const quantized: Transform = { position: snapTransformPosition(raw.position, gridLdu), basis: raw.basis }
-      const key = `${quantized.position.join(',')}|${canonicalTransform({ position: [0, 0, 0], basis: quantized.basis })}`
-      if (key === lastSnapKey.current && latestPart.current) return latestPart.current
-      lastSnapKey.current = key
-      const candidates = findSnapCandidates(part, model, quantized, { radiusLdu: Math.max(6, gridLdu * 0.8) })
-      for (const candidate of candidates) {
-        if (!poseRefusal(model, part.id, candidate.transform)) return candidate.transform
-      }
-      return quantized
-    },
-    [gridLdu, model, part, tool],
-  )
+  useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !dragging.current) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      dragging.current = false
+      controls.current?.reset?.()
+      // Release the native control too, otherwise pointer motion after Escape
+      // keeps moving its proxy and OrbitControls stays disabled until mouse-up.
+      gl.domElement.dispatchEvent(new PointerEvent('pointerup', { button: 0, bubbles: true }))
+      latest.current = []
+      onPreview(null)
+      resetProxy()
+    }
+    window.addEventListener('keydown', cancel, true)
+    return () => window.removeEventListener('keydown', cancel, true)
+  }, [gl, onPreview, resetProxy])
 
-  const resolveGroup = useCallback(
-    (raw: Transform): { preview: Map<string, Transform>; operations: CadOperation[] } => {
-      if (tool === 'rotate') {
-        const yaw = eulerDegreesFromBasis(raw.basis)[1]
-        return {
-          preview: applyRigidMotion(parts, [0, 0, 0], yaw),
-          operations: planRotateSelection(parts, yaw),
-        }
-      }
-      const delta = snapPosition(
-        [
-          raw.position[0] - startPose.position[0],
-          raw.position[1] - startPose.position[1],
-          raw.position[2] - startPose.position[2],
-        ],
-        gridLdu,
-      )
-      return {
-        preview: applyRigidMotion(parts, delta, 0),
-        operations: planTranslateSelection(parts, delta),
-      }
-    },
-    [gridLdu, parts, startPose.position, tool],
-  )
+  const resolve = useCallback((): CadOperation[] => {
+    if (!proxy) return []
+    proxy.updateMatrixWorld(true)
+    const raw = documentTransformOf(ROOT_MATRIX_INVERSE.clone().multiply(proxy.matrixWorld))
+    const operations = planGizmoTransforms(parts, startPose, raw, {
+      rotating: tool === 'rotate',
+      gridLdu,
+      locks: preferences.locks,
+    })
+    const operation = operations[0]
+    // A disabled snap must stay disabled. Axis locks cannot be defeated by a mate.
+    if (
+      parts.length === 1 &&
+      operation?.type === 'part.transform' &&
+      tool === 'move' &&
+      preferences.connectorSnap &&
+      !Object.values(preferences.locks).some(Boolean)
+    ) {
+      const candidates = findSnapCandidates(part, model, operation.transform, { radiusLdu: Math.max(6, gridLdu * 0.8) })
+      const candidate = candidates.find((entry) => !poseRefusal(model, part.id, entry.transform))
+      if (candidate) return [{ ...operation, transform: candidate.transform }]
+    }
+    return operations
+  }, [gridLdu, model, part, parts, preferences, proxy, startPose, tool])
 
   if (!proxy || !part) return <object3D ref={setProxy} />
 
@@ -255,37 +268,35 @@ function SelectionManipulator({
         ref={controls as never}
         object={proxy}
         mode={tool === 'rotate' ? 'rotate' : 'translate'}
-        space={grouped || tool !== 'rotate' ? 'world' : 'local'}
-        rotationSnap={Math.PI / 12}
+        space="local"
+        showX={tool === 'rotate' || !preferences.locks.x}
+        showY={tool === 'rotate' || !preferences.locks.y}
+        showZ={tool === 'rotate' || !preferences.locks.z}
+        rotationSnap={(preferences.rotationStep * Math.PI) / 180}
         size={1.05}
         onMouseDown={() => {
           dragging.current = true
-          lastSnapKey.current = ''
+          latest.current = []
         }}
         onObjectChange={() => {
-          if (grouped) {
-            const next = resolveGroup(readPose())
-            latestGroup.current = next.operations
-            onPreview(next.preview)
-            return
-          }
-          const next = resolvePart(readPose())
-          latestPart.current = next
-          onPreview(poseRefusal(model, part.id, next) ? null : new Map([[part.id, next]]))
+          if (!dragging.current) return
+          const next = resolve()
+          latest.current = next
+          onPreview(
+            new Map(next.flatMap((op) => (op.type === 'part.transform' ? [[op.partId, op.transform] as const] : []))),
+          )
         }}
         onMouseUp={() => {
+          if (!dragging.current) return
           dragging.current = false
-          if (grouped) {
-            const next = latestGroup.current ?? resolveGroup(readPose()).operations
-            latestGroup.current = null
-            onPreview(null)
-            if (next.length) onCommitGroup(next)
-            return
-          }
-          const next = latestPart.current ?? resolvePart(readPose())
-          latestPart.current = null
+          const next = latest.current
+          latest.current = []
           onPreview(null)
-          if (!poseRefusal(model, part.id, next)) onCommitPart(part.id, next)
+          // Also restores the handle after a refused or zero-length drag.
+          resetProxy()
+          if (!next.length) return
+          if (parts.length === 1 && next[0]?.type === 'part.transform') onCommitPart(next[0].partId, next[0].transform)
+          else onCommitGroup(next)
         }}
       />
     </>
@@ -317,7 +328,7 @@ function PlacementController({
   /** Client point a catalogue drag was released at, if the part came from a drop. */
   dropAt?: { clientX: number; clientY: number } | null
   onPreview: (transform: Transform | null) => void
-  onPlace: (transform: Transform, legal?: boolean, reason?: string) => void
+  onPlace: (transform: Transform, legal?: boolean, reason?: string) => boolean | void
   onDropHandled?: (committed: boolean) => void
 }) {
   const { camera, gl, raycaster, pointer } = useThree()
@@ -366,10 +377,14 @@ function PlacementController({
 
     const onMove = (event: PointerEvent) => {
       const rect = element.getBoundingClientRect()
-      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1)
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      )
       sample()
     }
     const onDown = (event: PointerEvent) => {
+      onMove(event)
       pressedAt.current = { x: event.clientX, y: event.clientY }
     }
     const onUp = (event: PointerEvent) => {
@@ -403,8 +418,8 @@ function PlacementController({
       )
       sample()
       const landing = resolved.current
-      if (landing) onPlace(landing.transform, landing.legal, landing.reason)
-      onDropHandled?.(Boolean(landing))
+      const placed = landing ? onPlace(landing.transform, landing.legal, landing.reason) !== false : false
+      onDropHandled?.(Boolean(landing?.legal && placed))
     }
 
     return () => {
@@ -647,10 +662,10 @@ function CameraRig({
     const distance = Math.max(24, extent * 2.05)
     const directions: Record<CameraView, THREE.Vector3> = {
       isometric: new THREE.Vector3(0.86, 0.64, 1),
-      front: new THREE.Vector3(0, 0.25, 1),
-      rear: new THREE.Vector3(0, 0.25, -1),
-      left: new THREE.Vector3(-1, 0.25, 0),
-      right: new THREE.Vector3(1, 0.25, 0),
+      front: new THREE.Vector3(0, 0, 1),
+      rear: new THREE.Vector3(0, 0, -1),
+      left: new THREE.Vector3(-1, 0, 0),
+      right: new THREE.Vector3(1, 0, 0),
       top: new THREE.Vector3(0, 1, 0.001),
     }
     const destination = center.clone().add(directions[view].normalize().multiplyScalar(distance))
@@ -682,7 +697,6 @@ function CameraRig({
     framed.current = hasParts
     // Opening a different document, or exploding the one that is open, both
     // replace what is on screen, so both are legitimate reasons to reframe.
-     
   }, [camera, documentId, exploded, resetKey, view])
 
   // A document that arrives empty and is then filled — a fresh project, an
@@ -698,7 +712,9 @@ function CameraRig({
         (current.min[2] + current.max[2]) / 2,
       ])
       const extent = Math.max(...current.size.map((amount) => amount * MODEL_ROOT_SCALE), 8)
-      camera.position.copy(center.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(Math.max(24, extent * 2.05))))
+      camera.position.copy(
+        center.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(Math.max(24, extent * 2.05))),
+      )
       camera.lookAt(center)
       camera.updateProjectionMatrix()
       controls.current.target.copy(center)
@@ -708,7 +724,9 @@ function CameraRig({
     return () => cancelAnimationFrame(raf)
   }, [camera, hasParts])
 
-  return <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={3} maxDistance={400} />
+  return (
+    <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={3} maxDistance={400} />
+  )
 }
 
 /** Optional animation channels. Every one settles deterministically. */
@@ -741,8 +759,9 @@ interface CadViewportProps {
   onTransform: (partId: string, transform: Transform) => void
   /** Multi-part gizmo commit — one rigid transaction. */
   onCommitTransforms?: (operations: CadOperation[]) => void
-  onNudgeSelection?: (dx: number, dz: number) => void
-  onPlace?: (transform: Transform, legal?: boolean, reason?: string) => void
+  onNudgeSelection?: (dx: number, dz: number, dy?: number) => void
+  transformPreferences?: ManipulationOptions
+  onPlace?: (transform: Transform, legal?: boolean, reason?: string) => boolean | void
   onJointNudge?: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
   onCanvasReady?: (canvas: HTMLCanvasElement) => void
 
@@ -785,6 +804,7 @@ export function CadViewport({
   onTransform,
   onCommitTransforms,
   onNudgeSelection,
+  transformPreferences = DEFAULT_MANIPULATION,
   onPlace,
   onJointNudge,
   onCanvasReady,
@@ -942,11 +962,14 @@ export function CadViewport({
     return ids
   }, [selection, renderMode, invalidIds])
 
-  const appearanceFor = useCallback((partId: string): PartAppearance => {
-    if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
-    if (renderMode === 'silhouette') return 'silhouette'
-    return selected.has(partId) ? 'selected' : 'solid'
-  }, [invalidIds, renderMode, selected])
+  const appearanceFor = useCallback(
+    (partId: string): PartAppearance => {
+      if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
+      if (renderMode === 'silhouette') return 'silhouette'
+      return selected.has(partId) ? 'selected' : 'solid'
+    },
+    [invalidIds, renderMode, selected],
+  )
 
   // Framing follows what is drawn, so exploding the model reframes onto the
   // exploded extent rather than onto the assembled one it no longer shows.
@@ -971,11 +994,15 @@ export function CadViewport({
   // Shadow frusta and the contact patch follow the model: a fixed 40-unit box
   // clipped a tower's shadow off at the third storey.
   const shadowExtent = useMemo(
-    () => Math.min(180, Math.max(14, Math.max(...displayBounds.size.map((amount) => amount * MODEL_ROOT_SCALE)) * 0.85)),
+    () =>
+      Math.min(180, Math.max(14, Math.max(...displayBounds.size.map((amount) => amount * MODEL_ROOT_SCALE)) * 0.85)),
     [displayBounds],
   )
 
-  const plan = useMemo(() => planBatches(solidMembers, excluded, appearanceFor), [solidMembers, excluded, appearanceFor])
+  const plan = useMemo(
+    () => planBatches(solidMembers, excluded, appearanceFor),
+    [solidMembers, excluded, appearanceFor],
+  )
   const ghostPlan = useMemo(() => planBatches(ghostMembers, new Set<string>()), [ghostMembers])
 
   /**
@@ -1015,16 +1042,19 @@ export function CadViewport({
   }, [transmissionOverride, transparentBatches])
 
   const manipulatedParts = useMemo(() => {
-    if (renderMode !== 'beauty' || placing || (tool !== 'move' && tool !== 'rotate')) return []
+    if (!['beauty', 'orthographic'].includes(renderMode) || placing || (tool !== 'move' && tool !== 'rotate')) return []
     if (selection.length < 1 || selection.length > INDIVIDUAL_SELECTION_LIMIT) return []
     return selection.map((id) => document.parts[id]).filter((part): part is PartInstance => Boolean(part))
   }, [document.parts, placing, renderMode, selection, tool])
 
   const commitDrag = useCallback(
     (partId: string, transform: Transform) => {
-      onTransform(partId, transform)
+      // The gizmo has already resolved its frame, locks, pivot and snap choice.
+      // A second implicit snap at the controller would silently change that pose.
+      if (onCommitTransforms) onCommitTransforms([{ type: 'part.transform', partId, transform }])
+      else onTransform(partId, transform)
     },
-    [onTransform],
+    [onCommitTransforms, onTransform],
   )
 
   const commitGroupDrag = useCallback(
@@ -1084,302 +1114,320 @@ export function CadViewport({
 
   return (
     <>
-    <Canvas
-      shadows="soft"
-      dpr={[1, tier.maxDpr]}
-      gl={{ antialias: tier.antialias, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' }}
-      onCreated={({ gl, scene }) => {
-        gl.setClearColor('#0b1012')
-        gl.outputColorSpace = THREE.SRGBColorSpace
-        gl.toneMapping = THREE.ACESFilmicToneMapping
-        gl.toneMappingExposure = 0.92
-        // Plastic is read from what it reflects, not from what shines on it.
-        // The studio is generated rather than fetched, so the viewport stays
-        // self-contained; `ViewportControls` replaces it when the environment
-        // prop changes and owns its disposal.
-        scene.environment = createStudioEnvironment(gl)
-        scene.environmentIntensity = 0.55
-        const canvas = gl.domElement
-        canvas.tabIndex = 0
-        canvas.setAttribute('role', 'application')
-        canvas.setAttribute('aria-label', 'CAD viewport')
-        canvas.setAttribute('aria-describedby', 'viewport-keys')
-        canvas.setAttribute(
-          'aria-keyshortcuts',
-          'ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown Home',
-        )
-        onCanvasReady?.(canvas)
-        // Renderer counters are exposed so the browser acceptance run can assert
-        // that draw calls track distinct part/colour combinations rather than
-        // brick count.
-        //
-        // Auto-reset is turned off deliberately: the viewport draws the gizmo
-        // helper in its own pass, and per-frame reset means whichever pass
-        // finishes last is all a sampler would see. Accumulating and resetting
-        // explicitly makes the counters cover every pass between two samples.
-        gl.info.autoReset = false
-        ;(window as unknown as { __brickwrightRenderStats?: () => unknown }).__brickwrightRenderStats = () => {
-          const sample = {
-            drawCalls: gl.info.render.calls,
-            triangles: gl.info.render.triangles,
-            geometries: gl.info.memory.geometries,
-            programs: gl.info.programs?.length ?? 0,
+      <Canvas
+        shadows="soft"
+        dpr={[1, tier.maxDpr]}
+        gl={{
+          antialias: tier.antialias,
+          alpha: false,
+          preserveDrawingBuffer: true,
+          powerPreference: 'high-performance',
+        }}
+        onCreated={({ gl, scene }) => {
+          gl.setClearColor('#0b1012')
+          gl.outputColorSpace = THREE.SRGBColorSpace
+          gl.toneMapping = THREE.ACESFilmicToneMapping
+          gl.toneMappingExposure = 0.92
+          // Plastic is read from what it reflects, not from what shines on it.
+          // The studio is generated rather than fetched, so the viewport stays
+          // self-contained; `ViewportControls` replaces it when the environment
+          // prop changes and owns its disposal.
+          scene.environment = createStudioEnvironment(gl)
+          scene.environmentIntensity = 0.55
+          const canvas = gl.domElement
+          canvas.tabIndex = 0
+          canvas.setAttribute('role', 'application')
+          canvas.setAttribute('aria-label', 'CAD viewport')
+          canvas.setAttribute('aria-describedby', 'viewport-keys')
+          canvas.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown Home')
+          onCanvasReady?.(canvas)
+          // Renderer counters are exposed so the browser acceptance run can assert
+          // that draw calls track distinct part/colour combinations rather than
+          // brick count.
+          //
+          // Auto-reset is turned off deliberately: the viewport draws the gizmo
+          // helper in its own pass, and per-frame reset means whichever pass
+          // finishes last is all a sampler would see. Accumulating and resetting
+          // explicitly makes the counters cover every pass between two samples.
+          gl.info.autoReset = false
+          ;(window as unknown as { __brickwrightRenderStats?: () => unknown }).__brickwrightRenderStats = () => {
+            const sample = {
+              drawCalls: gl.info.render.calls,
+              triangles: gl.info.render.triangles,
+              geometries: gl.info.memory.geometries,
+              programs: gl.info.programs?.length ?? 0,
+            }
+            gl.info.reset()
+            return sample
           }
-          gl.info.reset()
-          return sample
-        }
-      }}
-      onPointerMissed={() => {
-        // Background clicks are resolved by the identity pass, which knows the
-        // difference between "no part here" and "a part the raycaster missed".
-      }}
-    >
-      {renderMode === 'orthographic'
-        ? <OrthographicCamera makeDefault near={0.1} far={2000} zoom={28} />
-        : <PerspectiveCamera makeDefault fov={34} near={0.1} far={2000} />}
-      <ViewportKeyboard
-        document={document}
-        selection={selection}
-        tool={tool}
-        gridLdu={gridLdu}
-        visibility={visibility}
-        sectionPlanes={sectionPlanes}
-        placementPreview={placementPreview}
-        placing={Boolean(placement)}
-        onSelect={onSelect}
-        onTransform={onTransform}
-        onNudgeSelection={onNudgeSelection}
-        onPlace={onPlace}
-        onJointNudge={onJointNudge}
-        onSectionPlanesChange={setSectionPlanes}
-      />
+        }}
+        onPointerMissed={() => {
+          // Background clicks are resolved by the identity pass, which knows the
+          // difference between "no part here" and "a part the raycaster missed".
+        }}
+      >
+        {renderMode === 'orthographic' ? (
+          <OrthographicCamera makeDefault near={0.1} far={2000} zoom={28} />
+        ) : (
+          <PerspectiveCamera makeDefault fov={34} near={0.1} far={2000} />
+        )}
+        <ViewportKeyboard
+          document={document}
+          selection={selection}
+          tool={tool}
+          gridLdu={gridLdu}
+          visibility={visibility}
+          sectionPlanes={sectionPlanes}
+          placementPreview={placementPreview}
+          placing={Boolean(placement)}
+          onSelect={onSelect}
+          onTransform={onTransform}
+          onNudgeSelection={onNudgeSelection}
+          onPlace={onPlace}
+          onJointNudge={onJointNudge}
+          onSectionPlanesChange={setSectionPlanes}
+        />
 
-      {/* The environment carries the ambient term, so the lights here only
+        {/* The environment carries the ambient term, so the lights here only
           shape: a key that casts, a cool fill opposite it, and a rim that
           separates a dark model from a dark background. Their directions match
           the softbox baked into the environment, because shading and reflection
           disagreeing about where the light is makes plastic look painted. */}
-      <hemisphereLight intensity={0.22} color="#c3d6db" groundColor="#0b0f11" />
-      <directionalLight
-        position={[-16, 24, 13]}
-        intensity={1.7}
-        color="#fff4e6"
-        castShadow={tier.shadowMapSize > 0}
-        shadow-mapSize={[tier.shadowMapSize || 1, tier.shadowMapSize || 1]}
-        shadow-bias={-0.0006}
-        shadow-normalBias={0.02}
-        shadow-radius={3}
-        shadow-camera-left={-shadowExtent}
-        shadow-camera-right={shadowExtent}
-        shadow-camera-top={shadowExtent}
-        shadow-camera-bottom={-shadowExtent}
-        shadow-camera-far={shadowExtent * 6}
-      />
-      <directionalLight position={[18, 9, -17]} intensity={0.42} color="#8cddeb" />
-      <directionalLight position={[2, -8, -14]} intensity={0.22} color="#9fb6bd" />
+        <hemisphereLight intensity={0.22} color="#c3d6db" groundColor="#0b0f11" />
+        <directionalLight
+          position={[-16, 24, 13]}
+          intensity={1.7}
+          color="#fff4e6"
+          castShadow={tier.shadowMapSize > 0}
+          shadow-mapSize={[tier.shadowMapSize || 1, tier.shadowMapSize || 1]}
+          shadow-bias={-0.0006}
+          shadow-normalBias={0.02}
+          shadow-radius={3}
+          shadow-camera-left={-shadowExtent}
+          shadow-camera-right={shadowExtent}
+          shadow-camera-top={shadowExtent}
+          shadow-camera-bottom={-shadowExtent}
+          shadow-camera-far={shadowExtent * 6}
+        />
+        <directionalLight position={[18, 9, -17]} intensity={0.42} color="#8cddeb" />
+        <directionalLight position={[2, -8, -14]} intensity={0.22} color="#9fb6bd" />
 
-      <group ref={root} rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
-        {/* The bulk of the model renders as instanced batches; only parts that
+        <group ref={root} rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
+          {/* The bulk of the model renders as instanced batches; only parts that
             need individual treatment are drawn on their own. */}
-        {plan.batches.map((descriptor) => (
-          <PartBatch
-            key={descriptor.key}
-            descriptor={descriptor}
-            showEdges={edgesEnabled}
-            silhouette={renderMode === 'silhouette'}
-            interactive={false}
-            idBase={idBases.get(descriptor.key)}
-            onSelect={onSelect}
-          />
-        ))}
+          {plan.batches.map((descriptor) => (
+            <PartBatch
+              key={descriptor.key}
+              descriptor={descriptor}
+              showEdges={edgesEnabled}
+              silhouette={renderMode === 'silhouette'}
+              interactive={false}
+              idBase={idBases.get(descriptor.key)}
+              onSelect={onSelect}
+            />
+          ))}
 
-        {/* Context outside an isolation, drawn faintly and left out of picking. */}
-        {ghostPlan.batches.map((descriptor) => (
-          <PartBatch
-            key={`ghost:${descriptor.key}`}
-            descriptor={descriptor}
-            showEdges={false}
-            silhouette={false}
-            interactive={false}
-            ghostOpacity={resolvedVisibility.ghostOpacity}
-            onSelect={onSelect}
-          />
-        ))}
+          {/* Context outside an isolation, drawn faintly and left out of picking. */}
+          {ghostPlan.batches.map((descriptor) => (
+            <PartBatch
+              key={`ghost:${descriptor.key}`}
+              descriptor={descriptor}
+              showEdges={false}
+              silhouette={false}
+              interactive={false}
+              ghostOpacity={resolvedVisibility.ghostOpacity}
+              onSelect={onSelect}
+            />
+          ))}
 
-        {plan.individual.map((member) => (
-          <PartObject
-            key={member.part.id}
-            part={member.part}
-            appearance={appearanceFor(member.part.id)}
-            displayTransform={dragPreview?.get(member.part.id) ?? member.transform}
-            interactive={false}
-            idBase={idBases.get(`solo:${member.part.id}`)}
-            onSelect={onSelect}
-          />
-        ))}
+          {plan.individual.map((member) => (
+            <PartObject
+              key={member.part.id}
+              part={member.part}
+              appearance={appearanceFor(member.part.id)}
+              displayTransform={dragPreview?.get(member.part.id) ?? member.transform}
+              interactive={false}
+              idBase={idBases.get(`solo:${member.part.id}`)}
+              onSelect={onSelect}
+            />
+          ))}
 
-        {placement && placementDefinition && placementPreview && (
-          <group matrixAutoUpdate={false} matrix={sceneMatrix(placementPreview)}>
-            <PartVisual definition={placementDefinition} colorCode={placement.color} appearance="ghost" />
-          </group>
-        )}
-
-        {pendingProposal && (
-          <GhostProposal key={pendingProposal.id} proposal={pendingProposal} current={document} revealed={revealCount} />
-        )}
-
-        {renderMode === 'connections' &&
-          Object.values(document.parts).flatMap((part) =>
-            getWorldConnectors(part).map((feature) => (
-              <mesh key={`${feature.partId}_${feature.id}`} position={feature.frame.position as unknown as [number, number, number]}>
-                <sphereGeometry args={[2.4, 10, 10]} />
-                <meshBasicMaterial
-                  color={feature.gender === 'male' ? '#f4aa45' : '#7cefe7'}
-                  depthTest={false}
-                  transparent
-                  opacity={0.9}
-                />
-              </mesh>
-            )),
+          {placement && placementDefinition && placementPreview && (
+            <group matrixAutoUpdate={false} matrix={sceneMatrix(placementPreview)}>
+              <PartVisual definition={placementDefinition} colorCode={placement.color} appearance="ghost" />
+            </group>
           )}
-      </group>
 
-      <ViewportControls
-        document={document}
-        selection={selection}
-        registry={registry}
-        visibility={visibility}
-        onVisibilityChange={setVisibility}
-        sectionPlanes={sectionPlanes}
-        onSectionPlanesChange={setSectionPlanes}
-        motion={motion}
-        environment={environmentOverride ?? environment}
-        quality={qualityOverride ?? quality}
-        onQuality={setTier}
-        onEnvironmentRequest={setEnvironmentOverride}
-        onQualityRequest={setQualityOverride}
-        onTransmissionRequest={setTransmissionOverride}
-        onJointPreview={handleJointPreview}
-        onOverlay={setOverlay}
-        onSelect={onSelect}
-        onSelectMany={selectMany}
-        onClearSelection={onClearSelection}
-        extent={Math.max(12, shadowExtent * 1.6)}
-        enabled={!placing}
-        handleRef={controlsHandle}
-        onJointsChange={handleJoints}
-        onSweepChange={handleSweep}
-      />
+          {pendingProposal && (
+            <GhostProposal
+              key={pendingProposal.id}
+              proposal={pendingProposal}
+              current={document}
+              revealed={revealCount}
+            />
+          )}
 
-      <AnimationDriver
-        motion={motion}
-        proposalPartCount={animation?.proposalReveal === false ? 0 : proposalPartCount}
-        turntable={Boolean(animation?.turntable)}
-        playback={Boolean(animation?.instructionPlayback)}
-        stepCount={document.steps.length}
-        onReveal={setRevealed}
-        onPlayback={setPlaybackStep}
-      />
+          {renderMode === 'connections' &&
+            Object.values(document.parts).flatMap((part) =>
+              getWorldConnectors(part).map((feature) => (
+                <mesh
+                  key={`${feature.partId}_${feature.id}`}
+                  position={feature.frame.position as unknown as [number, number, number]}
+                >
+                  <sphereGeometry args={[2.4, 10, 10]} />
+                  <meshBasicMaterial
+                    color={feature.gender === 'male' ? '#f4aa45' : '#7cefe7'}
+                    depthTest={false}
+                    transparent
+                    opacity={0.9}
+                  />
+                </mesh>
+              )),
+            )}
+        </group>
 
-      <SectionHandles planes={sectionPlanes} extent={Math.max(12, shadowExtent * 1.6)} controls={controlsHandle} />
-      <JointHandles joints={joints} activeEdgeId={activeJointEdge} sweep={sweep} controls={controlsHandle} />
-      <BlockingMarker pointLdu={sweep?.blocking?.pointLdu ?? null} />
-
-      {manipulatedParts.length > 0 && !activeJointEdge && (
-        <SelectionManipulator
-          key={manipulatedParts.map((part) => part.id).join('|')}
-          parts={manipulatedParts}
-          tool={tool === 'rotate' ? 'rotate' : 'move'}
-          gridLdu={gridLdu}
+        <ViewportControls
           document={document}
-          onPreview={setDragPreview}
-          onCommitPart={commitDrag}
-          onCommitGroup={commitGroupDrag}
+          selection={selection}
+          registry={registry}
+          visibility={visibility}
+          onVisibilityChange={setVisibility}
+          sectionPlanes={sectionPlanes}
+          onSectionPlanesChange={setSectionPlanes}
+          motion={motion}
+          environment={environmentOverride ?? environment}
+          quality={qualityOverride ?? quality}
+          onQuality={setTier}
+          onEnvironmentRequest={setEnvironmentOverride}
+          onQualityRequest={setQualityOverride}
+          onTransmissionRequest={setTransmissionOverride}
+          onJointPreview={handleJointPreview}
+          onOverlay={setOverlay}
+          onSelect={onSelect}
+          onSelectMany={selectMany}
+          onClearSelection={onClearSelection}
+          extent={Math.max(12, shadowExtent * 1.6)}
+          enabled={!placing}
+          handleRef={controlsHandle}
+          onJointsChange={handleJoints}
+          onSweepChange={handleSweep}
         />
-      )}
 
-      {placement && onPlace && (
-        <PlacementController
-          request={placement}
-          model={document}
-          gridLdu={gridLdu}
-          root={root}
-          dropAt={dropAt}
-          onPreview={setPlacementPreview}
-          onPlace={onPlace}
-          onDropHandled={onDropHandled}
+        <AnimationDriver
+          motion={motion}
+          proposalPartCount={animation?.proposalReveal === false ? 0 : proposalPartCount}
+          turntable={Boolean(animation?.turntable)}
+          playback={Boolean(animation?.instructionPlayback)}
+          stepCount={document.steps.length}
+          onReveal={setRevealed}
+          onPlayback={setPlaybackStep}
         />
-      )}
 
-      <Grid
-        position={[0, -0.02, 0]}
-        args={[240, 240]}
-        cellSize={1}
-        cellThickness={0.6}
-        cellColor="#253135"
-        sectionSize={4}
-        sectionThickness={1.15}
-        sectionColor="#3a4d51"
-        fadeDistance={110}
-        fadeStrength={1.6}
-        infiniteGrid
-      />
-      {/* Contact shadow scaled to the model, so a city block is not sitting on
+        <SectionHandles planes={sectionPlanes} extent={Math.max(12, shadowExtent * 1.6)} controls={controlsHandle} />
+        <JointHandles joints={joints} activeEdgeId={activeJointEdge} sweep={sweep} controls={controlsHandle} />
+        <BlockingMarker pointLdu={sweep?.blocking?.pointLdu ?? null} />
+
+        {manipulatedParts.length > 0 && !activeJointEdge && (
+          <SelectionManipulator
+            key={manipulatedParts.map((part) => part.id).join('|')}
+            parts={manipulatedParts}
+            preferences={transformPreferences}
+            tool={tool === 'rotate' ? 'rotate' : 'move'}
+            gridLdu={gridLdu}
+            document={document}
+            onPreview={setDragPreview}
+            onCommitPart={commitDrag}
+            onCommitGroup={commitGroupDrag}
+          />
+        )}
+
+        {placement && onPlace && (
+          <PlacementController
+            request={placement}
+            model={document}
+            gridLdu={gridLdu}
+            root={root}
+            dropAt={dropAt}
+            onPreview={setPlacementPreview}
+            onPlace={onPlace}
+            onDropHandled={onDropHandled}
+          />
+        )}
+
+        <Grid
+          position={[0, -0.02, 0]}
+          args={[240, 240]}
+          cellSize={1}
+          cellThickness={0.6}
+          cellColor="#253135"
+          sectionSize={4}
+          sectionThickness={1.15}
+          sectionColor="#3a4d51"
+          fadeDistance={110}
+          fadeStrength={1.6}
+          infiniteGrid
+        />
+        {/* Contact shadow scaled to the model, so a city block is not sitting on
           a 70-unit patch that ends halfway across it. */}
-      {tier.contactShadowResolution > 0 && (
-        <ContactShadows
-          position={[0, -0.014, 0]}
-          scale={Math.max(24, shadowExtent * 2.4)}
-          opacity={0.62}
-          blur={1.9}
-          far={Math.max(18, shadowExtent)}
-          resolution={tier.contactShadowResolution}
-          color="#000000"
+        {tier.contactShadowResolution > 0 && (
+          <ContactShadows
+            position={[0, -0.014, 0]}
+            scale={Math.max(24, shadowExtent * 2.4)}
+            opacity={0.62}
+            blur={1.9}
+            far={Math.max(18, shadowExtent)}
+            resolution={tier.contactShadowResolution}
+            color="#000000"
+          />
+        )}
+        <CameraRig
+          bounds={displayBounds}
+          documentId={document.id}
+          hasParts={members.length > 0}
+          exploded={renderMode === 'exploded'}
+          view={cameraView}
+          resetKey={cameraResetKey + captureFrameKey}
+          motion={motion}
+        />
+        <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
+        <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
+          <GizmoViewport axisColors={['#ff6a55', '#8bcf65', '#6bbbd6']} labelColor="#0c1112" />
+        </GizmoHelper>
+        <fog attach="fog" args={['#0b1012', 90, 220]} />
+      </Canvas>
+      {overlay.marquee && (
+        <div
+          className="marquee-box"
+          aria-hidden="true"
+          style={{
+            left: overlay.marquee.left,
+            top: overlay.marquee.top,
+            width: overlay.marquee.width,
+            height: overlay.marquee.height,
+          }}
         />
       )}
-      <CameraRig
-        bounds={displayBounds}
-        documentId={document.id}
-        hasParts={members.length > 0}
-        exploded={renderMode === 'exploded'}
-        view={cameraView}
-        resetKey={cameraResetKey + captureFrameKey}
-        motion={motion}
-      />
-      <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
-      <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
-        <GizmoViewport axisColors={['#ff6a55', '#8bcf65', '#6bbbd6']} labelColor="#0c1112" />
-      </GizmoHelper>
-      <fog attach="fog" args={['#0b1012', 90, 220]} />
-    </Canvas>
-    {overlay.marquee && (
-      <div
-        className="marquee-box"
-        aria-hidden="true"
-        style={{
-          left: overlay.marquee.left,
-          top: overlay.marquee.top,
-          width: overlay.marquee.width,
-          height: overlay.marquee.height,
-        }}
-      />
-    )}
-    {overlay.lasso && overlay.lasso.length > 1 && (
-      <svg className="lasso-overlay" aria-hidden="true" style={LASSO_STYLE}>
-        <polygon
-          points={overlay.lasso.map(([x, y]) => `${x},${y}`).join(' ')}
-          fill="rgba(124, 239, 231, 0.08)"
-          stroke="#7cefe7"
-          strokeWidth={1.2}
-          strokeDasharray="5 4"
-        />
-      </svg>
-    )}
-    {overlay.sweep && (
-      <div className="sweep-readout" role="status" data-blocked={overlay.sweep.blocked ? 'true' : 'false'} style={SWEEP_STYLE}>
-        {overlay.sweep.text}
-      </div>
-    )}
+      {overlay.lasso && overlay.lasso.length > 1 && (
+        <svg className="lasso-overlay" aria-hidden="true" style={LASSO_STYLE}>
+          <polygon
+            points={overlay.lasso.map(([x, y]) => `${x},${y}`).join(' ')}
+            fill="rgba(124, 239, 231, 0.08)"
+            stroke="#7cefe7"
+            strokeWidth={1.2}
+            strokeDasharray="5 4"
+          />
+        </svg>
+      )}
+      {overlay.sweep && (
+        <div
+          className="sweep-readout"
+          role="status"
+          data-blocked={overlay.sweep.blocked ? 'true' : 'false'}
+          style={SWEEP_STYLE}
+        >
+          {overlay.sweep.text}
+        </div>
+      )}
     </>
   )
 }
@@ -1461,7 +1509,11 @@ function JointHandles({
 }) {
   const { gl } = useThree()
   const onGrab = useCallback(
-    (edgeId: string, handle: Parameters<RendererControlSurface['beginJointDrag']>[1], event: ThreeEvent<PointerEvent>) => {
+    (
+      edgeId: string,
+      handle: Parameters<RendererControlSurface['beginJointDrag']>[1],
+      event: ThreeEvent<PointerEvent>,
+    ) => {
       const point = canvasPointOf(event, gl.domElement)
       controls.current?.surface.beginJointDrag(edgeId, handle, point.x, point.y)
     },
@@ -1469,12 +1521,7 @@ function JointHandles({
   )
   if (!joints.length) return null
   return (
-    <JointManipulators
-      joints={joints}
-      activeEdgeId={activeEdgeId}
-      blocked={Boolean(sweep?.blocking)}
-      onGrab={onGrab}
-    />
+    <JointManipulators joints={joints} activeEdgeId={activeEdgeId} blocked={Boolean(sweep?.blocking)} onGrab={onGrab} />
   )
 }
 

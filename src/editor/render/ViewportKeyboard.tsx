@@ -26,7 +26,7 @@ interface ViewportKeyboardProps {
   placing: boolean
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onTransform: (partId: string, transform: Transform) => void
-  onNudgeSelection?: (dx: number, dz: number) => void
+  onNudgeSelection?: (dx: number, dz: number, dy?: number) => void
   onPlace?: (transform: Transform) => void
   onJointNudge?: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
   onSectionPlanesChange: (next: readonly SectionPlane[]) => void
@@ -38,13 +38,23 @@ function orbitAround(camera: THREE.Camera, target: THREE.Vector3, yawDeg: number
   spherical.theta += THREE.MathUtils.degToRad(yawDeg)
   const horizon = Math.PI / 2
   const limit = THREE.MathUtils.degToRad(VIEWPORT_PITCH_LIMIT_DEG)
-  spherical.phi = THREE.MathUtils.clamp(spherical.phi - THREE.MathUtils.degToRad(pitchDeg), horizon - limit, horizon + limit)
+  spherical.phi = THREE.MathUtils.clamp(
+    spherical.phi - THREE.MathUtils.degToRad(pitchDeg),
+    horizon - limit,
+    horizon + limit,
+  )
   offset.setFromSpherical(spherical)
   camera.position.copy(target).add(offset)
   camera.lookAt(target)
 }
 
 function dollyToward(camera: THREE.Camera, target: THREE.Vector3, factor: number) {
+  if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+    const orthographic = camera as THREE.OrthographicCamera
+    orthographic.zoom = Math.min(1000, Math.max(0.1, orthographic.zoom / factor))
+    orthographic.updateProjectionMatrix()
+    return
+  }
   const offset = camera.position.clone().sub(target)
   const next = Math.min(400, Math.max(3, offset.length() * factor))
   offset.setLength(next)
@@ -130,14 +140,17 @@ export function ViewportKeyboard({
         const next = nextInOrder(order, selection[selection.length - 1], command.direction)
         if (next) onSelect(next, command.extend, false)
       } else if (command.kind === 'nudge') {
-        if (selection.length > 1 && onNudgeSelection) {
-          onNudgeSelection(command.dx, command.dz)
+        if (onNudgeSelection) {
+          onNudgeSelection(command.dx, command.dz, command.dy)
         } else {
           for (const partId of selection) {
             const part = model.parts[partId]
             if (!part) continue
             const [x, y, z] = part.transform.position
-            onTransform(partId, { ...part.transform, position: [x + command.dx, y, z + command.dz] })
+            onTransform(partId, {
+              ...part.transform,
+              position: [x + command.dx, y + (command.dy ?? 0), z + command.dz],
+            })
           }
         }
       } else if (command.kind === 'joint') {
@@ -152,7 +165,9 @@ export function ViewportKeyboard({
         const existing = sectionPlanes[0]
         const plane = existing ?? createSectionPlane('y', [0, 0, 0])
         const next = offsetPlaneAlongNormal(plane, command.offsetLdu)
-        onSectionPlanesChange(existing ? sectionPlanes.map((candidate) => (candidate.id === plane.id ? next : candidate)) : [next])
+        onSectionPlanesChange(
+          existing ? sectionPlanes.map((candidate) => (candidate.id === plane.id ? next : candidate)) : [next],
+        )
       } else if (command.kind === 'occlude') {
         const surface = window.__brickwrightRenderer
         if (surface) {

@@ -5833,8 +5833,8 @@ textarea:focus-visible,
 
 .transform-steppers {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   align-items: center;
 }
 .transform-steppers > label {
@@ -5859,7 +5859,7 @@ textarea:focus-visible,
 }
 .stepper-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 .stepper-row {
@@ -8509,3 +8509,53 @@ textarea:focus-visible,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Modelling controls stay within reach, without covering the building surface. */
+.viewport-quick-controls {
+  position: absolute;
+  top: 40px;
+  left: 14px;
+  z-index: 5;
+  display: grid;
+  gap: 5px;
+  max-width: calc(100% - 28px);
+}
+.viewport-control-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: max-content;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--line-hi);
+  border-radius: 4px;
+  background: rgba(9, 16, 18, .94);
+  box-shadow: 0 4px 16px #0003;
+  color: var(--muted);
+}
+.viewport-control-row > svg { margin-left: 6px; }
+.viewport-control-row button, .viewport-control-row select {
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: #0b1316;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.viewport-control-row button[aria-pressed="true"] {
+  border-color: #83e7ee40;
+  color: var(--cyan);
+  background: #83e7ee14;
+}
+.viewport-control-row button:hover:not(:disabled), .viewport-control-row select:hover { color: var(--ink); border-color: var(--line-hi); }
+.viewport-control-row button:disabled { opacity: .3; cursor: default; }
+.viewport-control-row :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.selection-panel, .transform-panel { align-content: start; }
+.selection-modes, .selection-actions { align-content: start; }

@@ -1,6 +1,7 @@
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
+  ArrowDownToLine,
   Copy,
   Crosshair,
   FlipHorizontal2,
@@ -36,6 +37,7 @@ import {
   type ReferenceFrame,
 } from './transform'
 import type { Workbench } from './useWorkbench'
+import { NumberField } from './NumberField'
 
 /**
  * Contextual transform controls.
@@ -49,7 +51,12 @@ import type { Workbench } from './useWorkbench'
 const FRAMES: Array<{ id: ReferenceFrame; label: string; hint: string; icon: React.ReactElement }> = [
   { id: 'world', label: 'WORLD', hint: 'Axes are the document’s own X, Y and Z.', icon: <Globe size={11} /> },
   { id: 'local', label: 'LOCAL', hint: 'Axes follow the part’s own orientation.', icon: <RotateCw size={11} /> },
-  { id: 'connector', label: 'MATE', hint: 'Axes follow the part’s first compiled connector frame.', icon: <Link2 size={11} /> },
+  {
+    id: 'connector',
+    label: 'MATE',
+    hint: 'Axes follow the part’s first compiled connector frame.',
+    icon: <Link2 size={11} />,
+  },
 ]
 
 const PIVOTS: Array<{ id: PivotMode; label: string; hint: string }> = [
@@ -80,6 +87,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
   const single = parts.length === 1 ? parts[0] : undefined
   const extent = useMemo(() => selectionExtent(state.document, state.selection), [state.document, state.selection])
   const numeric = single ? readNumericPose(single.transform) : null
+  const position = single ? single.transform.position : resolvePivot(parts, 'centre')
 
   /**
    * Alternative connector mates for the selected part at its current position.
@@ -90,71 +98,90 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
    */
   const candidates = useMemo(() => {
     if (!single) return []
-    return findSnapCandidates(single, state.document, single.transform, { radiusLdu: STUD_LDU * 1.5, maxCandidates: 8 }).filter(
-      (candidate) => !poseRefusal(state.document, single.id, candidate.transform),
-    )
+    return findSnapCandidates(single, state.document, single.transform, {
+      radiusLdu: STUD_LDU * 1.5,
+      maxCandidates: 8,
+    }).filter((candidate) => !poseRefusal(state.document, single.id, candidate.transform))
   }, [single, state.document])
 
-  const commit = useCallback((label: string, operations: CadOperation[]) => {
-    if (!operations.length) return
-    workbench.commitTransforms(label, operations)
-  }, [workbench])
+  const commit = useCallback(
+    (label: string, operations: CadOperation[]) => {
+      if (!operations.length) return
+      workbench.commitTransforms(label, operations)
+    },
+    [workbench],
+  )
 
-  const setPosition = useCallback((axis: 0 | 1 | 2, value: number) => {
-    if (!single || !numeric) return
-    const position = [...numeric.position] as [number, number, number]
-    position[axis] = value
-    workbench.handleTransform(single.id, numericPose(single.transform, { position }))
-  }, [numeric, single, workbench])
+  const setPosition = useCallback(
+    (axis: 0 | 1 | 2, value: number) => {
+      if (!Number.isFinite(value) || !parts.length) return
+      const delta: [number, number, number] = [0, 0, 0]
+      delta[axis] = value - position[axis]
+      commit(
+        'Position selection',
+        parts.map((part) => ({
+          type: 'part.transform',
+          partId: part.id,
+          transform: translatePose(part.transform, delta, 'world'),
+        })),
+      )
+    },
+    [commit, parts, position],
+  )
 
-  const setRotation = useCallback((axis: 0 | 1 | 2, value: number) => {
-    if (!single || !numeric) return
-    const rotation = [...numeric.rotationDegrees] as [number, number, number]
-    rotation[axis] = value
-    workbench.handleTransform(single.id, numericPose(single.transform, { rotationDegrees: rotation }))
-  }, [numeric, single, workbench])
+  const setRotation = useCallback(
+    (axis: 0 | 1 | 2, value: number) => {
+      if (!single || !numeric) return
+      const rotation = [...numeric.rotationDegrees] as [number, number, number]
+      rotation[axis] = value
+      workbench.handleTransform(single.id, numericPose(single.transform, { rotationDegrees: rotation }), true)
+    },
+    [numeric, single, workbench],
+  )
 
-  const nudge = useCallback((axis: 0 | 1 | 2, direction: 1 | -1) => {
-    if (!parts.length) return
-    const vector: [number, number, number] = [0, 0, 0]
-    vector[axis] = transformPrefs.translateStep * direction
-    const reference = single ? connectorFrame(single) : null
-    commit(
-      `Nudge ${parts.length} part${parts.length === 1 ? '' : 's'}`,
-      parts.map((part) => ({
-        type: 'part.transform',
-        partId: part.id,
-        transform: translatePose(
-          part.transform,
-          vector,
-          transformPrefs.frame,
-          transformPrefs.frame === 'connector' ? (connectorFrame(part) ?? reference ?? undefined) : undefined,
-        ),
-      })),
-    )
-  }, [commit, parts, single, transformPrefs.frame, transformPrefs.translateStep])
+  const nudge = useCallback(
+    (axis: 0 | 1 | 2, direction: 1 | -1) => {
+      if (!parts.length) return
+      const vector: [number, number, number] = [0, 0, 0]
+      vector[axis] = transformPrefs.translateStep * direction
+      if (transformPrefs.locks[(['x', 'y', 'z'] as const)[axis]]) return
+      const reference = transformPrefs.frame === 'local' ? parts[0].transform.basis : connectorFrame(parts[0])
+      commit(
+        `Nudge ${parts.length} part${parts.length === 1 ? '' : 's'}`,
+        parts.map((part) => ({
+          type: 'part.transform',
+          partId: part.id,
+          transform: translatePose(part.transform, vector, transformPrefs.frame, reference ?? undefined),
+        })),
+      )
+    },
+    [commit, parts, transformPrefs.frame, transformPrefs.translateStep, transformPrefs.locks],
+  )
 
-  const turn = useCallback((axis: 0 | 1 | 2, direction: 1 | -1) => {
-    if (!parts.length) return
-    const vector = [0, 0, 0] as [number, number, number]
-    vector[axis] = 1
-    const pivot = resolvePivot(parts, transformPrefs.pivot)
-    commit(
-      `Turn ${parts.length} part${parts.length === 1 ? '' : 's'} ${transformPrefs.rotationStep * direction}°`,
-      parts.map((part) => ({
-        type: 'part.transform',
-        partId: part.id,
-        transform: rotatePose(
-          part.transform,
-          vector,
-          transformPrefs.rotationStep * direction,
-          transformPrefs.frame,
-          transformPrefs.pivot === 'origin' && parts.length === 1 ? undefined : pivot,
-          transformPrefs.frame === 'connector' ? (connectorFrame(part) ?? undefined) : undefined,
-        ),
-      })),
-    )
-  }, [commit, parts, transformPrefs.frame, transformPrefs.pivot, transformPrefs.rotationStep])
+  const turn = useCallback(
+    (axis: 0 | 1 | 2, direction: 1 | -1) => {
+      if (!parts.length) return
+      const vector = [0, 0, 0] as [number, number, number]
+      vector[axis] = 1
+      const pivot = resolvePivot(parts, transformPrefs.pivot)
+      commit(
+        `Turn ${parts.length} part${parts.length === 1 ? '' : 's'} ${transformPrefs.rotationStep * direction}°`,
+        parts.map((part) => ({
+          type: 'part.transform',
+          partId: part.id,
+          transform: rotatePose(
+            part.transform,
+            vector,
+            transformPrefs.rotationStep * direction,
+            parts.length > 1 && transformPrefs.frame === 'local' ? 'connector' : transformPrefs.frame,
+            transformPrefs.pivot === 'origin' && parts.length === 1 ? undefined : pivot,
+            transformPrefs.frame === 'local' ? parts[0].transform.basis : (connectorFrame(parts[0]) ?? undefined),
+          ),
+        })),
+      )
+    },
+    [commit, parts, transformPrefs.frame, transformPrefs.pivot, transformPrefs.rotationStep],
+  )
 
   const runArray = useCallback(() => {
     const axis = ARRAY_AXES.find((entry) => entry.id === arrayAxis)!
@@ -166,22 +193,31 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
     })
   }, [arrayAxis, arrayCopies, arraySpacing, extent, workbench])
 
-  const align = useCallback((axis: 'x' | 'y' | 'z', edge: AlignEdge) => {
-    commit(`Align ${parts.length} parts`, planAlign(parts, axis, edge))
-  }, [commit, parts])
+  const align = useCallback(
+    (axis: 'x' | 'y' | 'z', edge: AlignEdge) => {
+      commit(`Align ${parts.length} parts`, planAlign(parts, axis, edge))
+    },
+    [commit, parts],
+  )
 
-  const distribute = useCallback((axis: 'x' | 'y' | 'z') => {
-    commit(`Distribute ${parts.length} parts`, planDistribute(parts, axis))
-  }, [commit, parts])
+  const distribute = useCallback(
+    (axis: 'x' | 'y' | 'z') => {
+      commit(`Distribute ${parts.length} parts`, planDistribute(parts, axis))
+    },
+    [commit, parts],
+  )
 
-  const applyCandidate = useCallback((index: number) => {
-    const candidate = candidates[index]
-    if (!candidate || !single) return
-    setCandidateIndex(index)
-    commit('Seat on connector', [
-      { type: 'part.transform', partId: single.id, transform: canonicalisePose(candidate.transform) },
-    ])
-  }, [candidates, commit, single])
+  const applyCandidate = useCallback(
+    (index: number) => {
+      const candidate = candidates[index]
+      if (!candidate || !single) return
+      setCandidateIndex(index)
+      commit('Seat on connector', [
+        { type: 'part.transform', partId: single.id, transform: canonicalisePose(candidate.transform) },
+      ])
+    },
+    [candidates, commit, single],
+  )
 
   const disabled = !parts.length
   const scope = disabled
@@ -214,7 +250,8 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
               title={frame.hint}
               onClick={() => setTransformPrefs({ ...transformPrefs, frame: frame.id })}
             >
-              {frame.icon}{frame.label}
+              {frame.icon}
+              {frame.label}
             </button>
           ))}
         </div>
@@ -242,33 +279,50 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             type="button"
             aria-pressed={transformPrefs.locks[axis]}
             className={transformPrefs.locks[axis] ? 'locked' : ''}
-            title={transformPrefs.locks[axis] ? `${axis.toUpperCase()} is locked; drags cannot change it` : `Lock ${axis.toUpperCase()}`}
-            onClick={() => setTransformPrefs({ ...transformPrefs, locks: { ...transformPrefs.locks, [axis]: !transformPrefs.locks[axis] } })}
+            title={
+              transformPrefs.locks[axis]
+                ? `${axis.toUpperCase()} is locked; drags cannot change it`
+                : `Lock ${axis.toUpperCase()}`
+            }
+            onClick={() =>
+              setTransformPrefs({
+                ...transformPrefs,
+                locks: { ...transformPrefs.locks, [axis]: !transformPrefs.locks[axis] },
+              })
+            }
           >
-            {transformPrefs.locks[axis] ? <Lock size={9} /> : <Unlock size={9} />}{axis.toUpperCase()}
+            {transformPrefs.locks[axis] ? <Lock size={9} /> : <Unlock size={9} />}
+            {axis.toUpperCase()}
           </button>
         ))}
         <button
           type="button"
           className={`snap-toggle ${transformPrefs.connectorSnap ? 'on' : ''}`}
           aria-pressed={transformPrefs.connectorSnap}
-          title={transformPrefs.connectorSnap
-            ? 'Committed poses are resolved onto real connectors'
-            : 'Committed poses are taken exactly as entered'}
+          title={
+            transformPrefs.connectorSnap
+              ? 'Committed poses are resolved onto real connectors'
+              : 'Committed poses are taken exactly as entered'
+          }
           onClick={() => setTransformPrefs({ ...transformPrefs, connectorSnap: !transformPrefs.connectorSnap })}
         >
           <Magnet size={10} /> SNAP
         </button>
       </div>
 
-      {single && numeric ? (
+      {!disabled ? (
         <>
+          {!single && (
+            <p className="transform-multi-note">
+              Position the selection’s centre. All {parts.length} parts move together.
+            </p>
+          )}
           <div className="fields-grid" role="group" aria-label="Position in LDraw units">
             {(['X', 'Y', 'Z'] as const).map((axis, index) => (
               <NumberField
-                key={`p_${axis}`}
+                key={`p_${axis}_${state.selection.join('|')}`}
                 label={axis}
-                value={numeric.position[index]}
+                value={position[index]}
                 suffix="LDU"
                 disabled={transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
                 onCommit={(value) => setPosition(index as 0 | 1 | 2, value)}
@@ -278,17 +332,19 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {/* Euler degrees are a display affordance only. The document stores an
               exact basis; these fields decompose it for editing and recompose on
               commit, through the same canonical path the gizmo uses. */}
-          <div className="fields-grid rotation-fields" role="group" aria-label="Rotation in degrees">
-            {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
-              <NumberField
-                key={`r_${axis}`}
-                label={axis}
-                value={numeric.rotationDegrees[index]}
-                suffix="°"
-                onCommit={(value) => setRotation(index as 0 | 1 | 2, value)}
-              />
-            ))}
-          </div>
+          {single && numeric && (
+            <div className="fields-grid rotation-fields" role="group" aria-label="Rotation in degrees">
+              {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
+                <NumberField
+                  key={`r_${axis}_${single.id}`}
+                  label={axis}
+                  value={numeric.rotationDegrees[index]}
+                  suffix="°"
+                  onCommit={(value) => setRotation(index as 0 | 1 | 2, value)}
+                />
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <p className="transform-multi-note">
@@ -317,8 +373,22 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {(['X', 'Y', 'Z'] as const).map((axis, index) => (
             <div key={axis} className="stepper-row">
               <em>{axis}</em>
-              <button type="button" disabled={disabled} aria-label={`Nudge ${axis} negative`} onClick={() => nudge(index as 0 | 1 | 2, -1)}>−</button>
-              <button type="button" disabled={disabled} aria-label={`Nudge ${axis} positive`} onClick={() => nudge(index as 0 | 1 | 2, 1)}>+</button>
+              <button
+                type="button"
+                disabled={disabled || transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
+                aria-label={`Nudge ${axis} negative`}
+                onClick={() => nudge(index as 0 | 1 | 2, -1)}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                disabled={disabled || transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
+                aria-label={`Nudge ${axis} positive`}
+                onClick={() => nudge(index as 0 | 1 | 2, 1)}
+              >
+                +
+              </button>
             </div>
           ))}
         </div>
@@ -340,14 +410,36 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {(['X', 'Y', 'Z'] as const).map((axis, index) => (
             <div key={`t${axis}`} className="stepper-row">
               <em>R{axis}</em>
-              <button type="button" disabled={disabled} aria-label={`Turn ${axis} negative`} onClick={() => turn(index as 0 | 1 | 2, -1)}>−</button>
-              <button type="button" disabled={disabled} aria-label={`Turn ${axis} positive`} onClick={() => turn(index as 0 | 1 | 2, 1)}>+</button>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Turn ${axis} negative`}
+                onClick={() => turn(index as 0 | 1 | 2, -1)}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Turn ${axis} positive`}
+                onClick={() => turn(index as 0 | 1 | 2, 1)}
+              >
+                +
+              </button>
             </div>
           ))}
         </div>
       </div>
 
       <div className="transform-actions">
+        <ActionButton
+          icon={<ArrowDownToLine size={12} />}
+          label="Ground"
+          shortcut="⇧D"
+          disabled={disabled}
+          reason="Select parts to rest on the ground."
+          onClick={() => workbench.groundSelection()}
+        />
         <ActionButton
           icon={<Copy size={12} />}
           label="Clone"
@@ -419,8 +511,16 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           </label>
           <label>
             <span>ALONG</span>
-            <select value={arrayAxis} onChange={(event) => setArrayAxis(event.target.value as 'x' | 'y' | 'z')} aria-label="Array axis">
-              {ARRAY_AXES.map((axis) => <option key={axis.id} value={axis.id}>{axis.label}</option>)}
+            <select
+              value={arrayAxis}
+              onChange={(event) => setArrayAxis(event.target.value as 'x' | 'y' | 'z')}
+              aria-label="Array axis"
+            >
+              {ARRAY_AXES.map((axis) => (
+                <option key={axis.id} value={axis.id}>
+                  {axis.label}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -453,7 +553,10 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
                 key={edge}
                 type="button"
                 disabled={parts.length < 2}
-                title={parts.length < 2 ? 'Select two or more parts to align.' : `Align ${edge} on ${axis.toUpperCase()}`}
+                aria-label={`Align ${axis.toUpperCase()} ${edge}`}
+                title={
+                  parts.length < 2 ? 'Select two or more parts to align.' : `Align ${edge} on ${axis.toUpperCase()}`
+                }
                 onClick={() => align(axis, edge)}
               >
                 {edge === 'min' ? '⟨' : edge === 'max' ? '⟩' : '·'}
@@ -462,10 +565,19 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             <button
               type="button"
               disabled={parts.length < 3}
-              title={parts.length < 3 ? 'Select three or more parts to distribute.' : `Distribute evenly on ${axis.toUpperCase()}`}
+              aria-label={`Distribute ${axis.toUpperCase()}`}
+              title={
+                parts.length < 3
+                  ? 'Select three or more parts to distribute.'
+                  : `Distribute evenly on ${axis.toUpperCase()}`
+              }
               onClick={() => distribute(axis)}
             >
-              {axis === 'y' ? <AlignVerticalDistributeCenter size={11} /> : <AlignHorizontalDistributeCenter size={11} />}
+              {axis === 'y' ? (
+                <AlignVerticalDistributeCenter size={11} />
+              ) : (
+                <AlignHorizontalDistributeCenter size={11} />
+              )}
             </button>
           </div>
         ))}
@@ -483,16 +595,21 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {candidates.length ? (
             <ul>
               {candidates.slice(0, 5).map((candidate, index) => (
-                <li key={`${index}:${candidate.movingFeatureId}:${candidate.targetPartId}:${candidate.targetFeatureId}`}>
+                <li
+                  key={`${index}:${candidate.movingFeatureId}:${candidate.targetPartId}:${candidate.targetFeatureId}`}
+                >
                   <button
                     type="button"
                     className={index === candidateIndex ? 'active' : ''}
                     onClick={() => applyCandidate(index)}
                     title={`Seat ${candidate.movingFeatureId} onto ${candidate.targetPartId}/${candidate.targetFeatureId}`}
                   >
-                    <strong>{candidate.matches.length} mate{candidate.matches.length === 1 ? '' : 's'}</strong>
+                    <strong>
+                      {candidate.matches.length} mate{candidate.matches.length === 1 ? '' : 's'}
+                    </strong>
                     <small>
-                      {candidate.targetPartId} · {candidate.certainty} · {candidate.cursorTranslationLdu.toFixed(1)} LDU away
+                      {candidate.targetPartId} · {candidate.certainty} · {candidate.cursorTranslationLdu.toFixed(1)} LDU
+                      away
                     </small>
                   </button>
                 </li>
@@ -506,44 +623,6 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
         </div>
       )}
     </div>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  suffix,
-  disabled,
-  onCommit,
-}: {
-  label: string
-  value: number
-  suffix: string
-  disabled?: boolean
-  onCommit: (value: number) => void
-}) {
-  return (
-    <label className={`number-field ${disabled ? 'disabled' : ''}`}>
-      <span>{label}</span>
-      <div>
-        <input
-          key={value}
-          type="number"
-          defaultValue={value}
-          disabled={disabled}
-          aria-label={`${label} ${suffix === '°' ? 'rotation in degrees' : 'in LDraw units'}`}
-          title={disabled ? `${label} is locked` : undefined}
-          onBlur={(event) => onCommit(Number(event.target.value))}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              onCommit(Number((event.target as HTMLInputElement).value))
-            }
-          }}
-        />
-        <em>{suffix}</em>
-      </div>
-    </label>
   )
 }
 

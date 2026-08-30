@@ -39,6 +39,7 @@ export interface NudgeCommand {
   readonly kind: 'nudge'
   readonly dx: number
   readonly dz: number
+  readonly dy?: number
 }
 
 export type ViewportCommand =
@@ -92,6 +93,9 @@ export function commandFromViewportKey(
   const nudge = options.shift ? options.gridLdu * 4 : options.gridLdu
 
   if (key === 'Home' || key === '0') return { kind: 'frame' }
+  if (options.mode === 'nudge' && (key === 'PageUp' || key === 'PageDown')) {
+    return { kind: 'nudge', dx: 0, dz: 0, dy: key === 'PageUp' ? -nudge : nudge }
+  }
   if (key === 'PageUp' || key === '+' || key === '=' || key === 'Add') {
     return { kind: 'dolly', factor: 1 - VIEWPORT_DOLLY_STEP }
   }
@@ -179,9 +183,7 @@ export function describeViewportCommand(command: ViewportCommand, mode: Viewport
     case 'nudge':
       return `Nudged ${mode === 'nudge' ? 'the selection' : 'the camera'}`
     case 'joint':
-      return command.slideLdu
-        ? `Slid the joint ${command.slideLdu} LDU`
-        : `Rotated the joint ${command.rotateDegrees}°`
+      return command.slideLdu ? `Slid the joint ${command.slideLdu} LDU` : `Rotated the joint ${command.rotateDegrees}°`
     case 'section':
       return `Offset the section plane ${command.offsetLdu} LDU`
     case 'occlude':

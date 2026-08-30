@@ -6,6 +6,7 @@ import { CadViewport, type RenderMode } from '../CadViewport'
 import { Slot } from './ExtensionRegistry'
 import { EmptyBuildState } from './states'
 import type { Workbench } from './useWorkbench'
+import { ViewportQuickControls } from './ViewportQuickControls'
 
 /**
  * What each diagnostic view is showing.
@@ -14,7 +15,10 @@ import type { Workbench } from './useWorkbench'
  * subassembly grouping — but the colours only mean something to someone who
  * already knows the conventions, so each one says what it is.
  */
-const RENDER_MODE_COPY: Record<Exclude<RenderMode, 'beauty'>, { title: string; detail: string; keys?: Array<{ label: string; swatch: string }> }> = {
+const RENDER_MODE_COPY: Record<
+  Exclude<RenderMode, 'beauty'>,
+  { title: string; detail: string; keys?: Array<{ label: string; swatch: string }> }
+> = {
   orthographic: {
     title: 'Orthographic',
     detail: 'Parallel projection, so equal lengths measure equal on screen at any depth.',
@@ -29,7 +33,8 @@ const RENDER_MODE_COPY: Record<Exclude<RenderMode, 'beauty'>, { title: string; d
   },
   violations: {
     title: 'Collision report',
-    detail: 'Parts in a confirmed collision pair. Mating clearance is already subtracted, so legal stacking is not flagged.',
+    detail:
+      'Parts in a confirmed collision pair. Mating clearance is already subtracted, so legal stacking is not flagged.',
     keys: [{ label: 'In a collision pair', swatch: '#ff5c48' }],
   },
   silhouette: {
@@ -53,7 +58,8 @@ export function ViewportStage({
 }) {
   const { state, renderMode, placement, placementDefinition } = workbench
   const [dragOver, setDragOver] = useState(false)
-  const activeProposal = state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
+  const activeProposal =
+    state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
   const pendingProposalIds = new Set(state.proposals.map((proposal) => proposal.id))
   const visibleProposals = activeProposal
     ? workbench.viewportProposals.filter(
@@ -62,19 +68,23 @@ export function ViewportStage({
     : workbench.viewportProposals
 
   const pickStarter = useCallback(() => {
-    const first = searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0]
-      ?? searchCatalog({ requireGeometry: true, limit: 1 })[0]
+    const first =
+      searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0] ??
+      searchCatalog({ requireGeometry: true, limit: 1 })[0]
     if (first) workbench.armPart(first)
   }, [workbench])
 
-  const onDrop = useCallback((event: React.DragEvent<HTMLElement>) => {
-    const id = event.dataTransfer.getData('application/x-brickwright-part')
-    setDragOver(false)
-    if (!id) return
-    event.preventDefault()
-    const record = searchCatalog({ text: id, limit: 1, tier: 'all' })[0]
-    workbench.dropPart(record ?? { id, name: id }, event.clientX, event.clientY)
-  }, [workbench])
+  const onDrop = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      const id = event.dataTransfer.getData('application/x-brickwright-part')
+      setDragOver(false)
+      if (!id) return
+      event.preventDefault()
+      const record = searchCatalog({ text: id, limit: 1, tier: 'all' })[0]
+      workbench.dropPart(record ?? { id, name: id }, event.clientX, event.clientY)
+    },
+    [workbench],
+  )
 
   return (
     <section
@@ -96,6 +106,7 @@ export function ViewportStage({
         proposals={visibleProposals}
         tool={workbench.tool}
         gridLdu={workbench.gridLdu}
+        transformPreferences={workbench.transformPrefs}
         cameraView={workbench.cameraView}
         cameraResetKey={workbench.cameraResetKey}
         renderMode={renderMode}
@@ -106,12 +117,18 @@ export function ViewportStage({
         onSelectMany={workbench.handleSelectMany}
         onClearSelection={() => cadEngine.setSelection([])}
         onTransform={workbench.handleTransform}
-        onCommitTransforms={(operations) => workbench.commitTransforms(
-          workbench.tool === 'rotate'
-            ? (operations.length > 1 ? 'Turn selection' : 'Turn part')
-            : (operations.length > 1 ? `Move ${operations.length} parts` : 'Transform part'),
-          operations,
-        )}
+        onCommitTransforms={(operations) =>
+          workbench.commitTransforms(
+            workbench.tool === 'rotate'
+              ? operations.length > 1
+                ? 'Turn selection'
+                : 'Turn part'
+              : operations.length > 1
+                ? `Move ${operations.length} parts`
+                : 'Transform part',
+            operations,
+          )
+        }
         onNudgeSelection={workbench.nudgeSelection}
         onPlace={workbench.placeArmed}
         onJointNudge={workbench.driveJoint}
@@ -121,17 +138,30 @@ export function ViewportStage({
         }}
       />
       <p id="viewport-keys" className="viewport-keys-hint">
-        Arrow keys orbit · Shift for a coarser step · Page Up/Down or +/- zoom · Home or 0 frames · [ ] walk parts · , . joints · ; ' section · \ occlusion
+        {workbench.tool === 'move' || workbench.tool === 'rotate'
+          ? 'Arrows move · Page Up/Down raise/lower · Shift for a coarser step · Escape cancels a drag'
+          : 'Drag to orbit · Right-drag to pan · Scroll to zoom · Shift-drag to select'}
+        {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
-      <div className="viewport-corners" aria-hidden="true"><i /><i /><i /><i /></div>
+      <div className="viewport-corners" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
       <div className="viewport-title-block">
         <p>{workbench.selectionLabel}</p>
       </div>
+      <ViewportQuickControls workbench={workbench} />
       <div className="viewport-metrics">
         <Metric label="PARTS" value={String(state.validation.partCount).padStart(3, '0')} />
         <Metric label="CONN" value={String(state.validation.connectionCount).padStart(3, '0')} />
-        <Metric label="HITS" value={String(state.validation.collisions.length).padStart(2, '0')} good={state.validation.collisions.length === 0} />
+        <Metric
+          label="HITS"
+          value={String(state.validation.collisions.length).padStart(2, '0')}
+          good={state.validation.collisions.length === 0}
+        />
       </div>
 
       {renderMode !== 'beauty' && (
@@ -141,7 +171,10 @@ export function ViewportStage({
           {RENDER_MODE_COPY[renderMode].keys && (
             <ul>
               {RENDER_MODE_COPY[renderMode].keys!.map((entry) => (
-                <li key={entry.label}><i style={{ background: entry.swatch }} />{entry.label}</li>
+                <li key={entry.label}>
+                  <i style={{ background: entry.swatch }} />
+                  {entry.label}
+                </li>
               ))}
             </ul>
           )}
@@ -156,8 +189,12 @@ export function ViewportStage({
             <small>PLACING</small>
             <strong>{placementDefinition.name}</strong>
           </div>
-          <p>Click in the viewport to drop it · <kbd>R</kbd> turn · <kbd>Esc</kbd> cancel</p>
-          <button onClick={workbench.cancelPlacement} aria-label="Cancel placement"><X size={13} /></button>
+          <p>
+            Click in the viewport to drop it · <kbd>R</kbd> turn · <kbd>Esc</kbd> cancel
+          </p>
+          <button onClick={workbench.cancelPlacement} aria-label="Cancel placement">
+            <X size={13} />
+          </button>
         </div>
       )}
 
@@ -174,23 +211,35 @@ export function ViewportStage({
         <div className="instruction-overlay">
           <span>BUILD PLAYBACK</span>
           <strong>
-            STEP {String(workbench.playbackStep + 1).padStart(2, '0')} / {String(state.document.steps.length).padStart(2, '0')}
+            STEP {String(workbench.playbackStep + 1).padStart(2, '0')} /{' '}
+            {String(state.document.steps.length).padStart(2, '0')}
           </strong>
           <em>{state.document.steps[workbench.playbackStep]?.name}</em>
-          <button onClick={() => workbench.setPlaybackStep(null)} aria-label="Stop build playback"><X size={12} /></button>
+          <button onClick={() => workbench.setPlaybackStep(null)} aria-label="Stop build playback">
+            <X size={12} />
+          </button>
         </div>
       )}
 
       {activeProposal && (
         <div className="proposal-overlay">
           <span className="proposal-pulse" />
-          <div><small>GHOST PROPOSAL</small><strong>{activeProposal.label}</strong></div>
+          <div>
+            <small>GHOST PROPOSAL</small>
+            <strong>{activeProposal.label}</strong>
+          </div>
           <em>{activeProposal.operations.length} edits</em>
           {onReviewProposal && (
-            <button onClick={() => onReviewProposal(activeProposal.id)}><Eye size={13} /> Review</button>
+            <button onClick={() => onReviewProposal(activeProposal.id)}>
+              <Eye size={13} /> Review
+            </button>
           )}
-          <button onClick={() => workbench.acceptProposal(activeProposal.id)}><Check size={13} /> Accept</button>
-          <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal"><X size={13} /></button>
+          <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
+            <Check size={13} /> Accept
+          </button>
+          <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
+            <X size={13} />
+          </button>
         </div>
       )}
 
@@ -202,5 +251,10 @@ export function ViewportStage({
 }
 
 function Metric({ label, value, good }: { label: string; value: string; good?: boolean }) {
-  return <div className={good ? 'good' : ''}><span>{label}</span><strong>{value}</strong></div>
+  return (
+    <div className={good ? 'good' : ''}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
 }

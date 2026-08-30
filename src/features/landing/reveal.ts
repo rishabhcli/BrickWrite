@@ -62,17 +62,18 @@ function mixChannel(from: number, to: number, t: number) {
 /** Cyan → orange → green along the film, so the rim does not jump. */
 export function filmAccent(t: number): string {
   const clamped = Math.min(1, Math.max(0, t))
-  const [r, g, b] = clamped < 0.5
-    ? [
-        mixChannel(CYAN[0], ORANGE[0], clamped / 0.5),
-        mixChannel(CYAN[1], ORANGE[1], clamped / 0.5),
-        mixChannel(CYAN[2], ORANGE[2], clamped / 0.5),
-      ]
-    : [
-        mixChannel(ORANGE[0], GREEN[0], (clamped - 0.5) / 0.5),
-        mixChannel(ORANGE[1], GREEN[1], (clamped - 0.5) / 0.5),
-        mixChannel(ORANGE[2], GREEN[2], (clamped - 0.5) / 0.5),
-      ]
+  const [r, g, b] =
+    clamped < 0.5
+      ? [
+          mixChannel(CYAN[0], ORANGE[0], clamped / 0.5),
+          mixChannel(CYAN[1], ORANGE[1], clamped / 0.5),
+          mixChannel(CYAN[2], ORANGE[2], clamped / 0.5),
+        ]
+      : [
+          mixChannel(ORANGE[0], GREEN[0], (clamped - 0.5) / 0.5),
+          mixChannel(ORANGE[1], GREEN[1], (clamped - 0.5) / 0.5),
+          mixChannel(ORANGE[2], GREEN[2], (clamped - 0.5) / 0.5),
+        ]
   return `rgb(${r} ${g} ${b})`
 }
 
@@ -115,7 +116,8 @@ export function useFilmStage() {
     userLock.current = true
     setStage(next)
     if (record) writeBeat(next)
-    document.querySelector<HTMLElement>(`[data-film-stage="${next}"]`)
+    document
+      .querySelector<HTMLElement>(`[data-film-stage="${next}"]`)
       ?.scrollIntoView?.({ behavior: reduced ? 'auto' : 'smooth', block: 'center', inline: 'nearest' })
   }
 
@@ -205,7 +207,8 @@ export function useFilmStage() {
       userLock.current = true
       setStage(beat)
       requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>(`[data-film-stage="${beat}"]`)
+        document
+          .querySelector<HTMLElement>(`[data-film-stage="${beat}"]`)
           ?.scrollIntoView?.({ behavior: 'auto', block: 'center', inline: 'nearest' })
       })
     }
@@ -250,6 +253,16 @@ export function usePointerField<T extends HTMLElement>() {
     let currentY = window.innerHeight * 0.2
     let targetX = currentX
     let targetY = currentY
+    const scroller = document.getElementById('pf-main')
+    // `.pf-frame__body` is both the scroller and Chromium's containing block
+    // for the fixed landing chrome. Add its scroll position back, then remove
+    // its 56px top-bar offset so the software crosshair stays at clientY.
+    const scrollOffset = () => (scroller ? scroller.scrollTop - scroller.getBoundingClientRect().top : window.scrollY)
+    const paintScrollOffset = () => {
+      const offset = scrollOffset()
+      root.style.setProperty('--bw-scroll-y', `${offset.toFixed(1)}px`)
+      root.style.setProperty('--bw-ptr-y', `${(currentY + offset).toFixed(1)}px`)
+    }
 
     const magnets = () => [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
 
@@ -258,7 +271,7 @@ export function usePointerField<T extends HTMLElement>() {
       currentX += (targetX - currentX) * 0.14
       currentY += (targetY - currentY) * 0.14
       root.style.setProperty('--bw-ptr-x', `${currentX.toFixed(1)}px`)
-      root.style.setProperty('--bw-ptr-y', `${currentY.toFixed(1)}px`)
+      paintScrollOffset()
       for (const magnet of magnets()) {
         const box = magnet.getBoundingClientRect()
         const cx = box.left + box.width / 2
@@ -291,16 +304,22 @@ export function usePointerField<T extends HTMLElement>() {
       }
       const hot = magnets().some((magnet) => {
         const box = magnet.getBoundingClientRect()
-        return event.clientX >= box.left - 8 && event.clientX <= box.right + 8
-          && event.clientY >= box.top - 8 && event.clientY <= box.bottom + 8
+        return (
+          event.clientX >= box.left - 8 &&
+          event.clientX <= box.right + 8 &&
+          event.clientY >= box.top - 8 &&
+          event.clientY <= box.bottom + 8
+        )
       })
-      const stageBox = root.querySelector('.bw-film-stage .bw-stage')?.getBoundingClientRect()
+      const stageBox = root
+        .querySelector('.bw-simple-hero-model .bw-stage, .bw-film-stage .bw-stage')
+        ?.getBoundingClientRect()
       const orbit = Boolean(
-        stageBox
-        && event.clientX >= stageBox.left
-        && event.clientX <= stageBox.right
-        && event.clientY >= stageBox.top
-        && event.clientY <= stageBox.bottom,
+        stageBox &&
+        event.clientX >= stageBox.left &&
+        event.clientX <= stageBox.right &&
+        event.clientY >= stageBox.top &&
+        event.clientY <= stageBox.bottom,
       )
       root.dataset.cursor = hot ? 'hot' : orbit ? 'orbit' : 'draw'
       if (!running) {
@@ -319,11 +338,14 @@ export function usePointerField<T extends HTMLElement>() {
       }
     }
 
+    paintScrollOffset()
     window.addEventListener('pointermove', onMove, { passive: true })
+    scroller?.addEventListener('scroll', paintScrollOffset, { passive: true })
     document.documentElement.addEventListener('mouseleave', onLeave)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('pointermove', onMove)
+      scroller?.removeEventListener('scroll', paintScrollOffset)
       document.documentElement.removeEventListener('mouseleave', onLeave)
     }
   }, [reduced])

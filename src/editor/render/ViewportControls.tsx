@@ -903,11 +903,15 @@ export function ViewportControls(props: ViewportControlsProps) {
         // agent and a test call, and both want the camera where they asked for
         // it by the time the call returns.
         const active = latest.current.camera
-        active.position.copy(
-          centre.clone().add(new THREE.Vector3(0.86, 0.64, 1).normalize().multiplyScalar(extent * 2.4)),
-        )
-        active.lookAt(centre)
         const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
+        const direction = active.position.clone().sub(orbit?.target ?? new THREE.Vector3())
+        if (direction.lengthSq() < 0.001) direction.set(0.86, 0.64, 1)
+        active.position.copy(centre.clone().add(direction.normalize().multiplyScalar(extent * 2.4)))
+        active.lookAt(centre)
+        if ((active as THREE.OrthographicCamera).isOrthographicCamera) {
+          const { width, height } = latest.current.size
+          ;(active as THREE.OrthographicCamera).zoom = Math.max(1, Math.min(width, height) / (extent * 1.9))
+        }
         if (orbit?.target) {
           orbit.target.copy(centre)
           orbit.update?.()

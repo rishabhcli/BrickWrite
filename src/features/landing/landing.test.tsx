@@ -118,11 +118,13 @@ describe('the landing page', () => {
     expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
   })
 
-  it('keeps the atmosphere decorative and the compact model stage operable', () => {
+  it('keeps the atmosphere decorative, restores the visible cursor, and mounts the assembly reel', () => {
     const { container } = render(<LandingPage />)
     expect(container.querySelector('.bw-landing')?.getAttribute('data-pointer')).toBe('off')
     expect(container.querySelector('.bw-atmosphere')).toBeTruthy()
     expect(container.querySelector('.bw-studs')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelectorAll('.bw-cursor')).toHaveLength(2)
+    expect(container.querySelector('.bw-cursor > span')).toBeTruthy()
     expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-reticle')).toBeTruthy()
@@ -130,7 +132,9 @@ describe('the landing page', () => {
     const hero = DEMOS.find((demo) => demo.hero)!
     expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.validation.partCount))
     expect(container.querySelectorAll('.bw-stage-step')).toHaveLength(4)
-    expect(container.querySelector('.bw-film')).toBeNull()
+    expect(container.querySelector('.bw-assembly-film')).toBeTruthy()
+    expect(container.querySelectorAll('.bw-assembly-brick')).toHaveLength(96)
+    expect(container.querySelector('.bw-assembly-window')?.getAttribute('role')).toBe('img')
     expect(container.querySelector('.bw-bill-rail')).toBeNull()
   })
 
@@ -139,6 +143,14 @@ describe('the landing page', () => {
     const validated = screen.getByRole('tab', { name: /Validated/ })
     fireEvent.click(validated)
     expect(validated).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('lets a visitor scrub the assembly reel without scrolling', () => {
+    const { container } = render(<LandingPage />)
+    const validated = screen.getByRole('button', { name: /04\s*validated/i })
+    fireEvent.click(validated)
+    expect(validated).toHaveAttribute('aria-pressed', 'true')
+    expect(container.querySelector('.bw-assembly-film')).toHaveAttribute('data-assembly-stage', 'validated')
   })
 })
 

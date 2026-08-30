@@ -218,25 +218,29 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     const selection = workbench.state.selection.length
     const enteredSelection = before.selection === 0 && selection > 0
     const enteredConnect = before.tool !== 'connect' && workbench.tool === 'connect'
+    const enteredTransform =
+      selection > 0 &&
+      (workbench.tool === 'move' || workbench.tool === 'rotate') &&
+      (before.tool !== workbench.tool || enteredSelection)
     previousContext.current = { selection, tool: workbench.tool }
-    if (!enteredSelection && !enteredConnect) return
+    if (!enteredSelection && !enteredConnect && !enteredTransform) return
     // Model Map is itself a selection workspace. Replacing it with the generic
     // Selection sheet after its first row click would make browsing feel like
     // navigation that closes itself.
     if (
-      enteredSelection
-      && (
-        layoutRef.current.sections['model.explorer'] === true
-        || (layoutRef.current.sections.inspector === true && inspectorViewRef.current === 'validate')
-      )
-    ) return
+      enteredSelection &&
+      !enteredTransform &&
+      (layoutRef.current.sections['model.explorer'] === true ||
+        (layoutRef.current.sections.inspector === true && inspectorViewRef.current === 'validate'))
+    )
+      return
     const next = enteredConnect
       ? applyDockFocus(
           { ...layoutRef.current, right: { ...layoutRef.current.right, collapsed: false } },
           'connect',
           true,
         )
-      : applyChromeReveal(layoutRef.current, 'selection')
+      : applyChromeReveal(layoutRef.current, enteredTransform ? 'transform' : 'selection')
     updateLayout(next)
   }, [updateLayout, workbench.state.selection.length, workbench.tool])
 
@@ -289,9 +293,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     })
     setWorkspaceFocusHandler((request) => {
       const snapshot = cadEngine.getSnapshot()
-      const assembly = request.subassemblyId
-        ? snapshot.document.subassemblies[request.subassemblyId]
-        : undefined
+      const assembly = request.subassemblyId ? snapshot.document.subassemblies[request.subassemblyId] : undefined
       const requested = assembly?.partIds ?? request.partIds ?? []
       const matched = requested.filter((id) => Boolean(snapshot.document.parts[id]))
       const missing = requested.filter((id) => !snapshot.document.parts[id])
@@ -313,9 +315,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     })
     setProposalReviewHandler((proposalId) => {
       const proposals = cadEngine.getSnapshot().proposals
-      const proposal = proposalId
-        ? proposals.find((candidate) => candidate.id === proposalId)
-        : proposals.at(-1)
+      const proposal = proposalId ? proposals.find((candidate) => candidate.id === proposalId) : proposals.at(-1)
       if (proposal) setActiveProposalId(proposal.id)
       setTimelineView('review')
       return {
@@ -327,9 +327,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     setModelHealthHandler((issueId) => {
       const snapshot = cadEngine.getSnapshot()
       const health = inspectModelHealth(snapshot.document, snapshot.validation)
-      const issue = issueId
-        ? health.issues.find((candidate) => candidate.id === issueId)
-        : health.issues[0]
+      const issue = issueId ? health.issues.find((candidate) => candidate.id === issueId) : health.issues[0]
       setInspectorView('validate')
       setActiveHealthIssueId(issue?.id ?? null)
       const partIds = issue?.partIds.filter((id) => Boolean(snapshot.document.parts[id])) ?? []
@@ -466,6 +464,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   // -- global keyboard ------------------------------------------------------
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
       if (welcomeOpen) return
       const chord = chordFromEvent(event)
 
@@ -533,6 +532,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
       const commandId = commandForChord(shortcuts, chord)
       if (!commandId) return
+      // Native copy/paste, undo, and select-all belong to the focused text field.
+      if (typing && (commandId.startsWith('edit.') || commandId.startsWith('select.'))) return
       event.preventDefault()
       const result = runCommand(commandId)
       if (!result.ran && result.reason) workbench.notify({ kind: 'info', title: 'Unavailable', detail: result.reason })
@@ -782,7 +783,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     if (issue.kind === 'collision') workbench.setRenderMode('violations')
                   }}
                   onArticulate={workbench.driveJoint}
-                  onTransform={workbench.handleTransform}
+                  onTransform={(id, transform) => workbench.handleTransform(id, transform, true)}
                   onRecolor={workbench.recolorSelection}
                   onProtect={workbench.protectSelection}
                   onSelectIds={(ids) => cadEngine.setSelection(ids)}

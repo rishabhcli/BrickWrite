@@ -2,6 +2,7 @@ import { getPartBounds } from '../../cad/geometry'
 import { getWorldConnectors } from '../../cad/snapping'
 import {
   basisFromEulerDegrees,
+  applyMat3,
   canonicalTransform,
   cleanBasis,
   composeTransform,
@@ -10,6 +11,8 @@ import {
   orthonormalize,
   rotateLocal,
   rotateWorld,
+  multiplyMat3,
+  transposeMat3,
   type Mat3,
   type Vec3,
 } from '../../cad/math'
@@ -38,6 +41,87 @@ export interface AxisLocks {
 }
 
 export const NO_LOCKS: AxisLocks = { x: false, y: false, z: false }
+
+export interface ManipulationOptions {
+  frame: ReferenceFrame
+  pivot: PivotMode
+  locks: AxisLocks
+  connectorSnap: boolean
+  rotationStep: number
+}
+
+export const DEFAULT_MANIPULATION: ManipulationOptions = {
+  frame: 'world',
+  pivot: 'centre',
+  locks: NO_LOCKS,
+  connectorSnap: true,
+  rotationStep: 90,
+}
+
+/** One proxy frame for the entire selection; never rotate each member independently. */
+export function manipulationPose(parts: readonly PartInstance[], options: ManipulationOptions): Transform {
+  const first = parts[0]
+  return {
+    position: resolvePivot(parts, options.pivot),
+    basis:
+      !first || options.frame === 'world'
+        ? [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        : options.frame === 'connector'
+          ? (connectorFrame(first) ?? first.transform.basis)
+          : first.transform.basis,
+  }
+}
+
+/** Full matrix delta (including X/Z and >90° turns), without lossy Euler extraction. */
+export function planGizmoTransforms(
+  parts: readonly PartInstance[],
+  start: Transform,
+  raw: Transform,
+  options: { rotating: boolean; gridLdu: number; locks: AxisLocks },
+): CadOperation[] {
+  const rotation = multiplyMat3(raw.basis, transposeMat3(start.basis))
+  const localDelta = applyMat3(transposeMat3(start.basis), [
+    raw.position[0] - start.position[0],
+    raw.position[1] - start.position[1],
+    raw.position[2] - start.position[2],
+  ])
+  const snapped = snapPosition(localDelta, options.gridLdu)
+  const delta = applyMat3(start.basis, [
+    options.locks.x ? 0 : snapped[0],
+    options.locks.y ? 0 : snapped[1],
+    options.locks.z ? 0 : snapped[2],
+  ])
+  return parts.flatMap((part): CadOperation[] => {
+    const offset = applyMat3(rotation, [
+      part.transform.position[0] - start.position[0],
+      part.transform.position[1] - start.position[1],
+      part.transform.position[2] - start.position[2],
+    ])
+    const transform = canonicalisePose(
+      options.rotating
+        ? {
+            position: [start.position[0] + offset[0], start.position[1] + offset[1], start.position[2] + offset[2]],
+            basis: multiplyMat3(rotation, part.transform.basis),
+          }
+        : {
+            position: [
+              part.transform.position[0] + delta[0],
+              part.transform.position[1] + delta[1],
+              part.transform.position[2] + delta[2],
+            ],
+            basis: part.transform.basis,
+          },
+    )
+    return posesEqual(part.transform, transform) ? [] : [{ type: 'part.transform', partId: part.id, transform }]
+  })
+}
+
+/** Put the lowest point on Y=0, keeping all relative poses intact. LDraw is Y-down. */
+export function planGroundSelection(parts: readonly PartInstance[]): CadOperation[] {
+  if (!parts.length) return []
+  const bottom = Math.max(...parts.map((part) => getPartBounds(part).max[1]))
+  return Math.abs(bottom) < POSITION_QUANTUM ? [] : planTranslateSelection(parts, [0, -bottom, 0])
+}
 
 /** Position quantum, in LDU. Kills gizmo float noise without touching real values. */
 const POSITION_QUANTUM = 1e-4
@@ -134,7 +218,12 @@ export function gizmoPose(
 
 /** Moves a pose by an offset expressed in the chosen reference frame. */
 export function translatePose(base: Transform, delta: Vec3, frame: ReferenceFrame, referenceBasis?: Mat3): Transform {
-  const basis = frame === 'world' ? null : frame === 'local' ? (base.basis as Mat3) : (referenceBasis ?? (base.basis as Mat3))
+  const basis =
+    frame === 'world'
+      ? null
+      : frame === 'local'
+        ? (referenceBasis ?? (base.basis as Mat3))
+        : (referenceBasis ?? (base.basis as Mat3))
   const world: Vec3 = basis
     ? [
         basis[0] * delta[0] + basis[1] * delta[1] + basis[2] * delta[2],
@@ -170,7 +259,8 @@ export function rotatePose(
     frame === 'world'
       ? axis
       : (() => {
-          const basis = frame === 'local' ? (base.basis as Mat3) : (referenceBasis ?? (base.basis as Mat3))
+          const basis =
+            frame === 'local' ? (referenceBasis ?? (base.basis as Mat3)) : (referenceBasis ?? (base.basis as Mat3))
           return [
             basis[0] * axis[0] + basis[1] * axis[1] + basis[2] * axis[2],
             basis[3] * axis[0] + basis[4] * axis[1] + basis[5] * axis[2],
@@ -217,11 +307,7 @@ export const AXIS_INDEX: Record<'x' | 'y' | 'z', 0 | 1 | 2> = { x: 0, y: 1, z: 2
  * origins sit wherever the part author put them, so aligning origins leaves a
  * plate and a brick visibly unaligned even though the numbers agree.
  */
-export function planAlign(
-  parts: readonly PartInstance[],
-  axis: 'x' | 'y' | 'z',
-  edge: AlignEdge,
-): CadOperation[] {
+export function planAlign(parts: readonly PartInstance[], axis: 'x' | 'y' | 'z', edge: AlignEdge): CadOperation[] {
   if (parts.length < 2) return []
   const index = AXIS_INDEX[axis]
   const measured = parts.map((part) => ({ part, bounds: getPartBounds(part) }))
@@ -230,12 +316,17 @@ export function planAlign(
       ? Math.min(...measured.map((entry) => entry.bounds.min[index]))
       : edge === 'max'
         ? Math.max(...measured.map((entry) => entry.bounds.max[index]))
-        : (Math.min(...measured.map((entry) => entry.bounds.min[index]))
-            + Math.max(...measured.map((entry) => entry.bounds.max[index]))) / 2
+        : (Math.min(...measured.map((entry) => entry.bounds.min[index])) +
+            Math.max(...measured.map((entry) => entry.bounds.max[index]))) /
+          2
 
   return measured.flatMap(({ part, bounds }) => {
     const current =
-      edge === 'min' ? bounds.min[index] : edge === 'max' ? bounds.max[index] : (bounds.min[index] + bounds.max[index]) / 2
+      edge === 'min'
+        ? bounds.min[index]
+        : edge === 'max'
+          ? bounds.max[index]
+          : (bounds.min[index] + bounds.max[index]) / 2
     const delta = target - current
     if (Math.abs(delta) < POSITION_QUANTUM) return []
     const position = [...part.transform.position] as [number, number, number]
@@ -294,7 +385,9 @@ export function planRotateSelection(parts: readonly PartInstance[], degrees: num
   if (!parts.length) return []
   if (parts.length === 1) {
     const part = parts[0]!
-    return [{ type: 'part.transform', partId: part.id, transform: rotatePose(part.transform, [0, 1, 0], degrees, 'local') }]
+    return [
+      { type: 'part.transform', partId: part.id, transform: rotatePose(part.transform, [0, 1, 0], degrees, 'local') },
+    ]
   }
   const pivot = resolvePivot(parts, 'centre')
   return parts.map((part) => ({

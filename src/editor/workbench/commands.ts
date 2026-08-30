@@ -38,19 +38,40 @@ export function disabledReason(commandId: string, workbench: Workbench): string 
   const { state } = workbench
   const selected = state.selection.length
   const needsSelection = [
-    'edit.clone', 'edit.delete', 'edit.quarter-turn', 'edit.mirror', 'edit.array',
-    'edit.protect', 'edit.paint', 'edit.eyedropper',
-    'select.inverse', 'select.connected', 'select.colour', 'select.subassembly', 'select.definition',
-    'select.save', 'visibility.hide', 'visibility.isolate', 'visibility.ghost',
+    'edit.clone',
+    'edit.delete',
+    'edit.quarter-turn',
+    'edit.mirror',
+    'edit.array',
+    'edit.copy',
+    'edit.cut',
+    'edit.ground',
+    'edit.protect',
+    'edit.paint',
+    'edit.eyedropper',
+    'select.inverse',
+    'select.connected',
+    'select.colour',
+    'select.subassembly',
+    'select.definition',
+    'select.save',
+    'visibility.hide',
+    'visibility.isolate',
+    'visibility.ghost',
   ]
   if (needsSelection.includes(commandId) && !selected) return 'Select at least one part first.'
+  if (commandId === 'edit.paste' && !workbench.clipboard) return 'Copy or cut parts in this editor first.'
   if (commandId === 'edit.undo' && !state.canUndo) return 'Nothing to undo.'
   if (commandId === 'edit.redo' && !state.canRedo) return 'Nothing to redo.'
-  if (commandId === 'visibility.show-all'
-    && !workbench.visibility.hidden.size
-    && !workbench.visibility.isolated
-    && !workbench.visibility.ghosted.size) return 'Nothing is hidden, isolated or ghosted.'
-  if (commandId === 'project.resequence' && !state.validation.partCount) return 'Place parts before generating a build order.'
+  if (
+    commandId === 'visibility.show-all' &&
+    !workbench.visibility.hidden.size &&
+    !workbench.visibility.isolated &&
+    !workbench.visibility.ghosted.size
+  )
+    return 'Nothing is hidden, isolated or ghosted.'
+  if (commandId === 'project.resequence' && !state.validation.partCount)
+    return 'Place parts before generating a build order.'
   return null
 }
 
@@ -60,33 +81,42 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     action()
     return ok
   }
+  // The controller already reports a precise kernel refusal. Do not overwrite
+  // it with "select a part" when a selected part simply could not be moved.
+  const editSelection = (action: () => boolean): CommandOutcome =>
+    w.state.selection.length ? { ran: action() } : refuse('Select at least one part first.')
 
   return {
     // Tools ---------------------------------------------------------------
     'tool.select': () => run(() => w.setTool('select')),
     'tool.move': () => run(() => w.setTool('move')),
-    'tool.rotate': () => run(() => {
-      // While a ghost follows the cursor, R turns the ghost. Only once nothing
-      // is armed does it mean "pick up the rotate tool".
-      if (w.placement) w.rotatePlacement()
-      else w.setTool('rotate')
-    }),
+    'tool.rotate': () =>
+      run(() => {
+        // While a ghost follows the cursor, R turns the ghost. Only once nothing
+        // is armed does it mean "pick up the rotate tool".
+        if (w.placement) w.rotatePlacement()
+        else w.setTool('rotate')
+      }),
     'tool.connect': () => run(() => w.setTool('connect')),
 
     // Edit ----------------------------------------------------------------
-    'edit.undo': () => (w.state.canUndo ? run(() => cadEngine.undo('human')) : refuse('Nothing to undo.')),
-    'edit.redo': () => (w.state.canRedo ? run(() => cadEngine.redo('human')) : refuse('Nothing to redo.')),
-    'edit.clone': () => (w.duplicateSelection() ? ok : refuse('Select at least one part first.')),
-    'edit.delete': () => (w.deleteSelection() ? ok : refuse('Select at least one part first.')),
-    'edit.quarter-turn': () => (w.rotateSelection(90) ? ok : refuse('Select at least one part first.')),
-    'edit.mirror': () => (w.runSharedMutation('mirror_selection', { axisLdu: 0 }) ? ok : refuse('Mirror was refused.')),
+    'edit.undo': () => (w.state.canUndo ? { ran: w.replayHistory('undo') } : refuse('Nothing to undo.')),
+    'edit.redo': () => (w.state.canRedo ? { ran: w.replayHistory('redo') } : refuse('Nothing to redo.')),
+    'edit.clone': () => editSelection(w.duplicateSelection),
+    'edit.copy': () => ({ ran: w.copySelection() }),
+    'edit.cut': () => ({ ran: w.copySelection(true) }),
+    'edit.paste': () => (w.clipboard ? { ran: w.pasteSelection() } : refuse('Copy or cut parts in this editor first.')),
+    'edit.ground': () => ({ ran: w.groundSelection() }),
+    'edit.delete': () => editSelection(w.deleteSelection),
+    'edit.quarter-turn': () => editSelection(() => w.rotateSelection(90)),
+    'edit.mirror': () => editSelection(() => w.runSharedMutation('mirror_selection', { axisLdu: 0 })),
     'edit.array': () => run(() => w.setModal('core:command-deck:linear_array')),
-    'edit.protect': () => (w.toggleProtectSelection() ? ok : refuse('Select at least one part first.')),
-    'edit.paint': () => (w.recolorSelection(w.activeColor) ? ok : refuse('Select at least one part first.')),
+    'edit.protect': () => editSelection(w.toggleProtectSelection),
+    'edit.paint': () => editSelection(() => w.recolorSelection(w.activeColor)),
     'edit.eyedropper': () => (w.pickColorFromSelection() ? ok : refuse('Select a part to sample.')),
 
     // Selection -----------------------------------------------------------
-    'select.all': () => run(() => cadEngine.setSelection(Object.keys(w.state.document.parts))),
+    'select.all': () => run(() => w.applySelectionMode('visible')),
     'select.none': () => run(() => cadEngine.setSelection([])),
     'select.inverse': () => run(() => w.applySelectionMode('inverse')),
     'select.connected': () => run(() => w.applySelectionMode('connected')),

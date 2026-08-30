@@ -47,6 +47,8 @@ describe('chord normalisation', () => {
   it('reads a chord off a keyboard event', () => {
     expect(press({ key: 'z', metaKey: true })).toBe('mod+z')
     expect(press({ key: 'Z', metaKey: true, shiftKey: true })).toBe('mod+shift+z')
+    expect(press({ key: 'z', ctrlKey: true, shiftKey: true })).toBe('mod+shift+z')
+    expect(commandForChord(defaultShortcutMap(), press({ key: 'z', ctrlKey: true, shiftKey: true }))).toBe('edit.redo')
     expect(press({ key: 'g' })).toBe('g')
     expect(press({ key: 'Backspace' })).toBe('delete')
   })

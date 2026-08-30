@@ -3,6 +3,9 @@ import {
   CircleHelp,
   Command,
   Copy,
+  CopyPlus,
+  ClipboardPaste,
+  Scissors,
   Eye,
   Focus,
   Grid3X3,
@@ -20,7 +23,6 @@ import {
   Undo2,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { cadEngine } from '../../cad/engine'
 import type { RenderMode } from '../CadViewport'
 import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
@@ -116,10 +118,22 @@ export function Toolbar({
           <div className="toolgroup compact-tools selection-tools" aria-label={`${selected} selected`}>
             <span className="selection-tool-count">{selected}</span>
             <IconButton
-              icon={<Copy />}
+              icon={<CopyPlus />}
               label="Duplicate selection"
               shortcut={chord('edit.clone')}
               onClick={() => workbench.duplicateSelection()}
+            />
+            <IconButton
+              icon={<Copy />}
+              label="Copy parts"
+              shortcut={chord('edit.copy')}
+              onClick={() => workbench.copySelection()}
+            />
+            <IconButton
+              icon={<Scissors />}
+              label="Cut parts"
+              shortcut={chord('edit.cut')}
+              onClick={() => workbench.copySelection(true)}
             />
             <IconButton
               icon={<Rotate3d />}
@@ -147,10 +161,18 @@ export function Toolbar({
 
       <div className="toolgroup compact-tools history-tools">
         <IconButton
+          icon={<ClipboardPaste />}
+          label="Paste parts"
+          shortcut={chord('edit.paste')}
+          disabled={!workbench.clipboard}
+          disabledReason="Copy or cut parts in this editor first"
+          onClick={() => workbench.pasteSelection()}
+        />
+        <IconButton
           icon={<Undo2 />}
           label={state.canUndo ? `Undo ${state.transactions.at(-1)?.label ?? ''}`.trim() : 'Undo'}
           shortcut={chord('edit.undo')}
-          onClick={() => cadEngine.undo('human')}
+          onClick={() => workbench.replayHistory('undo')}
           disabled={!state.canUndo}
           disabledReason="Nothing to undo"
         />
@@ -158,7 +180,7 @@ export function Toolbar({
           icon={<Redo2 />}
           label="Redo"
           shortcut={chord('edit.redo')}
-          onClick={() => cadEngine.redo('human')}
+          onClick={() => workbench.replayHistory('redo')}
           disabled={!state.canRedo}
           disabledReason="Nothing to redo"
         />
@@ -204,6 +226,8 @@ export function Toolbar({
                 >
                   <option value={20}>Stud grid</option>
                   <option value={10}>Half-stud</option>
+                  <option value={8}>One plate</option>
+                  <option value={4}>4 LDU</option>
                   <option value={1}>Fine LDU</option>
                 </select>
               </label>
@@ -306,6 +330,7 @@ function ToolButton({
       className={`tool-button ${active ? 'active' : ''}`}
       onClick={onClick}
       role="radio"
+      aria-label={label}
       aria-checked={active}
       aria-keyshortcuts={shortcut}
       title={`${label} (${shortcut})`}

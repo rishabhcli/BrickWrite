@@ -38,67 +38,379 @@ export const RESERVED_CHORDS: readonly string[] = ['escape', 'enter', 'tab', 'sh
 
 export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   // Tools ------------------------------------------------------------------
-  { id: 'tool.select', title: 'Select tool', group: 'tools', detail: 'Pick parts, shift-drag to box select.', defaultChord: 'v', keywords: 'pointer arrow pick' },
-  { id: 'tool.move', title: 'Move tool', group: 'tools', detail: 'Drag the translate gizmo on the selection. Several parts move as one rigid body.', defaultChord: 'g', keywords: 'translate grab gizmo' },
-  { id: 'tool.rotate', title: 'Rotate tool', group: 'tools', detail: 'Drag the rotate rings on the selection. Several parts turn about their centre.', defaultChord: 'r', keywords: 'turn spin gizmo' },
-  { id: 'tool.connect', title: 'Connect tool', group: 'tools', detail: 'Mate two parts through their real connectors.', defaultChord: 'c', keywords: 'mate snap join hinge' },
+  {
+    id: 'tool.select',
+    title: 'Select tool',
+    group: 'tools',
+    detail: 'Pick parts, shift-drag to box select.',
+    defaultChord: 'v',
+    keywords: 'pointer arrow pick',
+  },
+  {
+    id: 'tool.move',
+    title: 'Move tool',
+    group: 'tools',
+    detail: 'Drag the translate gizmo on the selection. Several parts move as one rigid body.',
+    defaultChord: 'g',
+    keywords: 'translate grab gizmo',
+  },
+  {
+    id: 'tool.rotate',
+    title: 'Rotate tool',
+    group: 'tools',
+    detail: 'Drag the rotate rings on the selection. Several parts turn about their centre.',
+    defaultChord: 'r',
+    keywords: 'turn spin gizmo',
+  },
+  {
+    id: 'tool.connect',
+    title: 'Connect tool',
+    group: 'tools',
+    detail: 'Mate two parts through their real connectors.',
+    defaultChord: 'c',
+    keywords: 'mate snap join hinge',
+  },
 
   // Edit -------------------------------------------------------------------
-  { id: 'edit.undo', title: 'Undo', group: 'edit', detail: 'Reverse the last transaction, human or agent.', defaultChord: 'mod+z' },
-  { id: 'edit.redo', title: 'Redo', group: 'edit', detail: 'Reapply the last undone transaction.', defaultChord: 'shift+mod+z' },
-  { id: 'edit.clone', title: 'Clone selection', group: 'edit', detail: 'Duplicate the selection one part-width along X.', defaultChord: 'mod+d', keywords: 'duplicate copy' },
-  { id: 'edit.delete', title: 'Delete selection', group: 'edit', detail: 'Remove every selected part in one transaction.', defaultChord: 'delete', keywords: 'remove erase' },
-  { id: 'edit.quarter-turn', title: 'Quarter turn', group: 'edit', detail: 'Turn the selection 90°. One part turns about its own origin; several parts turn together about their centre so clutch is kept.', defaultChord: 'shift+r', keywords: 'rotate 90' },
-  { id: 'edit.mirror', title: 'Mirror across X', group: 'edit', detail: 'Reflect the selection through an exact X plane.', defaultChord: 'shift+m' },
-  { id: 'edit.array', title: 'Linear array…', group: 'edit', detail: 'Repeat the selection along an exact vector.', defaultChord: 'shift+a', keywords: 'repeat pattern' },
-  { id: 'edit.protect', title: 'Protect / unlock selection', group: 'edit', detail: 'Toggle the kernel-enforced agent lock.', defaultChord: 'l', keywords: 'lock' },
-  { id: 'edit.paint', title: 'Paint with active colour', group: 'edit', detail: 'Recolour the selection to the palette’s active colour.', defaultChord: 'p', keywords: 'recolour recolor colour' },
-  { id: 'edit.eyedropper', title: 'Pick colour from selection', group: 'edit', detail: 'Make the selected part’s colour the active colour.', defaultChord: 'k', keywords: 'eyedropper sample' },
+  {
+    id: 'edit.undo',
+    title: 'Undo',
+    group: 'edit',
+    detail: 'Reverse the last transaction, human or agent.',
+    defaultChord: 'mod+z',
+  },
+  {
+    id: 'edit.redo',
+    title: 'Redo',
+    group: 'edit',
+    detail: 'Reapply the last undone transaction.',
+    defaultChord: 'shift+mod+z',
+  },
+  {
+    id: 'edit.clone',
+    title: 'Clone selection',
+    group: 'edit',
+    detail: 'Duplicate the selection into clear space beside the model, resting on the ground.',
+    defaultChord: 'mod+d',
+    keywords: 'duplicate copy',
+  },
+  {
+    id: 'edit.copy',
+    title: 'Copy parts',
+    group: 'edit',
+    detail: 'Snapshot the selection in the editor clipboard.',
+    defaultChord: 'mod+c',
+  },
+  {
+    id: 'edit.cut',
+    title: 'Cut parts',
+    group: 'edit',
+    detail: 'Copy and remove the selection in one undoable edit.',
+    defaultChord: 'mod+x',
+  },
+  {
+    id: 'edit.paste',
+    title: 'Paste parts',
+    group: 'edit',
+    detail: 'Paste beside the model, preserving relative poses and colours.',
+    defaultChord: 'mod+v',
+  },
+  {
+    id: 'edit.ground',
+    title: 'Ground selection',
+    group: 'edit',
+    detail: 'Rest the selection on the ground without changing its shape.',
+    defaultChord: 'shift+d',
+    keywords: 'floor drop base',
+  },
+  {
+    id: 'edit.delete',
+    title: 'Delete selection',
+    group: 'edit',
+    detail: 'Remove every selected part in one transaction.',
+    defaultChord: 'delete',
+    keywords: 'remove erase',
+  },
+  {
+    id: 'edit.quarter-turn',
+    title: 'Quarter turn',
+    group: 'edit',
+    detail:
+      'Turn the selection 90°. One part turns about its own origin; several parts turn together about their centre so clutch is kept.',
+    defaultChord: 'shift+r',
+    keywords: 'rotate 90',
+  },
+  {
+    id: 'edit.mirror',
+    title: 'Mirror across X',
+    group: 'edit',
+    detail: 'Reflect the selection through an exact X plane.',
+    defaultChord: 'shift+m',
+  },
+  {
+    id: 'edit.array',
+    title: 'Linear array…',
+    group: 'edit',
+    detail: 'Repeat the selection along an exact vector.',
+    defaultChord: 'shift+a',
+    keywords: 'repeat pattern',
+  },
+  {
+    id: 'edit.protect',
+    title: 'Protect / unlock selection',
+    group: 'edit',
+    detail: 'Toggle the kernel-enforced agent lock.',
+    defaultChord: 'l',
+    keywords: 'lock',
+  },
+  {
+    id: 'edit.paint',
+    title: 'Paint with active colour',
+    group: 'edit',
+    detail: 'Recolour the selection to the palette’s active colour.',
+    defaultChord: 'p',
+    keywords: 'recolour recolor colour',
+  },
+  {
+    id: 'edit.eyedropper',
+    title: 'Pick colour from selection',
+    group: 'edit',
+    detail: 'Make the selected part’s colour the active colour.',
+    defaultChord: 'k',
+    keywords: 'eyedropper sample',
+  },
 
   // Selection --------------------------------------------------------------
-  { id: 'select.all', title: 'Select all', group: 'select', detail: 'Select every part in the document.', defaultChord: 'mod+a' },
-  { id: 'select.none', title: 'Clear selection', group: 'select', detail: 'Deselect everything.', defaultChord: 'shift+mod+a' },
-  { id: 'select.inverse', title: 'Invert selection', group: 'select', detail: 'Select everything the selection does not cover.', defaultChord: 'mod+i' },
-  { id: 'select.connected', title: 'Grow to connected island', group: 'select', detail: 'Expand through mated connectors to the whole rigid island.', defaultChord: 'alt+c' },
-  { id: 'select.colour', title: 'Select same colour', group: 'select', detail: 'Every part sharing a colour with the selection.', defaultChord: 'alt+k' },
-  { id: 'select.subassembly', title: 'Select whole module', group: 'select', detail: 'Every part in the selection’s subassemblies.', defaultChord: 'alt+m' },
-  { id: 'select.definition', title: 'Select same part number', group: 'select', detail: 'Every instance of the selected part numbers.', defaultChord: 'alt+p' },
-  { id: 'select.save', title: 'Save selection set…', group: 'select', detail: 'Name the current selection so it can be recalled.', defaultChord: 'shift+mod+s' },
+  {
+    id: 'select.all',
+    title: 'Select all',
+    group: 'select',
+    detail: 'Select visible parts, respecting hide and isolation.',
+    defaultChord: 'mod+a',
+  },
+  {
+    id: 'select.none',
+    title: 'Clear selection',
+    group: 'select',
+    detail: 'Deselect everything.',
+    defaultChord: 'shift+mod+a',
+  },
+  {
+    id: 'select.inverse',
+    title: 'Invert selection',
+    group: 'select',
+    detail: 'Select everything the selection does not cover.',
+    defaultChord: 'mod+i',
+  },
+  {
+    id: 'select.connected',
+    title: 'Grow to connected island',
+    group: 'select',
+    detail: 'Expand through mated connectors to the whole rigid island.',
+    defaultChord: 'alt+c',
+  },
+  {
+    id: 'select.colour',
+    title: 'Select same colour',
+    group: 'select',
+    detail: 'Every part sharing a colour with the selection.',
+    defaultChord: 'alt+k',
+  },
+  {
+    id: 'select.subassembly',
+    title: 'Select whole module',
+    group: 'select',
+    detail: 'Every part in the selection’s subassemblies.',
+    defaultChord: 'alt+m',
+  },
+  {
+    id: 'select.definition',
+    title: 'Select same part number',
+    group: 'select',
+    detail: 'Every instance of the selected part numbers.',
+    defaultChord: 'alt+p',
+  },
+  {
+    id: 'select.save',
+    title: 'Save selection set…',
+    group: 'select',
+    detail: 'Name the current selection so it can be recalled.',
+    defaultChord: 'shift+mod+s',
+  },
 
   // View -------------------------------------------------------------------
-  { id: 'view.fit', title: 'Frame the model', group: 'view', detail: 'Reset to isometric and fit everything on screen.', defaultChord: 'f' },
-  { id: 'view.iso', title: 'Isometric view', group: 'view', detail: 'Look at the model from three-quarters.', defaultChord: 'alt+1' },
+  {
+    id: 'view.fit',
+    title: 'Frame the model',
+    group: 'view',
+    detail: 'Reset to isometric and fit everything on screen.',
+    defaultChord: 'f',
+  },
+  {
+    id: 'view.iso',
+    title: 'Isometric view',
+    group: 'view',
+    detail: 'Look at the model from three-quarters.',
+    defaultChord: 'alt+1',
+  },
   { id: 'view.front', title: 'Front view', group: 'view', detail: 'Look along +Z.', defaultChord: 'alt+2' },
   { id: 'view.top', title: 'Top view', group: 'view', detail: 'Look straight down.', defaultChord: 'alt+3' },
-  { id: 'view.beauty', title: 'Beauty render', group: 'view', detail: 'The normal shaded viewport.', defaultChord: 'alt+b' },
-  { id: 'view.connections', title: 'Connector map', group: 'view', detail: 'Draw every compiled connector at its solved world position.', defaultChord: 'alt+n' },
-  { id: 'view.violations', title: 'Collision report', group: 'view', detail: 'Highlight parts in a confirmed collision pair.', defaultChord: 'alt+x' },
-  { id: 'view.exploded', title: 'Exploded view', group: 'view', detail: 'Push subassemblies apart. Display only.', defaultChord: 'alt+e' },
+  {
+    id: 'view.beauty',
+    title: 'Beauty render',
+    group: 'view',
+    detail: 'The normal shaded viewport.',
+    defaultChord: 'alt+b',
+  },
+  {
+    id: 'view.connections',
+    title: 'Connector map',
+    group: 'view',
+    detail: 'Draw every compiled connector at its solved world position.',
+    defaultChord: 'alt+n',
+  },
+  {
+    id: 'view.violations',
+    title: 'Collision report',
+    group: 'view',
+    detail: 'Highlight parts in a confirmed collision pair.',
+    defaultChord: 'alt+x',
+  },
+  {
+    id: 'view.exploded',
+    title: 'Exploded view',
+    group: 'view',
+    detail: 'Push subassemblies apart. Display only.',
+    defaultChord: 'alt+e',
+  },
 
   // Visibility -------------------------------------------------------------
-  { id: 'visibility.hide', title: 'Hide selection', group: 'visibility', detail: 'Stop drawing the selection. The document is unchanged.', defaultChord: 'h' },
-  { id: 'visibility.show-all', title: 'Show everything', group: 'visibility', detail: 'Clear hide, isolate and ghost.', defaultChord: 'shift+h' },
-  { id: 'visibility.isolate', title: 'Isolate selection', group: 'visibility', detail: 'Draw only the selection until cleared.', defaultChord: 'shift+i' },
-  { id: 'visibility.ghost', title: 'Ghost selection', group: 'visibility', detail: 'Draw the selection translucent so context stays readable.', defaultChord: 'shift+g' },
-  { id: 'visibility.focus', title: 'Focus selection', group: 'visibility', detail: 'Frame the camera tightly on the selection.', defaultChord: 'shift+f' },
+  {
+    id: 'visibility.hide',
+    title: 'Hide selection',
+    group: 'visibility',
+    detail: 'Stop drawing the selection. The document is unchanged.',
+    defaultChord: 'h',
+  },
+  {
+    id: 'visibility.show-all',
+    title: 'Show everything',
+    group: 'visibility',
+    detail: 'Clear hide, isolate and ghost.',
+    defaultChord: 'shift+h',
+  },
+  {
+    id: 'visibility.isolate',
+    title: 'Isolate selection',
+    group: 'visibility',
+    detail: 'Draw only the selection until cleared.',
+    defaultChord: 'shift+i',
+  },
+  {
+    id: 'visibility.ghost',
+    title: 'Ghost selection',
+    group: 'visibility',
+    detail: 'Draw the selection translucent so context stays readable.',
+    defaultChord: 'shift+g',
+  },
+  {
+    id: 'visibility.focus',
+    title: 'Focus selection',
+    group: 'visibility',
+    detail: 'Frame the camera tightly on the selection.',
+    defaultChord: 'shift+f',
+  },
 
   // Panels -----------------------------------------------------------------
-  { id: 'panel.left', title: 'Toggle the palette dock', group: 'panels', detail: 'Collapse or restore the left dock.', defaultChord: 'mod+b' },
-  { id: 'panel.right', title: 'Toggle the inspector dock', group: 'panels', detail: 'Collapse or restore the right dock.', defaultChord: 'shift+mod+b' },
-  { id: 'panel.bottom', title: 'Toggle the timeline', group: 'panels', detail: 'Collapse or restore the bottom dock.', defaultChord: 'mod+j' },
-  { id: 'panel.search', title: 'Search parts', group: 'panels', detail: 'Put the cursor in the catalogue search field.', defaultChord: 'mod+k' },
+  {
+    id: 'panel.left',
+    title: 'Toggle the palette dock',
+    group: 'panels',
+    detail: 'Collapse or restore the left dock.',
+    defaultChord: 'mod+b',
+  },
+  {
+    id: 'panel.right',
+    title: 'Toggle the inspector dock',
+    group: 'panels',
+    detail: 'Collapse or restore the right dock.',
+    defaultChord: 'shift+mod+b',
+  },
+  {
+    id: 'panel.bottom',
+    title: 'Toggle the timeline',
+    group: 'panels',
+    detail: 'Collapse or restore the bottom dock.',
+    defaultChord: 'mod+j',
+  },
+  {
+    id: 'panel.search',
+    title: 'Search parts',
+    group: 'panels',
+    detail: 'Put the cursor in the catalogue search field.',
+    defaultChord: 'mod+k',
+  },
 
   // Project ----------------------------------------------------------------
-  { id: 'project.command-palette', title: 'Command palette', group: 'project', detail: 'Find and run any command by name.', defaultChord: 'mod+p' },
-  { id: 'project.command-deck', title: 'Command deck', group: 'project', detail: 'The parameterised console for every shared capability.', defaultChord: 'mod+/' },
-  { id: 'project.export', title: 'Export LDraw', group: 'project', detail: 'Download the exact flat .ldr for this revision.', defaultChord: 'mod+e' },
-  { id: 'project.resequence', title: 'Regenerate build order', group: 'project', detail: 'Derive a verified attachment-aware build sequence.', defaultChord: null },
+  {
+    id: 'project.command-palette',
+    title: 'Command palette',
+    group: 'project',
+    detail: 'Find and run any command by name.',
+    defaultChord: 'mod+p',
+  },
+  {
+    id: 'project.command-deck',
+    title: 'Command deck',
+    group: 'project',
+    detail: 'The parameterised console for every shared capability.',
+    defaultChord: 'mod+/',
+  },
+  {
+    id: 'project.export',
+    title: 'Export LDraw',
+    group: 'project',
+    detail: 'Download the exact flat .ldr for this revision.',
+    defaultChord: 'mod+e',
+  },
+  {
+    id: 'project.resequence',
+    title: 'Regenerate build order',
+    group: 'project',
+    detail: 'Derive a verified attachment-aware build sequence.',
+    defaultChord: null,
+  },
 
   // Help -------------------------------------------------------------------
-  { id: 'help.shortcuts', title: 'Keyboard shortcuts', group: 'help', detail: 'The full command map.', defaultChord: '?' },
-  { id: 'help.welcome', title: 'Replay the welcome guide', group: 'help', detail: 'Show the first-run orientation again.', defaultChord: null },
-  { id: 'help.keymap', title: 'Customise shortcuts…', group: 'help', detail: 'Rebind any command and see conflicts.', defaultChord: null },
-  { id: 'help.reset-workspace', title: 'Reset workspace preferences', group: 'help', detail: 'Put the dock layout, palette sets and shortcut map back to their defaults. The model is untouched.', defaultChord: null, keywords: 'layout default restore shortcuts' },
+  {
+    id: 'help.shortcuts',
+    title: 'Keyboard shortcuts',
+    group: 'help',
+    detail: 'The full command map.',
+    defaultChord: '?',
+  },
+  {
+    id: 'help.welcome',
+    title: 'Replay the welcome guide',
+    group: 'help',
+    detail: 'Show the first-run orientation again.',
+    defaultChord: null,
+  },
+  {
+    id: 'help.keymap',
+    title: 'Customise shortcuts…',
+    group: 'help',
+    detail: 'Rebind any command and see conflicts.',
+    defaultChord: null,
+  },
+  {
+    id: 'help.reset-workspace',
+    title: 'Reset workspace preferences',
+    group: 'help',
+    detail: 'Put the dock layout, palette sets and shortcut map back to their defaults. The model is untouched.',
+    defaultChord: null,
+    keywords: 'layout default restore shortcuts',
+  },
 ]
 
 export const COMMAND_GROUP_LABEL: Record<CommandGroup, string> = {
@@ -151,9 +463,10 @@ export function chordFromEvent(event: KeyboardEvent): string {
   // Shift is only meaningful when it did not already change the character. `?`
   // is Shift+/ on most layouts, and recording it as `shift+?` would mean the
   // binding could never fire.
-  const lower = key.length === 1 ? key.toLowerCase() : key.toLowerCase()
-  const shiftChangedCharacter = key.length === 1 && key !== key.toLowerCase()
-  if (event.shiftKey && (key.length > 1 || shiftChangedCharacter)) parts.push('shift')
+  const lower = key.toLowerCase()
+  // Chromium can report a lowercase letter with Ctrl+Shift held. Looking only
+  // for uppercase mapped Ctrl+Shift+Z to Undo instead of Redo on those systems.
+  if (event.shiftKey && (key.length > 1 || /^[a-z]$/i.test(key))) parts.push('shift')
   parts.push(lower === 'backspace' ? 'delete' : lower)
   return normaliseChord(parts.join('+'))
 }
@@ -195,9 +508,10 @@ export function detectConflicts(map: ShortcutMap): ShortcutConflict[] {
   const byChord = new Map<string, string[]>()
   for (const [commandId, chord] of Object.entries(map)) {
     if (!chord) continue
-    const bucket = byChord.get(chord)
+    const normalised = normaliseChord(chord)
+    const bucket = byChord.get(normalised)
     if (bucket) bucket.push(commandId)
-    else byChord.set(chord, [commandId])
+    else byChord.set(normalised, [commandId])
   }
   const conflicts: ShortcutConflict[] = []
   for (const [chord, commandIds] of byChord) {
@@ -210,7 +524,8 @@ export function detectConflicts(map: ShortcutMap): ShortcutConflict[] {
 /** The command a chord should run, or null. Conflicted chords resolve to none. */
 export function commandForChord(map: ShortcutMap, chord: string): string | null {
   if (!chord) return null
-  const matches = Object.entries(map).filter(([, value]) => value === chord)
+  const normalised = normaliseChord(chord)
+  const matches = Object.entries(map).filter(([, value]) => value && normaliseChord(value) === normalised)
   return matches.length === 1 ? matches[0][0] : null
 }
 

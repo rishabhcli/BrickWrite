@@ -1,38 +1,15 @@
-import {
-  Box,
-  Check,
-  ChevronsLeft,
-  ChevronsRight,
-  Lock,
-  RotateCcw,
-  RotateCw,
-  ShieldCheck,
-  Unlock,
-} from 'lucide-react'
+import { Box, Check, ChevronsLeft, ChevronsRight, Lock, RotateCcw, RotateCw, ShieldCheck, Unlock } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { describeSize, getColor } from '../../cad/catalog'
 import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../../cad/math'
 import type { ModelHealthIssue } from '../../cad/modelHealth'
-import type {
-  EngineSnapshot,
-  PartDefinition,
-  PartInstance,
-  Transform,
-} from '../../cad/types'
+import type { EngineSnapshot, PartDefinition, PartInstance, Transform } from '../../cad/types'
 import { Slot } from './ExtensionRegistry'
 import { ModelHealthPanel } from './ModelHealthPanel'
+import { NumberField } from './NumberField'
 
 /** How many observed colours the inspector shows before offering the rest. */
 const INSPECTOR_SWATCH_LIMIT = 18
-
-function NumberField({ label, value, suffix, onCommit }: { label: string; value: number; suffix: string; onCommit: (value: number) => void }) {
-  return (
-    <label className="number-field">
-      <span>{label}</span>
-      <div><input key={value} type="number" defaultValue={value} onBlur={(event) => onCommit(Number(event.target.value))} /><em>{suffix}</em></div>
-    </label>
-  )
-}
 
 export interface ArticulationControl {
   edgeId: string
@@ -105,7 +82,9 @@ export function InspectorPanel({
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
       <div className="inspector-tabs" role="tablist">
-        <button className={tab === 'object' ? 'active' : ''} onClick={() => setTab('object')}>OBJECT</button>
+        <button className={tab === 'object' ? 'active' : ''} onClick={() => setTab('object')}>
+          OBJECT
+        </button>
         <button className={tab === 'validate' ? 'active' : ''} onClick={() => setTab('validate')}>
           VALIDATE
           <span className={report.healthy ? 'healthy-dot' : 'warning-dot'} />
@@ -115,19 +94,28 @@ export function InspectorPanel({
         selectedPart && definition ? (
           <div className="inspector-scroll">
             <section className="selection-identity">
-              <div className="selected-glyph"><Box size={24} strokeWidth={1.4} /></div>
+              <div className="selected-glyph">
+                <Box size={24} strokeWidth={1.4} />
+              </div>
               <div>
-                <span className="eyebrow">{definition.category} / {definition.canonicalId}</span>
+                <span className="eyebrow">
+                  {definition.category} / {definition.canonicalId}
+                </span>
                 <h3>{definition.name}</h3>
-                <p>{selectedPart.id} · {describeSize(definition)}</p>
+                <p>
+                  {selectedPart.id} · {describeSize(definition)}
+                </p>
               </div>
             </section>
             <section className="property-section">
-              <header><span>TRANSFORM</span><em>WORLD · LDU</em></header>
+              <header>
+                <span>TRANSFORM</span>
+                <em>WORLD · LDU</em>
+              </header>
               <div className="fields-grid">
                 {(['X', 'Y', 'Z'] as const).map((axis, index) => (
                   <NumberField
-                    key={`p_${axis}`}
+                    key={`p_${axis}_${selectedPart.id}`}
                     label={axis}
                     value={selectedPart.transform.position[index]}
                     suffix="LDU"
@@ -145,7 +133,7 @@ export function InspectorPanel({
               <div className="fields-grid rotation-fields">
                 {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
                   <NumberField
-                    key={`r_${axis}`}
+                    key={`r_${axis}_${selectedPart.id}`}
                     label={axis}
                     value={displayRotation[index]}
                     suffix="°"
@@ -162,7 +150,10 @@ export function InspectorPanel({
               </div>
             </section>
             <section className="property-section">
-              <header><span>COLOR</span><em>{getColor(selectedPart.color).name}</em></header>
+              <header>
+                <span>COLOR</span>
+                <em>{getColor(selectedPart.color).name}</em>
+              </header>
               {/* A part observed in 61 official colours produced a wall of
                   unlabelled circles. The evidence order puts the common ones
                   first, so the list is capped and the rest are one click away —
@@ -190,7 +181,9 @@ export function InspectorPanel({
                     : `Show all ${definition.availableColors.length} observed colours`}
                 </button>
               )}
-              <div className={`legality-row ${definition.availableColors.includes(selectedPart.color) ? '' : 'virtual'}`}>
+              <div
+                className={`legality-row ${definition.availableColors.includes(selectedPart.color) ? '' : 'virtual'}`}
+              >
                 <Check size={12} />
                 {definition.availableColors.includes(selectedPart.color)
                   ? `Observed in official sets · ${definition.availableColors.length} known colours`
@@ -200,16 +193,37 @@ export function InspectorPanel({
               </div>
             </section>
             <section className="property-section">
-              <header><span>CONNECTIONS</span><em>{definition.connectors.length} features</em></header>
+              <header>
+                <span>CONNECTIONS</span>
+                <em>{definition.connectors.length} features</em>
+              </header>
               <div className="connector-summary">
-                <div><span className="connector-icon male" /> <strong>{definition.connectors.filter((item) => item.gender === 'male').length}</strong><small>male</small></div>
-                <div><span className="connector-icon female" /> <strong>{definition.connectors.filter((item) => item.gender === 'female').length}</strong><small>female</small></div>
-                <div><ShieldCheck size={18} /> <strong>{definition.connectionStatus === 'ldcad-authoritative' ? 'LDCad' : 'none'}</strong><small>source</small></div>
+                <div>
+                  <span className="connector-icon male" />{' '}
+                  <strong>{definition.connectors.filter((item) => item.gender === 'male').length}</strong>
+                  <small>male</small>
+                </div>
+                <div>
+                  <span className="connector-icon female" />{' '}
+                  <strong>{definition.connectors.filter((item) => item.gender === 'female').length}</strong>
+                  <small>female</small>
+                </div>
+                <div>
+                  <ShieldCheck size={18} />{' '}
+                  <strong>{definition.connectionStatus === 'ldcad-authoritative' ? 'LDCad' : 'none'}</strong>
+                  <small>source</small>
+                </div>
               </div>
             </section>
             <section className="property-section">
-              <header><span>OWNERSHIP</span><em>{selectedPart.provenance}</em></header>
-              <button className={`lock-control ${selectedPart.protected ? 'locked' : ''}`} onClick={() => onProtect(!selectedPart.protected)}>
+              <header>
+                <span>OWNERSHIP</span>
+                <em>{selectedPart.provenance}</em>
+              </header>
+              <button
+                className={`lock-control ${selectedPart.protected ? 'locked' : ''}`}
+                onClick={() => onProtect(!selectedPart.protected)}
+              >
                 {selectedPart.protected ? <Lock size={15} /> : <Unlock size={15} />}
                 <span>{selectedPart.protected ? 'Protected from agent edits' : 'Unlocked for collaboration'}</span>
                 <i>{selectedPart.protected ? 'LOCKED' : 'OPEN'}</i>
@@ -217,7 +231,12 @@ export function InspectorPanel({
             </section>
             {articulation.length > 0 && (
               <section className="property-section">
-                <header><span>ARTICULATION</span><em>{articulation.length} joint{articulation.length === 1 ? '' : 's'}</em></header>
+                <header>
+                  <span>ARTICULATION</span>
+                  <em>
+                    {articulation.length} joint{articulation.length === 1 ? '' : 's'}
+                  </em>
+                </header>
                 {/* Only interfaces designed to move appear here. A stud
                     connection is rigid once built, so a brick wall offers
                     nothing to drive. */}
@@ -225,25 +244,39 @@ export function InspectorPanel({
                   <div className="joint-row" key={joint.edgeId}>
                     <div className="joint-copy">
                       <strong>{joint.family}</strong>
-                      <small>{joint.label.split(' · ').slice(2).join(' · ')} · moves {joint.movingCount}</small>
+                      <small>
+                        {joint.label.split(' · ').slice(2).join(' · ')} · moves {joint.movingCount}
+                      </small>
                     </div>
                     <div className="joint-controls">
                       {joint.canRotate && (
                         <>
-                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: -joint.rotateStep })} title={`Rotate -${joint.rotateStep}°`}>
+                          <button
+                            onClick={() => onArticulate(joint.edgeId, { rotateDegrees: -joint.rotateStep })}
+                            title={`Rotate -${joint.rotateStep}°`}
+                          >
                             <RotateCcw size={12} />
                           </button>
-                          <button onClick={() => onArticulate(joint.edgeId, { rotateDegrees: joint.rotateStep })} title={`Rotate +${joint.rotateStep}°`}>
+                          <button
+                            onClick={() => onArticulate(joint.edgeId, { rotateDegrees: joint.rotateStep })}
+                            title={`Rotate +${joint.rotateStep}°`}
+                          >
                             <RotateCw size={12} />
                           </button>
                         </>
                       )}
                       {joint.canSlide && (
                         <>
-                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: -joint.slideStep })} title={`Slide -${joint.slideStep} LDU`}>
+                          <button
+                            onClick={() => onArticulate(joint.edgeId, { slideLdu: -joint.slideStep })}
+                            title={`Slide -${joint.slideStep} LDU`}
+                          >
                             <ChevronsLeft size={12} />
                           </button>
-                          <button onClick={() => onArticulate(joint.edgeId, { slideLdu: joint.slideStep })} title={`Slide +${joint.slideStep} LDU`}>
+                          <button
+                            onClick={() => onArticulate(joint.edgeId, { slideLdu: joint.slideStep })}
+                            title={`Slide +${joint.slideStep} LDU`}
+                          >
                             <ChevronsRight size={12} />
                           </button>
                         </>
@@ -254,11 +287,16 @@ export function InspectorPanel({
               </section>
             )}
             <section className="property-section">
-              <header><span>DATA PROVENANCE</span><em>{definition.license}</em></header>
+              <header>
+                <span>DATA PROVENANCE</span>
+                <em>{definition.license}</em>
+              </header>
               <dl className="provenance-list">
                 <div>
                   <dt>Geometry</dt>
-                  <dd>{definition.ldrawId} · {definition.geometryAsset?.triangles.toLocaleString() ?? '—'} triangles</dd>
+                  <dd>
+                    {definition.ldrawId} · {definition.geometryAsset?.triangles.toLocaleString() ?? '—'} triangles
+                  </dd>
                 </div>
                 <div>
                   <dt>Connections</dt>
@@ -301,7 +339,14 @@ export function InspectorPanel({
               id="inspector"
               wrap={({ title, icon, content }) => (
                 <section className="property-section">
-                  {title ? <header><span>{icon}{title.toUpperCase()}</span></header> : null}
+                  {title ? (
+                    <header>
+                      <span>
+                        {icon}
+                        {title.toUpperCase()}
+                      </span>
+                    </header>
+                  ) : null}
                   {content}
                 </section>
               )}
@@ -309,14 +354,28 @@ export function InspectorPanel({
           </div>
         ) : (
           <div className="empty-inspector">
-            <div className="scanner-mark"><span /><span /><span /><span /></div>
+            <div className="scanner-mark">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
             <span className="eyebrow">NO OBJECT SELECTED</span>
             <h3>Inspect the build</h3>
             <p>Select any physical part to inspect its exact transform, connectors, identity and ownership.</p>
             <div className="overview-metrics">
-              <div><strong>{report.partCount}</strong><span>parts</span></div>
-              <div><strong>{Object.keys(state.document.subassemblies).length}</strong><span>modules</span></div>
-              <div><strong>r{state.document.revision}</strong><span>revision</span></div>
+              <div>
+                <strong>{report.partCount}</strong>
+                <span>parts</span>
+              </div>
+              <div>
+                <strong>{Object.keys(state.document.subassemblies).length}</strong>
+                <span>modules</span>
+              </div>
+              <div>
+                <strong>r{state.document.revision}</strong>
+                <span>revision</span>
+              </div>
             </div>
           </div>
         )

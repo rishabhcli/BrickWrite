@@ -33,10 +33,25 @@ describe('viewport keyboard mapping', () => {
     expect(nextInOrder(order, 'c', 1)).toBe('b')
   })
 
+  it('raises and lowers the selection with Page Up/Down in move mode', () => {
+    const opts = { shift: false, mode: 'nudge' as const, gridLdu: 8 }
+    expect(commandFromViewportKey('PageUp', opts)).toEqual({ kind: 'nudge', dx: 0, dz: 0, dy: -8 })
+    expect(commandFromViewportKey('PageDown', { ...opts, shift: true })).toEqual({
+      kind: 'nudge',
+      dx: 0,
+      dz: 0,
+      dy: 32,
+    })
+  })
+
   it('maps joint, section, occlusion and enter commands', () => {
     const opts = { shift: false, mode: 'orbit' as const, gridLdu: 20 }
     expect(commandFromViewportKey(',', opts)).toEqual({ kind: 'joint', rotateDegrees: -15, slideLdu: 0 })
-    expect(commandFromViewportKey('.', { ...opts, shift: true })).toEqual({ kind: 'joint', rotateDegrees: 0, slideLdu: 4 })
+    expect(commandFromViewportKey('.', { ...opts, shift: true })).toEqual({
+      kind: 'joint',
+      rotateDegrees: 0,
+      slideLdu: 4,
+    })
     expect(commandFromViewportKey(';', opts)).toEqual({ kind: 'section', offsetLdu: -8 })
     expect(commandFromViewportKey('\\', opts)).toEqual({ kind: 'occlude' })
     expect(commandFromViewportKey('Enter', { ...opts, placing: true })).toEqual({ kind: 'place' })

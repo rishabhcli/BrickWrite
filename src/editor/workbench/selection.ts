@@ -13,14 +13,7 @@ import type { ModelDocument } from '../../cad/types'
  * testable without a renderer and reusable by the agent.
  */
 
-export type SelectionMode =
-  | 'part'
-  | 'colour'
-  | 'connected'
-  | 'subassembly'
-  | 'definition'
-  | 'visible'
-  | 'inverse'
+export type SelectionMode = 'part' | 'colour' | 'connected' | 'subassembly' | 'definition' | 'visible' | 'inverse'
 
 export interface SelectionModeInfo {
   readonly id: SelectionMode
@@ -32,12 +25,48 @@ export interface SelectionModeInfo {
 }
 
 export const SELECTION_MODES: readonly SelectionModeInfo[] = [
-  { id: 'part', label: 'Part', hint: 'Click one part. Shift-click adds, shift-drag boxes.', needsSeed: false, shortcut: '1' },
-  { id: 'colour', label: 'Colour', hint: 'Every part sharing a colour with the selection.', needsSeed: true, shortcut: '2' },
-  { id: 'connected', label: 'Connected', hint: 'The whole rigid island reachable through mated connectors.', needsSeed: true, shortcut: '3' },
-  { id: 'subassembly', label: 'Module', hint: 'Every part in the selection’s subassemblies.', needsSeed: true, shortcut: '4' },
-  { id: 'definition', label: 'Same part', hint: 'Every instance of the selected part numbers.', needsSeed: true, shortcut: '5' },
-  { id: 'visible', label: 'Visible', hint: 'Everything currently drawn, ignoring hidden and isolated parts.', needsSeed: false, shortcut: '6' },
+  {
+    id: 'part',
+    label: 'Part',
+    hint: 'Click one part. Shift-click adds, shift-drag boxes.',
+    needsSeed: false,
+    shortcut: '1',
+  },
+  {
+    id: 'colour',
+    label: 'Colour',
+    hint: 'Every part sharing a colour with the selection.',
+    needsSeed: true,
+    shortcut: '2',
+  },
+  {
+    id: 'connected',
+    label: 'Connected',
+    hint: 'The whole rigid island reachable through mated connectors.',
+    needsSeed: true,
+    shortcut: '3',
+  },
+  {
+    id: 'subassembly',
+    label: 'Module',
+    hint: 'Every part in the selection’s subassemblies.',
+    needsSeed: true,
+    shortcut: '4',
+  },
+  {
+    id: 'definition',
+    label: 'Same part',
+    hint: 'Every instance of the selected part numbers.',
+    needsSeed: true,
+    shortcut: '5',
+  },
+  {
+    id: 'visible',
+    label: 'Visible',
+    hint: 'Everything currently drawn, ignoring hidden and isolated parts.',
+    needsSeed: false,
+    shortcut: '6',
+  },
   { id: 'inverse', label: 'Inverse', hint: 'Everything except the current selection.', needsSeed: true, shortcut: '7' },
 ]
 
@@ -98,23 +127,29 @@ export function resolveSelection(mode: SelectionMode, context: SelectionContext)
       return [...seeds]
     case 'colour': {
       const colours = new Set(seeds.map((id) => document.parts[id].color))
-      return Object.values(document.parts).filter((part) => colours.has(part.color)).map((part) => part.id)
+      return Object.values(document.parts)
+        .filter((part) => colours.has(part.color))
+        .map((part) => part.id)
     }
     case 'connected':
       return connectedComponent(document, seeds)
     case 'subassembly': {
       const groups = new Set(seeds.map((id) => document.parts[id].subassemblyId))
-      return Object.values(document.parts).filter((part) => groups.has(part.subassemblyId)).map((part) => part.id)
+      return Object.values(document.parts)
+        .filter((part) => groups.has(part.subassemblyId))
+        .map((part) => part.id)
     }
     case 'definition': {
       const definitions = new Set(seeds.map((id) => document.parts[id].definitionId))
-      return Object.values(document.parts).filter((part) => definitions.has(part.definitionId)).map((part) => part.id)
+      return Object.values(document.parts)
+        .filter((part) => definitions.has(part.definitionId))
+        .map((part) => part.id)
     }
     case 'visible':
       return Object.keys(document.parts).filter((id) => !hidden.has(id))
     case 'inverse': {
       const current = new Set(seeds)
-      return Object.keys(document.parts).filter((id) => !current.has(id))
+      return Object.keys(document.parts).filter((id) => !current.has(id) && !hidden.has(id))
     }
   }
 }

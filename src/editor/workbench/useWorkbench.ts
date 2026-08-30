@@ -24,6 +24,7 @@ import { useCad } from '../useCad'
 import { webMcpAdapter } from '../../webmcp/adapter'
 import type { WorkbenchNotice } from './ExtensionRegistry'
 import { usePersistentState } from './persistence'
+import { captureParts, planPaste, type PartClipboard } from './clipboard'
 import {
   applyVisibility,
   hiddenPartIds,
@@ -35,6 +36,10 @@ import {
 import { poseRefusal } from '../../cad/validation'
 import {
   canonicalisePose,
+  posesEqual,
+  planGroundSelection,
+  translatePose,
+  connectorFrame,
   planRotateSelection,
   NO_LOCKS,
   type AxisLocks,
@@ -125,6 +130,7 @@ export function useWorkbench() {
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [toast, setToast] = useState<WorkbenchNotice | null>(null)
   const [placement, setPlacement] = useState<PlacementRequest | null>(null)
+  const [clipboard, setClipboard] = useState<PartClipboard | null>(null)
   // Where a catalogue drag was released, when the armed part came from a drop.
   // The viewport commits it from its own mount effect; see `dropPart`.
   const [dropPoint, setDropPoint] = useState<{ clientX: number; clientY: number } | null>(null)
@@ -229,6 +235,20 @@ export function useWorkbench() {
     return true
   }, [])
 
+  const replayHistory = useCallback((direction: 'undo' | 'redo') => {
+    const result = cadEngine[direction]('human')
+    if (!result.ok) {
+      setToast({ kind: 'error', title: `Could not ${direction}`, detail: result.error.message })
+      return false
+    }
+    const document = cadEngine.getDocument()
+    // Restored parts should be immediately editable, not silently deselected.
+    const restored = result.value.affectedPartIds.filter((id) => document.parts[id])
+    if (restored.length) cadEngine.setSelection(restored)
+    setToast({ kind: 'success', title: result.value.label, detail: `Revision ${result.value.resultRevision}` })
+    return true
+  }, [])
+
   /**
    * Human commands and WebMCP long-tail commands share the same pure planner.
    * The only difference is attribution; both still commit through CadEngine.
@@ -261,7 +281,10 @@ export function useWorkbench() {
 
   // -- selection ------------------------------------------------------------
   const setTool = useCallback((next: EditorTool) => {
+    setPlacement(null)
+    setDropPoint(null)
     setToolRaw(next)
+    requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }))
     // Leaving Connect abandons a half-finished mate rather than leaving a stale
     // source connector armed behind an unrelated tool.
     if (next !== 'connect') {
@@ -341,15 +364,17 @@ export function useWorkbench() {
 
   // -- transforms -----------------------------------------------------------
   const handleTransform = useCallback(
-    (partId: string, transform: Transform) => {
+    (partId: string, transform: Transform, exact = false) => {
       const snapshot = cadEngine.getSnapshot()
       const part = snapshot.document.parts[partId]
+      if (!part || posesEqual(part.transform, transform)) return false
       const canonical = canonicalisePose(transform)
       const snapped =
-        part && transformPrefs.connectorSnap
+        !exact && transformPrefs.connectorSnap && !Object.values(transformPrefs.locks).some(Boolean)
           ? firstLegalSnap(part, snapshot.document, canonical, { radiusLdu: Math.max(4, gridLdu * 0.7) })
           : null
       const committed = canonicalisePose(snapped ?? canonical)
+      if (posesEqual(part.transform, committed)) return false
       const refused = poseRefusal(snapshot.document, partId, committed)
       if (refused) {
         setToast({
@@ -364,21 +389,27 @@ export function useWorkbench() {
                   ? 'Every stud on that face is taken. Place on the ground, or on a part with free studs.'
                   : 'That surface cannot clutch this part. Place on the ground, or on a face with free studs.',
         })
-        return
+        return false
       }
       lastCommittedPose.current = { partId, pose: committed }
-      dispatch(snapped ? 'Snap part to connectors' : 'Transform part', [
+      return dispatch(snapped ? 'Snap part to connectors' : 'Transform part', [
         { type: 'part.transform', partId, transform: committed },
       ])
     },
-    [dispatch, gridLdu, transformPrefs.connectorSnap],
+    [dispatch, gridLdu, transformPrefs.connectorSnap, transformPrefs.locks],
   )
 
   /** Commits several poses as one transaction — align, distribute, nudge. */
   const commitTransforms = useCallback(
     (label: string, operations: CadOperation[]) => {
-      if (!operations.length) return false
       const snapshot = cadEngine.getSnapshot()
+      operations = operations.filter(
+        (operation) =>
+          operation.type !== 'part.transform' ||
+          !snapshot.document.parts[operation.partId] ||
+          !posesEqual(snapshot.document.parts[operation.partId].transform, operation.transform),
+      )
+      if (!operations.length) return false
       const transforms = operations.filter(
         (operation): operation is Extract<CadOperation, { type: 'part.transform' }> =>
           operation.type === 'part.transform',
@@ -409,23 +440,34 @@ export function useWorkbench() {
 
   /** Keyboard nudge of a multi-part selection as one transaction, so clutch is kept. */
   const nudgeSelection = useCallback(
-    (dx: number, dz: number) => {
+    (dx: number, dz: number, dy = 0) => {
       const snapshot = cadEngine.getSnapshot()
       const operations: CadOperation[] = []
       for (const partId of snapshot.selection) {
         const part = snapshot.document.parts[partId]
         if (!part) continue
-        const [x, y, z] = part.transform.position
+        const delta: Vec3 = [
+          transformPrefs.locks.x ? 0 : dx,
+          transformPrefs.locks.y ? 0 : dy,
+          transformPrefs.locks.z ? 0 : dz,
+        ]
         operations.push({
           type: 'part.transform',
           partId,
-          transform: { ...part.transform, position: [x + dx, y, z + dz] },
+          transform: translatePose(
+            part.transform,
+            delta,
+            transformPrefs.frame,
+            transformPrefs.frame === 'connector'
+              ? (connectorFrame(snapshot.document.parts[snapshot.selection[0]]) ?? undefined)
+              : snapshot.document.parts[snapshot.selection[0]].transform.basis,
+          ),
         })
       }
       if (!operations.length) return false
       return commitTransforms(`Nudge ${operations.length} part${operations.length === 1 ? '' : 's'}`, operations)
     },
-    [commitTransforms],
+    [commitTransforms, transformPrefs.frame, transformPrefs.locks],
   )
 
   // -- placement ------------------------------------------------------------
@@ -440,9 +482,7 @@ export function useWorkbench() {
     (definition: PartDefinition, transform: Transform): PartInstance => {
       const snapshot = cadEngine.getSnapshot()
       const selected = snapshot.selection[0] ? snapshot.document.parts[snapshot.selection[0]] : undefined
-      const availableColor = definition.availableColors.includes(activeColor)
-        ? activeColor
-        : (definition.availableColors[0] ?? activeColor)
+      const availableColor = activeColor
       return {
         id: createId('part'),
         definitionId: definition.canonicalId,
@@ -478,9 +518,7 @@ export function useWorkbench() {
         })
         return false
       }
-      const color = definition.availableColors.includes(activeColor)
-        ? activeColor
-        : (definition.availableColors[0] ?? activeColor)
+      const color = activeColor
       setPlacement({ definitionId: definition.canonicalId, color, quarterTurns: 0 })
       setDropPoint(null)
       setToolRaw('select')
@@ -492,7 +530,7 @@ export function useWorkbench() {
 
   const placeArmed = useCallback(
     (transform: Transform, legal = true, reason?: string) => {
-      if (!placement) return
+      if (!placement) return false
       if (!legal) {
         const title =
           reason === 'occupied'
@@ -510,16 +548,18 @@ export function useWorkbench() {
                 ? 'That pose would interpenetrate another part. Place on remaining free studs, or on the ground.'
                 : 'That surface cannot clutch this part. Place on the ground, or on a face with free studs.',
         })
-        return
+        return false
       }
       const definition = catalog.get(placement.definitionId)
-      if (!definition) return
+      if (!definition) return false
       const part = buildPartAt(definition, canonicalisePose(transform))
       if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
         cadEngine.setSelection([part.id])
         // Staying armed is what makes building a wall bearable: the operator keeps
         // clicking, and each click lands another brick.
+        return true
       }
+      return false
     },
     [buildPartAt, dispatch, placement],
   )
@@ -547,9 +587,7 @@ export function useWorkbench() {
       const resolved = resolveQuickAdd(
         {
           definitionId: definition.canonicalId,
-          color: definition.availableColors.includes(activeColor)
-            ? activeColor
-            : (definition.availableColors[0] ?? activeColor),
+          color: activeColor,
           quarterTurns: 0,
         },
         snapshot.document,
@@ -586,6 +624,7 @@ export function useWorkbench() {
       if (dispatch(`Place ${definition.name}`, [{ type: 'part.add', part }])) {
         cadEngine.setSelection([part.id])
         setToolRaw('move')
+        requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }))
         return true
       }
       return false
@@ -640,9 +679,12 @@ export function useWorkbench() {
     if (!snapshot.selection.length) return false
     const selected = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
     const bounds = selected.map(getPartBounds)
-    const offset =
-      Math.max(...bounds.map((item) => item.max[0])) - Math.min(...bounds.map((item) => item.min[0])) + STUD_LDU
-    return runSharedMutation('duplicate_selection', { offsetLdu: [offset, 0, 0] })
+    const right = Math.max(...Object.values(snapshot.document.parts).map((part) => getPartBounds(part).max[0]))
+    const offset = Math.ceil((right - Math.min(...bounds.map((item) => item.min[0])) + STUD_LDU) / STUD_LDU) * STUD_LDU
+    // Copying a roof brick should not leave its clone hovering at roof height.
+    return runSharedMutation('duplicate_selection', {
+      offsetLdu: [offset, -Math.max(...bounds.map((item) => item.max[1])), 0],
+    })
   }, [runSharedMutation])
 
   const deleteSelection = useCallback(() => {
@@ -652,9 +694,70 @@ export function useWorkbench() {
       `Remove ${snapshot.selection.length} part${snapshot.selection.length === 1 ? '' : 's'}`,
       snapshot.selection.map((partId) => ({ type: 'part.remove', partId })),
     )
-    cadEngine.setSelection([])
+    if (committed) cadEngine.setSelection([])
     return committed
   }, [dispatch])
+
+  const copySelection = useCallback(
+    (cut = false) => {
+      const snapshot = cadEngine.getSnapshot()
+      try {
+        const next = captureParts(snapshot.document, snapshot.selection, cut)
+        if (!next) return false
+        // A refused cut must preserve both the old clipboard and the selection.
+        if (cut && !deleteSelection()) return false
+        setClipboard(next)
+        setToast({
+          kind: 'info',
+          title: `${cut ? 'Cut' : 'Copied'} ${next.parts.length} part${next.parts.length === 1 ? '' : 's'}`,
+          detail: 'Saved in the editor clipboard. Paste here or in another project during this editor session.',
+        })
+        return true
+      } catch (cause) {
+        setToast({ kind: 'error', title: 'Could not copy selection', detail: String(cause) })
+        return false
+      }
+    },
+    [deleteSelection],
+  )
+
+  const pasteSelection = useCallback(() => {
+    if (!clipboard) return false
+    try {
+      const plan = planPaste(cadEngine.getDocument(), clipboard)
+      if (!dispatch(`Paste ${plan.selection.length} part${plan.selection.length === 1 ? '' : 's'}`, plan.operations))
+        return false
+      cadEngine.setSelection(plan.selection)
+      setClipboard({ ...clipboard, cut: false })
+      setPlacement(null)
+      setToolRaw('move')
+      return true
+    } catch (cause) {
+      setToast({ kind: 'error', title: 'Could not paste selection', detail: String(cause) })
+      return false
+    }
+  }, [clipboard, dispatch])
+
+  const groundSelection = useCallback(() => {
+    const snapshot = cadEngine.getSnapshot()
+    return commitTransforms(
+      'Ground selection',
+      planGroundSelection(snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)),
+    )
+  }, [commitTransforms])
+
+  useEffect(() => {
+    setPlacement((current) => (current ? { ...current, color: activeColor } : current))
+  }, [activeColor])
+
+  // Transient tools and hidden ids belong to a document, not to the next opened project.
+  useEffect(() => {
+    setPlacement(null)
+    setDropPoint(null)
+    setConnect(IDLE_CONNECT)
+    setPlaybackStep(null)
+    setVisibility({ hidden: new Set(), isolated: null, ghosted: new Set() })
+  }, [state.document.id])
 
   const rotateSelection = useCallback(
     (degrees = 90) => {
@@ -916,26 +1019,13 @@ export function useWorkbench() {
     return true
   }, [])
 
-  /**
-   * Frames the camera tightly on the selection.
-   *
-   * The camera rig frames whatever is drawn, so focus isolates for exactly one
-   * frame, bumps the reset key, and restores. That gets a selection-tight frame
-   * out of a viewport whose framing contract is document-wide.
-   */
+  /** Frame the selection without temporarily hiding the rest of the model. */
   const focusSelection = useCallback(() => {
     const snapshot = cadEngine.getSnapshot()
-    if (!snapshot.selection.length) {
-      setCameraView('isometric')
-      setCameraResetKey((value) => value + 1)
-      return true
-    }
-    const restore = visibility
-    setVisibility((current) => ({ ...current, isolated: new Set(snapshot.selection) }))
+    if (snapshot.selection.length && window.__brickwrightRenderer?.frameParts(snapshot.selection)) return true
     setCameraResetKey((value) => value + 1)
-    requestAnimationFrame(() => requestAnimationFrame(() => setVisibility(restore)))
     return true
-  }, [visibility])
+  }, [])
 
   // -- saved selection sets -------------------------------------------------
   const saveSelectionSet = useCallback(
@@ -1111,6 +1201,7 @@ export function useWorkbench() {
     lastCommittedPose,
     canvasRef,
     dispatch,
+    replayHistory,
     runSharedMutation,
     commitTransforms,
     nudgeSelection,
@@ -1122,6 +1213,10 @@ export function useWorkbench() {
     dropPart,
     placeArmed,
     duplicateSelection,
+    clipboard,
+    copySelection,
+    pasteSelection,
+    groundSelection,
     deleteSelection,
     rotateSelection,
     recolorSelection,
