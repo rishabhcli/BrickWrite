@@ -1878,10 +1878,7 @@ const DEMOS = [
     title: 'Harbour Street',
     discipline: 'Modular architecture',
     tagline: 'A terrace of five shopfronts on a tiled street, every building and every floor separable.',
-    summary:
-      'Five modular units, three storeys each, standing on a street laid one tile at a time. Every storey is its ' +
-      'own subassembly, so a building lifts out of the terrace and a floor lifts off the building. Shopfronts get ' +
-      'doors and glazing at street level; the floors above are glazed the whole way along.',
+    summary: 'Five shopfronts on a tiled street. Every building lifts out, every floor lifts off.',
     techniques: [
       'One subassembly per storey, per unit',
       'Tiled carriageway, kerb and pavement',
@@ -1914,10 +1911,7 @@ const DEMOS = [
     title: 'Meridian Tower',
     discipline: 'Modular architecture',
     tagline: 'A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.',
-    summary:
-      'Every storey is its own subassembly resting on the deck of the one below, the way a modular building is ' +
-      'designed to come apart in the hand. The facades carry real window frames chosen from the compiled catalogue ' +
-      'by measured width, and the layer scrubber walks the tower a storey at a time because those seams are real.',
+    summary: 'Twenty-two storeys, each its own subassembly. Every floor lifts off the one below it.',
     techniques: [
       'One subassembly per storey',
       'Cross-bonded deck between floors',
@@ -1928,7 +1922,7 @@ const DEMOS = [
       'The massing study stacked the storeys as one continuous shell, so there was no seam to lift and the ' +
       'facades were blank. The published set separates every floor onto its own two-layer deck and glazes the ' +
       'elevations with frames the catalogue actually compiles.',
-    camera: { yaw: 38, pitch: 16, zoom: 1.72 },
+    camera: { yaw: 38, pitch: 18, zoom: 1.06 },
     maxPartsPerStep: 72,
     tensionAllowance: 640,
     tensionReason:

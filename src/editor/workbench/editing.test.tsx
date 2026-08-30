@@ -139,7 +139,9 @@ describe('editor transactions', () => {
     cadEngine.replaceDocument(document)
     const { result } = renderHook(useWorkbench)
     act(() => cadEngine.setSelection(['b']))
-    act(() => { expect(result.current.duplicateSelection()).toBe(true) })
+    act(() => {
+      expect(result.current.duplicateSelection()).toBe(true)
+    })
     const copied = cadEngine.getDocument().parts[cadEngine.getSnapshot().selection[0]]
     expect(copied.id).not.toBe('b')
     expect(getPartBounds(copied).max[1]).toBeCloseTo(0)
@@ -201,12 +203,10 @@ describe('editor transactions', () => {
     act(() => cadEngine.setSelection(['a']))
     act(() => result.current.copySelection())
     const before = result.current.clipboard
-    const execute = vi
-      .spyOn(cadEngine, 'execute')
-      .mockReturnValueOnce({
-        ok: false,
-        error: { code: 'COLLISION', message: 'Refused for test', repair: 'Repair first' },
-      })
+    const execute = vi.spyOn(cadEngine, 'execute').mockReturnValueOnce({
+      ok: false,
+      error: { code: 'COLLISION', message: 'Refused for test', repair: 'Repair first' },
+    })
     act(() => {
       expect(result.current.copySelection(true)).toBe(false)
     })

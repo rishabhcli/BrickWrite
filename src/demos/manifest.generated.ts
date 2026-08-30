@@ -29,7 +29,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Harbour Street",
       "discipline": "Modular architecture",
       "tagline": "A terrace of five shopfronts on a tiled street, every building and every floor separable.",
-      "summary": "Five modular units, three storeys each, standing on a street laid one tile at a time. Every storey is its own subassembly, so a building lifts out of the terrace and a floor lifts off the building. Shopfronts get doors and glazing at street level; the floors above are glazed the whole way along.",
+      "summary": "Five shopfronts on a tiled street. Every building lifts out, every floor lifts off.",
       "techniques": [
         "One subassembly per storey, per unit",
         "Tiled carriageway, kerb and pavement",
@@ -318,7 +318,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Meridian Tower",
       "discipline": "Modular architecture",
       "tagline": "A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.",
-      "summary": "Every storey is its own subassembly resting on the deck of the one below, the way a modular building is designed to come apart in the hand. The facades carry real window frames chosen from the compiled catalogue by measured width, and the layer scrubber walks the tower a storey at a time because those seams are real.",
+      "summary": "Twenty-two storeys, each its own subassembly. Every floor lifts off the one below it.",
       "techniques": [
         "One subassembly per storey",
         "Cross-bonded deck between floors",
@@ -352,8 +352,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "camera": {
         "yaw": 38,
-        "pitch": 16,
-        "zoom": 1.72
+        "pitch": 18,
+        "zoom": 1.06
       },
       "documentId": "demo_meridian_tower",
       "roughDocumentId": "demo_meridian_tower_rough",

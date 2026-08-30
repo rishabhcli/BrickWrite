@@ -137,7 +137,11 @@ export function ViewportStage({
           window.__brickwrightCanvas = canvas
         }}
       />
-      <p id="viewport-keys" className="viewport-keys-hint">
+      {/* Kept in the document because the canvas points `aria-describedby` at
+          it, but no longer printed over the model: a permanent cheat sheet in
+          the viewport is 21 words the operator reads once and then looks past
+          forever, and `?` already opens the full command map. */}
+      <p id="viewport-keys" className="visually-hidden">
         {workbench.tool === 'move' || workbench.tool === 'rotate'
           ? 'Arrows move · Page Up/Down raise/lower · Shift for a coarser step · Escape cancels a drag'
           : 'Drag to orbit · Right-drag to pan · Scroll to zoom · Shift-drag to select'}

@@ -40,26 +40,22 @@ const STEPS = [
   {
     icon: <MousePointerClick size={17} />,
     title: 'Pick a part, then click in the viewport',
-    body: 'Choosing a part from the library arms it, and a ghost follows your cursor. R turns it, Esc puts it back. Each click drops another one.',
-    hint: 'The + on a card drops it straight onto the build instead.',
+    hint: 'R turns the ghost, Esc puts it back, + on a card skips the viewport.',
   },
   {
     icon: <Boxes size={17} />,
     title: 'It mates on real connectors, not a grid',
-    body: 'Placement is solved against LDraw stud, clutch and pin geometry, so slopes, brackets and sideways studs land the way the physical part would.',
-    hint: 'Select a part and drag the arrows to move it — G, R and C switch tools.',
+    hint: 'Drag the arrows to move a part. G, R and C switch tools.',
   },
   {
     icon: <ShieldCheck size={17} />,
     title: 'Collisions and limits are checked live',
-    body: 'Every edit commits as one reversible transaction. The kernel refuses anything that breaks a hard constraint and reports what it found.',
-    hint: '⌘Z undoes any of it. The Validate tab shows the current report.',
+    hint: '⌘Z undoes any of it. Validate shows the current report.',
   },
   {
     icon: <Sparkles size={17} />,
     title: 'You decide what the agent may do',
-    body: 'Inspect lets it read. Propose lets it stage ghost edits you accept or reject. Build lets it commit directly, still bound by the same kernel.',
-    hint: 'Protected parts stay off-limits to the agent in every mode.',
+    hint: 'Inspect reads, Propose stages, Build commits. Protected parts stay off-limits.',
   },
 ] as const
 
@@ -79,10 +75,7 @@ export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
           <div>
             <span className="eyebrow">AGENT-NATIVE BRICK CAD</span>
             <h2 id="welcome-title">Build something real</h2>
-            <p>
-              Every part here is a compiled LDraw element with its own measured connectors. Four things worth knowing
-              before the first brick.
-            </p>
+            <p>Four things worth knowing before the first brick.</p>
           </div>
           <button onClick={onClose} aria-label="Close the welcome guide"><X size={15} /></button>
         </header>
@@ -92,7 +85,7 @@ export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
               <span className="welcome-index">{String(index + 1).padStart(2, '0')}</span>
               <span className="welcome-icon">{step.icon}</span>
               <strong>{step.title}</strong>
-              <p>{step.body}</p>
+
               <em>{step.hint}</em>
             </li>
           ))}

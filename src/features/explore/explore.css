@@ -458,3 +458,24 @@
     border-top: 1px solid var(--bw-line);
   }
 }
+
+/* Methodology, on demand ---------------------------------------------------
+   The statics table is numbers a reader scans; how those numbers were arrived
+   at is a hundred and thirty words they read once. Keeping both visible made
+   the panel a wall, so the prose folds away and the numbers stay. */
+.bw-method {
+  margin-top: 10px;
+}
+.bw-method > summary {
+  cursor: pointer;
+  color: var(--bw-muted, #8a969a);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.bw-method > summary:hover {
+  color: var(--bw-ink, #e8eef0);
+}
+.bw-method[open] > summary {
+  margin-bottom: 6px;
+}
