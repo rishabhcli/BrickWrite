@@ -56,22 +56,6 @@ export function LandingPage() {
               characters and {hero.validation.steps} verified build steps across a {hero.validation.footprintStuds[0]} ×{' '}
               {hero.validation.footprintStuds[1]}-stud site.
             </p>
-            {showcase ? (
-              <ul className="bw-campus-ledger" aria-label="Campus set scale">
-                <li>
-                  <b>{showcase.landmarkCount}</b>
-                  <span>landmarks</span>
-                </li>
-                <li>
-                  <b>{showcase.characterCount}</b>
-                  <span>characters</span>
-                </li>
-                <li>
-                  <b>{showcase.siteFinishParts.toLocaleString()}</b>
-                  <span>site pieces</span>
-                </li>
-              </ul>
-            ) : null}
             <div className="bw-hero-actions">
               <a
                 className="bw-button primary bw-magnet"
@@ -114,7 +98,17 @@ export function LandingPage() {
           </div>
 
           <div className="bw-simple-hero-model">
-            <Hero demo={hero} initialStage="validated" autoPlay={false} hideBrief />
+            {/* The four stages — brief, candidate, refinement, validated — are the
+                product in one moment: an idea typed in, a candidate proposed,
+                refined, and signed off by the kernel. `autoPlay` was off, which
+                left a still render beside a wall of text explaining what the
+                still render was.
+
+                It opens on the validated set so the first thing painted is the
+                finished, measured model, then replays how it got there. Motion
+                is gated on `prefers-reduced-motion`, stops the moment a visitor
+                takes the stage track over, and only runs while on screen. */}
+            <Hero demo={hero} initialStage="validated" hideBrief />
           </div>
         </section>
 
@@ -134,8 +128,6 @@ function ProofStrip({ demo }: { demo: DemoEntry }) {
     <section className="bw-proof-strip" aria-label="Verified build measurements" data-testid="hero-facts">
       <Proof label="Parts" value={<CountUp value={validation.partCount} fromZero />} />
       <Proof label="Mated connections" value={<CountUp value={validation.connectionCount} fromZero />} />
-      <Proof label="Build steps" value={<CountUp value={validation.steps} fromZero />} />
-      <Proof label="Collisions" value={validation.collisionCount} good={validation.collisionCount === 0} />
       <Proof
         label="Stability"
         value={validation.statics.stable ? 'Standing' : 'Review'}

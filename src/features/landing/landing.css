@@ -1327,13 +1327,16 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 
 .bw-simple-hero {
   width: min(var(--bw-simple-max), calc(100% - (2 * var(--bw-gutter))));
-  min-height: min(780px, calc(100vh - 56px));
+  /* The hero has to fit one screen. It was 1287px tall on a 900px laptop, which
+     put both calls to action below the fold: you landed on a headline, half a
+     paragraph, and nothing to press. */
+  min-height: min(720px, calc(100vh - 56px));
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(360px, 0.78fr) minmax(540px, 1.22fr);
   align-items: center;
-  gap: clamp(36px, 5vw, 88px);
-  padding: clamp(64px, 8vw, 120px) 0 clamp(44px, 6vw, 88px);
+  gap: clamp(28px, 4vw, 64px);
+  padding: clamp(24px, 2.6vw, 44px) 0 clamp(24px, 3vw, 48px);
 }
 
 .bw-simple-hero-copy {
@@ -1352,8 +1355,8 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 .bw-simple-hero-copy .bw-display {
   max-width: 720px;
   margin: 14px 0 24px;
-  font-size: clamp(58px, 6.5vw, 104px);
-  line-height: 0.86;
+  font-size: clamp(46px, 5vw, 78px);
+  line-height: 0.88;
   letter-spacing: -0.065em;
   text-transform: uppercase;
 }
@@ -1441,7 +1444,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   min-height: 0;
 }
 .bw-simple-hero-model .bw-stage {
-  height: clamp(440px, 55vw, 680px);
+  height: clamp(340px, 40vw, 560px);
   border: 1px solid rgba(131, 231, 238, 0.17);
   background: rgba(6, 10, 11, 0.84);
   box-shadow:
@@ -1459,7 +1462,10 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   width: min(var(--bw-simple-max), calc(100% - (2 * var(--bw-gutter))));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* Tracks the number of measurements rather than a fixed six, so dropping one
+     re-flows instead of leaving a hole at the end of the row. */
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column;
   border-block: 1px solid var(--bw-line);
   background: rgba(11, 16, 18, 0.78);
 }
@@ -1587,7 +1593,9 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 }
 
 .bw-simple-close {
-  padding-block: clamp(96px, 12vw, 180px);
+  /* Was up to 180px above and below one line and one button, on top of the
+     section's own padding — the page looked like it had run out. */
+  padding-block: clamp(40px, 5vw, 72px);
   border-top: 1px solid var(--bw-line);
 }
 .bw-simple-close .bw-close {
