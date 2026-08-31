@@ -14,3 +14,4 @@ artifacts
 .vercel
 .wrangler/
 .env*
+docs/how-it-works/guide.html
