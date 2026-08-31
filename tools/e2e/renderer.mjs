@@ -23,6 +23,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { checkCaptureSet } from '../../src/editor/render/capture.ts'
 
 /**
  * The server to drive.
@@ -354,7 +355,11 @@ try {
     canvas.dispatchEvent(new PointerEvent('pointerdown', options))
     window.dispatchEvent(new PointerEvent('pointerup', options))
     await new Promise((resolve) => requestAnimationFrame(resolve))
-    return window.brickwright.getDocument() && document.querySelector('.viewport-title-block p')?.textContent
+    // The title block holds a <p> when nothing is selected and a <button>
+    // naming the part when something is, so the block itself is the stable
+    // place to read the selection from — a `p` selector finds nothing exactly
+    // when there *is* a selection.
+    return window.brickwright.getDocument() && document.querySelector('.viewport-title-block')?.textContent
   }, { x: hit.x, y: hit.y })
   console.log(`Click selection reported: ${clickSelected}`)
 
@@ -431,7 +436,7 @@ try {
       y1: canvas.clientHeight * 0.8,
     })
     return {
-      label: document.querySelector('.viewport-title-block p')?.textContent,
+      label: document.querySelector('.viewport-title-block')?.textContent,
       byPixels: region.partIds.length,
       byCentre: region.centreRuleWouldSelect.length,
     }
@@ -464,7 +469,7 @@ try {
   await page.keyboard.up('Alt')
   await page.waitForTimeout(400)
   assert(lassoVisible === 1, 'Alt-dragging did not draw a lasso')
-  const lassoSelection = await page.evaluate(() => document.querySelector('.viewport-title-block p')?.textContent)
+  const lassoSelection = await page.evaluate(() => document.querySelector('.viewport-title-block')?.textContent)
   console.log(`Lasso selection: ${lassoSelection}`)
   assert(
     /\d+ parts selected/.test(lassoSelection ?? ''),
@@ -603,6 +608,13 @@ try {
     const surface = window.__brickwrightRenderer
     const isolated = await surface.setVisibility({ isolateSeedIds: [ids.flap], hops: 6, outside: 'hidden' })
     surface.frameParts([ids.base, ids.flap])
+    // `frameParts` transitions unless motion is reduced, and its own docstring
+    // says to call `settle()` for a deterministic read. Without it the position
+    // below is sampled mid-flight: measured, the flap projected to y = -845 in
+    // a 712px canvas, so the click landed on nothing and the diagnostic pick
+    // that followed reported null. Six frames is a guess; `settle` is the
+    // contract.
+    surface.settle()
     for (let frame = 0; frame < 6; frame += 1) {
       await new Promise((resolve) => requestAnimationFrame(resolve))
     }
@@ -614,6 +626,12 @@ try {
     canvas.dispatchEvent(new PointerEvent('pointerdown', options))
     window.dispatchEvent(new PointerEvent('pointerup', options))
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    // Reset before asking again. `pick` is the same primitive the click just
+    // used, and it deliberately cycles: repeated picks at one pixel walk
+    // backwards through depth. Without this the diagnostic below reports the
+    // *next* thing behind what the click chose — and with only six parts
+    // visible, a couple of steps into the cycle is background.
+    surface.resetCycle()
     return {
       picked: surface.pick(at.x, at.y).partId,
       joints: surface.listJoints(),
@@ -621,7 +639,7 @@ try {
       isolated,
       flap: ids.flap,
       mechanism: ids.added,
-      selection: document.querySelector('.viewport-title-block p')?.textContent,
+      selection: document.querySelector('.viewport-title-block')?.textContent,
     }
   }, hinge)
   measured.joints = jointList.joints
@@ -1059,20 +1077,20 @@ try {
     `The same mode at the same revision produced different hashes: ${beautyHashes}`,
   )
 
-  // These five always show genuinely different things, so they must never
-  // collide. `violations` is deliberately excluded: on a model with no
-  // collisions it has nothing to draw and is *correctly* identical to beauty,
-  // and asserting otherwise would be asserting that the diagnostic invents
-  // something. Its relationship to beauty is checked against the kernel's own
-  // collision count instead.
-  const alwaysDistinct = ['beauty', 'orthographic', 'silhouette', 'connections', 'exploded']
-  const distinctHashes = new Set(
-    capture.results.filter((shot) => alwaysDistinct.includes(shot.requested)).map((shot) => shot.hash),
+  // Reproducibility and mode-distinctness come from the kernel's own rule rather
+  // than a copy of it here. This check and `checkCaptureSet` had drifted: the
+  // shared one required *all* modes to differ, including `violations`, which on a
+  // clean model is correctly identical to beauty — and nothing called it, so the
+  // wrong rule sat there passing its own tests while the truth lived only in this
+  // file. Node runs the TypeScript source directly, so there is no reason for two
+  // copies.
+  const captureFailures = checkCaptureSet(
+    capture.results.map((shot) => ({ mode: shot.requested, revision: shot.revision, hash: shot.hash })),
+    { collisions: capture.collisions },
   )
   assert(
-    distinctHashes.size === alwaysDistinct.length,
-    `Only ${distinctHashes.size} distinct hashes across ${alwaysDistinct.length} modes that show different things: ` +
-      JSON.stringify(capture.results.map((shot) => [shot.requested, shot.hash])),
+    captureFailures.length === 0,
+    `Capture set failed its contract:\n  ${captureFailures.join('\n  ')}\n${JSON.stringify(capture.results.map((shot) => [shot.requested, shot.hash]))}`,
   )
 
   const violationsHash = capture.results.find((shot) => shot.requested === 'violations')?.hash

@@ -26,7 +26,7 @@ export type LandingTarget =
   | { kind: 'describe' }
   | { kind: 'gallery' }
 
-export type LandingNavigator = (target: LandingTarget, href: string) => boolean
+export type LandingNavigator = (target: LandingTarget, href: string, options?: { replace?: boolean }) => boolean
 
 /** Fired after an in-place query change, since `pushState` fires nothing. */
 export const NAVIGATION_EVENT = 'brickwright:navigation'
@@ -65,7 +65,13 @@ export function hrefFor(target: LandingTarget): string {
 
 export function navigate(target: LandingTarget, options: { replace?: boolean } = {}): void {
   const href = hrefFor(target)
-  if (navigator?.(target, href)) return
+  if (navigator?.(target, href, options)) {
+    // The shell updates its own router state, but an Explore-to-Explore query
+    // move keeps the same route component mounted. Announce it to that
+    // component's portable URL reader as well so a card opens immediately.
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NAVIGATION_EVENT))
+    return
+  }
   if (typeof window === 'undefined') return
 
   const next = new URL(href, window.location.origin)

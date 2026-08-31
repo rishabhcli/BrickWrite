@@ -10,9 +10,10 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
-import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Route, Routes, useNavigate } from 'react-router-dom'
+import { setLandingNavigator } from '../features/landing/navigation'
 import type { RouteModule } from './contracts'
-import { BootCancelledError, bootForRoute, resetBoot, type BootStage } from './boot'
+import { BootCancelledError, bootForRoute, bootPhaseMs, bootTo, resetBoot, type BootStage } from './boot'
 import { BootStageProvider } from './boot-context'
 import { PLATFORM_ROUTES, isRouteRegistered, registerRoute, routeById, routeHasAppFrame } from './routes'
 import { trackPlatformEvent, usePlatformAnalytics } from './analytics'
@@ -140,12 +141,15 @@ function AccountGate({ children }: { children: ReactNode }) {
 
 /* --- Route host ---------------------------------------------------------- */
 
-type HostState =
-  | { kind: 'booting' }
-  | { kind: 'ready'; stage: BootStage }
-  | { kind: 'failed'; message: string }
+type HostState = { kind: 'booting' } | { kind: 'ready'; stage: BootStage } | { kind: 'failed'; message: string }
 
 function bootHeadline(route: RouteModule): { headline: string; detail?: string } {
+  if (route.boot === 'parts') {
+    return {
+      headline: 'Loading the compiled parts',
+      detail: 'LDraw geometry, LDCad connection metadata and the LDraw colour table.',
+    }
+  }
   if (route.boot === 'catalog') {
     return {
       headline: 'Loading the compiled catalog',
@@ -157,6 +161,34 @@ function bootHeadline(route: RouteModule): { headline: string; detail?: string }
     detail:
       'Loading LDraw identities, LDCad connection metadata and the LDraw colour table, then restoring your project.',
   }
+}
+
+/**
+ * Start the surface's chunk download alongside the boot, not after it.
+ *
+ * `lazy()` calls its factory when the lazy component first *renders*, and the
+ * surface only renders once the boot gate resolves. That put the whole editor
+ * bundle — the workbench, Three.js, the renderer — behind the catalog fetch,
+ * the session restore and the geometry warm rather than beside them, even
+ * though the two are independent and both network-bound. Handing `lazy` a
+ * promise that is already in flight collapses that waterfall.
+ *
+ * The gate is the `parts` stage rather than nothing, and that is load-bearing:
+ * `src/cad/engine.ts` builds the showcase document at module scope, which
+ * throws unless the compiled pack is installed, so a surface that imports the
+ * kernel cannot be *evaluated* before the parts tier is resident. `boot: 'none'`
+ * surfaces are forbidden the kernel by their own declaration, so they start at
+ * once.
+ */
+function prefetchSurface(route: RouteModule): () => Promise<{ default: ComponentType }> {
+  const kernelSafe = route.boot === 'none' ? Promise.resolve() : bootTo('parts').then(() => undefined)
+  const pending = kernelSafe.then(() => route.load())
+  // Observed so a surface that fails to arrive while the gate is still showing
+  // its own spinner cannot raise an unhandled rejection. `lazy` is handed the
+  // same promise and still sees the rejection, so the error boundary is
+  // reached exactly as before.
+  void pending.catch(() => undefined)
+  return () => pending
 }
 
 /**
@@ -199,7 +231,18 @@ export function RouteHost({ route }: { route: RouteModule }) {
     setState({ kind: 'booting' })
     bootForRoute(route, { signal: controller.signal }).then(
       (stage) => {
-        track({ name: 'boot.completed', boot: route.boot, elapsedMs: Date.now() - startedAt })
+        // The phase breakdown, not just the total. A boot that spends 40 ms in
+        // the catalog and 900 ms restoring a project is a completely different
+        // problem from the reverse, and one number cannot tell them apart.
+        track({
+          name: 'boot.completed',
+          boot: route.boot,
+          elapsedMs: Date.now() - startedAt,
+          catalogMs: Math.round(bootPhaseMs('catalog.parts')),
+          kernelMs: Math.round(bootPhaseMs('kernel.module')),
+          sessionMs: Math.round(bootPhaseMs('session.restore') + bootPhaseMs('session.query')),
+          geometryMs: Math.round(bootPhaseMs('geometry.preload')),
+        })
         setState({ kind: 'ready', stage })
       },
       (cause: unknown) => {
@@ -217,7 +260,7 @@ export function RouteHost({ route }: { route: RouteModule }) {
   // forever and "try again" has to mean it.
   const Surface = useMemo<ComponentType>(() => {
     if (!isRouteRegistered(route.id)) return createNotInstalledSurface(route.id)
-    return lazy(() => route.load())
+    return lazy(prefetchSurface(route))
   }, [attempt, route])
 
   if (state.kind === 'booting') {
@@ -336,6 +379,7 @@ export function PlatformShell() {
 
   return (
     <PlatformErrorBoundary key={generation} onRecover={recover}>
+      <LandingNavigationBridge />
       <AccountGate>
         <Suspense fallback={<LoadingState headline="Starting Brickwright" />}>
           <ShellRoutes />
@@ -346,13 +390,32 @@ export function PlatformShell() {
 }
 
 /**
+ * Landing and Explore predate the platform router and expose a tiny navigation
+ * seam so they can also render in isolation. The shell must install that seam:
+ * without it, every marketing CTA falls back to `location.assign`, turning a
+ * working SPA route into a brittle full-page reload on static hosts.
+ */
+function LandingNavigationBridge() {
+  const routerNavigate = useNavigate()
+  useEffect(
+    () =>
+      setLandingNavigator((_target, href, options) => {
+        routerNavigate(href, { replace: options?.replace })
+        return true
+      }),
+    [routerNavigate],
+  )
+  return null
+}
+
+/**
  * The application root.
  *
  * `main.tsx` renders exactly this inside `StrictMode`, and nothing else.
  */
 export function AppShell() {
   return (
-    <BrowserRouter>
+    <BrowserRouter useTransitions={false}>
       <PlatformShell />
     </BrowserRouter>
   )

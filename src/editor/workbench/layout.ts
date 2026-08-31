@@ -19,6 +19,7 @@ export interface DockGeometry {
 }
 
 export type LayoutPresetId = 'laptop' | 'desktop' | 'ultrawide'
+export type RightDockTab = 'design' | 'object'
 
 export interface WorkbenchLayout {
   readonly left: DockGeometry
@@ -28,6 +29,8 @@ export interface WorkbenchLayout {
   readonly preset: LayoutPresetId | null
   /** Open/closed state of the collapsible sections inside the docks. */
   readonly sections: Readonly<Record<string, boolean>>
+  /** The durable top-level view shown in the right dock. */
+  readonly rightTab: RightDockTab
 }
 
 export const DOCK_LIMITS: Record<DockId, { min: number; max: number }> = {
@@ -59,6 +62,7 @@ export const LAYOUT_PRESETS: Record<
       right: { size: 260, collapsed: true },
       bottom: { size: 124, collapsed: true },
       preset: 'laptop',
+      rightTab: 'design',
     },
   },
   desktop: {
@@ -69,6 +73,7 @@ export const LAYOUT_PRESETS: Record<
       right: { size: 300, collapsed: true },
       bottom: { size: 152, collapsed: true },
       preset: 'desktop',
+      rightTab: 'design',
     },
   },
   ultrawide: {
@@ -79,6 +84,7 @@ export const LAYOUT_PRESETS: Record<
       right: { size: 392, collapsed: true },
       bottom: { size: 168, collapsed: true },
       preset: 'ultrawide',
+      rightTab: 'design',
     },
   },
 }
@@ -87,18 +93,17 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   palette: true,
   colors: true,
   'model.explorer': false,
-  selection: true,
+  selection: false,
   transform: false,
   inspector: false,
   validate: false,
   connect: false,
-  // The quieter 300px inspector cannot hold Generate, Refine and the design
-  // partner open at once. Headers stay visible; opening one (or
-  // `workspace_reveal`) closes the others so the column is never a stack of
-  // half-visible sheets.
-  'generation.panel': false,
-  'refinement.panel': false,
-  'agent.workbench': false,
+  // Design is the first-run workspace. These remain independently
+  // collapsible: Generate, Refine and Agent form one intentional stack rather
+  // than competing with the contextual Object sheets.
+  'generation.panel': true,
+  'refinement.panel': true,
+  'agent.workbench': true,
 }
 
 export const defaultLayout = (preset: LayoutPresetId = 'desktop'): WorkbenchLayout => ({
@@ -178,18 +183,18 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
 /** Width of a collapsed side dock: the reopen rail stays clickable. */
 export const COLLAPSED_RAIL = 34
 /** Height of a collapsed bottom dock. */
-export const COLLAPSED_BAR = 30
-/** Must match `.app-shell` in `src/styles.css` and the Workbench inline grid. */
-export const TOPBAR_HEIGHT = 52
-export const TOOLRAIL_HEIGHT = 44
-export const STATUSBAR_HEIGHT = 24
+export const COLLAPSED_BAR = 0
+/** Must match `.app-shell` in `workbench.css` and the Workbench inline grid. */
+export const TOPBAR_HEIGHT = 44
+/** The tools float inside the viewport now; no permanent grid strip is reserved. */
+export const TOOLRAIL_HEIGHT = 0
+export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
-// v2 starts with a viewport-first workspace. The earlier key is deliberately
-// not migrated: carrying its always-open inspector/timeline forward would make
-// the simplification invisible to existing operators.
-const STORAGE_KEY = 'layout.v2'
+// v3 starts with a truly build-first workspace: both the timeline and the verbose inspector are closed. Earlier keys are deliberately
+// not migrated so the simplification is visible to existing operators.
+const STORAGE_KEY = 'layout.v3'
 
 export function loadLayout(viewportWidth: number): WorkbenchLayout {
   const stored = readPreference<WorkbenchLayout | null>(STORAGE_KEY, null)
@@ -205,6 +210,7 @@ export function loadLayout(viewportWidth: number): WorkbenchLayout {
     },
     preset: stored.preset ?? null,
     sections: { ...DEFAULT_SECTIONS, ...(stored.sections ?? {}) },
+    rightTab: stored.rightTab === 'object' ? 'object' : 'design',
   }
 }
 

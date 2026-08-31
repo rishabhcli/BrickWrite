@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
-import type { DemoEntry, DemoPreview } from '../../demos'
-import { loadPreview } from '../../demos'
+import { loadPreview, type DemoSummary } from '../../demos/summary'
+import type { DemoPreview } from '../../demos'
 import { useOnScreen, useReducedMotion } from '../explore/motion'
 import { trackLanding } from './analytics'
 import { StageHud } from './plate'
@@ -35,7 +35,7 @@ interface StageCopy {
 }
 
 export interface HeroProps {
-  demo: DemoEntry
+  demo: DemoSummary
   /** First frame for an uncontrolled hero. The front door opens on proof. */
   initialStage?: HeroStage
   /** When set, the parent owns the stage — used by the landing film. */
@@ -323,7 +323,7 @@ export function Hero({
 }
 
 /** The accessible description of what the canvas is showing right now. */
-function describeStage(demo: DemoEntry, stage: HeroStage): string {
+function describeStage(demo: DemoSummary, stage: HeroStage): string {
   const good = demo.validation
   const rough = demo.roughValidation
   if (stage === 'brief') {

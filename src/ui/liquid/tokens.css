@@ -1,0 +1,167 @@
+/**
+ * The single token substrate for chrome material.
+ *
+ * This replaces the flat-blur substrate that lived in src/ui/glass, which is
+ * deleted. The migration was budgeted as a long coexistence between two
+ * systems; it turned out to be seven import lines, so there is no dual-system
+ * window to police and no alias shim left behind.
+ *
+ * The --glass-* names are kept deliberately. Thirty-one lines of app CSS read
+ * them — `.topbar.glass-bar` and friends in workbench.css — and renaming a
+ * token that is already correct buys nothing but churn.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Chrome typography remains deliberately humanist; Chakra Petch is reserved
+   * for the marketing wordmark, not controls and reading text. */
+  --font-chrome: 'Manrope Variable', 'Avenir Next', sans-serif;
+
+  /* Dark material: a restrained tint, a light inner edge, and the iOS-style
+   * darkened outer edge so glass remains legible above a CAD scene. */
+  --glass-fill: rgba(20, 24, 28, 0.62);
+  --glass-fill-elevated: rgba(24, 29, 34, 0.72);
+  --glass-fill-control: rgba(27, 33, 38, 0.68);
+  --glass-edge-inner: rgba(255, 255, 255, 0.22);
+  --glass-edge-outer: rgba(0, 0, 0, 0.45);
+  --glass-edge: var(--glass-edge-inner);
+  --glass-specular: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent) top / 100% 1px no-repeat;
+  --glass-scrim: #0d1315;
+  --glass-shadow: 0 20px 48px rgba(0, 0, 0, 0.36);
+
+  /* Blur belongs to bounded chrome roles, never to the application root or
+   * WebGL viewport. */
+  --glass-blur-nav: 20px;
+  --glass-blur-control: 10px;
+  --glass-blur-chip: 6px;
+
+  --r-control: 14px;
+  --r-section: 18px;
+  --r-panel: 22px;
+  --r-island: 28px;
+  --r-sheet: 26px;
+
+  /* #77898e has 5.13:1 contrast on #0d1315 and 5.47:1 on #06090a. */
+  --faint: #77898e;
+
+  /*
+   * Lensing.
+   *
+   * Refraction is what separates glass from a translucent rectangle: the edge
+   * has to bend what is behind it, not merely dim it. These describe the
+   * bend for the tier-1 material.
+   *
+   * --lens-displacement is passed to the displacement map as a pixel scale.
+   * Above roughly 80 the edge stops reading as glass and starts reading as a
+   * fisheye, which is why the ceiling is not a matter of taste.
+   */
+  --lens-displacement: 64;
+  --lens-aberration: 2;
+  --lens-elasticity: 0.15;
+  --lens-saturation: 130;
+
+  /*
+   * The tier-1 tint is deliberately thinner than --glass-fill.
+   *
+   * The blur material needs opacity to stay legible, because dimming is the
+   * only thing separating its text from the scene. The lensed material earns
+   * legibility from the bend and the rim instead, so the same 0.62 here would
+   * simply hide the refraction it was mixed to reveal.
+   */
+  --lens-tint: rgba(18, 22, 26, 0.42);
+
+  /*
+   * Over bright content the scrim gets *darker*, not lighter.
+   *
+   * Apple can lighten the material over a bright backdrop because it flips its
+   * label colour to dark in the same breath. This chrome cannot: its text
+   * colours come from app CSS on every consumer, and inverting them centrally
+   * would mean touching each one and re-deriving the whole contrast suite. A
+   * light scrim under unchanged near-white text is simply unreadable, so what
+   * adapts here is the scrim's *depth* and the rim's direction — the surface
+   * thickens to keep its text legible and the edge inverts to a dark rim, which
+   * is the cue that actually reads as glass responding to what is behind it.
+   */
+  --lens-tint-over-light: rgba(10, 14, 17, 0.62);
+
+  /*
+   * Specular sweep offsets, written by LiquidStage from the shared pointer.
+   *
+   * They are plain numbers in the -1..1 range rather than lengths so a
+   * consumer can scale them per role: a 28px island wants a smaller sweep
+   * than a full-width bar for the same pointer travel.
+   */
+  --lens-pointer-x: 0;
+  --lens-pointer-y: 0;
+
+  /*
+   * Motion, in two tiers.
+   *
+   * `intent` is for things the operator deliberately summoned — a panel, the
+   * command palette, a sheet. `work` is for everything that happens *during*
+   * work: dragging a brick, orbiting, scrubbing a timeline. The distinction
+   * exists because chrome that animates expressively while you place your
+   * four-thousandth brick stops being delightful somewhere around the fiftieth.
+   *
+   * The CSS mirrors of the spring constants below are approximations for
+   * surfaces that never mount Motion; the springs themselves live in motion.ts.
+   */
+  --ease-intent: linear(0, 0.13 6%, 0.45 15%, 0.87 27%, 1.03 35%, 1.06 43%, 1 55%, 0.99 70%, 1);
+  --ease-work: cubic-bezier(0.22, 0.8, 0.3, 1);
+  --dur-intent: 420ms;
+  --dur-work: 120ms;
+  --dur-press: 90ms;
+  --press-scale: 0.975;
+}
+
+/* App-specific sheets may load after this file. The data attribute is a more
+ * specific selector than :root, so the AA-safe faint token remains shared. */
+html[data-theme='dark'] {
+  --faint: #77898e;
+}
+
+/*
+ * Tier 3, the opaque material.
+ *
+ * Reduced transparency is not a request for *less* blur, it is a request for
+ * none, so this collapses the material rather than softening it.
+ *
+ * The attribute form exists as well as the media query because LiquidStage
+ * mirrors the preference onto the document, which lets a test force the state
+ * that matchMedia cannot be made to report per page in every driver.
+ */
+html[data-reduced-transparency='true'] .liquid-fill {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--panel);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-fill: var(--panel, #0d1315);
+    --glass-fill-elevated: var(--panel-2, #121a1d);
+    --glass-fill-control: var(--panel-2, #121a1d);
+    --glass-scrim: var(--panel, #0d1315);
+  }
+
+  .liquid-fill {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--panel);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    /*
+     * Reduced motion jumps to the settled state; it does not run the same
+     * animation faster. This mirrors the policy already documented in
+     * src/editor/render/motion.ts, so the viewport and its chrome cannot
+     * disagree about what a motion preference means.
+     */
+    --dur-intent: 0ms;
+    --dur-work: 0ms;
+    --dur-press: 0ms;
+    --press-scale: 1;
+  }
+}

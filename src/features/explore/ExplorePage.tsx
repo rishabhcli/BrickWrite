@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DEMOS, getDemo, loadPreview, type DemoEntry, type DemoPreview } from '../../demos'
+import { DEMOS, getDemo, loadPreview, type DemoCategory, type DemoEntry, type DemoPreview } from '../../demos'
 import { setKnownDemoIds, trackLanding } from '../landing/analytics'
 import { hrefFor, navigate, useLandingRoute } from '../landing/navigation'
 import { PlateAtmosphere, StageHud } from '../landing/plate'
@@ -27,6 +27,10 @@ type ViewMode = 'solid' | 'exploded' | 'before-after'
 
 export function ExplorePage() {
   const route = useLandingRoute()
+  return route.demoId ? <DemoExplorer route={route} /> : <ExploreCatalog />
+}
+
+function DemoExplorer({ route }: { route: ReturnType<typeof useLandingRoute> }) {
   const demo = (route.demoId ? getDemo(route.demoId) : undefined) ?? DEMOS[0]
   const unknownId = route.demoId !== null && !getDemo(route.demoId)
   const pointer = usePointerField<HTMLDivElement>()
@@ -179,8 +183,8 @@ export function ExplorePage() {
         Skip to the model
       </a>
       <header className="bw-explore-bar">
-        <a className="bw-button ghost small" href={hrefFor({ kind: 'landing' })} onClick={anchor({ kind: 'landing' })}>
-          ← Brickwright
+        <a className="bw-button ghost small" href={hrefFor({ kind: 'explore' })} onClick={anchor({ kind: 'explore' })}>
+          ← All builds
         </a>
         <div className="bw-explore-title">
           <h1>{demo.title}</h1>
@@ -558,6 +562,135 @@ export function ExplorePage() {
         </ol>
       </section>
     </div>
+  )
+}
+
+const CATEGORY_LABELS: Record<'all' | DemoCategory, string> = {
+  all: 'All builds',
+  landmarks: 'Landmarks',
+  architecture: 'Buildings',
+  animals: 'Animals',
+  creative: 'Funny & creative',
+  vehicles: 'Vehicles',
+}
+
+function ExploreCatalog() {
+  const pointer = usePointerField<HTMLDivElement>()
+  const [category, setCategory] = useState<'all' | DemoCategory>('all')
+  const filtered = category === 'all' ? DEMOS : DEMOS.filter((demo) => demo.category === category)
+  const totalParts = DEMOS.reduce((sum, demo) => sum + demo.validation.partCount, 0)
+  const largest = [...DEMOS].sort((a, b) => b.validation.partCount - a.validation.partCount)[0]
+
+  return (
+    <div
+      ref={pointer.ref}
+      className="bw-surface bw-explore bw-explore-catalog"
+      data-pointer={pointer.live ? 'live' : 'off'}
+    >
+      <PlateAtmosphere />
+      <div className="bw-studs" aria-hidden="true" />
+      <section className="bw-catalog-hero" aria-labelledby="bw-catalog-title">
+        <div className="bw-catalog-kicker">
+          <span>Editable megabuild library</span>
+          <span>{DEMOS.length} kernel-verified starting points</span>
+        </div>
+        <div className="bw-catalog-hero-grid">
+          <div>
+            <p className="bw-eyebrow accent">Pick something enormous</p>
+            <h1 id="bw-catalog-title">Don’t start from zero.</h1>
+            <p className="bw-catalog-lede">
+              Start from a landmark, a city block, a giant animal or something wonderfully ridiculous. Every build is
+              already assembled from real catalog parts—open one, copy it, then tear it apart or keep building.
+            </p>
+          </div>
+          <dl className="bw-catalog-totals" aria-label="Collection scale">
+            <div>
+              <dt>Editable parts</dt>
+              <dd>{totalParts.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Largest build</dt>
+              <dd>{largest.validation.partCount.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Minimum size</dt>
+              <dd>1,000+</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section className="bw-catalog-library" aria-labelledby="bw-library-title">
+        <div className="bw-catalog-toolbar">
+          <div>
+            <p className="bw-eyebrow">The full collection</p>
+            <h2 id="bw-library-title">Choose your starting world.</h2>
+          </div>
+          <div className="bw-catalog-filters" role="group" aria-label="Filter builds">
+            {(Object.keys(CATEGORY_LABELS) as Array<'all' | DemoCategory>).map((value) => (
+              <button
+                type="button"
+                className="bw-chip"
+                aria-pressed={category === value}
+                key={value}
+                onClick={() => setCategory(value)}
+              >
+                {CATEGORY_LABELS[value]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bw-catalog-grid" aria-live="polite">
+          {filtered.map((demo, index) => (
+            <CatalogCard demo={demo} index={index} key={demo.id} />
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function CatalogCard({ demo, index }: { demo: DemoEntry; index: number }) {
+  const target = { kind: 'explore' as const, demoId: demo.id }
+  return (
+    <article className="bw-catalog-card" data-category={demo.category}>
+      <a className="bw-catalog-image" href={hrefFor(target)} onClick={anchor(target)}>
+        <img
+          src={demo.assets.thumbnail.url}
+          alt={`${demo.title}, a ${demo.validation.partCount.toLocaleString()}-part editable ${CATEGORY_LABELS[demo.category].toLowerCase()} build.`}
+          width={720}
+          height={450}
+          loading={index < 3 ? 'eager' : 'lazy'}
+          decoding="async"
+        />
+        <span className="bw-catalog-index">{String(index + 1).padStart(2, '0')}</span>
+        <span className="bw-catalog-category">{CATEGORY_LABELS[demo.category]}</span>
+      </a>
+      <div className="bw-catalog-card-body">
+        <div>
+          <h3>{demo.title}</h3>
+          <p>{demo.tagline}</p>
+        </div>
+        <dl className="bw-catalog-card-stats">
+          <div>
+            <dt>Parts</dt>
+            <dd>{demo.validation.partCount.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Footprint</dt>
+            <dd>{demo.validation.footprintStuds.map((value) => Math.round(value)).join(' x ')}</dd>
+          </div>
+          <div>
+            <dt>Steps</dt>
+            <dd>{demo.validation.steps}</dd>
+          </div>
+        </dl>
+        <a className="bw-catalog-open" href={hrefFor(target)} onClick={anchor(target)}>
+          Preview & edit <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </article>
   )
 }
 

@@ -78,6 +78,20 @@ export type RelationIntent =
  */
 export type AxisIntent = 'horizontal' | 'vertical'
 
+/**
+ * A word the request used, and the catalog words it was read as.
+ *
+ * The point of recording this is that a reinterpretation must never be silent.
+ * "brik" answered with Brick 2 x 4 is the right answer; "brik" answered with
+ * Brick 2 x 4 and no statement that the word was corrected is a resolver that
+ * has started guessing on the caller's behalf, and the next guess is the wrong
+ * one with nothing to show what happened.
+ */
+export interface TermReading {
+  typed: string
+  reads: string[]
+}
+
 export interface PartQuery {
   raw: string
   /** Every word, after dimension folding and hyphen splitting. */
@@ -102,6 +116,17 @@ export interface PartQuery {
   availability: 'common' | 'rare' | 'any'
   /** Terms the parser could not interpret and the catalog has never seen. */
   unmatchedTerms: string[]
+  /** Terms the catalog does not use, and the words this build read them as. */
+  readings: TermReading[]
+  /**
+   * Conditions the request stated that this build has no scale to test.
+   *
+   * Kept apart from `unmatchedTerms` because the two are charged differently: an
+   * unknown word means part of the request was never understood and the
+   * confidence has to say so, where "big" was understood perfectly and simply
+   * cannot be checked. Both are reported to the caller; only the first is priced.
+   */
+  uncheckableTerms: string[]
 }
 
 export interface QueryContext {
@@ -112,6 +137,14 @@ export interface QueryContext {
   resolveIdentity?: (token: string) => string | null
   /** True when the lexical vocabulary contains the term at all. */
   knowsTerm?: (term: string) => boolean
+  /**
+   * The catalog words a term is read as, or null when the typed word is one.
+   *
+   * This is how a beginner's vocabulary and a misspelling stop being reported
+   * as conditions the build could not meet: a word that was understood, however
+   * indirectly, is not an unmatched term.
+   */
+  readTerm?: (term: string) => string[] | null
 }
 
 /**
@@ -128,6 +161,12 @@ const STOP_WORDS = new Set([
   'part', 'parts', 'piece', 'pieces', 'element', 'elements', 'lego', 'brickwright',
   'can', 'could', 'would', 'do', 'does', 'how', 'have', 'has', 'there', 'what',
   'like', 'as', 'so', 'its', 'their', 'from', 'by', 'about', 'between', 'version',
+  // The words a beginner reaches for when they have no word for the shape.
+  // "roof bit", "flat bit", "the long thin one" each name exactly one thing,
+  // and "bit" and "one" are not it. Left in they retrieve, because the catalog
+  // does spell them - five parts say "Bit", and "One" survives in "Technic Bush
+  // with One Flange" - so the filler decides the answer.
+  'bit', 'bits', 'one', 'ones',
 ])
 
 /**
@@ -162,12 +201,47 @@ const NUMBER_WORDS: Array<[string, string]> = (() => {
   for (const [tens, tensValue] of TENS) {
     for (const [unit, unitValue] of UNITS) entries.push([`${tens} ${unit}`, String(tensValue + unitValue)])
   }
-  for (const [word, value] of [...TENS, ...TEENS, ...UNITS]) entries.push([word, String(value)])
+  // "one" is deliberately excluded from the bare-word pass; see ONE_AS_NUMBER.
+  for (const [word, value] of [...TENS, ...TEENS, ...UNITS]) {
+    if (word !== 'one') entries.push([word, String(value)])
+  }
   entries.push(['zero', '0'])
   return entries.sort((a, b) => b[0].length - a[0].length)
 })()
 
+/**
+ * "one" as a number rather than as a pronoun.
+ *
+ * It is the only number word in English that is also the commonest way to refer
+ * to a thing you have not named - "the long thin one", "a bendy one" - and
+ * folding it to a digit everywhere turns those into a search for LDraw part 1,
+ * the Homemaker Drawer. So it only becomes a digit next to something that makes
+ * it a measurement: a dimension operator, another number, or a unit. The
+ * compound forms ("twenty one") are already folded before this runs.
+ */
+
 const APPROXIMATE_WORDS = new Set(['about', 'around', 'roughly', 'approximately', 'circa', 'nearly', 'almost', 'ish'])
+
+/**
+ * Size claims with nothing to check them against.
+ *
+ * "A big flat thing" states a size, and this build measures sizes in studs; it
+ * has no scale on which "big" is true or false. Left in the retrieval terms
+ * these words are actively harmful, because the catalog does use them - "big" in
+ * 19 names, all printed torsos and one curly wig; "giant" in 15, all wheel
+ * diameters - so "big flat thing" answered with a Bionicle armour plate, which
+ * is a confident answer to a question nobody asked.
+ *
+ * So they are read as what they are: a stated condition this build cannot
+ * satisfy, reported alongside the answer to the rest of the request. "large" and
+ * "small" are excluded on purpose - LDraw uses both as real part-name modifiers
+ * ("Wheel Spoked Large", "Plate Special 2 x 2 with Small Holes"), so somebody
+ * typing them may well be quoting the catalog.
+ */
+const VAGUE_SIZE_WORDS = new Set([
+  'big', 'bigger', 'biggest', 'huge', 'giant', 'gigantic', 'enormous', 'massive',
+  'tiny', 'teeny', 'little', 'smallest', 'minuscule',
+])
 const FOOTPRINT_AXIS_WORDS = new Set(['wide', 'width', 'long', 'length', 'across', 'deep', 'depth', 'square'])
 const HEIGHT_AXIS_WORDS = new Set(['tall', 'high', 'height', 'thick'])
 
@@ -178,7 +252,23 @@ const HEIGHT_AXIS_WORDS = new Set(['tall', 'high', 'height', 'thick'])
  * Drawer, and the request quietly becomes a lookup for a piece of doll's house
  * furniture. A digit followed by a unit is a quantity, never a part number.
  */
-const UNIT_WORDS = /^(?:studs?|plates?|bricks?|wide|width|long|length|tall|high|height|deep|depth|across|square|thick)$/
+const UNIT_PATTERN = 'studs?|plates?|bricks?|wide|width|long|length|tall|high|height|deep|depth|across|square|thick'
+const UNIT_WORDS = new RegExp(`^(?:${UNIT_PATTERN})$`)
+
+/**
+ * "one" as a number rather than as a pronoun.
+ *
+ * It is the only number word in English that is also the commonest way to refer
+ * to a thing you have not named - "the long thin one", "a bendy one" - and
+ * folding it to a digit everywhere turns those into a search for LDraw part 1,
+ * the Homemaker Drawer. So it only becomes a digit next to something that makes
+ * it a measurement: a dimension operator, another number, or a unit. The
+ * compound forms ("twenty one") are already folded before this runs.
+ */
+const ONE_AS_NUMBER: Array<[RegExp, string]> = [
+  [new RegExp(String.raw`(^|[^a-z0-9])one(?=\s+(?:by|x|\d|${UNIT_PATTERN})\b)`, 'g'), '$11'],
+  [/(^|[^a-z0-9])(by|x)\s+one(?![a-z0-9])/g, '$1$2 1'],
+]
 
 /**
  * Connector vocabulary. Multi-word entries are matched first, because "pin
@@ -290,6 +380,7 @@ function preNormalize(text: string): string {
   for (const [word, digits] of NUMBER_WORDS) {
     normalized = normalized.replace(new RegExp(`(^|[^a-z0-9])${word}([^a-z0-9]|$)`, 'g'), `$1${digits}$2`)
   }
+  for (const [pattern, replacement] of ONE_AS_NUMBER) normalized = normalized.replace(pattern, replacement)
   return normalized
     .replace(/(\d)\s*by\s*(?=\d)/g, '$1x')
     .replace(/(\d)-(?=[a-z])/g, '$1 ')
@@ -397,6 +488,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     evidence: [],
   }
   const color: ColorIntent = { codes: [], names: [], finishes: [], evidence: [] }
+  const vagueSizes = new Set<string>()
   const connectorFamilies = new Set<ConnectionFamily>()
   const excludedFamilies = new Set<ConnectionFamily>()
   const categories = new Set<string>()
@@ -416,6 +508,11 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
 
     if (APPROXIMATE_WORDS.has(word)) {
       dimensions.approximate = true
+      consume(index, 1)
+      continue
+    }
+    if (VAGUE_SIZE_WORDS.has(word)) {
+      vagueSizes.add(word)
       consume(index, 1)
       continue
     }
@@ -576,18 +673,24 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
 
   const contentTerms: string[] = []
   const unmatchedTerms: string[] = []
+  const readings: TermReading[] = []
   const knowsTerm = context.knowsTerm ?? (() => true)
+  const readTerm = context.readTerm ?? (() => null)
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index]
     if (STOP_WORDS.has(word)) continue
     if (consumed[index]) continue
     if (contentTerms.includes(word)) continue
     contentTerms.push(word)
+    const reads = readTerm(word)
+    if (reads?.length) readings.push({ typed: word, reads })
     // A word the catalog has never used is still worth trying against the
     // latent index - character trigrams reach "Steering" from "steers" - but it
     // is reported all the same, because an unrecognised term must never widen
-    // the result set silently.
-    if (!knowsTerm(word) && !unmatchedTerms.includes(word)) unmatchedTerms.push(word)
+    // the result set silently. A word that was *read* as catalog vocabulary is
+    // a different case: it was understood, so it belongs in `readings` where the
+    // reading is stated, not here where it would claim the request failed.
+    if (!reads?.length && !knowsTerm(word) && !unmatchedTerms.includes(word)) unmatchedTerms.push(word)
   }
 
   return {
@@ -606,5 +709,7 @@ export function parseQuery(raw: string, context: QueryContext): PartQuery {
     variantPreference,
     availability,
     unmatchedTerms,
+    readings,
+    uncheckableTerms: [...vagueSizes],
   }
 }

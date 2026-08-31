@@ -47,11 +47,29 @@ describe('landing and explore navigation', () => {
     const restore = setLandingNavigator(shell)
     try {
       navigate({ kind: 'editor' })
-      expect(shell).toHaveBeenCalledWith({ kind: 'editor' }, '/editor')
+      expect(shell).toHaveBeenCalledWith({ kind: 'editor' }, '/editor', {})
       // The registered navigator claimed it, so the document did not move.
       expect(window.location.pathname).toBe('/')
     } finally {
       restore()
+    }
+  })
+
+  it('announces a shell-handled query move to the mounted Explore surface', () => {
+    window.history.replaceState(null, '', '/explore')
+    const seen = vi.fn()
+    window.addEventListener(NAVIGATION_EVENT, seen)
+    const restore = setLandingNavigator((_target, href) => {
+      window.history.pushState(null, '', href)
+      return true
+    })
+    try {
+      navigate({ kind: 'explore', demoId: 'blue-whale-monument' })
+      expect(window.location.search).toBe('?demo=blue-whale-monument')
+      expect(seen).toHaveBeenCalledTimes(1)
+    } finally {
+      restore()
+      window.removeEventListener(NAVIGATION_EVENT, seen)
     }
   })
 })

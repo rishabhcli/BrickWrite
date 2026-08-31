@@ -65,6 +65,7 @@ describe('clamping', () => {
       bottom: { size: 200, collapsed: false },
       preset: null,
       sections: {},
+      rightTab: 'design' as const,
     }
     const fitted = clampLayout(greedy, { width: 1024, height: 800 })
     const used =
@@ -97,10 +98,16 @@ describe('clamping', () => {
 
 describe('persistence', () => {
   it('round-trips a dragged layout', () => {
-    const dragged = { ...defaultLayout('desktop'), left: { size: 331, collapsed: false }, preset: null }
+    const dragged = {
+      ...defaultLayout('desktop'),
+      left: { size: 331, collapsed: false },
+      preset: null,
+      rightTab: 'object' as const,
+    }
     saveLayout(dragged)
     expect(loadLayout(1600).left.size).toBe(331)
     expect(loadLayout(1600).preset).toBeNull()
+    expect(loadLayout(1600).rightTab).toBe('object')
   })
 
   it('falls back to a recommended preset when nothing is stored', () => {
@@ -119,11 +126,32 @@ describe('persistence', () => {
     saveLayout({ ...defaultLayout(), right: { size: 9000, collapsed: false } })
     expect(loadLayout(1600).right.size).toBe(DOCK_LIMITS.right.max)
   })
+
+  it('normalizes missing or invalid right tabs to Design', () => {
+    const older = { ...defaultLayout() } as Partial<ReturnType<typeof defaultLayout>>
+    Reflect.deleteProperty(older, 'rightTab')
+    saveLayout(older as ReturnType<typeof defaultLayout>)
+    expect(loadLayout(1600).rightTab).toBe('design')
+
+    saveLayout({ ...defaultLayout(), rightTab: 'layers' } as unknown as ReturnType<typeof defaultLayout>)
+    expect(loadLayout(1600).rightTab).toBe('design')
+  })
+
+  it('merges defaults without erasing stored section preferences', () => {
+    saveLayout({
+      ...defaultLayout(),
+      sections: { 'generation.panel': false, selection: true },
+    })
+    const restored = loadLayout(1600)
+    expect(restored.sections['generation.panel']).toBe(false)
+    expect(restored.sections.selection).toBe(true)
+    expect(restored.sections['agent.workbench']).toBe(true)
+  })
 })
 
 describe('grid templates', () => {
   it('reserves splitter tracks between every dock and the viewport', () => {
-    expect(workspaceColumns(defaultLayout('desktop'))).toBe(`268px 4px minmax(0, 1fr) 4px ${COLLAPSED_RAIL}px`)
+    expect(workspaceColumns(defaultLayout('desktop'))).toBe('268px 4px minmax(0, 1fr) 4px 34px')
   })
 
   it('leaves a reopen rail when a dock is collapsed', () => {
@@ -138,22 +166,32 @@ describe('grid templates', () => {
 
 describe('chrome', () => {
   it('matches the quieter shell strip heights', () => {
-    expect(TOPBAR_HEIGHT).toBe(52)
-    expect(TOOLRAIL_HEIGHT).toBe(44)
-    expect(STATUSBAR_HEIGHT).toBe(24)
-    expect(CHROME_HEIGHT).toBe(120)
+    expect(TOPBAR_HEIGHT).toBe(44)
+    expect(TOOLRAIL_HEIGHT).toBe(0)
+    expect(STATUSBAR_HEIGHT).toBe(0)
+    expect(CHROME_HEIGHT).toBe(44)
   })
 
-  it('keeps Generate, Refine and the design partner collapsed in a 300px dock', () => {
+  it('opens into a build-first workspace', () => {
     expect(defaultLayout().right.collapsed).toBe(true)
     expect(defaultLayout().bottom.collapsed).toBe(true)
-    expect(DEFAULT_SECTIONS['generation.panel']).toBe(false)
-    expect(DEFAULT_SECTIONS['refinement.panel']).toBe(false)
-    expect(DEFAULT_SECTIONS['agent.workbench']).toBe(false)
+    expect(defaultLayout().rightTab).toBe('design')
+    expect(DEFAULT_SECTIONS['generation.panel']).toBe(true)
+    expect(DEFAULT_SECTIONS['refinement.panel']).toBe(true)
+    expect(DEFAULT_SECTIONS['agent.workbench']).toBe(true)
     expect(DEFAULT_SECTIONS.transform).toBe(false)
     expect(DEFAULT_SECTIONS.inspector).toBe(false)
-    expect(DEFAULT_SECTIONS.selection).toBe(true)
+    expect(DEFAULT_SECTIONS.selection).toBe(false)
+    expect(DEFAULT_SECTIONS['model.explorer']).toBe(false)
     expect(DEFAULT_SECTIONS.connect).toBe(false)
-    expect(defaultLayout().sections['generation.panel']).toBe(false)
+    expect(defaultLayout().sections['generation.panel']).toBe(true)
+  })
+
+  it('keeps optional docks closed and Design ready in every preset', () => {
+    for (const preset of Object.values(LAYOUT_PRESETS)) {
+      expect(preset.layout.right.collapsed).toBe(true)
+      expect(preset.layout.bottom.collapsed).toBe(true)
+      expect(preset.layout.rightTab).toBe('design')
+    }
   })
 })

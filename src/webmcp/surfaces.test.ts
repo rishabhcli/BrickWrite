@@ -117,7 +117,9 @@ const brickRun = (): GenerationRun => {
     metrics: metrics(1),
     phases: [],
     notes: [],
+    inference: { requests: 0, inputTokens: 0, outputTokens: 0 },
     boxes: [],
+    continuation: null,
   }
   return {
     promptHash: 'test',
@@ -125,6 +127,8 @@ const brickRun = (): GenerationRun => {
     settings: { candidates: 1, repairBudget: 0, strategies: ['test-brick'], constraints: null },
     candidates: [candidate],
     rejected: [],
+    failed: [],
+    inference: { requests: 0, inputTokens: 0, outputTokens: 0 },
     distinctHashes: 1,
     elapsedMs: 1,
     notes: [],

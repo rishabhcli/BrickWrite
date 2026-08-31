@@ -104,6 +104,7 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
   const [offset, setOffset] = useState<[number, number, number]>([20, 0, 0])
   const [copies, setCopies] = useState(3)
   const [axis, setAxis] = useState(0)
+  const [mirrorAxis, setMirrorAxis] = useState<'x' | 'y' | 'z'>('x')
   const [movingPartId, setMovingPartId] = useState('')
   const [targetPartId, setTargetPartId] = useState('')
   const [jointId, setJointId] = useState('')
@@ -115,6 +116,10 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
   const [subassemblyId, setSubassemblyId] = useState('')
   const [subassemblyName, setSubassemblyName] = useState('')
   const [noteText, setNoteText] = useState('')
+  // The human half of generate_from_brief / generate_region. The agent reaches
+  // the same planners through preflight_capability; a builder should not have
+  // to open the chat to run the thing the vocabulary already lists.
+  const [designPrompt, setDesignPrompt] = useState('')
   const [noteId, setNoteId] = useState('')
   const [noteResponse, setNoteResponse] = useState('')
   const [resolveNote, setResolveNote] = useState(true)
@@ -224,7 +229,7 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
   const argsFor = (): Record<string, unknown> => {
     switch (active) {
       case 'duplicate_selection': return { offsetLdu: offset }
-      case 'mirror_selection': return { axisLdu: axis }
+      case 'mirror_selection': return { axis: mirrorAxis, axisLdu: axis, about: 'world' }
       case 'linear_array': return { copies, offsetLdu: offset }
       case 'connect_parts': return { movingPartId, targetPartId }
       case 'articulate_joint': return {
@@ -276,7 +281,18 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
           : {}),
       }
       case 'build_field': return { widthStuds: runStuds, depthStuds: runDepthStuds, layers: rigidFloor ? 2 : 1, family: wallFamily === 'brick' ? 'plate' : wallFamily, color: buildColor }
+      case 'build_crane': return { boomStuds: 6, color: buildColor }
+      case 'build_lattice': return { widthStuds: 5, depthStuds: 5, heightCourses: 3, bayStuds: 2, color: buildColor }
+      case 'build_snot_hull': return { widthStuds: 6, depthStuds: 5, layers: 1, color: buildColor }
+      case 'build_clock_faces': return { diameterStuds: 8, color: buildColor }
       case 'build_hinged_flap': return { widthStuds: runStuds, reachStuds: runDepthStuds, color: buildColor }
+      case 'generate_from_brief': return { prompt: designPrompt.trim() }
+      case 'generate_region': return {
+        prompt: designPrompt.trim(),
+        // The measured anchor, never an invented one. With nothing selected the
+        // planner measures the whole document instead.
+        ...(state.selection[0] ? { anchorPartId: state.selection[0] } : {}),
+      }
       case 'stack_selection': return { copies: storeys }
       case 'build_structure': return {
         widthStuds: runStuds,
@@ -305,6 +321,9 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
     if (active === 'create_subassembly' && !newSubassembly.trim()) return 'Name the new subassembly.'
     if (active === 'rename_subassembly' && !subassemblyName.trim()) return 'Name the subassembly.'
     if (active === 'rename_document' && !projectName.trim()) return 'Name the project.'
+    if ((active === 'generate_from_brief' || active === 'generate_region') && !designPrompt.trim()) {
+      return 'Describe what to build in a sentence.'
+    }
     if (active === 'set_dimension_limit' && (widthStuds <= 0 || depthStuds <= 0)) return 'Width and depth must be positive.'
     if (active === 'set_palette' && (!paletteCodes.length || paletteCodes.length > 64)) return 'List 1–64 LDraw colour codes.'
     if (active === 'remove_constraint' && !constraintId) return 'Choose a constraint to remove.'
@@ -409,7 +428,8 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
                   <VectorControl label="Exact offset" value={offset} onChange={setOffset} />
                 </>
               )}
-              {active === 'mirror_selection' && <NumberControl label="Mirror plane X" value={axis} suffix="LDU" onChange={setAxis} />}
+              {active === 'mirror_selection' && <SelectControl label="Reflect across" value={mirrorAxis} onChange={(value) => setMirrorAxis(value as 'x' | 'y' | 'z')} options={[{ value: 'x', label: 'X — left / right' }, { value: 'z', label: 'Z — front / back' }, { value: 'y', label: 'Y — up / down' }]} />}
+              {active === 'mirror_selection' && <NumberControl label={`Mirror plane ${mirrorAxis.toUpperCase()}`} value={axis} suffix="LDU" onChange={setAxis} />}
               {active === 'build_hinged_flap' && (
                 <>
                   <div className="command-grid">
@@ -583,6 +603,19 @@ export function CommandDeck({ open, state, onClose, onRun, initialCapability }: 
               )}
               {active === 'apply_build_order' && <NumberControl label="Maximum parts per step" value={maxPartsPerStep} min={1} max={100} onChange={setMaxPartsPerStep} />}
               {active === 'rename_document' && <TextControl label="Project name" value={projectName} onChange={setProjectName} maxLength={120} />}
+              {(active === 'generate_from_brief' || active === 'generate_region') && (
+                <TextAreaControl
+                  label={active === 'generate_region' ? 'What goes in this region' : 'What should be built'}
+                  value={designPrompt}
+                  onChange={setDesignPrompt}
+                  placeholder={
+                    active === 'generate_region'
+                      ? 'A crane deck 8 x 8 studs, 6 studs tall.'
+                      : 'A harbour control tower 24 x 20 studs, 30 studs tall, with a metro station.'
+                  }
+                  maxLength={4000}
+                />
+              )}
               {active === 'set_dimension_limit' && (
                 <>
                   <div className="command-pair-fields">

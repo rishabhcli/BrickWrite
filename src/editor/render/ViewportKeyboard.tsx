@@ -5,6 +5,7 @@ import { findArticulatedJoints } from '../../cad/articulation'
 import type { ModelDocument, Transform } from '../../cad/types'
 import type { ResolvedPlacement } from '../../cad/placement'
 import type { EditorTool } from '../CadViewport'
+import { cameraControlsOf } from './cameraControl'
 import { resolveVisibility, type VisibilityState } from './visibility'
 import { createSectionPlane, offsetPlaneAlongNormal, type SectionPlane } from './sectionPlanes'
 import {
@@ -33,35 +34,6 @@ interface ViewportKeyboardProps {
   onSectionPlanesChange: (next: readonly SectionPlane[]) => void
 }
 
-function orbitAround(camera: THREE.Camera, target: THREE.Vector3, yawDeg: number, pitchDeg: number) {
-  const offset = camera.position.clone().sub(target)
-  const spherical = new THREE.Spherical().setFromVector3(offset)
-  spherical.theta += THREE.MathUtils.degToRad(yawDeg)
-  const horizon = Math.PI / 2
-  const limit = THREE.MathUtils.degToRad(VIEWPORT_PITCH_LIMIT_DEG)
-  spherical.phi = THREE.MathUtils.clamp(
-    spherical.phi - THREE.MathUtils.degToRad(pitchDeg),
-    horizon - limit,
-    horizon + limit,
-  )
-  offset.setFromSpherical(spherical)
-  camera.position.copy(target).add(offset)
-  camera.lookAt(target)
-}
-
-function dollyToward(camera: THREE.Camera, target: THREE.Vector3, factor: number) {
-  if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
-    const orthographic = camera as THREE.OrthographicCamera
-    orthographic.zoom = Math.min(1000, Math.max(0.1, orthographic.zoom / factor))
-    orthographic.updateProjectionMatrix()
-    return
-  }
-  const offset = camera.position.clone().sub(target)
-  const next = Math.min(100000, Math.max(1, offset.length() * factor))
-  offset.setLength(next)
-  camera.position.copy(target).add(offset)
-}
-
 function announce(command: ReturnType<typeof commandFromViewportKey>, mode: ReturnType<typeof viewportMode>) {
   if (!command) return
   const live = document.getElementById('viewport-live')
@@ -72,7 +44,7 @@ function announce(command: ReturnType<typeof commandFromViewportKey>, mode: Retu
  * Focusable-canvas keyboard: orbit, dolly, frame, selection walking, nudge,
  * joints, section offset, occlusion cycling and keyboard placement.
  *
- * Lives inside the R3F tree so it can reach the live camera and OrbitControls
+ * Lives inside the R3F tree so it can reach the live camera and CameraControls
  * without a third window-level listener.
  */
 export function ViewportKeyboard({
@@ -119,15 +91,39 @@ export function ViewportKeyboard({
       if (!command) return
       event.preventDefault()
       event.stopPropagation()
-      const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
-      const target = orbit?.target ?? new THREE.Vector3()
+      const control = cameraControlsOf(controls)
+      const animated = window.__brickwrightRenderer?.motionPolicy().animated ?? true
+
+      /**
+       * Applies a camera command's result now, when motion is off.
+       *
+       * `camera-controls` records a target and lets the next frame interpolate
+       * towards it. With animation enabled that is the whole point. With it
+       * disabled there is nothing to interpolate, yet `camera.zoom` still does
+       * not move until something renders — so a keyboard zoom was a no-op for
+       * one frame, and anything reading the camera in between saw the old pose.
+       * `ViewportControls` already forces the update on the named-view path for
+       * exactly this reason; the keyboard path is the same promise.
+       */
+      const settle = (control: ReturnType<typeof cameraControlsOf>) => {
+        if (!control || animated) return
+        control.update(0)
+        control.camera.updateMatrixWorld(true)
+      }
 
       if (command.kind === 'orbit') {
-        orbitAround(camera, target, command.yawDeg, command.pitchDeg)
-        orbit?.update?.()
+        if (control) {
+          const limit = THREE.MathUtils.degToRad(VIEWPORT_PITCH_LIMIT_DEG)
+          void control.rotateTo(control.azimuthAngle + THREE.MathUtils.degToRad(command.yawDeg),
+            THREE.MathUtils.clamp(control.polarAngle - THREE.MathUtils.degToRad(command.pitchDeg), Math.PI / 2 - limit, Math.PI / 2 + limit), animated)
+          settle(control)
+        }
       } else if (command.kind === 'dolly') {
-        dollyToward(camera, target, command.factor)
-        orbit?.update?.()
+        if (control) {
+          if (camera instanceof THREE.OrthographicCamera) void control.zoomTo(THREE.MathUtils.clamp(camera.zoom / command.factor, 0.1, 1000), animated)
+          else void control.dollyTo(THREE.MathUtils.clamp(control.distance * command.factor, 1, 100000), animated)
+          settle(control)
+        }
       } else if (command.kind === 'frame') {
         const ids = Object.keys(model.parts)
         window.__brickwrightRenderer?.frameParts(ids.length ? ids : [])

@@ -1,17 +1,17 @@
-import { Boxes, MousePointerClick, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { MousePointerClick, Undo2, X } from 'lucide-react'
 import type { RefObject } from 'react'
 import { useFocusTrap } from '../platform/a11y'
 
 /**
  * First-run orientation.
  *
- * Brickwright is a dense CAD console, and every control on it was legible only
- * to someone who already knew the model it implements: a catalog you arm from,
- * a viewport you drop into, a kernel that mates parts by their real connectors,
- * and an agent whose reach you set. Nothing on screen said any of that, so the
- * opening move — "how do I put a brick down?" — had no answer short of clicking
- * around. This says it once, in the order the work happens, and then gets out of
- * the way.
+ * This used to introduce the whole console — connector mating, agent autonomy
+ * tiers, the validation report — in four headings and four hints, all of it
+ * before a single brick existed. None of that is usable on move one, and a
+ * beginner reading eight lines of CAD vocabulary learns only that this
+ * application is for somebody else. What is left is the one thing that gets a
+ * brick on screen and the promise that makes experimenting safe. Everything
+ * else is on the surface that needs it, or behind `?`.
  *
  * It is reachable again from the keyboard map, so dismissing it is not a
  * one-way door.
@@ -39,23 +39,13 @@ export function markWelcomeSeen(): void {
 const STEPS = [
   {
     icon: <MousePointerClick size={17} />,
-    title: 'Pick a part, then click in the viewport',
-    hint: 'R turns the ghost, Esc puts it back, + on a card skips the viewport.',
+    title: 'Click a part on the left, then click in the grid',
+    hint: 'It lands snapped to whatever is under it.',
   },
   {
-    icon: <Boxes size={17} />,
-    title: 'It mates on real connectors, not a grid',
-    hint: 'Drag the arrows to move a part. G, R and C switch tools.',
-  },
-  {
-    icon: <ShieldCheck size={17} />,
-    title: 'Collisions and limits are checked live',
-    hint: '⌘Z undoes any of it. Validate shows the current report.',
-  },
-  {
-    icon: <Sparkles size={17} />,
-    title: 'You decide what the agent may do',
-    hint: 'Inspect reads, Propose stages, Build commits. Protected parts stay off-limits.',
+    icon: <Undo2 size={17} />,
+    title: 'Nothing here is permanent',
+    hint: '⌘Z undoes anything you do.',
   },
 ] as const
 
@@ -89,7 +79,7 @@ export function WelcomeGuide({ open, onClose }: WelcomeGuideProps) {
           ))}
         </ol>
         <footer>
-          <span>Press <kbd>?</kbd> at any time for the full command map.</span>
+          <span>Press <kbd>?</kbd> for everything else.</span>
           <button className="welcome-start" onClick={onClose}>Start building</button>
         </footer>
       </section>

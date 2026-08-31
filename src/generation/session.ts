@@ -567,6 +567,25 @@ export class GenerationSession {
   }
 
   /**
+   * Hands a candidate to a reviewer that is not this panel.
+   *
+   * The Design Partner reviews through the agent's wave ledger, which runs its
+   * own `commandBus.preflight`. If this session ghosted the same candidate as
+   * well there would be two live proposals for one set of parts stacked over
+   * one viewport, and two accept buttons either of which would invalidate the
+   * other. So the ghost is withdrawn and only the selection is kept, which is
+   * what the panel needs in order to highlight the candidate the assistant
+   * chose.
+   */
+  adoptCandidate(candidateId: string): Candidate | null {
+    const candidate = this.candidate(candidateId)
+    if (!candidate) return null
+    this.discardGhost()
+    this.set({ selectedCandidateId: candidateId, outcome: null })
+    return candidate
+  }
+
+  /**
    * Commits the reviewed candidate as one transaction.
    *
    * The panel defaults to `human`: the operator typed the request, edited the

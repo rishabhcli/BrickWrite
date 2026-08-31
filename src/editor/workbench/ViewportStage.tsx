@@ -1,6 +1,6 @@
 import { Check, ChevronDown, Eye, X } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
-import { searchCatalog } from '../../cad/catalog'
+import { catalog, searchCatalog } from '../../cad/catalog'
 import type { ResolvedPlacement } from '../../cad/placement'
 import { PlacementBar } from './PlacementBar'
 import { PartContextMenu } from './PartContextMenu'
@@ -60,7 +60,6 @@ export function ViewportStage({
   onReviewProposal?: (proposalId: string) => void
 }) {
   const { state, renderMode, placement, placementDefinition } = workbench
-  const [dragOver, setDragOver] = useState(false)
   const [preview, setPreview] = useState<ResolvedPlacement | null>(null)
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
@@ -84,16 +83,19 @@ export function ViewportStage({
     const first =
       searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0] ??
       searchCatalog({ requireGeometry: true, limit: 1 })[0]
-    if (first) workbench.armPart(first)
+    // Commit it, rather than arm it. See `EmptyBuildState`: the empty viewport is
+    // the one place where "nothing visibly happened" is indistinguishable from a
+    // broken application, and `addPart` ends with the brick selected, the Move
+    // handles attached and the canvas focused.
+    if (first) workbench.addPart(first)
   }, [workbench])
 
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLElement>) => {
       const id = event.dataTransfer.getData('application/x-brickwright-part')
-      setDragOver(false)
       if (!id) return
       event.preventDefault()
-      const record = searchCatalog({ text: id, limit: 1, tier: 'all' })[0]
+      const record = catalog.describe(id)
       workbench.dropPart(record ?? { id, name: id }, event.clientX, event.clientY)
     },
     [workbench],
@@ -101,7 +103,7 @@ export function ViewportStage({
 
   return (
     <section
-      className={`viewport-shell ${dragOver ? 'drag-target' : ''}`}
+      className="viewport-shell"
       aria-label="Three-dimensional CAD viewport"
       data-render-mode={renderMode}
       onPointerDownCapture={(event) => {
@@ -132,9 +134,7 @@ export function ViewportStage({
         if (!event.dataTransfer.types.includes('application/x-brickwright-part')) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'copy'
-        setDragOver(true)
       }}
-      onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
       <CadViewport
@@ -187,14 +187,8 @@ export function ViewportStage({
         {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
-      <div className="viewport-corners" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
       <div className="viewport-title-block">
-        {state.selection.length ? (
+        {!placement && state.selection.length ? (
           <button
             className="selection-actions-trigger"
             aria-label="Selection actions"
@@ -208,20 +202,9 @@ export function ViewportStage({
             {workbench.selectedDefinition?.name ?? `${state.selection.length} parts selected`}
             <ChevronDown size={12} />
           </button>
-        ) : (
-          <p>No selection</p>
-        )}
+        ) : null}
       </div>
       <ViewportQuickControls workbench={workbench} />
-      <div className="viewport-metrics">
-        <Metric label="PARTS" value={String(state.validation.partCount).padStart(3, '0')} />
-        <Metric label="CONN" value={String(state.validation.connectionCount).padStart(3, '0')} />
-        <Metric
-          label="HITS"
-          value={String(state.validation.collisions.length).padStart(2, '0')}
-          good={state.validation.collisions.length === 0}
-        />
-      </div>
 
       {/* Ortho is an editing projection, not a diagnostic overlay. Its pressed
           toolbar button is enough; a large legend used to obscure the model. */}
@@ -245,13 +228,6 @@ export function ViewportStage({
 
       {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
       {contextPoint && <PartContextMenu workbench={workbench} point={contextPoint} onClose={closeContext} />}
-
-      {dragOver && (
-        <div className="viewport-droptarget" role="status">
-          <strong>Drop to place</strong>
-          <p>The part is solved onto whatever is under the cursor.</p>
-        </div>
-      )}
 
       {state.validation.partCount === 0 && !placement && <EmptyBuildState onPickStarter={pickStarter} />}
 
@@ -295,14 +271,5 @@ export function ViewportStage({
           here without this file knowing they exist. */}
       <Slot id="overlay" />
     </section>
-  )
-}
-
-function Metric({ label, value, good }: { label: string; value: string; good?: boolean }) {
-  return (
-    <div className={good ? 'good' : ''}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   )
 }

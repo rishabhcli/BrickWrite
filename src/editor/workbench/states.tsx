@@ -9,17 +9,21 @@ import type { ReactNode } from 'react'
  * and the answer has to be on screen.
  */
 
-/** Nothing placed yet. Offers the one action that gets past it. */
+/**
+ * Nothing placed yet. Offers the one action that gets past it.
+ *
+ * The button puts a brick down rather than arming one. Arming left the viewport
+ * looking untouched until the pointer happened to cross it — the first thing a
+ * newcomer does here appearing to do nothing — and it cost a second click to
+ * finish. One press now lands a brick, selected, with its handles already up.
+ * How to place the *next* one is the sentence above it.
+ */
 export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }) {
   return (
     <div className="viewport-empty" data-state="empty">
       <div className="viewport-empty-mark" aria-hidden="true"><span /><span /><span /></div>
-      <strong>Nothing placed yet</strong>
-      <p>
-        Choose a part on the left, then click here to drop it. Placement is solved against the part's real
-        LDraw connectors, so the first brick sets the frame everything else mates into.
-      </p>
-      <button onClick={onPickStarter}>Pick a starter brick</button>
+      <strong>Drag a part here</strong>
+      <button onClick={onPickStarter}>Start with a brick</button>
     </div>
   )
 }

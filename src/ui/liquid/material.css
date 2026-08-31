@@ -1,0 +1,326 @@
+/*
+ * The three materials.
+ *
+ * Bounded chrome only. Nothing here may target #root, a canvas, or a viewport
+ * parent: filtering the surface a WebGL scene is composited into costs frame
+ * time on every frame, forever, to blur something nobody is looking through.
+ *
+ * The material class is `liquid-fill` so that this stylesheet could never win
+ * against the legacy one by accident while both were loaded. Role classes keep
+ * their `glass-*` names because thirty-one lines of app CSS already select on
+ * them — `.topbar.glass-bar`, `.dock.glass-dock`, `.right-dock-tabs
+ * .glass-tabs__tab` — and renaming a correct name is pure churn.
+ */
+
+.liquid-fill {
+  --liquid-material: var(--glass-fill);
+  background: var(--glass-specular), var(--liquid-material);
+  border: 1px solid var(--glass-edge-outer);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-inner),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(120%);
+  backdrop-filter: blur(var(--liquid-blur)) saturate(120%);
+  color: var(--ink, #f0f5f6);
+  font-family: var(--font-chrome);
+}
+
+/*
+ * Tier 1.
+ *
+ * The host stops painting its own material and becomes a frame for the lining:
+ * the lens element supplies fill, blur and refraction together, because a
+ * displacement map has to bend a backdrop it can actually see. A background
+ * here would be sampled by the lining sitting on top of it and the refraction
+ * would resolve to a flat tint.
+ *
+ * `position: relative; z-index: 0` gives the host a stacking context so the
+ * lining's negative index cannot escape to an ancestor. Deliberately not
+ * `isolation: isolate`: isolation forms a backdrop root, which would leave the
+ * lining with nothing behind it to refract.
+ */
+/*
+ * The stacking guarantee, deliberately the weakest rule in the file.
+ *
+ * The lining sits at z-index -1, which requires the host to form a stacking
+ * context or the lining escapes to an ancestor and paints behind it. But most
+ * hosts already form one: workbench.css gives .topbar z-index 20, .dock 8 and
+ * .toolbar-island 18, and those values place the chrome above the WebGL canvas.
+ *
+ * Declaring `z-index: 0` here unlayered overrode all three and dropped the
+ * entire toolbar island behind the canvas — buttons and all, confirmed by
+ * elementFromPoint returning CANVAS at a button's own centre. An unlayered
+ * declaration beats every layered one, so putting only the stacking pair in a
+ * layer lets any authored z-index win while still covering a host that has
+ * none. `isolation: isolate` would be the more obvious way to force a context
+ * and is exactly wrong: it forms a backdrop root, leaving the lining with
+ * nothing behind it to refract.
+ */
+@layer liquid-stacking {
+  .liquid-fill[data-tier='lensed'] {
+    position: relative;
+    z-index: 0;
+  }
+}
+
+.liquid-fill[data-tier='lensed'] {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--glass-shadow);
+  border-color: color-mix(in srgb, var(--glass-edge-outer) 70%, transparent);
+}
+
+/*
+ * The lining.
+ *
+ * Four stacked layers inside one absolutely positioned span: the refracting
+ * backdrop, the pointer-tracked specular, and the rim that gives the edge
+ * thickness. They are separate elements rather than one because backdrop-filter
+ * applies to what is behind an element, so anything painted on the same element
+ * would sit on top of its own refraction and flatten it.
+ */
+.liquid-lens {
+  border-radius: inherit;
+  display: block;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+/* Zero-sized: it carries the filter definition, never any pixels. */
+.liquid-lens__defs {
+  height: 0;
+  position: absolute;
+  width: 0;
+}
+
+.liquid-lens__warp,
+.liquid-lens__sheen,
+.liquid-lens__glow,
+.liquid-lens__rim {
+  border-radius: inherit;
+  display: block;
+  inset: 0;
+  position: absolute;
+}
+
+.liquid-lens__warp {
+  background: var(--lens-tint);
+}
+
+.liquid-fill.liquid-over-light .liquid-lens__warp {
+  background: var(--lens-tint-over-light);
+}
+
+/* Tier 3. Reduced transparency asks for no blur, not less of it. */
+.liquid-fill[data-tier='opaque'] {
+  background: var(--panel, #0d1315);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/*
+ * Over-light.
+ *
+ * Real glass over bright content shows a dark edge and an inverted specular.
+ * Without this the surface reads as a grey rectangle the moment a white part
+ * or a light baseplate fills the frame behind it.
+ */
+.liquid-fill.liquid-over-light {
+  --glass-edge-inner: rgba(0, 0, 0, 0.16);
+  --glass-edge-outer: rgba(0, 0, 0, 0.34);
+  --glass-specular: linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent) top / 100% 1px no-repeat;
+  /* The blur tier thickens for the same reason the lensed tier does: the text
+     on it stays near-white, so the scrim has to carry the contrast. */
+  --glass-fill: rgba(10, 14, 17, 0.78);
+  --glass-fill-elevated: rgba(12, 16, 19, 0.82);
+  --glass-fill-control: rgba(12, 16, 19, 0.8);
+  color: var(--ink, #f0f5f6);
+}
+
+.liquid-radius-control {
+  border-radius: var(--r-control);
+}
+.liquid-radius-section {
+  border-radius: var(--r-section);
+}
+.liquid-radius-panel {
+  border-radius: var(--r-panel);
+}
+.liquid-radius-island {
+  border-radius: var(--r-island);
+}
+.liquid-radius-sheet {
+  border-radius: var(--r-sheet);
+}
+
+.liquid-blur-nav {
+  --liquid-blur: var(--glass-blur-nav);
+}
+.liquid-blur-control {
+  --liquid-blur: var(--glass-blur-control);
+}
+.liquid-blur-chip {
+  --liquid-blur: var(--glass-blur-chip);
+}
+
+/*
+ * Controls.
+ *
+ * These never reach tier 1: refraction on a 34px pill is invisible and still
+ * costs a compositor layer. They get the material, the press response, and the
+ * pointer-tracked specular, which is where the whole effect is legible at this
+ * size anyway.
+ */
+.liquid-button,
+.liquid-field,
+.liquid-tabs__tab {
+  font: inherit;
+}
+
+.liquid-button {
+  --liquid-button-fill: color-mix(in srgb, var(--glass-fill-control) 82%, var(--cyan, #83e7ee) 18%);
+  --liquid-material: var(--liquid-button-fill);
+  align-items: center;
+  appearance: none;
+  border: 1px solid var(--glass-edge-outer);
+  border-radius: var(--r-control);
+  box-shadow: inset 0 1px 0 var(--glass-edge-inner);
+  color: var(--ink, #f0f5f6);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  transition:
+    background-color var(--dur-work) var(--ease-work),
+    border-color var(--dur-work) var(--ease-work),
+    color var(--dur-work) var(--ease-work),
+    transform var(--dur-press) var(--ease-work);
+}
+
+.liquid-button--filled {
+  --liquid-button-fill: var(--cyan, #83e7ee);
+  border-color: var(--cyan, #83e7ee);
+  color: #071214;
+  font-weight: 700;
+}
+.liquid-button--tinted {
+  --liquid-button-fill: color-mix(in srgb, var(--glass-fill-control) 82%, var(--cyan, #83e7ee) 18%);
+  border-color: color-mix(in srgb, var(--cyan, #83e7ee) 45%, var(--glass-edge-outer));
+}
+.liquid-button--plain {
+  --liquid-button-fill: rgba(20, 24, 28, 0.24);
+  box-shadow: none;
+}
+.liquid-button:hover:not(:disabled) {
+  border-color: var(--glass-edge-inner);
+  transform: translateY(-1px);
+}
+/* The gel compression: the surface gives, the label inside it does not move. */
+.liquid-button:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+.liquid-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.liquid-field {
+  --liquid-material: var(--glass-fill-control);
+  appearance: none;
+  color: var(--ink, #f0f5f6);
+  min-height: 34px;
+  padding: 7px 10px;
+  width: 100%;
+}
+.liquid-field::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+
+.liquid-tabs {
+  align-items: center;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+}
+.liquid-tabs[aria-orientation='vertical'] {
+  align-items: stretch;
+  flex-direction: column;
+}
+.liquid-tabs__tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-island) - 5px);
+  color: var(--faint);
+  cursor: pointer;
+  min-height: 30px;
+  padding: 5px 10px;
+  transition:
+    color var(--dur-work) var(--ease-work),
+    background-color var(--dur-work) var(--ease-work);
+}
+.liquid-tabs__tab.is-selected {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--glass-edge-inner);
+  color: var(--ink, #f0f5f6);
+}
+.liquid-tabs__tab:hover:not(:disabled) {
+  color: var(--ink, #f0f5f6);
+}
+.liquid-tabs__tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.liquid-sheet {
+  --liquid-material: var(--glass-fill-elevated);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-inner),
+    var(--glass-shadow);
+}
+.liquid-notice {
+  padding: 10px 12px;
+}
+.liquid-notice--success {
+  border-color: color-mix(in srgb, var(--green, #98d56d) 55%, var(--glass-edge-outer));
+}
+.liquid-notice--warning {
+  border-color: color-mix(in srgb, var(--orange, #f5a33f) 65%, var(--glass-edge-outer));
+}
+.liquid-notice--error {
+  border-color: color-mix(in srgb, var(--red, #ff6753) 65%, var(--glass-edge-outer));
+}
+
+.liquid-button:focus-visible,
+.liquid-field:focus-visible,
+.liquid-tabs__tab:focus-visible {
+  outline: 2px solid var(--cyan, #83e7ee);
+  outline-offset: 2px;
+}
+.liquid-button:focus-visible,
+.liquid-field:focus-visible {
+  border-radius: var(--r-control);
+}
+.liquid-tabs__tab:focus-visible {
+  border-radius: calc(var(--r-island) - 5px);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-button--plain {
+    --liquid-button-fill: var(--panel-2, #121a1d);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-button:hover:not(:disabled),
+  .liquid-button:active:not(:disabled) {
+    transform: none;
+  }
+}

@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { GlassPanel } from '../ui/liquid'
 import { Ban, Check, CircleAlert, Info, MousePointer2, Play, RotateCcw, SlidersHorizontal, Stethoscope, X } from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
 import { MAX_WEIGHT, objectiveList } from './objectives'
@@ -61,9 +62,9 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
 
   if (!selection.length && !running && !state.proposals.length) {
     return (
-      <section className="bw-refine" aria-label="Refine">
+      <GlassPanel as="section" className="bw-refine" aria-label="Refine">
         <EmptyScope api={api} partIds={partIds} outcome={state.outcome} onDismiss={() => session.clearOutcome()} />
-      </section>
+      </GlassPanel>
     )
   }
 
@@ -73,7 +74,7 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
   const nothing = foundNothing(state)
 
   return (
-    <section className="bw-refine" aria-label="Refine">
+    <GlassPanel as="section" className="bw-refine" aria-label="Refine">
       <div className="bw-refine__scope">
         <div>
           <strong className="bw-refine__num">{selection.length}</strong>{' '}
@@ -316,7 +317,7 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
           </span>
         </div>
       )}
-    </section>
+    </GlassPanel>
   )
 }
 

@@ -158,10 +158,12 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   },
   {
     id: 'edit.mirror',
-    title: 'Mirror across X',
+    title: 'Mirror left to right',
     group: 'edit',
-    detail: 'Reflect the selection through an exact X plane.',
+    detail:
+      'Reflect the selection about its own centre. Front-to-back and vertical mirrors are in the Mirror panel. Parts that are not symmetric about the plane are still placed, and named — a mirrored slope wants the opposite-hand element.',
     defaultChord: 'shift+m',
+    keywords: 'mirror flip reflect symmetry',
   },
   {
     id: 'edit.array',

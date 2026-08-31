@@ -161,15 +161,18 @@ describe('palette', () => {
     expect(after).toBeLessThan(before)
   })
 
-  it('carries a drag payload the viewport can read', () => {
-    const { container } = renderPalette()
+  it('picks up with the pointer and emits live platform coordinates', () => {
+    const onDragPart = vi.fn(() => true)
+    const { container } = renderPalette({ onDragPart })
     const card = container.querySelector('.part-card') as HTMLElement
-    expect(card.getAttribute('draggable')).toBe('true')
-    const data = new Map<string, string>()
-    fireEvent.dragStart(card, {
-      dataTransfer: { setData: (type: string, value: string) => data.set(type, value), effectAllowed: '' },
-    })
-    expect(data.get('application/x-brickwright-part')).toBeTruthy()
+    const live = vi.fn()
+    window.addEventListener('brickwright:part-drag', live)
+    fireEvent.pointerDown(card, { pointerId: 7, button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 40, clientY: 50 })
+    expect(onDragPart).toHaveBeenCalledTimes(1)
+    expect(live).toHaveBeenCalledTimes(1)
+    expect((live.mock.calls[0][0] as CustomEvent).detail).toEqual({ clientX: 40, clientY: 50 })
+    window.removeEventListener('brickwright:part-drag', live)
   })
 
   it('explains an empty result instead of showing a blank grid', () => {

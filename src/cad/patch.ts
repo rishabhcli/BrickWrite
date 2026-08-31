@@ -4,8 +4,9 @@ import type {
   CadOperation,
   ConnectionEdge,
   Constraint,
-  ModuleDefinition,
+  JointOverride,
   ModelDocument,
+  ModuleDefinition,
   PartInstance,
   Subassembly,
 } from './types'
@@ -38,6 +39,7 @@ export type EntityMutation =
   | { kind: 'notes'; value: BuilderNote[] }
   | { kind: 'constraints'; value: Constraint[] }
   | { kind: 'modules'; value: ModuleDefinition[] }
+  | { kind: 'joint-overrides'; value: JointOverride[] }
 
 export interface TouchedEntities {
   readonly partIds: readonly string[]
@@ -54,34 +56,54 @@ export interface DocumentPatch {
 const clone = <T,>(value: T): T => structuredClone(value)
 
 /**
- * Applies mutations, sharing structure with the previous document.
+ * A document under construction, copying each record only when written.
  *
- * Only the top-level records are copied and only touched entries replaced, so an
- * edit to one brick does not deep-copy the other four thousand. Untouched part
- * objects are shared by reference, which is safe because the kernel never
- * mutates a stored entity in place.
+ * Applying mutations shares structure with the previous document: only the
+ * top-level records are copied and only touched entries replaced, so an edit to
+ * one brick does not deep-copy the other four thousand. Untouched part objects
+ * are shared by reference, which is safe because the kernel never mutates a
+ * stored entity in place.
+ *
+ * The records are also copied *lazily*, per record, on first write. Two callers
+ * pay for that. `applyMutations` on a part edit no longer copies the connection
+ * table, which on the 11,493-part campus demo holds 26,496 entries — more than
+ * the parts. And `mutationsForOperations`, which needs a document its own later
+ * operations can read back, gets one copy for the whole batch instead of one per
+ * emitted mutation: a single `part.add` emits three, and the batch went from
+ * 30.2 ms to 4.6 ms on that demo.
  */
-export function applyMutations(document: ModelDocument, mutations: readonly EntityMutation[]): ModelDocument {
-  const next: ModelDocument = {
-    ...document,
-    parts: { ...document.parts },
-    subassemblies: { ...document.subassemblies },
-    connections: { ...document.connections },
-  }
-  for (const mutation of mutations) {
+function workingDocument(document: ModelDocument) {
+  const next: ModelDocument = { ...document }
+  let ownsParts = false
+  let ownsSubassemblies = false
+  let ownsConnections = false
+
+  const apply = (mutation: EntityMutation) => {
     switch (mutation.kind) {
       case 'document-name':
         next.name = mutation.value
         break
       case 'part':
+        if (!ownsParts) {
+          next.parts = { ...document.parts }
+          ownsParts = true
+        }
         if (mutation.value) next.parts[mutation.id] = mutation.value
         else delete next.parts[mutation.id]
         break
       case 'subassembly':
+        if (!ownsSubassemblies) {
+          next.subassemblies = { ...document.subassemblies }
+          ownsSubassemblies = true
+        }
         if (mutation.value) next.subassemblies[mutation.id] = mutation.value
         else delete next.subassemblies[mutation.id]
         break
       case 'connection':
+        if (!ownsConnections) {
+          next.connections = { ...document.connections }
+          ownsConnections = true
+        }
         if (mutation.value) next.connections[mutation.id] = mutation.value
         else delete next.connections[mutation.id]
         break
@@ -97,9 +119,19 @@ export function applyMutations(document: ModelDocument, mutations: readonly Enti
       case 'modules':
         next.modules = mutation.value
         break
+      case 'joint-overrides':
+        next.jointOverrides = mutation.value
+        break
     }
   }
-  return next
+
+  return { document: next, apply }
+}
+
+export function applyMutations(document: ModelDocument, mutations: readonly EntityMutation[]): ModelDocument {
+  const working = workingDocument(document)
+  for (const mutation of mutations) working.apply(mutation)
+  return working.document
 }
 
 /**
@@ -164,6 +196,12 @@ export function invertMutations(
           inverse.push({ kind: 'modules', value: clone(document.modules ?? []) })
         }
         break
+      case 'joint-overrides':
+        if (!seen.has('joint-overrides')) {
+          seen.add('joint-overrides')
+          inverse.push({ kind: 'joint-overrides', value: clone(document.jointOverrides ?? []) })
+        }
+        break
     }
   }
   return inverse
@@ -193,12 +231,15 @@ export function mutationsForOperations(
   transactionId: string,
 ): EntityMutation[] {
   // A working copy lets a batch build on its own earlier operations — placing a
-  // part and then recolouring it in one transaction, for instance.
-  let working = document
+  // part and then recolouring it in one transaction, for instance. It is private
+  // to this function and written in place; `workingDocument` copies each record
+  // once, on the batch's first write to it.
+  const state = workingDocument(document)
+  const working = state.document
   const mutations: EntityMutation[] = []
   const emit = (mutation: EntityMutation) => {
     mutations.push(mutation)
-    working = applyMutations(working, [mutation])
+    state.apply(mutation)
   }
 
   const withMembership = (subassemblyId: string, mutate: (members: string[]) => string[]) => {
@@ -282,6 +323,48 @@ export function mutationsForOperations(
         withMembership(operation.subassemblyId, (members) =>
           members.includes(part.id) ? members : [...members, part.id],
         )
+        break
+      }
+      case 'joint.override': {
+        // Replaced rather than appended when the same pair is asserted twice:
+        // two freedoms for one joint is not a state the kernel should be able
+        // to hold, and the last word is the one the builder meant.
+        const { a, b } = operation.override
+        const same = (override: JointOverride) =>
+          (override.a.partId === a.partId &&
+            override.a.featureId === a.featureId &&
+            override.b.partId === b.partId &&
+            override.b.featureId === b.featureId) ||
+          (override.a.partId === b.partId &&
+            override.a.featureId === b.featureId &&
+            override.b.partId === a.partId &&
+            override.b.featureId === a.featureId)
+        const overrides = clone(working.jointOverrides ?? []).filter((override) => !same(override))
+        overrides.push(clone(operation.override))
+        emit({ kind: 'joint-overrides', value: overrides })
+
+        // Refresh the edge now, if it is already there.
+        //
+        // Connection edges are re-derived on every edit, but the diff only
+        // emits an edge that is *new* — an existing one is left alone, because
+        // recomputing a joint that cannot have changed would cost a comparison
+        // per edge on every keystroke of a drag. Asserting a freedom is exactly
+        // the case where it did change, and this is the one place that knows
+        // which edge, so it says so rather than making the diff look.
+        const edge = Object.values(working.connections).find(
+          (candidate) =>
+            (candidate.a.partId === a.partId &&
+              candidate.a.featureId === a.featureId &&
+              candidate.b.partId === b.partId &&
+              candidate.b.featureId === b.featureId) ||
+            (candidate.a.partId === b.partId &&
+              candidate.a.featureId === b.featureId &&
+              candidate.b.partId === a.partId &&
+              candidate.b.featureId === a.featureId),
+        )
+        if (edge) {
+          emit({ kind: 'connection', id: edge.id, value: { ...clone(edge), joint: clone(operation.override.joint) } })
+        }
         break
       }
       case 'subassembly.add':

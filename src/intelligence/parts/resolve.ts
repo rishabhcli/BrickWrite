@@ -39,6 +39,15 @@ const SEMANTIC_CANDIDATES = 150
  * request was "brick".
  */
 const DIMENSIONAL_CANDIDATES = 60
+/**
+ * How many identities a stated colour may contribute.
+ *
+ * Same reasoning as the footprint stage and the same shape: a colour is a
+ * filter on the answer, not a source of answers, so it is held to the words the
+ * request also used - unless there are none, which is the case that used to have
+ * no answer at all. "clear" is a whole question to a seven-year-old.
+ */
+const COLOR_CANDIDATES = 60
 const DEFAULT_LIMIT = 8
 
 export interface PartIntelligence {
@@ -163,6 +172,7 @@ function resolveAgainst(
     categories: catalog.categories,
     resolveIdentity: (token) => lexical.resolveIdentity(token)?.id ?? null,
     knowsTerm: (term) => lexical.hasTerm(term),
+    readTerm: (term) => lexical.interpret(term),
   })
 
   const candidates = new Map<string, Candidate>()
@@ -203,13 +213,27 @@ function resolveAgainst(
     admit(corpus.documents[index])
   }
 
-  // 5. Latent similarity, over the same query and every candidate found so far.
+  // 5. Identities this build has actually observed in the colour asked for.
+  for (const index of colorCandidates(query, corpus)) {
+    if (requireWordMatch && !touched.has(index)) continue
+    admit(corpus.documents[index])
+  }
+
+  // 6. Latent similarity, over the same query and every candidate found so far.
   //
   // Terms the lexical vocabulary rejected are deliberately included: character
   // trigrams are exactly the mechanism that reaches "Steering" from "steers",
   // and a word this build has never indexed is the case the latent space is
   // there to cover. It is still reported as unmatched.
-  const semanticText = [query.contentTerms.join(' '), query.color.evidence.join(' ')].join(' ').trim()
+  //
+  // A colour word joins that text only when the request also said something
+  // about the part. On its own it is a filter with no shape in it, and the
+  // latent space answers it with whatever parts are *named* like the colour:
+  // "clear" returned a bandana, a starched cape and a set of air tanks, every
+  // one of them a confident answer to a question nobody asked.
+  const semanticText = query.contentTerms.length
+    ? [query.contentTerms.join(' '), query.color.evidence.join(' ')].join(' ').trim()
+    : ''
   let semanticQuery: SemanticQuery | null = null
   if (semanticIndex && semanticText) {
     semanticQuery = semanticIndex.query(semanticText)
@@ -293,6 +317,32 @@ function footprintCandidates(query: PartQuery, corpus: PartCorpus): number[] {
       const [low, high] = key.split('x')
       if (Number(low) !== footprintExtent && Number(high) !== footprintExtent) continue
       picked.push(...bucket.slice(0, Math.ceil(DIMENSIONAL_CANDIDATES / 4)))
+    }
+  }
+  return picked
+}
+
+/**
+ * Document indices this build has observed in one of the requested colours,
+ * most-used first.
+ *
+ * The union across codes is walked code by code and capped, rather than
+ * gathered and sorted, because a finish word such as "clear" resolves to 57
+ * colour codes and taking the head of each bucket is what keeps the stage
+ * proportional to the answer rather than to the palette.
+ */
+function colorCandidates(query: PartQuery, corpus: PartCorpus): number[] {
+  if (!query.color.codes.length) return []
+  const picked: number[] = []
+  const seen = new Set<number>()
+  const perCode = Math.max(4, Math.ceil(COLOR_CANDIDATES / query.color.codes.length))
+  for (const code of query.color.codes) {
+    const bucket = corpus.byColor.get(code)
+    if (!bucket) continue
+    for (let i = 0; i < bucket.length && i < perCode; i += 1) {
+      if (seen.has(bucket[i])) continue
+      seen.add(bucket[i])
+      picked.push(bucket[i])
     }
   }
   return picked
@@ -515,7 +565,11 @@ function interpretedDimensions(query: PartQuery): [number, number, number] | nul
  * nearest gears while naming the two conditions none of them meet.
  */
 function unmatchedTerms(query: PartQuery, ranked: RankedCandidate[]): string[] {
-  const unmatched = [...query.unmatchedTerms]
+  // A size word with no scale behind it is the third kind, and it belongs here
+  // rather than in the parser's own list: "big" was understood, it is simply
+  // not a thing this build can measure, and the caller has to be told that
+  // instead of being handed the answer to "flat" as if it answered "big flat".
+  const unmatched = [...query.unmatchedTerms, ...query.uncheckableTerms]
   const add = (term: string) => {
     if (term && !unmatched.includes(term)) unmatched.push(term)
   }

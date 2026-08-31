@@ -1,6 +1,7 @@
 import { nearestPlaceableNeighbour } from '../cad/snapping'
 import { floatingPartIds } from '../cad/validation'
 import type { ModelDocument } from '../cad/types'
+import { classifySubject, type SubjectArchetype } from '../generation/brief'
 
 /**
  * The next legal move, as a measured sentence.
@@ -28,6 +29,35 @@ export interface AgentSituation {
   readonly floatingPartId?: string
   /** Nearest part that can still receive a brick on top, from the hovering part. */
   readonly nearbyAnchorId?: string
+  /** What the builder's last message asked for, per the brief compiler's own keywords. */
+  readonly subject?: SubjectArchetype
+  /** True when that message reads as "build me a whole X" rather than an edit. */
+  readonly designRequest?: boolean
+  /** True when a generated candidate is already staged and awaiting a human. */
+  readonly generationPending?: boolean
+}
+
+/**
+ * Whether the builder asked for a *thing* or for an *edit*.
+ *
+ * The keywords come from the brief compiler rather than from a second list
+ * kept here, because a subject the compiler cannot classify is a subject
+ * generation cannot mass, and the two answers drifting apart is how an agent
+ * ends up compiling a brief for something it will then fail to build.
+ *
+ * "A blank plate" is the deliberate exception: it names no subject and it is
+ * exactly what `build_field` is for.
+ */
+const WANTS_BLANK = /\b(baseplate|base plate|blank plate|empty plate|flat base|just a base|foundation only)\b/i
+
+export function classifyRequest(text: string | null | undefined): {
+  subject: SubjectArchetype
+  designRequest: boolean
+} {
+  const source = (text ?? '').trim()
+  if (!source) return { subject: 'unknown', designRequest: false }
+  const { archetype } = classifySubject(source)
+  return { subject: archetype, designRequest: archetype !== 'unknown' && !WANTS_BLANK.test(source) }
 }
 
 export interface AgentNextStep {
@@ -56,19 +86,45 @@ export function situationFromLive(document: ModelDocument, extra: Partial<AgentS
     floatingPartId,
     nearbyAnchorId:
       extra.nearbyAnchorId ?? (floatingPartId ? nearestPlaceableNeighbour(document, floatingPartId)?.id : undefined),
+    subject: extra.subject,
+    designRequest: extra.designRequest,
+    generationPending: extra.generationPending,
   }
 }
 
 export function nextAgentAction(situation: AgentSituation): AgentNextStep {
   const code = situation.failureCode ?? ''
 
+  // A staged candidate is somebody else's turn. Adding parts on top of one is
+  // how a review of "here is your tower" turns into a review of "here is your
+  // tower and a 2x4 the assistant put on it".
+  if (situation.generationPending && !code) {
+    return {
+      tool: 'generation_state',
+      why: 'generated',
+      args: {},
+      action:
+        'A generated candidate is staged and waiting for the builder to accept or reject it. Read generation_state and tell them what is in it. Do not place parts on top of a wave under review.',
+    }
+  }
+
   if (situation.partCount === 0) {
+    if (situation.designRequest) {
+      const subject = situation.subject && situation.subject !== 'unknown' ? ` a ${situation.subject}` : ''
+      return {
+        tool: 'generation_compile',
+        why: 'generate',
+        args: {},
+        action:
+          `The document is empty and the builder asked for${subject || ' a whole model'}. Generate it: call generation_compile, settle any conflict it reports with generation_set, then generation_run and generation_preview. Do not lay it brick by brick — preflight_placement has no anchor here, and a model of this kind is hundreds of parts.`,
+      }
+    }
     return {
       tool: 'capability_search',
       why: 'empty',
       args: { query: 'build_field' },
       action:
-        'The document is empty. Do not call preflight_placement — it needs an existing anchor part. Call capability_search with query "build_field", then preflight_capability with that schema.',
+        'The document is empty and no subject was named. Do not call preflight_placement — it needs an existing anchor part. Call capability_search with query "build_field", then preflight_capability with that schema.',
     }
   }
 

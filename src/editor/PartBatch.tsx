@@ -1,9 +1,11 @@
 import { type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { catalog } from '../cad/catalog'
-import { geometryCache, MAIN_COLOUR, type PartGeometry } from '../cad/mesh'
+import { MAIN_COLOUR, type PartGeometry } from '../cad/mesh'
 import type { PartDefinition, PartInstance, Transform } from '../cad/types'
+import { useEdgeLodRegistration } from './render/EdgeLod'
+import { usePartGeometry } from './render/usePartGeometry'
 import { registerPickable, unregisterPickable } from './render/idPass'
 import { surfaceMaterialFor, type PartAppearance } from './PartVisual'
 
@@ -52,23 +54,15 @@ export interface PartBatchDescriptor {
  */
 export const INDIVIDUAL_SELECTION_LIMIT = 24
 
-/**
- * Above this many batched parts, hard edges are dropped entirely.
- *
- * Edges are merged per batch rather than drawn per part (see `BatchEdges`), so
- * draw calls stay flat, but the merged buffers still cost memory proportional to
- * brick count. This is the ceiling at which that trade stops being worthwhile.
- * It is a quality tier, not a correctness one: the CAD kernel is unaffected and
- * the UI reports it.
- */
-export const EDGE_RENDER_BUDGET = 6000
-
-/**
- * Vertex ceiling for one batch's merged edge buffer, ~7 MB at three floats per
- * vertex. A batch past this limit renders without edges rather than allocating
- * without bound.
- */
 const MERGED_EDGE_VERTEX_BUDGET = 600_000
+
+/** Geometric slack buckets; a live batch never shrinks its allocated buffer. */
+export function instanceCapacity(required: number, previous = 0): number {
+  if (required <= previous) return previous
+  let capacity = Math.max(32, previous)
+  while (capacity < required) capacity *= 2
+  return capacity
+}
 
 const matrixOf = (transform: Transform, target: THREE.Matrix4): THREE.Matrix4 => {
   const b = transform.basis
@@ -76,20 +70,59 @@ const matrixOf = (transform: Transform, target: THREE.Matrix4): THREE.Matrix4 =>
   return target.set(b[0], b[1], b[2], x, b[3], b[4], b[5], y, b[6], b[7], b[8], z, 0, 0, 0, 1)
 }
 
-/** Subscribes to the shared cache so a batch appears as soon as its mesh lands. */
-function useBatchGeometry(definition: PartDefinition): PartGeometry | null {
-  const [geometry, setGeometry] = useState<PartGeometry | null>(() => geometryCache.get(definition))
-  useEffect(() => {
-    let cancelled = false
-    setGeometry(geometryCache.get(definition))
-    void geometryCache.load(definition).then((loaded) => {
-      if (!cancelled) setGeometry(loaded)
-    })
-    return () => {
-      cancelled = true
+/**
+ * Brings a batch's instance buffer up to date, writing only what moved.
+ *
+ * `planBatches` builds fresh member arrays on every commit, so the effect that
+ * uploads them used to rewrite *every* matrix in *every* batch whenever the
+ * document changed — adding one brick to a 5,000-part model rebuilt 5,000
+ * matrices across 42 batches and recomputed 42 bounding spheres, all to move one
+ * of them. Measured on an M3 Max over 5,000 parts in 42 batches: that
+ * unconditional path cost 1.43 ms of main-thread time per commit, and this one
+ * costs 0.35 ms when nothing moved and 0.44 ms when one brick did.
+ *
+ * The comparison is against **the buffer itself** rather than against a cached
+ * copy of the previous plan, which makes it correct by construction: a write is
+ * skipped exactly when `instanceMatrix` already holds the sixteen floats it
+ * would receive. A reference check on the `Transform` object is tempting and was
+ * measured — it took the unchanged case from 0.35 ms to 0.05 ms — but it reports
+ * "unchanged" for a transform mutated in place, and did: the benchmark that
+ * measured it also caught it reporting nothing written for a brick that had
+ * moved. A silently stale brick is not worth 0.3 ms.
+ *
+ * `Math.fround` is what makes the comparison honest: the buffer is 32-bit, so a
+ * basis element of `cos 45°` is stored rounded, and comparing the stored value
+ * against the 64-bit source would report every rotated part as moved on every
+ * commit — which is the whole cost this function exists to avoid.
+ *
+ * Returns the number of matrices written, which is what a test can assert on:
+ * "unchanged poses cost no writes" is the property, and a count is the only way
+ * to see it from outside.
+ */
+export function writeInstanceMatrices(mesh: THREE.InstancedMesh, members: readonly BatchMember[]): number {
+  const array = mesh.instanceMatrix.array
+  let written = 0
+  for (let index = 0; index < members.length; index += 1) {
+    const b = members[index].transform.basis
+    const [x, y, z] = members[index].transform.position
+    const at = index * 16
+    // Column-major, the layout `Matrix4.set` produces and `InstancedMesh` uploads.
+    if (
+      array[at] === Math.fround(b[0]) && array[at + 4] === Math.fround(b[1]) && array[at + 8] === Math.fround(b[2]) &&
+      array[at + 1] === Math.fround(b[3]) && array[at + 5] === Math.fround(b[4]) && array[at + 9] === Math.fround(b[5]) &&
+      array[at + 2] === Math.fround(b[6]) && array[at + 6] === Math.fround(b[7]) && array[at + 10] === Math.fround(b[8]) &&
+      array[at + 12] === Math.fround(x) && array[at + 13] === Math.fround(y) && array[at + 14] === Math.fround(z) &&
+      array[at + 15] === 1
+    ) {
+      continue
     }
-  }, [definition])
-  return geometry
+    array[at] = b[0]; array[at + 4] = b[1]; array[at + 8] = b[2]; array[at + 12] = x
+    array[at + 1] = b[3]; array[at + 5] = b[4]; array[at + 9] = b[5]; array[at + 13] = y
+    array[at + 2] = b[6]; array[at + 6] = b[7]; array[at + 10] = b[8]; array[at + 14] = z
+    array[at + 3] = 0; array[at + 7] = 0; array[at + 11] = 0; array[at + 15] = 1
+    written += 1
+  }
+  return written
 }
 
 interface PartBatchProps {
@@ -111,7 +144,7 @@ interface PartBatchProps {
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
 }
 
-export function PartBatch({
+export const PartBatch = memo(function PartBatch({
   descriptor,
   showEdges,
   silhouette,
@@ -121,8 +154,10 @@ export function PartBatch({
   onSelect,
 }: PartBatchProps) {
   const instances = useRef<THREE.InstancedMesh>(null)
-  const geometry = useBatchGeometry(descriptor.definition)
-  const scratch = useMemo(() => new THREE.Matrix4(), [])
+  const geometry = usePartGeometry(descriptor.definition)
+  const capacityRef = useRef(0)
+  const capacity = instanceCapacity(descriptor.members.length, capacityRef.current)
+  useLayoutEffect(() => { capacityRef.current = capacity }, [capacity])
 
   const materials = useMemo(() => {
     if (!geometry) return []
@@ -140,17 +175,21 @@ export function PartBatch({
   useLayoutEffect(() => {
     const mesh = instances.current
     if (!mesh) return
-    descriptor.members.forEach((member, index) => {
-      mesh.setMatrixAt(index, matrixOf(member.transform, scratch))
-    })
+    const written = writeInstanceMatrices(mesh, descriptor.members)
+    const resized = mesh.count !== descriptor.members.length
     mesh.count = descriptor.members.length
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.computeBoundingSphere()
+    // Uploading a buffer nobody changed, and recomputing a bounding sphere over
+    // every instance to arrive at the same sphere, is the per-commit cost this
+    // guard exists to skip: one edit touches one batch, not all of them.
+    if (written > 0 || resized) {
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.computeBoundingSphere()
+    }
     // A raycast run outside React — the placement ghost does exactly that — gets
     // back an object and an instance index, so the batch has to say which part
     // each index stands for.
     mesh.userData.members = descriptor.members
-  }, [descriptor.members, geometry, scratch])
+  }, [descriptor.members, geometry, capacity])
 
   // Identity registration follows the batch's own lifetime. Re-running it when
   // the base changes matters: the registry is rebuilt whenever the plan changes,
@@ -165,7 +204,7 @@ export function PartBatch({
     }
     registerPickable(mesh, idBase)
     return () => unregisterPickable(mesh)
-  }, [idBase, geometry, descriptor.members.length])
+  }, [idBase, geometry, capacity, descriptor.members.length])
 
   if (!geometry) return null
 
@@ -181,27 +220,64 @@ export function PartBatch({
     <group>
       <instancedMesh
         ref={instances}
-        // The key forces a fresh instance buffer when the batch grows, since
+        // The key forces a fresh buffer only when the slack bucket grows, since
         // InstancedMesh capacity is fixed at construction.
-        key={`${descriptor.key}:${descriptor.members.length}`}
-        args={[geometry.surface, undefined as unknown as THREE.Material, Math.max(1, descriptor.members.length)]}
+        key={`${descriptor.key}:${capacity}`}
+        args={[geometry.surface, undefined as unknown as THREE.Material, capacity]}
         material={materials}
         castShadow
         receiveShadow
-        onPointerDown={handlePointer}
-        onDoubleClick={(event) => {
+        onPointerDown={interactive ? handlePointer : undefined}
+        onDoubleClick={interactive ? (event) => {
           if (!interactive || event.instanceId === undefined) return
           const member = descriptor.members[event.instanceId]
           if (!member) return
           event.stopPropagation()
           onSelect(member.part.id, false, true)
-        }}
+        } : undefined}
       />
       {showEdges && geometry.edges && !silhouette && (
         <BatchEdges descriptor={descriptor} geometry={geometry} opacity={0.34 * ghostOpacity} />
       )}
     </group>
   )
+})
+
+/**
+ * A part's own line segments, longest first.
+ *
+ * The ordering is what makes a shortened `drawRange` survivable. A compiled
+ * LDraw brick is mostly *stud* edges — a 2×4 carries about 216 line segments and
+ * only twelve of them are the box — so a uniform sample at a quarter density
+ * keeps a scatter of stud chords and loses corners, which reads as a brick
+ * dissolving. Taking the longest segments first keeps the outline and spends the
+ * cut on the chords nobody can resolve anyway.
+ *
+ * Cached against the source attribute, which the geometry cache shares across
+ * every batch and every instance of a definition, so the sort happens once per
+ * part shape rather than once per batch.
+ */
+const segmentOrderCache = new WeakMap<THREE.BufferAttribute | THREE.InterleavedBufferAttribute, Int32Array>()
+
+function segmentsByLength(source: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): Int32Array {
+  const cached = segmentOrderCache.get(source)
+  if (cached) return cached
+  const count = Math.floor(source.count / 2)
+  const lengths = new Float32Array(count)
+  for (let segment = 0; segment < count; segment += 1) {
+    const a = segment * 2
+    const dx = source.getX(a + 1) - source.getX(a)
+    const dy = source.getY(a + 1) - source.getY(a)
+    const dz = source.getZ(a + 1) - source.getZ(a)
+    lengths[segment] = dx * dx + dy * dy + dz * dz
+  }
+  const order = new Int32Array(count)
+  for (let segment = 0; segment < count; segment += 1) order[segment] = segment
+  // Ties break on index so two identical parts order their edges identically and
+  // a still camera cannot produce a different buffer from one commit to the next.
+  order.sort((a, b) => lengths[b] - lengths[a] || a - b)
+  segmentOrderCache.set(source, order)
+  return order
 }
 
 /**
@@ -210,8 +286,19 @@ export function PartBatch({
  * Line geometry has no instanced equivalent without a custom shader, so drawing
  * edges per part costs one call each — which measurably dominated the frame once
  * batching had flattened the surface calls. Merging restores one draw call per
- * batch. Returns null when the batch is empty or past the vertex budget, which
- * the caller renders as "no edges" rather than as an unbounded allocation.
+ * batch. Samples complete segments when over budget, keeping bounded edges even
+ * for very large batches. Returns null only for empty geometry or zero budget.
+ *
+ * The emission order has two jobs, and they are independent:
+ *
+ *   - **Across members**, a coprime stride, so a prefix covers the whole batch
+ *     rather than its first few parts. This is what keeps a shortened
+ *     `drawRange` spatially distributed.
+ *   - **Within a member**, longest edge first, so a shortened `drawRange` costs
+ *     each part its stud chords and not its corners.
+ *
+ * A full draw contains exactly the segments it always did, in a different order,
+ * so nothing changes for a model inside its budget.
  *
  * Exported so the benchmark builds its scene from the same code the viewport
  * does; an edge path that only the editor exercised would be the first thing to
@@ -225,22 +312,33 @@ export function buildMergedEdgeGeometry(
   const source = edges?.getAttribute('position')
   if (!source) return null
   const perInstance = source.count
-  const total = perInstance * members.length
-  if (total === 0 || total > vertexBudget) return null
+  const availableSegments = Math.floor(perInstance / 2) * members.length
+  const segments = Math.min(availableSegments, Math.max(0, Math.floor(vertexBudget / 2)))
+  const total = segments * 2
+  if (total === 0) return null
 
   const positions = new Float32Array(total * 3)
   const matrix = new THREE.Matrix4()
   const vertex = new THREE.Vector3()
-  members.forEach((member, instance) => {
+  const order = segmentsByLength(source)
+  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
+  let stride = Math.max(1, Math.floor(members.length * 0.6180339887498949))
+  while (gcd(stride, members.length) !== 1) stride += 1
+  for (let segment = 0; segment < segments; segment += 1) {
+    // Rank-major: every member contributes its longest edge before any member
+    // contributes its second longest. Within a rank the coprime stride walks the
+    // members so a prefix shorter than the batch still spans it, and no
+    // (member, edge) pair can repeat because indices within one rank are
+    // distinct modulo the member count.
+    const rank = order[Math.floor(segment / members.length)]
+    const member = members[(segment * stride) % members.length]
     matrixOf(member.transform, matrix)
-    const base = instance * perInstance * 3
-    for (let index = 0; index < perInstance; index += 1) {
-      vertex.fromBufferAttribute(source, index).applyMatrix4(matrix)
-      positions[base + index * 3] = vertex.x
-      positions[base + index * 3 + 1] = vertex.y
-      positions[base + index * 3 + 2] = vertex.z
+    const start = rank * 2
+    for (let endpoint = 0; endpoint < 2; endpoint += 1) {
+      vertex.fromBufferAttribute(source, start + endpoint).applyMatrix4(matrix)
+      vertex.toArray(positions, (segment * 2 + endpoint) * 3)
     }
-  })
+  }
   const buffer = new THREE.BufferGeometry()
   buffer.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   return buffer
@@ -280,11 +378,14 @@ function BatchEdges({
     [signature, geometry],
   )
 
+  const lines = useRef<THREE.LineSegments>(null)
+  useEdgeLodRegistration(descriptor.key, lines, merged)
+
   // Merged buffers are owned by this component, so they are disposed with it.
   useEffect(() => () => merged?.dispose(), [merged])
 
   if (!merged) return null
-  return <lineSegments geometry={merged} material={material} />
+  return <lineSegments ref={lines} geometry={merged} material={material} userData={{ partBatchEdges: true }} />
 }
 
 /**

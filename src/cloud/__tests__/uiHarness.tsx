@@ -169,8 +169,15 @@ export function withRuntime(runtime: CloudRuntime, children: ReactNode) {
 export function fakeWorkbenchApi(
   engine: CadEngine,
   overrides: Partial<CloudWorkbenchApi> = {},
-): CloudWorkbenchApi & { calls: { capability: string[]; modal: (string | null)[]; notices: string[] } } {
-  const calls = { capability: [] as string[], modal: [] as (string | null)[], notices: [] as string[] }
+): CloudWorkbenchApi & {
+  calls: { capability: string[]; modal: (string | null)[]; notices: string[]; selected: string[][] }
+} {
+  const calls = {
+    capability: [] as string[],
+    modal: [] as (string | null)[],
+    notices: [] as string[],
+    selected: [] as string[][],
+  }
   return {
     get snapshot() {
       return engine.getSnapshot()
@@ -193,6 +200,10 @@ export function fakeWorkbenchApi(
         engine.getSnapshot().document.revision,
       )
       return result.ok
+    },
+    select: (partIds) => {
+      calls.selected.push([...partIds])
+      engine.setSelection([...partIds])
     },
     ...overrides,
     calls,

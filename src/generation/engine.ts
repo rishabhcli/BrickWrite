@@ -11,8 +11,10 @@ import type { GeometryProvider } from '../cad/collision'
 import { evaluateHardGates, compareBuildQuality, metricDistance, type MetricVector } from './score'
 import {
   runPipeline,
+  strategyOrderFor,
   STRATEGIES,
   type Candidate,
+  type InferenceUsage,
   type PhaseEvent,
   type PipelineOptions,
 } from './phases'
@@ -66,6 +68,14 @@ export interface RejectedCandidate {
   readonly failures: string[]
 }
 
+/** A candidate attempt that failed before the kernel could score a document. */
+export interface CandidateFailure {
+  readonly candidateIndex: number
+  readonly strategy: string
+  readonly seed: number
+  readonly reason: string
+}
+
 export interface GenerationRun {
   readonly promptHash: string
   readonly provenance: Provenance
@@ -74,6 +84,10 @@ export interface GenerationRun {
   readonly candidates: Candidate[]
   /** Candidates the gates refused, with the reasons. Never silently dropped. */
   readonly rejected: RejectedCandidate[]
+  /** Provider or pipeline failures isolated to one candidate attempt. */
+  readonly failed: CandidateFailure[]
+  /** Successful model requests and token totals across all completed candidates. */
+  readonly inference: InferenceUsage
   /** Distinct structural hashes across every candidate produced. */
   readonly distinctHashes: number
   readonly elapsedMs: number
@@ -104,11 +118,15 @@ export class GenerationEngine {
     return this.provider !== null
   }
 
-  private settingsFor(options: GenerateOptions): GenerationSettings {
+  private settingsFor(brief: DesignBrief, options: GenerateOptions): GenerationSettings {
     const count = Math.max(1, Math.min(options.count ?? 3, STRATEGIES.length * 4))
+    // Ordered by what the subject is, not by declaration order. Candidate 0 is
+    // the massing the archetype asked for; the rest are alternatives worth
+    // looking at rather than three restatements of a building.
+    const order = strategyOrderFor(brief)
     const strategies = options.strategies?.length
       ? [...options.strategies]
-      : Array.from({ length: count }, (_, index) => STRATEGIES[index % STRATEGIES.length].id)
+      : Array.from({ length: count }, (_, index) => order[index % order.length]!)
     return {
       candidates: count,
       repairBudget: options.repairBudget ?? 24,
@@ -125,7 +143,7 @@ export class GenerationEngine {
    * separately-maintained guess at what mattered.
    */
   describeRun(brief: DesignBrief, options: GenerateOptions): RunDescriptor {
-    const settings = this.settingsFor(options)
+    const settings = this.settingsFor(brief, options)
     return {
       promptHash: promptHashFor(brief, settings, this.version),
       provider: this.provider?.id ?? 'deterministic',
@@ -146,12 +164,13 @@ export class GenerationEngine {
    */
   async generate(brief: DesignBrief, options: GenerateOptions): Promise<GenerationRun> {
     const startedAt = Date.now()
-    const settings = this.settingsFor(options)
+    const settings = this.settingsFor(brief, options)
     const rootSeed = options.seed ?? 0
     const promptHash = promptHashFor(brief, settings, this.version)
 
     const accepted: Candidate[] = []
     const rejected: RejectedCandidate[] = []
+    const failed: CandidateFailure[] = []
     const hashes = new Set<string>()
     const notes: string[] = []
 
@@ -183,12 +202,26 @@ export class GenerationEngine {
           const current = cursor
           cursor += 1
           if (current >= jobs.length) return
-          const candidate = await jobs[current]!.run()
-          produced.push({ index: jobs[current]!.index, candidate })
+          const job = jobs[current]!
+          try {
+            const candidate = await job.run()
+            produced.push({ index: job.index, candidate })
+          } catch (cause) {
+            if (shouldAbortRun(cause, options.signal)) throw cause
+            failed.push({
+              candidateIndex: job.index,
+              strategy: settings.strategies[job.index % settings.strategies.length]!,
+              seed: hash32(
+                `${promptHash}|${settings.strategies[job.index % settings.strategies.length]}|${rootSeed}|${job.index}`,
+              ) >>> 0,
+              reason: describeFailure(cause),
+            })
+          }
         }
       }),
     )
     produced.sort((a, b) => a.index - b.index)
+    failed.sort((a, b) => a.candidateIndex - b.candidateIndex)
 
     for (const item of produced) {
       hashes.add(item.candidate.structuralHash)
@@ -199,9 +232,14 @@ export class GenerationEngine {
       else rejected.push({ candidate: item.candidate, failures: gates.failures })
     }
 
-    if (hashes.size < settings.candidates) {
+    if (hashes.size < produced.length) {
       notes.push(
-        `${settings.candidates} candidate(s) produced ${hashes.size} distinct structure(s); two strategies converged on the same graph for this brief.`,
+        `${produced.length} completed candidate(s) produced ${hashes.size} distinct structure(s); two strategies converged on the same graph for this brief.`,
+      )
+    }
+    if (failed.length) {
+      notes.push(
+        `${failed.length} of ${settings.candidates} candidate attempt(s) failed before scoring; successful candidates remain reviewable and each failure is reported separately.`,
       )
     }
     if (!accepted.length && rejected.length) {
@@ -226,12 +264,43 @@ export class GenerationEngine {
         (a, b) => compareBuildQuality(a.metrics, b.metrics) || a.structuralHash.localeCompare(b.structuralHash),
       ),
       rejected,
+      failed,
+      inference: sumInference(produced.map((item) => item.candidate.inference)),
       distinctHashes: hashes.size,
       elapsedMs: Date.now() - startedAt,
       notes,
     }
   }
 }
+
+const shouldAbortRun = (cause: unknown, signal?: AbortSignal): boolean => {
+  if (signal?.aborted) return true
+  const name = cause instanceof Error ? cause.name : ''
+  return (
+    name === 'AbortError' ||
+    name === 'GenerationCancelled' ||
+    name === 'GenerationAbortedError' ||
+    // Missing/rejected credentials are a run-level configuration state. The
+    // session must surface its explicit deterministic alternative instead of
+    // reporting the same failure once per candidate.
+    name === 'ModelProviderUnavailableError'
+  )
+}
+
+const describeFailure = (cause: unknown): string => {
+  const detail = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'Unknown candidate failure.'
+  return detail.replace(/\s+/g, ' ').trim().slice(0, 320) || 'Unknown candidate failure.'
+}
+
+const sumInference = (usage: readonly InferenceUsage[]): InferenceUsage =>
+  usage.reduce<InferenceUsage>(
+    (total, entry) => ({
+      requests: total.requests + entry.requests,
+      inputTokens: total.inputTokens + entry.inputTokens,
+      outputTokens: total.outputTokens + entry.outputTokens,
+    }),
+    { requests: 0, inputTokens: 0, outputTokens: 0 },
+  )
 
 const promptHashFor = (brief: DesignBrief, settings: GenerationSettings, version: string): string =>
   hash32(stableStringify({ brief, settings, version })).toString(16).padStart(8, '0')

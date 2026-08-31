@@ -154,20 +154,71 @@ export interface PartGeometry {
 
 type GeometryState =
   | { status: 'loading'; promise: Promise<PartGeometry | null> }
-  | { status: 'ready'; geometry: PartGeometry }
+  | { status: 'ready'; geometry: PartGeometry; bytes: number; usedAt: number }
   | { status: 'failed'; reason: string }
+
+/**
+ * How much memory a decoded part actually occupies.
+ *
+ * Measured from the buffers rather than taken from the asset's file size: the
+ * compiled asset is packed, and what a long session accumulates is the decoded
+ * form — float32 positions and normals, the index, and the separate edge
+ * buffer, which for a detailed part outweighs the surface.
+ */
+function residentBytesOf(geometry: PartGeometry): number {
+  let bytes = 0
+  for (const buffer of [geometry.surface, geometry.edges]) {
+    if (!buffer) continue
+    for (const attribute of Object.values(buffer.attributes)) {
+      const array = (attribute as THREE.BufferAttribute).array
+      if (array) bytes += array.byteLength
+    }
+    const index = buffer.getIndex()
+    if (index?.array) bytes += index.array.byteLength
+  }
+  return bytes
+}
+
+/**
+ * Resident geometry budget, in bytes.
+ *
+ * Today's pack compiles to about 48 MB for 900 parts, and decodes to something
+ * in the low hundreds of megabytes if every one of them is touched — so this
+ * default does not bite on the current catalog, which is the intent. It bounds
+ * the *growth*: CI already records the plan to widen the pack toward ~900 MB,
+ * and a `Map` held for the tab's lifetime turns that into a session that gets
+ * slower the longer it is used and never recovers.
+ */
+export const DEFAULT_GEOMETRY_BUDGET_BYTES = 192 * 1024 * 1024
 
 /**
  * Immutable, content-addressed geometry cache.
  *
  * Assets are named by the SHA-256 of their own bytes, so a cached entry can
  * never be stale and two catalog revisions that share a part share its asset.
+ *
+ * Bounded, and bounded *safely*. An unbounded cache is a leak on both sides —
+ * the decoded buffers on the heap and the uploaded ones on the GPU, since
+ * dropping a `BufferGeometry` without disposing it frees neither. But eviction
+ * has a failure mode worse than the leak: disposing geometry something is still
+ * drawing empties the viewport. So callers that hold a `PartGeometry` past the
+ * call that returned it — the two renderer hooks, the exporter — `retain` it,
+ * and only unretained entries are ever considered. Least recently used goes
+ * first, and only far enough to get back under budget.
  */
 export class GeometryCache {
   private states = new Map<string, GeometryState>()
   private listeners = new Set<() => void>()
+  /** Live holders per asset. An entry with holders is never evicted. */
+  private holders = new Map<string, number>()
+  /** Monotonic use counter; cheaper and steadier than a wall clock. */
+  private clock = 0
+  private bytes = 0
 
-  constructor(private readonly baseUrl = '') {}
+  constructor(
+    private readonly baseUrl = '',
+    private readonly budgetBytes = DEFAULT_GEOMETRY_BUDGET_BYTES,
+  ) {}
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
@@ -183,10 +234,66 @@ export class GeometryCache {
     const asset = definition.geometryAsset
     if (!asset) return null
     const state = this.states.get(asset.file)
-    if (state?.status === 'ready') return state.geometry
+    if (state?.status === 'ready') {
+      this.clock += 1
+      state.usedAt = this.clock
+      return state.geometry
+    }
     if (state) return null
     void this.load(definition)
     return null
+  }
+
+  /**
+   * Marks a part's geometry as in use until the returned function is called.
+   *
+   * Balanced, so the same asset held by forty batches counts forty times and is
+   * released when the last one goes. Retaining a part that is not resident is
+   * legal and is the normal case: a renderer retains on mount and the fetch
+   * lands afterwards, and the count is what stops the sweep from taking it back
+   * out again a moment later.
+   */
+  retain(definition: PartDefinition): () => void {
+    const file = definition.geometryAsset?.file
+    if (!file) return () => {}
+    this.holders.set(file, (this.holders.get(file) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const next = (this.holders.get(file) ?? 1) - 1
+      if (next > 0) this.holders.set(file, next)
+      else this.holders.delete(file)
+    }
+  }
+
+  /**
+   * Drops least-recently-used unretained geometry until back under budget.
+   *
+   * Returns the number of assets released, so a caller — or a test — can see
+   * that it did something rather than infer it.
+   */
+  sweep(): number {
+    if (this.bytes <= this.budgetBytes) return 0
+    const candidates: Array<{ file: string; usedAt: number; bytes: number }> = []
+    for (const [file, state] of this.states) {
+      if (state.status !== 'ready' || this.holders.has(file)) continue
+      candidates.push({ file, usedAt: state.usedAt, bytes: state.bytes })
+    }
+    candidates.sort((a, b) => a.usedAt - b.usedAt)
+    let released = 0
+    for (const candidate of candidates) {
+      if (this.bytes <= this.budgetBytes) break
+      const state = this.states.get(candidate.file)
+      if (state?.status !== 'ready') continue
+      state.geometry.surface.dispose()
+      state.geometry.edges?.dispose()
+      this.states.delete(candidate.file)
+      this.bytes -= candidate.bytes
+      released += 1
+    }
+    if (released) this.emit()
+    return released
   }
 
   getStatus(definition: PartDefinition): GeometryState['status'] | 'unavailable' {
@@ -224,7 +331,14 @@ export class GeometryCache {
       }
     })()
       .then((geometry) => {
-        this.states.set(asset.file, { status: 'ready', geometry })
+        this.clock += 1
+        const bytes = residentBytesOf(geometry)
+        this.states.set(asset.file, { status: 'ready', geometry, bytes, usedAt: this.clock })
+        this.bytes += bytes
+        // After the insert, so the newest arrival is measured too — but it is
+        // also the most recently used, so it is the last thing the sweep would
+        // reach for.
+        this.sweep()
         this.emit()
         return geometry
       })
@@ -247,6 +361,11 @@ export class GeometryCache {
     let count = 0
     for (const state of this.states.values()) if (state.status === 'ready') count += 1
     return count
+  }
+
+  /** Decoded bytes currently held, across surface and edge buffers. */
+  get residentBytes(): number {
+    return this.bytes
   }
 }
 

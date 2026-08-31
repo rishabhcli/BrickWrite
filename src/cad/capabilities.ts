@@ -1,3 +1,4 @@
+import { MechanismGeometryError, planCrane, planLattice, planSnotHull, planClockFaces } from './assembly'
 import { articulate, findArticulatedJoints } from './articulation'
 import {
   AssemblyError,
@@ -13,12 +14,13 @@ import {
 } from './assembly'
 import { captureModule, describeModule, documentModules, findModule, ModuleError, stampModule } from './modules'
 import { catalog, PLATE_LDU, STUD_LDU, studPlaneLdu, underPlaneLdu } from './catalog'
-import { getPartBounds, nearbyParts, snapLdu } from './geometry'
+import { boundsOfMany, getPartBounds, nearbyParts, snapLdu } from './geometry'
 import { createId } from './ids'
 import { composeTransform, invertTransform } from './math'
+import { canMirror, mirrorPlaneFor, mirrorTransform, type MirrorAxis } from './mirror'
 import { computeBuildOrder } from './instructions'
 import { searchMateBetween } from './placement'
-import type { Actor, CadOperation, ModelDocument, PartInstance, Transform, Vec3 } from './types'
+import type { Actor, CadOperation, ModelDocument, PartInstance, Vec3 } from './types'
 import { floatingPartIds, unclutchedRestCode, unclutchedRestPartIds, airbornePartIds } from './validation'
 
 /**
@@ -39,7 +41,7 @@ export const SHARED_CAPABILITIES = [
   { id: 'list_joints', kind: 'read', group: 'mechanism', title: 'List joints', summary: 'Inspect drivable joints in the current scope.', input: { partIds: 'string[], optional' } },
   { id: 'compute_build_order', kind: 'read', group: 'sequence', title: 'Preview build order', summary: 'Derive and verify an attachment-aware build sequence.', input: { maxPartsPerStep: 'integer, optional' } },
   { id: 'duplicate_selection', kind: 'mutate', group: 'transform', title: 'Duplicate precisely', summary: 'Copy parts by a measured direction or an exact LDraw-unit offset.', input: { partIds: 'string[], optional', offsetLdu: '[x,y,z], optional', along: '"x" | "z" | "on-top", optional' } },
-  { id: 'mirror_selection', kind: 'mutate', group: 'transform', title: 'Mirror across X', summary: 'Reflect selected transforms across an exact X plane, or about the selection centre.', input: { partIds: 'string[], optional', axisLdu: 'number, default 0', about: '"world" | "selection", default world' } },
+  { id: 'mirror_selection', kind: 'mutate', group: 'transform', title: 'Mirror selection', summary: 'Reflect selected transforms across an exact plane on any axis, or about the selection centre. Emits only buildable poses and names parts a reflection cannot carry faithfully.', input: { partIds: 'string[], optional', axis: '"x" | "y" | "z", default "x"', axisLdu: 'number, default 0', about: '"world" | "selection", default world' } },
   { id: 'linear_array', kind: 'mutate', group: 'transform', title: 'Linear array', summary: 'Create deterministic repeated copies along a measured direction or an exact vector.', input: { partIds: 'string[], optional', copies: 'integer 1-24', offsetLdu: '[x,y,z], optional', along: '"x" | "z" | "on-top", optional' } },
   { id: 'build_wall', kind: 'mutate', group: 'assemble', title: 'Lay a wall', summary: 'Generate a bonded brick wall in one transaction, with staggered courses and optional openings.', input: { lengthStuds: 'integer 1-256', courses: 'integer 1-64', axis: '"x" | "z", default "x"', color: 'LDraw colour, optional', family: '"brick" | "plate" | "tile", default "brick"', depthStuds: '1 or 2, default 1', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
   { id: 'build_enclosure', kind: 'mutate', group: 'assemble', title: 'Lay a storey', summary: 'Generate four interlocking walls and an optional floor: one storey of a building, in one transaction.', input: { widthStuds: 'integer', depthStuds: 'integer', courses: 'integer 1-64', color: 'LDraw colour, optional', family: '"brick" | "plate", default "brick"', wallDepthStuds: '1 or 2, default 1', floor: 'boolean, default false', floorLayers: '1 or 2, default 2 (2 is cross-bonded and rigid)', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional', openings: '[{ atStud, widthStuds, fromCourse, toCourse }], optional' } },
@@ -64,6 +66,14 @@ export const SHARED_CAPABILITIES = [
   { id: 'remove_constraint', kind: 'mutate', group: 'constraints', title: 'Remove constraint', summary: 'Remove a named design constraint through shared history.', input: { constraintId: 'string' } },
   { id: 'apply_build_order', kind: 'mutate', group: 'sequence', title: 'Generate build order', summary: 'Replace the timeline with a verified attachment-aware sequence.', input: { maxPartsPerStep: 'integer, optional' } },
   { id: 'rename_document', kind: 'mutate', group: 'project', title: 'Rename project', summary: 'Rename the revisioned CAD document through the command bus.', input: { name: 'string' } },
+  // === CAD-MECHANISM-OWNED (Sol-1) ===
+  { id: 'build_crane', kind: 'mutate', group: 'mechanism', title: 'Build a crane', summary: 'Four-course mast and a bonded boom on a real luffing hinge; no winch or load rating.', input: { boomStuds: 'integer 2-64', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  { id: 'build_lattice', kind: 'mutate', group: 'mechanism', title: 'Build an orthogonal lattice', summary: 'Stud columns between bonded decks. Dimensions minus one must be multiples of bayStuds. No diagonal trusses.', input: { widthStuds: 'integer 3-32', depthStuds: 'integer 3-32', heightCourses: 'integer 1-16', bayStuds: 'integer 2-16', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  { id: 'build_snot_hull', kind: 'mutate', group: 'mechanism', title: 'Build a sideways-stud hull', summary: 'Open deck and side-stud rim with genuinely clutched plate skins. Dimensions exclude the exterior skins.', input: { widthStuds: 'integer 3-32', depthStuds: 'integer 3-32', layers: 'integer 1-2', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  { id: 'build_clock_faces', kind: 'mutate', group: 'mechanism', title: 'Build four clock hands', summary: 'Four open square-frame faces with one articulated hand each. Nominal sweep diameter; no dials, gearing or timekeeping.', input: { diameterStuds: 'integer 4-16', color: 'LDraw colour, optional', originLdu: '[x,y,z], optional', anchorPartId: 'existing part id, optional' } },
+  // === AGENT-ML-OWNED (Opus) ===
+  { id: 'generate_from_brief', kind: 'mutate', group: 'assemble', title: 'Generate from a brief', summary: 'Compile a sentence into a design brief and run the generation pipeline: a whole bonded model, massed, framed, packed and detailed, as one transaction. Deterministic here; the model-backed path is the generation_run tool.', input: { prompt: 'string', candidateCount: 'integer 1-6, default 1', useModel: 'boolean, default false — true is refused here, use generation_run', partBudget: 'integer 1-4000, optional', envelopeStuds: '[w,h,d], optional' } },
+  { id: 'generate_region', kind: 'mutate', group: 'assemble', title: 'Generate into a region', summary: 'Generate a sub-build into a measured envelope on an existing part — a wing, a ramp, another storey — leaving every part already placed byte-identical.', input: { prompt: 'string', anchorPartId: 'existing part id, optional', envelopeStuds: '[w,h,d], optional', partBudget: 'integer 1-4000, optional' } },
 ] as const
 
 export type SharedCapability = (typeof SHARED_CAPABILITIES)[number]
@@ -80,7 +90,7 @@ export function sharedCapability(id: string): SharedCapability | undefined {
 
 export class SharedCapabilityError extends Error {
   constructor(
-    readonly code: 'INVALID_OPERATION' | 'PART_NOT_FOUND' | 'NO_COMPATIBLE_CONNECTOR' | 'CONNECTOR_OCCUPIED' | 'COLLISION' | 'DISCONNECTED' | 'RESOURCE_LIMIT',
+    readonly code: 'GEOMETRY_UNAVAILABLE' | 'INVALID_OPERATION' | 'PART_NOT_FOUND' | 'NO_COMPATIBLE_CONNECTOR' | 'CONNECTOR_OCCUPIED' | 'COLLISION' | 'DISCONNECTED' | 'RESOURCE_LIMIT',
     message: string,
     readonly repair: string,
     readonly details?: Record<string, unknown>,
@@ -138,11 +148,8 @@ function originOnParts(parts: readonly PartInstance[]): Vec3 {
     const plane = studs !== null ? part.transform.position[1] + studs : getPartBounds(part).min[1]
     y = Math.min(y, plane)
   }
-  return [
-    snapLdu(Math.min(...boxes.map((box) => box.min[0]))),
-    y,
-    snapLdu(Math.min(...boxes.map((box) => box.min[2]))),
-  ]
+  const extent = boundsOfMany(boxes)
+  return [snapLdu(extent.min[0]), y, snapLdu(extent.min[2])]
 }
 
 function stampOriginOnAnchor(anchor: PartInstance): Vec3 {
@@ -203,7 +210,8 @@ function measuredAlongOffset(document: ModelDocument, partIds: readonly string[]
   }
   const boxes = partIds.map((id) => getPartBounds(document.parts[id]))
   const index = along === 'x' ? 0 : 2
-  const size = Math.max(...boxes.map((box) => box.max[index])) - Math.min(...boxes.map((box) => box.min[index]))
+  const extent = boundsOfMany(boxes)
+  const size = extent.max[index] - extent.min[index]
   const snapped = Math.max(STUD_LDU, Math.round(size / STUD_LDU) * STUD_LDU)
   return along === 'x' ? [snapped, 0, 0] : [0, 0, snapped]
 }
@@ -316,14 +324,6 @@ function scopedPartIds(context: SharedMutationContext, args: Record<string, unkn
   return ids
 }
 
-/** Reflects a rigid transform through the document-space plane x = `axis`. */
-export function mirrorTransformAcrossX(transform: Transform, axis: number): Transform {
-  const basis = transform.basis
-  return {
-    position: [axis - (transform.position[0] - axis), transform.position[1], transform.position[2]],
-    basis: [-basis[0], basis[1], basis[2], -basis[3], basis[4], basis[5], -basis[6], basis[7], basis[8]],
-  }
-}
 
 /**
  * Where a generated assembly starts, when the caller does not say.
@@ -332,7 +332,7 @@ export function mirrorTransformAcrossX(transform: Transform, axis: number): Tran
  * built. Defaulting to the stud plane of the selection is what a person means
  * by "now put a floor on that". An agent copies `anchorPartId` instead of XYZ.
  */
-function assemblyPlacement(
+export function assemblyPlacement(
   context: SharedMutationContext,
   args: Record<string, unknown>,
 ): { origin: Vec3; anchor: PartInstance | null } {
@@ -786,18 +786,32 @@ export function planSharedMutation(
 
     case 'mirror_selection': {
       const partIds = scopedPartIds(context, args)
+      const axisName = args.axis === 'y' ? 'y' : args.axis === 'z' ? 'z' : 'x'
+      const mirrorAxis: MirrorAxis = axisName === 'x' ? 0 : axisName === 'y' ? 1 : 2
       const about = args.about === 'selection' ? 'selection' : 'world'
-      let axis = finite(args.axisLdu, 0, 'axisLdu')
+      let plane = finite(args.axisLdu, 0, 'axisLdu')
       if (about === 'selection') {
-        const boxes = partIds.map((id) => getPartBounds(context.document.parts[id]))
-        axis = (Math.min(...boxes.map((box) => box.min[0])) + Math.max(...boxes.map((box) => box.max[0]))) / 2
+        const extent = boundsOfMany(partIds.map((id) => getPartBounds(context.document.parts[id])))
+        plane = mirrorPlaneFor(extent, mirrorAxis)
       }
+      // Every emitted basis keeps a positive determinant, so a mirror can only
+      // ever produce placements of parts that are actually manufactured. Where a
+      // part's connectors are not symmetric about the plane, that pose is a real
+      // placement but not a faithful reflection — it wants the opposite-hand
+      // part, which this build has no table to name. Reported, never silently
+      // swapped and never blocking: the count is preserved and the operator is
+      // told exactly which parts need a hand change.
+      const unfaithful = partIds.filter((partId) => !canMirror(context.document, partId, mirrorAxis))
       return {
         capability,
         label: `Mirror ${partIds.length} part${partIds.length === 1 ? '' : 's'}`,
-        operations: partIds.map((partId) => ({ type: 'part.transform', partId, transform: mirrorTransformAcrossX(context.document.parts[partId].transform, axis) })),
+        operations: partIds.map((partId) => ({ type: 'part.transform', partId, transform: mirrorTransform(context.document.parts[partId].transform, mirrorAxis, plane) })),
         nextSelection: partIds,
-        summary: `${partIds.length} part${partIds.length === 1 ? '' : 's'} reflected across x=${axis} LDU.`,
+        summary:
+          `${partIds.length} part${partIds.length === 1 ? '' : 's'} reflected across ${axisName}=${plane} LDU.`
+          + (unfaithful.length
+            ? ` ${unfaithful.length} of them ${unfaithful.length === 1 ? 'is' : 'are'} not symmetric about that plane, so ${unfaithful.length === 1 ? 'its pose is' : 'their poses are'} buildable but not a true mirror of the original shape: ${unfaithful.slice(0, 4).join(', ')}${unfaithful.length > 4 ? ', …' : ''}.`
+            : ''),
       }
     }
 
@@ -835,6 +849,25 @@ export function planSharedMutation(
       }
       refuseIllegalAdds(context.document, operations)
       return { capability, label: `Array ${partIds.length} part${partIds.length === 1 ? '' : 's'} × ${copies}`, operations, nextSelection, summary: `${copies} repeated cop${copies === 1 ? 'y' : 'ies'} along [${offset.join(', ')}] LDU.` }
+    }
+
+    // Sol-1 mechanism dispatch seam.
+    case 'build_crane':
+    case 'build_lattice':
+    case 'build_snot_hull':
+    case 'build_clock_faces':
+      return planMechanismAssembly(capability, args, context)
+
+    case 'generate_from_brief':
+    case 'generate_region': {
+      if (!generationPlanner) {
+        throw new SharedCapabilityError(
+          'INVALID_OPERATION',
+          'The generation pipeline is not loaded in this context.',
+          'Call the generation_compile or generation_run tool first — either one loads it — then retry this capability.',
+        )
+      }
+      return generationPlanner(capability, args, context)
     }
 
     case 'build_wall':
@@ -1195,5 +1228,75 @@ export function planSharedMutation(
       const name = text(args.name, 'Project name', 120)
       return { capability, label: `Rename project to “${name}”`, operations: [{ type: 'document.rename', name }], summary: `The document name becomes ${name}.` }
     }
+  }
+}
+
+// === AGENT-ML-OWNED (Opus) ===
+/**
+ * The generation planner, injected rather than imported.
+ *
+ * `generate_from_brief` and `generate_region` plan by running the generation
+ * pipeline, which is a large chunk — massing strategies, the snap realiser, the
+ * 26-axis scorer and a silhouette rasteriser. This file is reached statically
+ * from the WebMCP adapter and from the agent's tool host, both of which are
+ * paid for on first paint, and neither of which should carry the pipeline for a
+ * conversation that only reads the scene. So the pipeline registers itself when
+ * its own chunk loads, and until then these two capabilities are discoverable
+ * through `capability_search` but say plainly that they are not loaded.
+ *
+ * The alternative — importing `src/generation/phases.ts` here — would put the
+ * pipeline in the first chunk without any test noticing, because the lazy-chunk
+ * test in `src/webmcp/imports.test.ts` reads static imports with a regex that
+ * does not match this file's multi-line import of it.
+ */
+export type GenerationCapabilityPlanner = (
+  capability: 'generate_from_brief' | 'generate_region',
+  args: Record<string, unknown>,
+  context: SharedMutationContext,
+) => SharedMutationPlan
+
+let generationPlanner: GenerationCapabilityPlanner | null = null
+
+export function registerGenerationPlanner(planner: GenerationCapabilityPlanner): void {
+  generationPlanner = planner
+}
+
+/** Whether the generation chunk has registered itself in this context. */
+export const generationPlannerLoaded = (): boolean => generationPlanner !== null
+
+// ---- Sol-1 mechanism planner adapter --------------------------------------
+function planMechanismAssembly(
+  capability: 'build_crane' | 'build_lattice' | 'build_snot_hull' | 'build_clock_faces',
+  args: Record<string, unknown>, context: SharedMutationContext,
+): SharedMutationPlan {
+  const { origin, anchor } = assemblyPlacement(context, args)
+  const base = {
+    originLdu: origin, color: integer(args.color, 71, 0, 999999, 'color'), actor: context.actor,
+    subassemblyId: Object.values(context.document.subassemblies).find(item => !item.locked)?.id ?? 'main',
+    stepId: context.document.steps.at(-1)?.id ?? 'step_1',
+  }
+  const required = (name: string): number => {
+    if (typeof args[name] !== 'number' || !Number.isFinite(args[name])) {
+      throw new SharedCapabilityError('INVALID_OPERATION', `${name} is required and must be a finite number.`, 'Follow the capability schema.')
+    }
+    return args[name] as number
+  }
+  try {
+    let plan: AssemblyPlan
+    switch (capability) {
+      case 'build_crane': plan = planCrane({ ...base, boomStuds: required('boomStuds') }); break
+      case 'build_lattice': plan = planLattice({ ...base, widthStuds: required('widthStuds'), depthStuds: required('depthStuds'), heightCourses: required('heightCourses'), bayStuds: required('bayStuds') }); break
+      case 'build_snot_hull': plan = planSnotHull({ ...base, widthStuds: required('widthStuds'), depthStuds: required('depthStuds'), layers: required('layers') }); break
+      case 'build_clock_faces': plan = planClockFaces({ ...base, diameterStuds: required('diameterStuds') }); break
+    }
+    const operations = finishAssemblyOperations(context, plan.operations, anchor)
+    return { capability, label: sharedCapability(capability)!.title, operations, nextSelection: plan.partIds,
+      summary: `${plan.partCount} parts. ${plan.notes.at(-1) ?? ''}`,
+      report: { parts: plan.partCount, bill: plan.bill, notes: plan.notes, warnings: plan.warnings, origin },
+    }
+  } catch (error) {
+    if (error instanceof MechanismGeometryError) throw new SharedCapabilityError(error.code, error.message, error.repair, { definitionId: error.definitionId })
+    if (error instanceof AssemblyError) throw new SharedCapabilityError(error.code === 'RESOURCE_LIMIT' ? 'RESOURCE_LIMIT' : 'INVALID_OPERATION', error.message, error.repair)
+    throw error
   }
 }

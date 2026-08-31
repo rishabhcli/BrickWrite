@@ -76,6 +76,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
   const { state, transformPrefs, setTransformPrefs } = workbench
   const [candidateIndex, setCandidateIndex] = useState(0)
   const [arrayOpen, setArrayOpen] = useState(false)
+  const [mirrorOpen, setMirrorOpen] = useState(false)
+  const [mirrorAxis, setMirrorAxis] = useState<'x' | 'y' | 'z'>('x')
+  const [mirrorAbout, setMirrorAbout] = useState<'world' | 'selection'>('selection')
   const [arrayCopies, setArrayCopies] = useState(3)
   const [arrayAxis, setArrayAxis] = useState<'x' | 'y' | 'z'>('x')
   const [arraySpacing, setArraySpacing] = useState<number | 'auto'>('auto')
@@ -462,8 +465,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           label="Mirror"
           shortcut="⇧M"
           disabled={disabled}
+          expanded={mirrorOpen}
           reason="Select at least one part first."
-          onClick={() => workbench.runSharedMutation('mirror_selection', { axisLdu: 0 })}
+          onClick={() => setMirrorOpen((value) => !value)}
         />
         <ActionButton
           icon={<Palette size={12} />}
@@ -539,6 +543,51 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           </label>
           <button type="button" className="array-run" onClick={() => runArray()}>
             ARRAY
+          </button>
+        </div>
+      )}
+
+      {mirrorOpen && !disabled && (
+        /* Which plane, and where it sits, are both real decisions.
+           Builders mirror front-to-back as often as left-to-right, and the
+           command was X-only for as long as it existed. `About` matters just as
+           much: reflecting through the world origin throws a selection to the
+           other side of the model, which is occasionally what you want and
+           almost never what you meant, so the default plane is the selection's
+           own measured centre. */
+        <div className="array-control" role="group" aria-label="Mirror">
+          <label>
+            <span>ACROSS</span>
+            <select
+              value={mirrorAxis}
+              onChange={(event) => setMirrorAxis(event.target.value as 'x' | 'y' | 'z')}
+              aria-label="Mirror axis"
+            >
+              <option value="x">X — left / right</option>
+              <option value="z">Z — front / back</option>
+              <option value="y">Y — up / down</option>
+            </select>
+          </label>
+          <label>
+            <span>ABOUT</span>
+            <select
+              value={mirrorAbout}
+              onChange={(event) => setMirrorAbout(event.target.value as 'world' | 'selection')}
+              aria-label="Mirror plane"
+            >
+              <option value="selection">Its own centre</option>
+              <option value="world">World origin</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="array-run"
+            onClick={() => {
+              workbench.runSharedMutation('mirror_selection', { axis: mirrorAxis, about: mirrorAbout, axisLdu: 0 })
+              setMirrorOpen(false)
+            }}
+          >
+            MIRROR
           </button>
         </div>
       )}

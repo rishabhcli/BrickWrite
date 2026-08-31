@@ -9,7 +9,7 @@ import { catalog, type CatalogPayload } from '../../../cad/catalog'
  * stubbed `fetch`.
  *
  * The part resolver is a ranking system, and a ranking system tested against a
- * 58-part stub proves nothing about ranking - every query would have one
+ * 59-part stub proves nothing about ranking - every query would have one
  * plausible answer. These tests therefore run against the same 22,941
  * identities, 900 compiled meshes, 322 colours and 1,150 renames the
  * application ships, read from `public/` on disk and handed to the production

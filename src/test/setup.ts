@@ -36,6 +36,22 @@ if (typeof globalThis.sessionStorage === 'undefined' || globalThis.sessionStorag
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: memoryStorage() })
 }
 
+// jsdom implements no layout and therefore no ResizeObserver. The liquid
+// material uses one to cache each lensed surface's box, so that reading it on
+// every pointer frame does not force a synchronous layout. A stub that never
+// fires is the honest shape here: jsdom has no resize to report, and the
+// geometry it would carry is exactly what a layout-free DOM cannot answer.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  })
+}
+
 // Tests run against a real slice of the compiled catalog — genuine LDraw
 // bounds, LDCad connectors and Rebrickable colour evidence — so kernel
 // behaviour is exercised against actual parts rather than a convenient stub.

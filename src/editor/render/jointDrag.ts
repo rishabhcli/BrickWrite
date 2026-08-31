@@ -42,6 +42,10 @@ export function handlesFor(joint: ArticulatedJoint): JointHandle[] {
       return ['rotate', 'slide']
     case 'spherical':
       return ['ball']
+    case 'winch':
+      // One handle, because a winch has one input: the drum. The load's travel
+      // is the consequence, not a second thing to grab.
+      return ['rotate']
     default:
       // `unknown` and `fixed` articulate nothing. Drawing a handle that refuses
       // to move is worse than drawing none.

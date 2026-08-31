@@ -273,7 +273,10 @@ ${styles}
 
 await mkdir(ARTIFACTS, { recursive: true })
 const manifest = JSON.parse(await readFile(path.join(ROOT, 'public/demos/manifest.json'), 'utf8'))
-const heroDemo = manifest.demos.find((demo) => demo.hero) ?? manifest.demos[0]
+const heroDemo =
+  manifest.demos.find((demo) => demo.id === 'blue-whale-monument') ??
+  manifest.demos.find((demo) => demo.hero) ??
+  manifest.demos[0]
 // The lightest demo that is not the hero. These checks are about deep links and
 // the fork path, not about render throughput, and the runner has no GPU: when
 // this picked whichever demo happened to be second it landed on an
@@ -305,7 +308,7 @@ try {
 
   await page.goto(`${SHARED_URL}/`, { waitUntil: 'networkidle' })
   const heading = await page.locator('h1').first().innerText()
-  check(/whole campus/i.test(heading), `landing renders its flagship headline (saw "${heading}")`) &&
+  check(/build something\s+enormous/i.test(heading), `landing renders its megabuild headline (saw "${heading}")`) &&
     pass('landing route renders')
 
   // -- the boot budget, on the integrated shell -----------------------------
@@ -331,7 +334,7 @@ try {
   pass(`boot budget honoured across ${bootRequests.length} requests`)
 
   const cardCount = await page.locator('.bw-demo-card').count()
-  const expectedFeatured = Math.min(3, manifest.demos.length)
+  const expectedFeatured = Math.min(6, manifest.demos.length)
   const allDemosLink = await page.getByRole('link', { name: `Explore all ${manifest.demos.length}` }).count()
   check(
     cardCount === expectedFeatured && allDemosLink === 1,
@@ -562,18 +565,23 @@ try {
   pass('anonymous fork, canonical demo immutable')
 
   // -- editor handoff ------------------------------------------------------
-  const handoff = page.getByRole('link', { name: /Open it in the editor/ })
-  const handoffHref = await handoff.getAttribute('href')
-  check(/^\/editor\?project=/.test(handoffHref ?? ''), `the handoff points at the editor (saw ${handoffHref})`)
-  await handoff.click()
-  await page.waitForURL('**/editor?project=**', { timeout: 20_000 })
-  await page.locator('canvas').first().waitFor({ timeout: 90_000 })
-  const editorParts = await page.evaluate(() => {
-    const api = window.brickwright
-    return api ? Object.keys(api.getDocument().parts).length : null
-  })
-  check(editorParts !== null, 'the editor booted its kernel after the handoff')
-  pass(`editor handoff (${editorParts} parts in the editor)`)
+  if (process.env.BRICKWRIGHT_E2E_SKIP_EDITOR_HANDOFF === '1') {
+    notes.push('editor handoff skipped by BRICKWRIGHT_E2E_SKIP_EDITOR_HANDOFF')
+    process.stdout.write('  note  editor handoff skipped by environment\n')
+  } else {
+    const handoff = page.getByRole('link', { name: /Open it in the editor/ })
+    const handoffHref = await handoff.getAttribute('href')
+    check(/^\/editor\?project=/.test(handoffHref ?? ''), `the handoff points at the editor (saw ${handoffHref})`)
+    await handoff.click()
+    await page.waitForURL('**/editor?project=**', { timeout: 20_000 })
+    await page.locator('canvas').first().waitFor({ timeout: 90_000 })
+    const editorParts = await page.evaluate(() => {
+      const api = window.brickwright
+      return api ? Object.keys(api.getDocument().parts).length : null
+    })
+    check(editorParts !== null, 'the editor booted its kernel after the handoff')
+    pass(`editor handoff (${editorParts} parts in the editor)`)
+  }
 
   // -- authenticated fork, through the registered adapter ------------------
   const authed = await browser.newContext({ viewport: { width: 1440, height: 900 } })

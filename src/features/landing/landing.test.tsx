@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { DEMOS } from '../../demos'
+import { DEMOS, getDemo } from '../../demos'
 import {
   assertLandingVocabulary,
   LandingAnalyticsVocabularyError,
@@ -57,15 +57,16 @@ describe('the landing page', () => {
     expect(container.querySelector('nav')).toBeNull()
   })
 
-  it('offers the flagship and all four creator calls to action', () => {
+  it('offers the megabuild library, the featured build and every creator handoff', () => {
     render(<LandingPage />)
-    const hero = DEMOS.find((demo) => demo.hero)!
-    expect(screen.getByRole('link', { name: /Explore the campus/ })).toHaveAttribute(
+    const lead = getDemo('blue-whale-monument') ?? DEMOS[0]
+    expect(screen.getByRole('link', { name: /Open this build/ })).toHaveAttribute(
       'href',
-      hrefFor({ kind: 'explore', demoId: hero.id }),
+      hrefFor({ kind: 'explore', demoId: lead.id }),
     )
-    expect(screen.getByRole('link', { name: /Start building/ })).toHaveAttribute('href', '/editor?doc=blank')
-    expect(screen.getByRole('link', { name: 'Describe an idea' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Explore the megabuilds/ })).toHaveAttribute('href', '/explore')
+    expect(screen.getByRole('link', { name: /Start from scratch/ })).toHaveAttribute('href', '/editor?doc=blank')
+    expect(screen.getByRole('link', { name: /Describe another idea/ })).toHaveAttribute(
       'href',
       '/editor?doc=blank&intent=describe',
     )
@@ -73,15 +74,18 @@ describe('the landing page', () => {
     expect(screen.getByRole('link', { name: /Open the editor/ })).toHaveAttribute('href', '/editor')
   })
 
-  // The landing features up to three builds, however many the collection holds.
+  // The landing features up to six builds, however many the collection holds.
   // Pinning the number here meant retiring a demo failed the landing tests
   // rather than the thing they exist to check: that every card it does show
   // links somewhere real and reserves its space before the image loads.
   it('links each featured demo, with described images sized to avoid layout shift', () => {
     render(<LandingPage />)
-    const featured = DEMOS.slice(0, 3)
+    const featured = DEMOS.slice(0, 6)
+    const featuredSection = screen.getByRole('region', { name: /A few worlds/i })
     for (const demo of featured) {
-      const card = screen.getByRole('link', { name: new RegExp(demo.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
+      const card = within(featuredSection).getByRole('link', {
+        name: new RegExp(demo.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      })
       expect(card).toHaveAttribute('href', hrefFor({ kind: 'explore', demoId: demo.id }))
       const image = within(card).getByRole('img')
       expect(image).toHaveAttribute('width', '720')
@@ -89,12 +93,16 @@ describe('the landing page', () => {
       expect(image.getAttribute('alt')?.length ?? 0).toBeGreaterThan(20)
       expect(image).toHaveAttribute('src', demo.assets.thumbnail.url)
     }
-    expect(screen.getAllByRole('link').filter((link) => link.querySelector('img'))).toHaveLength(featured.length)
+    expect(
+      within(featuredSection)
+        .getAllByRole('link')
+        .filter((link) => link.querySelector('img')),
+    ).toHaveLength(featured.length)
   })
 
   it('quotes only numbers that came out of a validation run', () => {
     render(<LandingPage />)
-    const hero = DEMOS.find((demo) => demo.hero)!
+    const hero = getDemo('blue-whale-monument') ?? DEMOS[0]
     const facts = screen.getByTestId('hero-facts').textContent ?? ''
     expect(facts).toContain(String(hero.validation.partCount))
     expect(facts).toContain(String(hero.validation.connectionCount))
@@ -128,8 +136,8 @@ describe('the landing page', () => {
     expect(container.querySelector('.bw-stage-hud')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-stage-readout')?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bw-reticle')).toBeTruthy()
-    expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('whole campus.')
-    const hero = DEMOS.find((demo) => demo.hero)!
+    expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('enormous.')
+    const hero = getDemo('blue-whale-monument') ?? DEMOS[0]
     expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.validation.partCount))
     expect(container.querySelectorAll('.bw-stage-step')).toHaveLength(4)
     expect(container.querySelector('.bw-assembly-film')).toBeTruthy()
@@ -150,12 +158,14 @@ describe('the landing page', () => {
     expect(css).not.toMatch(/cursor\s*:\s*none/)
   })
 
-  it('lets visitors take the sculpture apart and put it back together', () => {
+  it('opens on a diverse stack of real generated builds rather than a decorative mini model', () => {
     const { container } = render(<LandingPage />)
-    fireEvent.click(screen.getByRole('button', { name: /Take it apart/ }))
-    expect(container.querySelector('.bw-sculpture')).toHaveAttribute('data-scattered', 'true')
-    fireEvent.click(screen.getByRole('button', { name: /Put it together/ }))
-    expect(container.querySelector('.bw-sculpture')).toHaveAttribute('data-scattered', 'false')
+    const constellation = screen.getByLabelText('A sample of editable large-scale builds')
+    expect(within(constellation).getAllByRole('link')).toHaveLength(4)
+    expect(container.querySelector('.bw-sculpture')).toBeNull()
+    expect(within(constellation).getByText('Blue Whale Monument')).toBeInTheDocument()
+    expect(within(constellation).getByText('Sunline Suspension Bridge')).toBeInTheDocument()
+    expect(within(constellation).getByText('Colossal Duck Float')).toBeInTheDocument()
   })
 
   it('offers a page-wide motion pause without hiding any content', () => {

@@ -133,6 +133,15 @@ const WEIGHT = {
  * decoration. Unknown is never penalised: 96% of the catalog has no compiled
  * envelope, and punishing that would collapse the answer set onto the pack.
  *
+ * That is why `wrongSize` sits *above* `WEIGHT.dimensional`. With the penalty
+ * below the reward, a request that states two sizes and meets one of them comes
+ * out ahead of a request that states no size at all: "a 64 stud long 1 x 1
+ * round brick" answered with Brick Round 1 x 1 earned 1.10 for the footprint it
+ * matched and paid 0.80 for the length no part in the library has, a net gain of
+ * 0.30 for having asked the impossible - which surfaced as a 40% confidence on
+ * an unsatisfiable request. Measurably wrong has to cost more than measurably
+ * right is worth.
+ *
  * `forbiddenConnector` is the mirror of the connector reward: a request that
  * says "no studs on top" has stated a fact about the answer, and a part that
  * carries the ruled-out family is wrong rather than merely unmatched.
@@ -143,7 +152,7 @@ const WEIGHT = {
  * answers with six patterned versions of the slope and never the slope.
  */
 const PENALTY = {
-  wrongSize: 1.6,
+  wrongSize: 2.6,
   missingConnector: 0.7,
   wrongAxis: 1.2,
   forbiddenConnector: 1.1,
@@ -170,7 +179,7 @@ const PENALTY = {
  * tracks the observed hit rate per band. Numbers are recorded in
  * docs/integration/part-intelligence.md.
  */
-const CALIBRATION = { slope: 0.6125, intercept: -3.1016 } as const
+const CALIBRATION = { slope: 0.5179, intercept: -2.7761 } as const
 
 /** Maps fused evidence onto the probability that the match is acceptable. */
 export function calibrateConfidence(score: number): number {

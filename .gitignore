@@ -14,3 +14,4 @@ artifacts
 .vercel
 .wrangler/
 .env*
+.playwright-mcp

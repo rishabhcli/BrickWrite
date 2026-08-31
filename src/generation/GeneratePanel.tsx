@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { GlassPanel } from '../ui/liquid'
 import { Ban, Check, CircleAlert, Columns3, Eye, Play, Wand2, X } from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
 import { maskedContentProps } from '../platform/analytics'
@@ -50,10 +51,11 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
   )
 
   return (
-    <section className="bw-gen" aria-label="Generate">
+    <GlassPanel as="section" className="bw-gen" aria-label="Generate">
       <label className="bw-gen__field">
         <span>What should be built</span>
         <textarea
+          data-generation-prompt=""
           rows={3}
           value={state.prompt}
           placeholder="A 16 × 10 stud lighthouse in white and red, under 200 parts, with a lamp room that lifts off."
@@ -196,9 +198,9 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
       {producedNothing(state) && (
         <Notice
           tone="empty"
-          title="No candidate passed the hard gates"
-          detail={`${state.run?.rejected.length ?? 0} candidate${state.run?.rejected.length === 1 ? '' : 's'} were built and every one of them failed a gate. Nothing was invented to fill the gap.`}
-          repair="Loosen the envelope or the budget, or generate more candidates."
+          title={state.run?.rejected.length ? 'No candidate passed the hard gates' : 'No candidate finished'}
+          detail={`${state.run?.rejected.length ?? 0} candidate${state.run?.rejected.length === 1 ? '' : 's'} were built and refused; ${state.run?.failed.length ?? 0} attempt${state.run?.failed.length === 1 ? '' : 's'} failed before scoring. Nothing was invented to fill the gap.`}
+          repair="Review the reported failures, loosen the envelope or budget if needed, then generate again."
           alert={false}
           action={null}
           onDismiss={null}
@@ -297,6 +299,18 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
         </div>
       )}
 
+      {state.run && state.run.failed.length > 0 && (
+        <div className="bw-gen__rejected">
+          <h3>Candidate attempts that did not finish ({state.run.failed.length})</h3>
+          {state.run.failed.map((failure) => (
+            <div className="bw-gen__rejection" key={`${failure.candidateIndex}:${failure.seed}`}>
+              <strong>{failure.strategy}</strong>
+              <p>{failure.reason}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {state.run && (
         <div className="bw-gen__report">
           <span>
@@ -311,6 +325,15 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
           <span>
             Elapsed <b className="bw-gen__num">{formatSeconds(state.run.elapsedMs)}</b>
           </span>
+          <span>
+            Model requests <b className="bw-gen__num">{state.run.inference.requests}</b>
+          </span>
+          <span>
+            Tokens{' '}
+            <b className="bw-gen__num">
+              {state.run.inference.inputTokens.toLocaleString()} in · {state.run.inference.outputTokens.toLocaleString()} out
+            </b>
+          </span>
           {state.run.notes.map((note) => (
             <span key={note} style={{ gridColumn: '1 / -1' }}>
               {note}
@@ -318,7 +341,7 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
           ))}
         </div>
       )}
-    </section>
+    </GlassPanel>
   )
 }
 

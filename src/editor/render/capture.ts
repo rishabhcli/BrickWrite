@@ -105,10 +105,29 @@ export type DistinctCaptureMode = (typeof DISTINCT_CAPTURE_MODES)[number]
  *
  * Returns the failures rather than throwing, so both the unit test and the
  * browser acceptance run can report *which* pair collided instead of only that
- * something did.
+ * something did. `tools/e2e/renderer.mjs` imports this directly, which is the
+ * point: the rule below is subtle enough that two copies of it drifted.
+ *
+ * **`violations` is the subtle case.** Every other mode draws something
+ * genuinely different, so two of them sharing a hash means one is not rendering.
+ * `violations` draws *collisions* — so on a clean model it has nothing to add and
+ * is correctly pixel-identical to `beauty`. Requiring it to differ would be
+ * requiring the diagnostic to invent something. The rule therefore depends on
+ * the kernel's collision count, and it cuts both ways: with collisions present,
+ * `violations` matching `beauty` means the overlay is *not drawing* and is a real
+ * failure.
+ *
+ * This function used to require all six modes to differ unconditionally, and its
+ * fixture happened to give `violations` its own hash, so the tests passed while
+ * the rule was wrong. Nothing called it; the acceptance run had worked the truth
+ * out separately and encoded it inline.
  */
 export function checkCaptureSet(
   captures: ReadonlyArray<{ mode: string; revision: number; hash: string }>,
+  options: {
+    /** Collisions the kernel reports for the captured document. */
+    readonly collisions?: number
+  } = {},
 ): string[] {
   const failures: string[] = []
   const byMode = new Map<string, Set<string>>()
@@ -126,14 +145,30 @@ export function checkCaptureSet(
     const key = `${capture.mode}@${capture.revision}`
     if (!representative.has(key)) representative.set(key, capture.hash)
   }
+  const collisions = options.collisions ?? 0
+  const isViolations = (key: string) => key.startsWith('violations@')
   const byHash = new Map<string, string[]>()
   for (const [key, hash] of representative) {
+    // Held out of the generic distinctness pass in both directions, so the one
+    // message a reader gets is the specific one. Judged by its own rule below.
+    if (isViolations(key)) continue
     const bucket = byHash.get(hash) ?? []
     bucket.push(key)
     byHash.set(hash, bucket)
   }
   for (const [hash, keys] of byHash) {
     if (keys.length > 1) failures.push(`${keys.join(' and ')} share hash ${hash}; the modes are indistinguishable`)
+  }
+
+  for (const [key, hash] of representative) {
+    if (!isViolations(key) || collisions === 0) continue
+    const revision = key.slice('violations@'.length)
+    const beauty = representative.get(`beauty@${revision}`)
+    if (beauty !== undefined && beauty === hash) {
+      failures.push(
+        `${key} is pixel-identical to beauty@${revision} while the kernel reports ${collisions} collision${collisions === 1 ? '' : 's'}; the overlay is not drawing`,
+      )
+    }
   }
   return failures
 }

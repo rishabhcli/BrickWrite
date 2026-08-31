@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  allocateEdgeBudget,
+  allocateEdgeVertexCounts,
+  edgeBudgetForTier,
+  movingEdgeShare,
+  MOTION_EDGE_VERTEX_BUDGET,
   DEFAULT_EDGE_BUDGET,
   QUALITY_TIERS,
   QualityController,
-  screenExtentPixels,
+  ndcHeightToPixels,
 } from './quality'
 
 describe('the quality ladder', () => {
@@ -22,12 +25,14 @@ describe('the quality ladder', () => {
     }
   })
 
-  it('gives up edges before it gives up shadows', () => {
-    // Losing contact shadows makes a model appear to float, which is a spatial
-    // misreading; losing hard edges is cosmetic.
-    const firstWithoutEdges = QUALITY_TIERS.findIndex((tier) => !tier.edges)
-    const firstWithoutShadows = QUALITY_TIERS.findIndex((tier) => tier.shadowMapSize === 0)
-    expect(firstWithoutEdges).toBeLessThan(firstWithoutShadows)
+  it('reduces edge density before shadows, but retains edges in every tier', () => {
+    expect(QUALITY_TIERS.every(tier => tier.edges)).toBe(true)
+    const budgets = QUALITY_TIERS.map(tier => edgeBudgetForTier(tier).vertexBudget)
+    expect(budgets).toEqual([2_400_000, 2_400_000, 1_200_000, 400_000, 120_000])
+    const reduced = budgets.findIndex(value => value < budgets[0])
+    const noShadow = QUALITY_TIERS.findIndex(tier => tier.shadowMapSize === 0)
+    expect(reduced).toBeLessThan(noShadow)
+    expect(budgets.every(value => value > 0)).toBe(true)
   })
 })
 
@@ -100,35 +105,59 @@ describe('the frame-time governor', () => {
 })
 
 describe('apparent size', () => {
-  it('grows with world size and shrinks with distance', () => {
-    const fov = (34 * Math.PI) / 180
-    const near = screenExtentPixels(1, 10, fov, 1000)
-    const far = screenExtentPixels(1, 100, fov, 1000)
-    expect(near).toBeGreaterThan(far * 9)
+  it('converts an NDC delta to pixels, and halves it', () => {
+    // NDC runs from −1 to 1, so a delta of 1 is *half* the viewport. Getting
+    // this wrong is invisible to a test that only checks the value moves in the
+    // right direction, and it was wrong: the previous closed-form helper
+    // reported a sphere of true extent 107.2 px as 214.5.
+    expect(ndcHeightToPixels(1, 1000)).toBe(500)
+    expect(ndcHeightToPixels(2, 1000)).toBe(1000)
+    expect(ndcHeightToPixels(0.02, 1000)).toBeCloseTo(10, 6)
   })
 
-  it('saturates rather than dividing by zero at the camera', () => {
-    expect(screenExtentPixels(1, 0, 0.6, 800)).toBe(800)
+  it('does not care which way the projection put the sign', () => {
+    // The caller subtracts two projected y values; which is larger depends on
+    // the camera, and a negative extent would silently fail every threshold.
+    expect(ndcHeightToPixels(-0.5, 800)).toBe(ndcHeightToPixels(0.5, 800))
   })
 })
 
+/**
+ * The allocator the renderer actually calls.
+ *
+ * There were two: an all-or-nothing `allocateEdgeBudget`, and
+ * `allocateEdgeVertexCounts`, which grants a partial vertex count so one giant
+ * batch cannot take the whole budget or nothing. `EdgeLodProvider` uses the
+ * second. The tests covered only the first — so four green tests asserted the
+ * behaviour of a function no longer wired to anything, while the one deciding
+ * whether a model shows outlines had none. The dead one is gone; its four
+ * behaviours are asserted here against the live one, plus the two properties
+ * only it has.
+ */
 describe('edge budget allocation', () => {
+  const budget = { minScreenPixels: 18, vertexBudget: 1_000_000 }
+  const granted = (allocation: Map<string, number>) =>
+    [...allocation.entries()].filter(([, count]) => count > 0).map(([key]) => key)
+
   it('spends the budget on what is visible', () => {
     // A model past the budget should lose its distant background's edges, not
     // whichever batch the plan happened to emit first.
-    const chosen = allocateEdgeBudget(
+    const allocation = allocateEdgeVertexCounts(
       [
         { key: 'far', vertices: 900_000, screenPixels: 40 },
         { key: 'near', vertices: 900_000, screenPixels: 400 },
       ],
-      { minScreenPixels: 18, vertexBudget: 1_000_000 },
+      budget,
     )
-    expect([...chosen]).toEqual(['near'])
+    expect(allocation.get('near')).toBe(900_000)
+    expect(allocation.get('far')).toBe(100_000)
   })
 
   it('drops batches too small to read', () => {
-    const chosen = allocateEdgeBudget([{ key: 'speck', vertices: 10, screenPixels: 3 }])
-    expect(chosen.size).toBe(0)
+    // Filtered out entirely rather than granted zero, because `EdgeLodProvider`
+    // reads `allocations.get(key) ?? 0` and a missing key means the same thing.
+    const allocation = allocateEdgeVertexCounts([{ key: 'speck', vertices: 10, screenPixels: 3 }])
+    expect(allocation.has('speck')).toBe(false)
   })
 
   it('keeps everything when the budget is ample', () => {
@@ -137,14 +166,71 @@ describe('edge budget allocation', () => {
       vertices: 1000,
       screenPixels: 100,
     }))
-    expect(allocateEdgeBudget(candidates, DEFAULT_EDGE_BUDGET).size).toBe(20)
+    const allocation = allocateEdgeVertexCounts(candidates, DEFAULT_EDGE_BUDGET)
+    expect(granted(allocation)).toHaveLength(20)
+    expect([...allocation.values()].every((count) => count === 1000)).toBe(true)
   })
 
   it('is deterministic when two batches tie', () => {
+    // Ties break on key so a camera that has not moved cannot produce a
+    // different frame from one render to the next.
     const candidates = [
       { key: 'b', vertices: 10, screenPixels: 100 },
       { key: 'a', vertices: 10, screenPixels: 100 },
     ]
-    expect([...allocateEdgeBudget(candidates)]).toEqual(['a', 'b'])
+    expect([...allocateEdgeVertexCounts(candidates).keys()]).toEqual(['a', 'b'])
+  })
+
+  it('grants a partial count rather than nothing, and never overspends', () => {
+    // The whole reason this allocator replaced the all-or-nothing one: a single
+    // batch larger than the budget used to be skipped entirely, so the biggest
+    // thing on screen was the one thing with no outlines.
+    const allocation = allocateEdgeVertexCounts([{ key: 'huge', vertices: 4_000_000, screenPixels: 900 }], budget)
+    expect(allocation.get('huge')).toBe(1_000_000)
+
+    const many = Array.from({ length: 5 }, (_, index) => ({
+      key: `b${index}`,
+      vertices: 400_000,
+      screenPixels: 500 - index,
+    }))
+    const spread = allocateEdgeVertexCounts(many, budget)
+    const total = [...spread.values()].reduce((sum, count) => sum + count, 0)
+    expect(total).toBe(1_000_000)
+    expect(total).toBeLessThanOrEqual(budget.vertexBudget)
+    // Nearest first: the last two get nothing rather than everyone getting a
+    // slice too thin to read.
+    expect(spread.get('b0')).toBe(400_000)
+    expect(spread.get('b4')).toBe(0)
+  })
+
+  it('thins every batch equally while the camera moves, and only then', () => {
+    // The measured knee: at 5,000 parts the scene holds 2,160,512 merged edge
+    // vertices and drawing a quarter of them costs 4.46 ms less a frame. A still
+    // frame keeps all of them, because a still frame is what a model is read
+    // from.
+    expect(movingEdgeShare(2_160_512, false)).toBe(1)
+    const share = movingEdgeShare(2_160_512, true)
+    expect(share).toBeCloseTo(MOTION_EDGE_VERTEX_BUDGET / 2_160_512, 6)
+    expect(2_160_512 * share).toBeCloseTo(MOTION_EDGE_VERTEX_BUDGET, 6)
+  })
+
+  it('leaves a model that fits inside the motion budget untouched', () => {
+    // Below the budget, an orbit draws exactly what a still frame draws. Without
+    // this a thousand-brick model would flicker its outlines for no gain at all.
+    expect(movingEdgeShare(MOTION_EDGE_VERTEX_BUDGET, true)).toBe(1)
+    expect(movingEdgeShare(MOTION_EDGE_VERTEX_BUDGET - 2, true)).toBe(1)
+    expect(movingEdgeShare(0, true)).toBe(1)
+    expect(movingEdgeShare(MOTION_EDGE_VERTEX_BUDGET + 500_000, true)).toBeLessThan(1)
+  })
+
+  it('only ever grants whole line segments', () => {
+    // The count goes to `setDrawRange`, and an edge is two vertices. An odd
+    // grant would draw half a segment — a line from a real corner to nowhere.
+    const allocation = allocateEdgeVertexCounts(
+      [{ key: 'odd', vertices: 999, screenPixels: 100 }],
+      { minScreenPixels: 18, vertexBudget: 501 },
+    )
+    expect(allocation.get('odd')! % 2).toBe(0)
+    expect(allocation.get('odd')).toBe(500)
   })
 })

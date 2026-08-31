@@ -1,3 +1,4 @@
+import './workbench.css'
 import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -6,6 +7,7 @@ import { cadEngine } from '../../cad/engine'
 import type { SharedMutationId } from '../../cad/capabilities'
 import { inspectModelHealth, type ModelHealthIssue } from '../../cad/modelHealth'
 import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
+import { GlassDock, GlassTabs } from '../../ui/liquid'
 import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
 import { markWelcomeSeen, WelcomeGuide, welcomeUnseen } from '../WelcomeGuide'
@@ -25,7 +27,6 @@ import { InspectorPanel, type InspectorView } from './InspectorPanel'
 import { ModelExplorerPanel } from './ModelExplorerPanel'
 import { PalettePanel } from './PalettePanel'
 import { SelectionPanel } from './SelectionPanel'
-import { StatusBar } from './StatusBar'
 import { TimelinePanel, type TimelineView } from './TimelinePanel'
 import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
@@ -37,7 +38,6 @@ import {
   clampLayout,
   DOCK_LIMITS,
   LAYOUT_PRESETS,
-  STATUSBAR_HEIGHT,
   TOOLRAIL_HEIGHT,
   TOPBAR_HEIGHT,
   defaultLayout,
@@ -46,21 +46,19 @@ import {
   saveLayout,
   workspaceColumns,
   type DockId,
-  type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
 import {
+  CHROME_SURFACE_TARGETS,
   applyChromeReveal,
   applyDockFocus,
-  applyExclusiveDock,
-  CHROME_SURFACE_TARGETS,
   focusProposalReview,
   publishChrome,
-  revealChrome,
   setChromeRevealHandler,
   setModelHealthHandler,
   setProposalReviewHandler,
   setWorkspaceFocusHandler,
+  type ChromeSurface,
 } from '../../webmcp/chrome'
 import { createCommandHandlers, disabledReason as reasonFor } from './commands'
 import {
@@ -92,6 +90,51 @@ export interface WorkbenchProps {
   contributions?: readonly ComponentType[]
 }
 
+const DESIGN_SECTION_IDS = ['generation.panel', 'refinement.panel', 'agent.workbench'] as const
+const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'inspector', 'connect'] as const
+const isDesignSection = (id: string) => (DESIGN_SECTION_IDS as readonly string[]).includes(id)
+const isObjectSection = (id: string) => (OBJECT_SECTION_IDS as readonly string[]).includes(id)
+
+/**
+ * WebMCP still models the right dock as one exclusive stack. At the Workbench
+ * seam we retain that focus behaviour for Object, while preserving the three
+ * independently collapsible Design preferences for when the operator returns.
+ */
+function applyWorkbenchReveal(layout: WorkbenchLayout, surface: ChromeSurface): WorkbenchLayout {
+  const target = CHROME_SURFACE_TARGETS[surface]
+  if (target.dock === 'right' && target.section && isDesignSection(target.section)) {
+    return {
+      ...layout,
+      right: { ...layout.right, collapsed: false },
+      rightTab: 'design',
+      sections: { ...layout.sections, [target.section]: true },
+    }
+  }
+
+  const next = applyChromeReveal(layout, surface)
+  if (target.dock !== 'right') return next
+  const designSections = Object.fromEntries(DESIGN_SECTION_IDS.map((id) => [id, layout.sections[id]]))
+  return {
+    ...next,
+    rightTab: 'object',
+    sections: { ...next.sections, ...designSections },
+  }
+}
+
+function applyWorkbenchSectionFocus(layout: WorkbenchLayout, id: string, open: boolean): WorkbenchLayout {
+  if (isDesignSection(id)) {
+    return { ...layout, rightTab: 'design', sections: { ...layout.sections, [id]: open } }
+  }
+  const next = applyDockFocus(layout, id, open)
+  if (!isObjectSection(id)) return next
+  const designSections = Object.fromEntries(DESIGN_SECTION_IDS.map((section) => [section, layout.sections[section]]))
+  return {
+    ...next,
+    rightTab: 'object',
+    sections: { ...next.sections, ...designSections },
+  }
+}
+
 export function Workbench({ contributions = [] }: WorkbenchProps) {
   const workbench = useWorkbench()
   const location = useLocation()
@@ -102,7 +145,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcutMap())
   const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() =>
-    applyExclusiveDock(loadLayout(typeof window === 'undefined' ? 1600 : window.innerWidth)),
+    loadLayout(typeof window === 'undefined' ? 1600 : window.innerWidth),
   )
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
@@ -110,6 +153,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null)
   const [inspectorView, setInspectorView] = useState<InspectorView>('object')
   const [activeHealthIssueId, setActiveHealthIssueId] = useState<string | null>(null)
+  /**
+   * Bumped every time something asks for Generate.
+   *
+   * The prompt cannot be focused from the reveal itself: Generate is a lazily
+   * imported contribution, so at that moment the textarea does not exist. It
+   * cannot be focused from the layout effect either — unrelated layout churn
+   * re-runs that effect and cancelled the wait — so the request gets its own
+   * token to hang off.
+   */
+  const [promptFocusToken, setPromptFocusToken] = useState(0)
   const saveInput = useRef<HTMLInputElement>(null)
 
   const layout = useMemo(() => clampLayout(rawLayout, viewport), [rawLayout, viewport])
@@ -137,6 +190,40 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     setRawLayout(next)
     saveLayout(next)
   }, [])
+
+  const revealWorkbenchSurface = useCallback(
+    (surface: ChromeSurface) => {
+      if (surface === 'feedback') setTimelineView('feedback')
+      if (surface === 'review') setTimelineView('review')
+      if (surface === 'generation') setPromptFocusToken((token) => token + 1)
+      // `health` and `inspector` are two surfaces sharing one panel, so asking
+      // for either has to land on that one — otherwise a reveal returns whatever
+      // tab was last looked at, and an agent calling `workspace_reveal` gets a
+      // different answer depending on history it cannot see.
+      //
+      // The `inspector` line has a guard, though not a unit one: it lives in a
+      // component too large to mount for a single assertion, so
+      // `tools/e2e-smoke.mjs` covers it — it reveals `inspector` and then waits
+      // for `.inspector-panel .selection-identity`, which only renders on the
+      // Object tab. Remove this line and that wait times out. Worth knowing,
+      // because the coupling is invisible from here.
+      if (surface === 'health') setInspectorView('validate')
+      if (surface === 'inspector') setInspectorView('object')
+      const next = applyWorkbenchReveal(layoutRef.current, surface)
+      pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
+      updateLayout(next)
+      publishChrome({
+        docks: {
+          left: { collapsed: next.left.collapsed, size: next.left.size },
+          right: { collapsed: next.right.collapsed, size: next.right.size },
+          bottom: { collapsed: next.bottom.collapsed, size: next.bottom.size },
+        },
+        sections: { ...next.sections },
+        ...chromeViewRef.current,
+      })
+    },
+    [updateLayout],
+  )
 
   // The feedback inbox carries tabs, filters, anchored cards and a reply field.
   // A laptop preset's 124px build strip is enough for step cards but clips the
@@ -203,7 +290,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     (id: string) => {
       if (workbench.tool === 'connect' && id !== 'connect') workbench.setTool('select')
       const open = rawLayout.sections[id] !== false
-      updateLayout(applyDockFocus(rawLayout, id, !open))
+      updateLayout(applyWorkbenchSectionFocus(rawLayout, id, !open))
     },
     [rawLayout, updateLayout, workbench],
   )
@@ -212,44 +299,48 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   // creates context, then stays under the operator's control. A new selection
   // opens Selection; entering Connect opens the guided mate sheet. Collapsing
   // the dock afterwards is respected until a genuinely new context begins.
-  const previousContext = useRef({ selection: workbench.state.selection.length, tool: workbench.tool })
+  const previousContext = useRef({
+    selection: workbench.state.selection.length,
+    tool: workbench.tool,
+    toolPicks: workbench.toolPicks,
+  })
   useEffect(() => {
     const before = previousContext.current
     const selection = workbench.state.selection.length
     const enteredSelection = before.selection === 0 && selection > 0
     const enteredConnect = before.tool !== 'connect' && workbench.tool === 'connect'
-    const enteredTransform =
+    // Reaching for Move or Rotate is a request for exact numbers, so the
+    // Transform sheet opens. Landing in Move because a brick was clicked or
+    // quick-added is not: unfurling reference frames, axis locks, pivots and
+    // align rows on top of "I clicked a brick" is how a viewport turns into a
+    // cockpit. Hence `toolPicks` rather than the tool itself — both arrive as
+    // 'move'. The small Selection sheet answers a click; Transform is one
+    // click away in the same dock.
+    const askedForTransform =
       selection > 0 &&
       (workbench.tool === 'move' || workbench.tool === 'rotate') &&
-      (before.tool !== workbench.tool || enteredSelection)
-    previousContext.current = { selection, tool: workbench.tool }
-    if (!enteredSelection && !enteredConnect && !enteredTransform) return
+      workbench.toolPicks !== before.toolPicks
+    previousContext.current = { selection, tool: workbench.tool, toolPicks: workbench.toolPicks }
+    if (!enteredSelection && !enteredConnect && !askedForTransform) return
     // Model Map is itself a selection workspace. Replacing it with the generic
     // Selection sheet after its first row click would make browsing feel like
     // navigation that closes itself.
     if (
       enteredSelection &&
-      !enteredTransform &&
+      !askedForTransform &&
       (layoutRef.current.sections['model.explorer'] === true ||
         (layoutRef.current.sections.inspector === true && inspectorViewRef.current === 'validate'))
     )
       return
     const next = enteredConnect
-      ? applyDockFocus(
+      ? applyWorkbenchSectionFocus(
           { ...layoutRef.current, right: { ...layoutRef.current.right, collapsed: false } },
           'connect',
           true,
         )
-      : applyChromeReveal(layoutRef.current, enteredTransform ? 'transform' : 'selection')
+      : applyWorkbenchReveal(layoutRef.current, askedForTransform ? 'transform' : 'selection')
     updateLayout(next)
-  }, [updateLayout, workbench.state.selection.length, workbench.tool])
-
-  const applyPreset = useCallback(
-    (preset: LayoutPresetId) => {
-      updateLayout({ ...defaultLayout(preset), sections: rawLayout.sections })
-    },
-    [rawLayout.sections, updateLayout],
-  )
+  }, [updateLayout, workbench.state.selection.length, workbench.tool, workbench.toolPicks])
 
   useEffect(() => {
     publishChrome({
@@ -271,26 +362,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   notifyRef.current = workbench.notify
 
   useEffect(() => {
-    setChromeRevealHandler((surface) => {
-      // `feedback` is not only a dock: it is one view inside that dock. An
-      // agent revealing the inbox must land on the same notes the human sees,
-      // not merely open the bottom band on whichever tab was last active.
-      if (surface === 'feedback') setTimelineView('feedback')
-      if (surface === 'review') setTimelineView('review')
-      if (surface === 'health') setInspectorView('validate')
-      const next = applyChromeReveal(layoutRef.current, surface)
-      pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
-      updateLayout(next)
-      publishChrome({
-        docks: {
-          left: { collapsed: next.left.collapsed, size: next.left.size },
-          right: { collapsed: next.right.collapsed, size: next.right.size },
-          bottom: { collapsed: next.bottom.collapsed, size: next.bottom.size },
-        },
-        sections: { ...next.sections },
-        ...chromeViewRef.current,
-      })
-    })
+    setChromeRevealHandler(revealWorkbenchSurface)
     setWorkspaceFocusHandler((request) => {
       const snapshot = cadEngine.getSnapshot()
       const assembly = request.subassemblyId ? snapshot.document.subassemblies[request.subassemblyId] : undefined
@@ -371,28 +443,63 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         }
       }
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('intent') === 'describe') {
-        revealChrome('generation')
+        revealWorkbenchSurface('generation')
+        // Announced for anything already listening, and consumed here because
+        // this shell owns the query parameter — nothing else can read the URL for
+        // itself without racing that consumption.
+        window.dispatchEvent(new CustomEvent('brickwright:intent-describe'))
         consumeSearchParams(['intent'])
+        focusGeneratePrompt()
       }
       syncAddressBar()
     }
+    /**
+     * Put the caret in the prompt, however late the prompt arrives.
+     *
+     * The shell owns this rather than the Generate panel, because the shell is
+     * the only party that knows the intent *before* the panel exists: revealing
+     * the surface is a state update, so a panel mounted as a consequence of this
+     * listener cannot have heard the event that caused it. That was the defect —
+     * the landing page's "describe a build" button delivered a workbench with no
+     * cursor in the field it had just promised.
+     *
+     * A bounded wait rather than a single frame, because the panel may itself
+     * defer its field, and bounded rather than open-ended so a route without a
+     * Generate surface cannot leave a poll running.
+     */
+    const focusGeneratePrompt = (attemptsLeft = 12) => {
+      const prompt = window.document.querySelector<HTMLTextAreaElement>(
+        'textarea[data-generation-prompt], .bw-gen textarea',
+      )
+      if (prompt) {
+        prompt.focus()
+        return
+      }
+      if (attemptsLeft > 0) requestAnimationFrame(() => focusGeneratePrompt(attemptsLeft - 1))
+    }
+
+    // For anything that announces the intent without going through the query
+    // parameter — the agent surface, a deep link handled elsewhere, a test.
+    const describeIntent = () => {
+      revealWorkbenchSurface('generation')
+      focusGeneratePrompt()
+    }
+    window.addEventListener('brickwright:intent-describe', describeIntent)
     void run()
     return () => {
+      window.removeEventListener('brickwright:intent-describe', describeIntent)
       setChromeRevealHandler(null)
       setWorkspaceFocusHandler(null)
       setProposalReviewHandler(null)
       setModelHealthHandler(null)
     }
-  }, [location.hash, location.pathname, location.search, navigate, updateLayout])
+  }, [location.hash, location.pathname, location.search, navigate, revealWorkbenchSurface])
 
   useEffect(() => {
     const section = pendingReveal.current
     if (!section) return
     pendingReveal.current = null
     document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: 'nearest' })
-    if (section === 'generation.panel') {
-      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.bw-gen textarea')?.focus())
-    }
   }, [layout])
 
   const focusSearch = useCallback(() => {
@@ -453,6 +560,31 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const welcomeOpen = modal === 'core:welcome'
   const saveSetOpen = modal === 'core:save-selection'
   const anyCoreModal = deckOpen || paletteOpen || shortcutsOpen || welcomeOpen || saveSetOpen
+
+  // `?intent=describe` promises "just describe it", and it was arriving with the
+  // caret nowhere. Two races, not one: the panel it reveals is a lazily imported
+  // contribution that mounts a second or so later, and on a first run the
+  // reveal fires while the welcome dialog still holds focus inside its trap.
+  // So this waits for the field rather than guessing at a frame count, and it
+  // waits behind `anyCoreModal` rather than on a timer, because a person
+  // reading that dialog takes as long as they take. It never pulls focus out of
+  // somewhere the operator has since put it.
+  useEffect(() => {
+    if (!promptFocusToken || anyCoreModal) return
+    let frame = 0
+    const deadline = Date.now() + 4000
+    const claim = () => {
+      const field = document.querySelector<HTMLTextAreaElement>('.bw-gen textarea')
+      if (field) {
+        if (document.activeElement === null || document.activeElement === document.body) field.focus()
+        return
+      }
+      if (Date.now() > deadline) return
+      frame = requestAnimationFrame(claim)
+    }
+    frame = requestAnimationFrame(claim)
+    return () => cancelAnimationFrame(frame)
+  }, [anyCoreModal, promptFocusToken])
 
   useEffect(() => {
     if (!saveSetOpen) return
@@ -578,7 +710,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const sections = layout.sections
   const { state } = workbench
   const connectActive = workbench.tool === 'connect'
-  const rightSectionOpen = (id: string) => !connectActive && sections[id] === true
+  const rightTab = connectActive ? 'object' : layout.rightTab
+  const rightSectionOpen = (id: string) => rightTab === 'object' && !connectActive && sections[id] === true
 
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
@@ -591,19 +724,19 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         className="app-shell"
         style={{
           gridTemplateColumns: workspaceColumns(layout),
-          gridTemplateRows: `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px ${STATUSBAR_HEIGHT}px`,
+          gridTemplateRows: `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`,
         }}
         data-preset={layout.preset ?? 'custom'}
       >
         <TopBar workbench={workbench} />
-        <Toolbar workbench={workbench} shortcuts={shortcuts} onImport={workbench.importModel} />
+        <Toolbar workbench={workbench} shortcuts={shortcuts} onImport={workbench.importModel} timelineOpen={!layout.bottom.collapsed} onToggleTimeline={() => toggleDock('bottom')} />
 
         {layout.left.collapsed ? (
           <CollapsedRail dock="left" label="Palette" onExpand={() => toggleDock('left')} />
         ) : (
-          <div className="dock dock-left" role="region" aria-label="Palette dock">
+          <GlassDock as="div" className="dock dock-left" role="region" aria-label="Palette dock">
             <div className="dock-head">
-              <span className="eyebrow">LIBRARY</span>
+              <Blocks size={15} aria-label="Parts library" />
               <DockCollapseButton dock="left" onCollapse={() => toggleDock('left')} />
             </div>
             <div className="dock-scroll">
@@ -618,9 +751,19 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 <PalettePanel
                   activeColor={workbench.activeColor}
                   armedId={workbench.placement?.definitionId ?? null}
-                  onColorChange={workbench.setActiveColor}
+                  /* A colour click paints what is selected, and only sets the
+                     next-brick colour when nothing is. Wiring this to
+                     `setActiveColor` meant clicking red with a brick selected
+                     did nothing at all on screen — the one outcome a beginner
+                     reads as "this application is broken". `recolorSelection`
+                     already carries both behaviours; it was simply never
+                     reachable from the swatches. */
+                  onColorChange={workbench.recolorSelection}
                   onAdd={workbench.addPart}
                   onArm={workbench.armPart}
+                  onDragPart={workbench.beginPartDrag}
+                  onDropPart={workbench.dropPart}
+                  onDragEnd={workbench.endPartDrag}
                 />
               </DockSection>
               <Slot
@@ -638,7 +781,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 )}
               />
             </div>
-          </div>
+          </GlassDock>
         )}
 
         <DockSplitter
@@ -665,150 +808,129 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         />
 
         {layout.right.collapsed ? (
-          <CollapsedRail dock="right" label="Inspector" onExpand={() => toggleDock('right')} />
+          <CollapsedRail dock="right" label="Design and Object" onExpand={() => toggleDock('right')} />
         ) : (
-          <div className="dock dock-right" role="region" aria-label="Inspector dock">
+          <GlassDock as="div" className="dock dock-right" role="region" aria-label="Inspector dock">
             <div className="dock-head">
-              <span className="eyebrow">INSPECT</span>
-              <nav className="dock-jump" aria-label="Jump to inspector section">
-                <button type="button" onClick={() => revealChrome('model')}>
-                  Model
-                </button>
-                <button type="button" onClick={() => revealChrome('health')}>
-                  Health
-                </button>
-                <button type="button" onClick={() => revealChrome(state.selection.length ? 'selection' : 'inspector')}>
-                  {state.selection.length ? 'Selection' : 'Details'}
-                </button>
-                {state.selection.length > 0 && (
-                  <button type="button" onClick={() => revealChrome('transform')}>
-                    Transform
-                  </button>
-                )}
-                <button type="button" onClick={() => revealChrome('agent')}>
-                  Partner
-                </button>
-                <button type="button" onClick={() => revealChrome('generation')}>
-                  Generate
-                </button>
-                <button type="button" onClick={() => revealChrome('refinement')}>
-                  Refine
-                </button>
-              </nav>
+              <GlassTabs
+                className="right-dock-tabs"
+                aria-label="Right dock view"
+                tabs={[
+                  { id: 'design', label: 'Design' },
+                  { id: 'object', label: 'Object' },
+                ]}
+                value={rightTab}
+                onValueChange={(value) => {
+                  if (value !== 'design' && value !== 'object') return
+                  updateLayout({
+                    ...rawLayout,
+                    right: { ...rawLayout.right, collapsed: false },
+                    rightTab: value,
+                  })
+                }}
+              />
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
             </div>
-            <div className="dock-scroll">
-              {connectActive && (
-                <DockSection
-                  id="connect"
-                  title="Connect"
-                  icon={<CircleDot size={11} />}
-                  open
-                  grow
-                  onToggle={() => workbench.setTool('select')}
-                >
-                  <ConnectPanel workbench={workbench} />
-                </DockSection>
-              )}
-              <DockSection
-                id="model.explorer"
-                title="Model map"
-                icon={<Boxes size={11} />}
-                badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
-                open={rightSectionOpen('model.explorer')}
-                grow={rightSectionOpen('model.explorer')}
-                onToggle={() => toggleSection('model.explorer')}
-              >
-                <ModelExplorerPanel workbench={workbench} />
-              </DockSection>
-              <DockSection
-                id="selection"
-                title="Selection"
-                icon={<MousePointer2 size={11} />}
-                badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
-                open={rightSectionOpen('selection')}
-                grow={rightSectionOpen('selection') && state.selection.length > 0}
-                onToggle={() => toggleSection('selection')}
-              >
-                <SelectionPanel workbench={workbench} />
-              </DockSection>
-              <DockSection
-                id="transform"
-                title="Transform"
-                icon={<Move3d size={11} />}
-                open={rightSectionOpen('transform')}
-                grow={rightSectionOpen('transform')}
-                onToggle={() => toggleSection('transform')}
-              >
-                <TransformPanel workbench={workbench} />
-              </DockSection>
-              <Slot
-                id="panel-right"
-                wrap={({ id, title, icon, content }) => (
-                  <DockSection
-                    id={id}
-                    title={title ?? id}
-                    icon={icon}
-                    open={rightSectionOpen(id)}
-                    grow={rightSectionOpen(id)}
-                    onToggle={() => toggleSection(id)}
-                  >
-                    {content}
-                  </DockSection>
-                )}
-              />
-              <DockSection
-                id="inspector"
-                title={inspectorView === 'validate' ? 'Model health' : 'Inspector'}
-                icon={inspectorView === 'validate' ? <CircleAlert size={11} /> : <SlidersHorizontal size={11} />}
-                open={rightSectionOpen('inspector')}
-                grow={rightSectionOpen('inspector')}
-                onToggle={() => toggleSection('inspector')}
-              >
-                <InspectorPanel
-                  state={state}
-                  selectedPart={workbench.selectedPart}
-                  definition={workbench.selectedDefinition}
-                  view={inspectorView}
-                  activeHealthIssueId={activeHealthIssueId}
-                  articulation={workbench.articulation}
-                  onViewChange={setInspectorView}
-                  onActiveHealthIssue={setActiveHealthIssueId}
-                  onFocusHealthIssue={(issue: ModelHealthIssue, mode) => {
-                    const ids = issue.partIds.filter((id) => Boolean(cadEngine.getDocument().parts[id]))
-                    previousContext.current = { ...previousContext.current, selection: ids.length }
-                    cadEngine.setSelection([...ids])
-                    if (mode === 'frame' && ids.length) workbench.focusSelection()
-                    if (mode === 'isolate' && ids.length) workbench.isolateSelection()
-                    if (issue.kind === 'collision') workbench.setRenderMode('violations')
-                  }}
-                  onArticulate={workbench.driveJoint}
-                  onTransform={(id, transform) => workbench.handleTransform(id, transform, true)}
-                  onRecolor={workbench.recolorSelection}
-                  onProtect={workbench.protectSelection}
-                  onSelectIds={(ids) => cadEngine.setSelection(ids)}
+            <div className={`dock-scroll right-dock-${rightTab}`} role="tabpanel" aria-label={`${rightTab} tools`}>
+              {rightTab === 'design' ? (
+                <Slot
+                  id="panel-right"
+                  wrap={({ id, title, icon, content }) => (
+                    <DockSection
+                      id={id}
+                      title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
+                      icon={icon}
+                      open={sections[id] !== false}
+                      grow={sections[id] !== false}
+                      onToggle={() => toggleSection(id)}
+                    >
+                      {content}
+                    </DockSection>
+                  )}
                 />
-              </DockSection>
+              ) : (
+                <>
+                  <DockSection
+                    id="connect"
+                    title="Connect"
+                    icon={<CircleDot size={11} />}
+                    open={connectActive}
+                    grow={connectActive}
+                    onToggle={() => workbench.setTool(connectActive ? 'select' : 'connect')}
+                  >
+                    <ConnectPanel workbench={workbench} />
+                  </DockSection>
+                  <DockSection
+                    id="model.explorer"
+                    title="Model map"
+                    icon={<Boxes size={11} />}
+                    badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
+                    open={rightSectionOpen('model.explorer')}
+                    grow={rightSectionOpen('model.explorer')}
+                    onToggle={() => toggleSection('model.explorer')}
+                  >
+                    <ModelExplorerPanel workbench={workbench} />
+                  </DockSection>
+                  <DockSection
+                    id="selection"
+                    title="Selection"
+                    icon={<MousePointer2 size={11} />}
+                    badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
+                    open={rightSectionOpen('selection')}
+                    grow={rightSectionOpen('selection') && state.selection.length > 0}
+                    onToggle={() => toggleSection('selection')}
+                  >
+                    <SelectionPanel workbench={workbench} />
+                  </DockSection>
+                  <DockSection
+                    id="transform"
+                    title="Transform"
+                    icon={<Move3d size={11} />}
+                    open={rightSectionOpen('transform')}
+                    grow={rightSectionOpen('transform')}
+                    onToggle={() => toggleSection('transform')}
+                  >
+                    <TransformPanel workbench={workbench} />
+                  </DockSection>
+                  <DockSection
+                    id="inspector"
+                    title={inspectorView === 'validate' ? 'Model health' : 'Inspector'}
+                    icon={inspectorView === 'validate' ? <CircleAlert size={11} /> : <SlidersHorizontal size={11} />}
+                    open={rightSectionOpen('inspector')}
+                    grow={rightSectionOpen('inspector')}
+                    onToggle={() => toggleSection('inspector')}
+                  >
+                    <InspectorPanel
+                      state={state}
+                      selectedPart={workbench.selectedPart}
+                      definition={workbench.selectedDefinition}
+                      view={inspectorView}
+                      activeHealthIssueId={activeHealthIssueId}
+                      articulation={workbench.articulation}
+                      onViewChange={setInspectorView}
+                      onActiveHealthIssue={setActiveHealthIssueId}
+                      onFocusHealthIssue={(issue: ModelHealthIssue, mode) => {
+                        const ids = issue.partIds.filter((id) => Boolean(cadEngine.getDocument().parts[id]))
+                        previousContext.current = { ...previousContext.current, selection: ids.length }
+                        cadEngine.setSelection([...ids])
+                        if (mode === 'frame' && ids.length) workbench.focusSelection()
+                        if (mode === 'isolate' && ids.length) workbench.isolateSelection()
+                        if (issue.kind === 'collision') workbench.setRenderMode('violations')
+                      }}
+                      onArticulate={workbench.driveJoint}
+                      onTransform={(id, transform) => workbench.handleTransform(id, transform, true)}
+                      onRecolor={workbench.recolorSelection}
+                      onProtect={workbench.protectSelection}
+                      onSelectIds={(ids) => cadEngine.setSelection(ids)}
+                    />
+                  </DockSection>
+                </>
+              )}
             </div>
-          </div>
+          </GlassDock>
         )}
 
-        {layout.bottom.collapsed ? (
-          <button className="dock-bar" onClick={() => toggleDock('bottom')} aria-label="Show the build timeline">
-            <Boxes size={12} /> BUILD SEQUENCE · {state.document.steps.length} steps · {state.transactions.length} edits
-            {state.proposals.length > 0 && (
-              <em className="review-badge">
-                {state.proposals.length} review{state.proposals.length === 1 ? '' : 's'} pending
-              </em>
-            )}
-            {state.document.notes.some((note) => note.status === 'open') && (
-              <em>
-                {state.document.notes.filter((note) => note.status === 'open').length} handoff
-                {state.document.notes.filter((note) => note.status === 'open').length === 1 ? '' : 's'}
-              </em>
-            )}
-          </button>
-        ) : (
+        {!layout.bottom.collapsed && (
           <TimelinePanel
             onSequence={workbench.regenerateBuildOrder}
             state={state}
@@ -827,14 +949,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             }
           />
         )}
-
-        <StatusBar
-          workbench={workbench}
-          shortcuts={shortcuts}
-          online={online}
-          preset={layout.preset}
-          onPreset={applyPreset}
-        />
 
         <CommandDeck
           open={deckOpen}

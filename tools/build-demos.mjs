@@ -100,7 +100,17 @@ const [
 ])
 
 const { catalog, getColor, originForSurface, surfaceAbove, STUD_LDU, PLATE_LDU, BRICK_LDU } = catalogModule
-const { planEnclosure, planBrickField, elementLibrary } = assemblyModule
+const {
+  planEnclosure,
+  planBrickField,
+  planWall,
+  planLattice,
+  planClockFaces,
+  planHingedFlap,
+  planCrane,
+  planSnotHull,
+  elementLibrary,
+} = assemblyModule
 const { findCollisions, geometryFromArrays } = collisionModule
 const { getPartBounds } = geometryModule
 const { computeBuildOrder, verifyBuildOrder } = instructionsModule
@@ -192,7 +202,7 @@ const C = {
   sand: 135,
   darkGreen: 288,
   reddishBrown: 70,
-  mediumBlue: 42,
+  mediumBlue: 73,
   darkBluishGrey: 72,
 }
 
@@ -398,7 +408,6 @@ function assertOnGrid(definition, position, basis, label) {
   }
 }
 
-
 const basisFor = (degrees) =>
   degrees % 90 === 0
     ? QUARTER_TURN_BASES[(((degrees / 90) % 4) + 4) % 4]
@@ -445,7 +454,13 @@ function assembleDocument(build, meta) {
   }
   document.connections = deriveConnectionEdges(document, 1, 'import-inferred')
 
-  const order = computeBuildOrder(document, { maxPartsPerStep: meta.maxPartsPerStep ?? 10 })
+  // Insertability is opt-in because it is expensive on a hot path; this is not a
+  // hot path. A published demo carries instructions a person will follow, so a
+  // step that cannot physically be built is exactly what this gate should say.
+  const order = computeBuildOrder(document, {
+    maxPartsPerStep: meta.maxPartsPerStep ?? 10,
+    checkInsertability: true,
+  })
   document.steps = order.steps
   for (const step of order.steps) {
     for (const partId of step.partIds) document.parts[partId] = { ...document.parts[partId], stepId: step.id }
@@ -490,6 +505,13 @@ class DemoRejected extends Error {
  */
 function gate(id, document, order, options = {}) {
   const failures = []
+
+  // This collection is the front door, not a fixture drawer. The previous
+  // gallery mixed thirty-part experiments with the campus and made "Explore"
+  // feel like a toy shelf. A published starting point now has to clear an
+  // explicit four-digit scale floor before any of the deeper gates matter.
+  const partCount = Object.keys(document.parts).length
+  if (partCount < 1_000) failures.push(`only ${partCount} parts; showcase builds must contain at least 1,000`)
 
   // -- catalog ---------------------------------------------------------------
   for (const part of Object.values(document.parts)) {
@@ -1725,10 +1747,7 @@ function harbourStreet(rough) {
   }))
 
   const build = new Build({
-    subassemblies: [
-      { id: 'street', name: 'Street, kerb and pavement', accent: '#7f8c9b' },
-      ...units,
-    ],
+    subassemblies: [{ id: 'street', name: 'Street, kerb and pavement', accent: '#7f8c9b' }, ...units],
   })
 
   const notes = []
@@ -1872,11 +1891,1433 @@ function harbourStreet(rough) {
   return { build, notes, warnings }
 }
 
+/**
+ * An original saucer freighter.
+ *
+ * The published demos are all modular AABB architecture — a terrace, a tower, a
+ * campus — so the collection proves one discipline three times. This one exists
+ * to prove a different one: a hull whose skin is built sideways, a ramp that
+ * actually opens, a turret that actually turns, and a planform that is not a
+ * box.
+ *
+ * The planform is deliberately its own thing: a centred cockpit between twin
+ * forward booms, on a lozenge hull that steps in at both ends. It is not a
+ * recreation of any film ship or any retail set, and it is not meant to read as
+ * one — what it borrows is *technique* (sideways-stud skins, a hinged ramp, a
+ * pinned turret), which is the part worth showing.
+ *
+ * Two of the four assemblies come from the kernel's own mechanism planners
+ * rather than from brick-by-brick authoring here: `planSnotHull` builds the
+ * side-stud rim and its clutched skins, and `planHingedFlap` builds the ramp.
+ * Duplicating that geometry in this file would be a second implementation to
+ * keep in step with the first.
+ */
+function saucerFreighter(rough) {
+  // The bow/stern apron. It has to clear the hull skins, which hang outward
+  // from the rim brackets by a little over a stud — an apron only as deep as
+  // the inset would put the ramp's hinge line straight through them.
+  const STEP = rough ? 3 : 8
+  const HULL_W = rough ? 18 : 44
+  const HULL_D = rough ? 14 : 32
+  // The deck is inset on all four edges, not just fore and aft: that is what
+  // makes the planform a lozenge rather than a slab with two chamfers, and it
+  // leaves an apron the hull sides and the ramp can stand on.
+  const STEP_Z = rough ? 1 : 2
+  const DECK_W = HULL_W - STEP * 2
+  const DECK_D = HULL_D - STEP_Z * 2
+
+  const build = new Build({
+    subassemblies: [
+      { id: 'dock', name: 'Launch cradle', accent: '#d66b55' },
+      { id: 'keel', name: 'Keel and lower hull', accent: '#7f8c9b' },
+      { id: 'skin', name: 'Sideways hull skin', accent: '#83e7ee' },
+      { id: 'booms', name: 'Forward booms', accent: '#d6a85d' },
+      { id: 'cockpit', name: 'Cockpit and turret', accent: '#f7b04a' },
+      { id: 'ramp', name: 'Boarding ramp', accent: '#77b96a' },
+      { id: 'engine', name: 'Engine block', accent: '#d66b55' },
+      { id: 'cargo', name: 'Cargo pods', accent: '#8bcf65' },
+    ],
+  })
+
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  // -- launch cradle -------------------------------------------------------
+  // The earlier ship sat directly on the ground and still read as a medium
+  // vehicle beside the city-scale builds. A full-footprint, cross-bonded lift
+  // cradle makes this a display-scale shipyard model and gives builders a
+  // structural field they can extend with gantries, service carts or scenery.
+  const dockLayers = rough ? 1 : 2
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'dock',
+        origin: [0, 0, 0],
+        color: C.darkTan,
+        family: 'plate',
+        widthStuds: HULL_W,
+        footprintDepthStuds: HULL_D,
+        layers: dockLayers,
+      }),
+    ),
+    'dock',
+  )
+  const dockFoundationTop = -dockLayers * PLATE_LDU
+  if (!rough) {
+    for (let z = 0; z < HULL_D; z += 1) {
+      for (let x = 0; x < HULL_W; x += 1) {
+        build.place(
+          '3024',
+          x === Math.floor(HULL_W / 2) || z === Math.floor(HULL_D / 2) ? C.orange : C.darkTan,
+          (x + 0.5) * STUD_LDU,
+          (z + 0.5) * STUD_LDU,
+          dockFoundationTop,
+          { sub: 'dock', label: `launch cradle finish ${x},${z}` },
+        )
+      }
+    }
+  }
+  const dockTop = dockFoundationTop - (rough ? 0 : PLATE_LDU)
+
+  // -- keel ----------------------------------------------------------------
+  // A cross-bonded slab the whole ship stands on. Two layers, because one is
+  // held only where something is built on top of it.
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'keel',
+        origin: [0, dockTop, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: HULL_W,
+        footprintDepthStuds: HULL_D,
+        layers: 2,
+      }),
+    ),
+    'keel',
+  )
+  const keelTop = dockTop - 2 * PLATE_LDU
+
+  // -- hull sides ----------------------------------------------------------
+  // A one-stud perimeter around the keel apron. A ship has sides; without them
+  // the keel reads as a raft with things standing on it.
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'keel',
+        origin: [0, keelTop, 0],
+        color: C.darkBluishGrey,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: HULL_W,
+        footprintDepthStuds: HULL_D,
+        courses: 3,
+        floor: false,
+      }),
+    ),
+    'keel',
+  )
+
+  // -- sideways hull skin --------------------------------------------------
+  // `planSnotHull` is the kernel's own side-stud rim: a bonded deck, a
+  // one-brick rim of brackets around it, and 1 x 1 plate skins genuinely
+  // clutched to the side studs. Inset from the keel at both ends, that rim is
+  // also what gives the ship its stepped lozenge planform rather than a box.
+  //
+  // Its own geometry sets the surfaces everything else lands on: the deck is
+  // two plate layers below its origin, and the rim stands one brick above that.
+  const deckTop = keelTop - 2 * PLATE_LDU
+  absorb(
+    planSnotHull({
+      originLdu: [STEP * STUD_LDU, keelTop, STEP_Z * STUD_LDU],
+      color: C.lightBluishGrey,
+      subassemblyId: 'skin',
+      stepId: 'step_1',
+      actor: HUMAN,
+      widthStuds: Math.min(32, DECK_W),
+      depthStuds: Math.min(32, DECK_D),
+      layers: rough ? 1 : 2,
+    }),
+    'skin',
+  )
+  notes.push(
+    `Hull skin: ${DECK_W} x ${DECK_D} stud open deck with a side-stud rim, inset ${STEP} studs fore and aft and ${STEP_Z} abeam.`,
+  )
+
+  // The deck interior, one stud inside the rim on every edge. Everything built
+  // on top of the hull is placed inside this rectangle so nothing lands on the
+  // rim brackets or overhangs the skin.
+  const ix0 = STEP + 1
+  const ix1 = STEP + DECK_W - 2
+  const iz0 = STEP_Z + 1
+  const iz1 = STEP_Z + DECK_D - 2
+
+  // -- twin booms ----------------------------------------------------------
+  // Two longitudinal bays with the cockpit centred between them. A single
+  // offset tube would be somebody else's ship; this planform is its own.
+  const boomLen = Math.min(rough ? 6 : 16, ix1 - ix0)
+  const boomDepth = 4
+  const boomX = ix1 - boomLen
+  for (const [index, z] of [iz0, iz1 - boomDepth].entries()) {
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'booms',
+          origin: [boomX * STUD_LDU, deckTop, z * STUD_LDU],
+          color: C.lightBluishGrey,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: boomLen,
+          footprintDepthStuds: boomDepth,
+          courses: 2,
+          floor: true,
+          floorLayers: 2,
+        }),
+      ),
+      'booms',
+    )
+    notes.push(`Boom ${index + 1}: ${boomLen} studs long on the ${index === 0 ? 'port' : 'starboard'} side.`)
+  }
+
+  // -- cockpit -------------------------------------------------------------
+  // Centred in the beam, between the booms, at the forward end of the deck.
+  const cockpitSize = rough ? 4 : 8
+  const cockpitX = ix1 - cockpitSize
+  const cockpitZ = Math.round((HULL_D - cockpitSize) / 2)
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'cockpit',
+        origin: [cockpitX * STUD_LDU, deckTop, cockpitZ * STUD_LDU],
+        color: C.lightBluishGrey,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: cockpitSize,
+        footprintDepthStuds: cockpitSize,
+        courses: 3,
+        floor: true,
+        floorLayers: 2,
+      }),
+    ),
+    'cockpit',
+  )
+
+  // -- boarding ramp -------------------------------------------------------
+  // On the exposed keel step at the stern, clear of the hull rim, so it swings
+  // down to the ground rather than into the skin.
+  absorb(
+    planHingedFlap(
+      spec({
+        sub: 'ramp',
+        // Inboard of the hull side ring, which occupies the outer stud.
+        origin: [2 * STUD_LDU, keelTop, Math.round(HULL_D / 2 - 2) * STUD_LDU],
+        color: C.darkTan,
+        widthStuds: rough ? 2 : 4,
+        reachStuds: rough ? 1 : 2,
+      }),
+    ),
+    'ramp',
+  )
+  notes.push('Boarding ramp is a hinged flap on the stern step, driven by the same joint solver as any other hinge.')
+
+  // -- engine block --------------------------------------------------------
+  // Aft, between the booms' line and the stern rim, so the mass sits behind the
+  // cockpit where a freighter's would.
+  const engineW = rough ? 4 : 8
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'engine',
+        origin: [ix0 * STUD_LDU, deckTop, cockpitZ * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: engineW,
+        footprintDepthStuds: cockpitSize,
+        courses: 3,
+        floor: true,
+        floorLayers: 2,
+      }),
+    ),
+    'engine',
+  )
+
+  // -- cargo pods ----------------------------------------------------------
+  // A freighter carries something. Two pods sit inboard of the booms, each its
+  // own separable assembly.
+  // Inboard of the booms in x, and in the central band in z so they clear the
+  // boom bays entirely rather than sharing a stud with them.
+  // The booms take the outboard z bands (iz0..iz0+4 and iz1-4..iz1), so the
+  // pods share what is left between them and must not overlap each other.
+  // Even footprints only: an odd run leaves the enclosure planner a single
+  // leftover stud, and the 1 x 1 it picks for that corner lands with nothing
+  // under it.
+  const podSize = rough ? 4 : 6
+  const podX = ix0 + engineW + 2
+  for (const [index, z] of [iz0 + 6, iz0 + 14].entries()) {
+    if (z + podSize > iz1 - 4) break
+    if (podX + podSize > ix1) break
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'cargo',
+          origin: [podX * STUD_LDU, deckTop, z * STUD_LDU],
+          color: C.darkTan,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: podSize,
+          footprintDepthStuds: podSize,
+          courses: 2,
+          floor: true,
+          floorLayers: 2,
+        }),
+      ),
+      'cargo',
+    )
+    notes.push(`Cargo pod ${index + 1} lifts out of the hull as its own assembly.`)
+  }
+
+  // -- spine deck ----------------------------------------------------------
+  // Ties the booms, cockpit and engine into one dorsal surface rather than
+  // leaving them as separate lumps on an open deck.
+  const spineZ = cockpitZ
+  const engineTop = deckTop - (2 * PLATE_LDU + 3 * BRICK_LDU)
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'keel',
+        origin: [ix0 * STUD_LDU, engineTop, spineZ * STUD_LDU],
+        color: C.lightBluishGrey,
+        family: 'plate',
+        widthStuds: Math.min(engineW, ix1 - ix0),
+        footprintDepthStuds: cockpitSize,
+        layers: 2,
+      }),
+    ),
+    'keel',
+  )
+  const spineTop = engineTop - 2 * PLATE_LDU
+
+  // -- dorsal turret -------------------------------------------------------
+  // On the spine, above the engine, which is where a dorsal turret goes and
+  // also the only place on this hull with clear air above it. A hinged flap is
+  // a turret that actually elevates: the kernel reads 3937/3938 as a revolute
+  // joint and drives it, so this is a mechanism rather than a moulded detail.
+  absorb(
+    planHingedFlap(
+      spec({
+        sub: 'cockpit',
+        origin: [(ix0 + 2) * STUD_LDU, spineTop, (spineZ + 2) * STUD_LDU],
+        color: C.darkBluishGrey,
+        widthStuds: 2,
+        reachStuds: rough ? 1 : 2,
+      }),
+    ),
+    'cockpit',
+  )
+  notes.push('Dorsal turret is a real hinge on the spine; the joint solver drives it in the editor.')
+
+  return { build, notes, warnings }
+}
+
+/**
+ * A harbour control tower with a working programme.
+ *
+ * The complaint the demo collection answers here is not size — the campus set
+ * is 11,473 parts. It is *kind*: every published demo is a modular architecture
+ * stack, so the collection proves one discipline repeatedly. A play set is a
+ * different thing. It has a programme — places where vehicles go in and out, a
+ * platform, a machine that moves — and the parts of it that matter are the ones
+ * that do something.
+ *
+ * So this one is a podium with two vehicle bays, a metro platform along one
+ * edge, a glazed control shaft, and a crane on the podium roof built by the
+ * kernel's own `planCrane` — a real luffing hinge, not a moulded jib.
+ */
+function harbourControlTower(rough) {
+  const SITE_W = rough ? 28 : 60
+  const SITE_D = rough ? 20 : 40
+  const PODIUM_W = rough ? 16 : 40
+  const PODIUM_D = rough ? 12 : 26
+  const PODIUM_COURSES = rough ? 3 : 6
+  const SHAFT = rough ? 8 : 14
+  const SHAFT_COURSES = rough ? 6 : 20
+
+  const build = new Build({
+    subassemblies: [
+      { id: 'site', name: 'Quayside and platform', accent: '#7f8c9b' },
+      { id: 'podium', name: 'Podium and vehicle bays', accent: '#d6a85d' },
+      { id: 'shaft', name: 'Control shaft', accent: '#83e7ee' },
+      { id: 'crane', name: 'Quay crane', accent: '#f7b04a' },
+      { id: 'crown', name: 'Control room and mast', accent: '#77b96a' },
+      { id: 'shed', name: 'Quayside warehouse', accent: '#d66b55' },
+    ],
+  })
+
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  const windowWidths = [...new Set(elementLibrary('window').map((entry) => entry.widthStuds))].sort((a, b) => a - b)
+  const bay = windowWidths.includes(2) ? 2 : (windowWidths[0] ?? 2)
+
+  // -- quayside ------------------------------------------------------------
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'site',
+        origin: [0, 0, 0],
+        color: C.lightBluishGrey,
+        family: 'plate',
+        widthStuds: SITE_W,
+        footprintDepthStuds: SITE_D,
+        layers: 2,
+      }),
+    ),
+    'site',
+  )
+  const groundTop = -2 * PLATE_LDU
+
+  // The metro platform: a raised strip along the seaward edge, which is where
+  // the programme starts. Two layers so it is rigid, not a painted stripe.
+  const platformDepth = rough ? 4 : 6
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'site',
+        origin: [0, groundTop, (SITE_D - platformDepth) * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: SITE_W,
+        footprintDepthStuds: platformDepth,
+        layers: 2,
+      }),
+    ),
+    'site',
+  )
+  notes.push(`Metro platform runs the full ${SITE_W}-stud quay edge.`)
+
+  // -- podium with vehicle bays -------------------------------------------
+  // Two openings cut to the full height of the podium wall: this is where a
+  // vehicle drives in, so the opening has to be a door, not a window.
+  const bayWidth = 4
+  const openings = [
+    { atStud: 3, widthStuds: bayWidth, fromCourse: 0, toCourse: PODIUM_COURSES - 1, element: 'door' },
+    {
+      atStud: PODIUM_W - 3 - bayWidth,
+      widthStuds: bayWidth,
+      fromCourse: 0,
+      toCourse: PODIUM_COURSES - 1,
+      element: 'door',
+    },
+  ]
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'podium',
+        origin: [2 * STUD_LDU, groundTop, 2 * STUD_LDU],
+        color: C.sand,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: PODIUM_W,
+        footprintDepthStuds: PODIUM_D,
+        courses: PODIUM_COURSES,
+        floor: true,
+        floorLayers: 2,
+        openings,
+      }),
+    ),
+    'podium',
+  )
+  // An enclosure with a floor is that floor *plus* its courses: the deck is laid
+  // at the origin and the walls stand on it. Measuring only the courses puts the
+  // next storey a floor's thickness inside the one below it.
+  const podiumTop = groundTop - (2 * PLATE_LDU + PODIUM_COURSES * BRICK_LDU)
+  notes.push(`Podium carries ${openings.length} full-height vehicle bays.`)
+
+  // The podium roof deck, which the shaft and the crane both stand on.
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'podium',
+        origin: [2 * STUD_LDU, podiumTop, 2 * STUD_LDU],
+        color: C.darkTan,
+        family: 'plate',
+        widthStuds: PODIUM_W,
+        footprintDepthStuds: PODIUM_D,
+        layers: 2,
+      }),
+    ),
+    'podium',
+  )
+  const roofTop = podiumTop - 2 * PLATE_LDU
+
+  // -- control shaft -------------------------------------------------------
+  // A stack of storeys rather than one tall shell with decks dropped into it.
+  // A deck spanning a hollow shell rests on nothing — its edges only touch the
+  // inner faces of the walls, and touching a wall is not clutching it. Built as
+  // separate enclosures, each storey's floor lands on the walls below and the
+  // tower comes apart floor by floor.
+  const shaftX = 4
+  const shaftZ = 4
+  const storeyCourses = rough ? 3 : 5
+  const storeys = Math.max(1, Math.round(SHAFT_COURSES / storeyCourses))
+  let shaftTop = roofTop
+  for (let storey = 0; storey < storeys; storey += 1) {
+    const shaftOpenings = []
+    for (let at = 1; at + bay < SHAFT; at += 3) {
+      shaftOpenings.push({ atStud: at, widthStuds: bay, fromCourse: 1, toCourse: storeyCourses - 2, element: 'window' })
+    }
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'shaft',
+          origin: [shaftX * STUD_LDU, shaftTop, shaftZ * STUD_LDU],
+          color: storey % 2 === 0 ? C.white : C.sand,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: SHAFT,
+          footprintDepthStuds: SHAFT,
+          courses: storeyCourses,
+          floor: true,
+          floorLayers: 2,
+          openings: storeyCourses >= 4 ? shaftOpenings : [],
+        }),
+      ),
+      'shaft',
+    )
+    shaftTop -= 2 * PLATE_LDU + storeyCourses * BRICK_LDU
+  }
+  notes.push(`Control shaft is ${storeys} separable storeys, each on its own two-layer deck.`)
+
+  // -- control room and mast ----------------------------------------------
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'crown',
+        origin: [shaftX * STUD_LDU, shaftTop, shaftZ * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: SHAFT,
+        footprintDepthStuds: SHAFT,
+        layers: 2,
+      }),
+    ),
+    'crown',
+  )
+  const crownTop = shaftTop - 2 * PLATE_LDU
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'crown',
+        origin: [(shaftX + 1) * STUD_LDU, crownTop, (shaftZ + 1) * STUD_LDU],
+        color: C.white,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: SHAFT - 2,
+        footprintDepthStuds: SHAFT - 2,
+        courses: 2,
+        floor: false,
+      }),
+    ),
+    'crown',
+  )
+
+  // -- quay crane ----------------------------------------------------------
+  // `planCrane` is the kernel's own: a bonded mast and a boom on a real 3937 /
+  // 3938 luffing hinge. Re-deriving the mast geometry in this file would be a
+  // second implementation to keep in step with the first.
+  const craneX = PODIUM_W - (rough ? 5 : 7)
+  const craneZ = PODIUM_D - 6
+  absorb(
+    planCrane({
+      originLdu: [craneX * STUD_LDU, roofTop, craneZ * STUD_LDU],
+      color: C.yellow,
+      subassemblyId: 'crane',
+      stepId: 'step_1',
+      actor: HUMAN,
+      boomStuds: rough ? 4 : 8,
+    }),
+    'crane',
+  )
+  notes.push('Quay crane luffs on a real hinge; the kernel drives it as a revolute joint.')
+
+  // -- quayside warehouse --------------------------------------------------
+  // The second building is what turns a tower into a site: somewhere for the
+  // crane to move cargo to.
+  // Clear of the podium, which occupies x 2 .. 2 + PODIUM_W.
+  const shedX = PODIUM_W + 4
+  const shedW = Math.max(6, SITE_W - shedX - 2)
+  const shedD = rough ? 8 : 12
+  const shedZ = 2
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'shed',
+        origin: [shedX * STUD_LDU, groundTop, shedZ * STUD_LDU],
+        color: C.reddishBrown,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: shedW,
+        footprintDepthStuds: shedD,
+        courses: 4,
+        floor: true,
+        floorLayers: 2,
+        openings: [{ atStud: 3, widthStuds: 4, fromCourse: 0, toCourse: 3, element: 'door' }],
+      }),
+    ),
+    'shed',
+  )
+  const shedTop = groundTop - (2 * PLATE_LDU + 4 * BRICK_LDU)
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'shed',
+        origin: [shedX * STUD_LDU, shedTop, shedZ * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: shedW,
+        footprintDepthStuds: shedD,
+        layers: 2,
+      }),
+    ),
+    'shed',
+  )
+
+  // -- platform canopy -----------------------------------------------------
+  // Two low walls carrying a roof over the metro platform, so the platform is
+  // a place rather than a stripe of darker plate.
+  const canopyZ = SITE_D - platformDepth
+  const platformTop = groundTop - 2 * PLATE_LDU
+  for (const z of [canopyZ, SITE_D - 1]) {
+    absorb(
+      planWall(
+        spec({
+          sub: 'site',
+          origin: [2 * STUD_LDU, platformTop, z * STUD_LDU],
+          color: C.white,
+          family: 'brick',
+          axis: 'x',
+          depthStuds: 1,
+          lengthStuds: SITE_W - 4,
+          courses: 3,
+        }),
+      ),
+      'site',
+    )
+  }
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'site',
+        origin: [2 * STUD_LDU, platformTop - 3 * BRICK_LDU, canopyZ * STUD_LDU],
+        color: C.darkTan,
+        family: 'plate',
+        widthStuds: SITE_W - 4,
+        footprintDepthStuds: platformDepth,
+        layers: 2,
+      }),
+    ),
+    'site',
+  )
+  notes.push('Metro platform is covered: two bonded walls carrying a plate canopy.')
+
+  return { build, notes, warnings }
+}
+
+/**
+ * An original ironwork lookout with a clock stage.
+ *
+ * The third discipline the collection was missing. A lattice is not a wall with
+ * holes in it — it is columns carrying decks, with nothing between them — and a
+ * clock face is not a printed tile, it is a hand on a hinge. Both exist as
+ * kernel planners (`planLattice`, `planClockFaces`) that no demo had ever
+ * called, so the collection was shipping planners it did not demonstrate.
+ *
+ * The tower is two lattice tiers stepping inward over a masonry plinth, a clock
+ * stage with four independently hinged hands, and an observation deck. It is
+ * its own design: no landmark is being reproduced, and the proportions come
+ * from what the planners can actually build.
+ */
+function ironLatticeLookout(rough) {
+  // `planLattice` bays the deck on a grid, so both dimensions must be one more
+  // than a multiple of the bay — and the bay is odd here on purpose. An even
+  // bay forces an odd deck (17 = 4x4+1), and `planBrickField` fills the
+  // leftover column of an odd footprint with 1 x 1 specials that land on
+  // nothing. An odd bay gives an even deck the field planner tiles cleanly.
+  const BAY = 3
+  const TIER_A = rough ? 10 : 16
+  const TIER_B = rough ? 7 : 10
+  const PLINTH = rough ? 16 : 32
+  const PLINTH_COURSES = rough ? 3 : 5
+  const TIER_A_COURSES = rough ? 5 : 12
+  const TIER_B_COURSES = rough ? 4 : 10
+
+  const build = new Build({
+    subassemblies: [
+      { id: 'plinth', name: 'Masonry plinth', accent: '#d6a85d' },
+      { id: 'lower', name: 'Lower ironwork tier', accent: '#7f8c9b' },
+      { id: 'upper', name: 'Upper ironwork tier', accent: '#83e7ee' },
+      { id: 'clock', name: 'Clock stage', accent: '#f7b04a' },
+      { id: 'lookout', name: 'Observation deck', accent: '#77b96a' },
+    ],
+  })
+
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  // -- plinth --------------------------------------------------------------
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'plinth',
+        origin: [0, 0, 0],
+        color: C.lightBluishGrey,
+        family: 'plate',
+        widthStuds: PLINTH,
+        footprintDepthStuds: PLINTH,
+        layers: 2,
+      }),
+    ),
+    'plinth',
+  )
+  const groundTop = -2 * PLATE_LDU
+
+  const arches = []
+  for (let at = 3; at + 4 < PLINTH; at += 8) {
+    // Stop one course short of the top. A door frame reaching past the last
+    // course pokes through the deck above and the kernel counts that twice:
+    // once as a collision, once as a break in the build order.
+    arches.push({ atStud: at, widthStuds: 4, fromCourse: 0, toCourse: PLINTH_COURSES - 2, element: 'door' })
+  }
+  absorb(
+    planEnclosure(
+      spec({
+        sub: 'plinth',
+        origin: [0, groundTop, 0],
+        color: C.sand,
+        family: 'brick',
+        depthStuds: 1,
+        widthStuds: PLINTH,
+        footprintDepthStuds: PLINTH,
+        courses: PLINTH_COURSES,
+        floor: true,
+        floorLayers: 2,
+        openings: arches,
+      }),
+    ),
+    'plinth',
+  )
+  let cursor = groundTop - (2 * PLATE_LDU + PLINTH_COURSES * BRICK_LDU)
+
+  // The plinth roof, and the whole difference between the two candidates.
+  //
+  // The published set caps the plinth with two cross-bonded plate layers, so
+  // the sheet interlocks with itself and carries the ironwork above it. The
+  // first attempt stood the lattice straight on the open plinth: its lower deck
+  // then had nothing under it but the one-stud wall rim, and most of that deck
+  // is measured as unsupported. That is the refinement, and it is why the
+  // rough candidate is worse on an axis the kernel counts rather than on taste.
+  if (!rough) {
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'plinth',
+          origin: [0, cursor, 0],
+          color: C.lightBluishGrey,
+          family: 'plate',
+          widthStuds: PLINTH,
+          footprintDepthStuds: PLINTH,
+          layers: 2,
+        }),
+      ),
+      'plinth',
+    )
+    cursor -= 2 * PLATE_LDU
+  }
+  notes.push(`Plinth carries ${arches.length} open arches at ground level.`)
+
+  // -- lower ironwork tier -------------------------------------------------
+  const lowerX = Math.floor((PLINTH - TIER_A) / 2)
+  absorb(
+    planLattice({
+      originLdu: [lowerX * STUD_LDU, cursor, lowerX * STUD_LDU],
+      color: C.darkBluishGrey,
+      subassemblyId: 'lower',
+      stepId: 'step_1',
+      actor: HUMAN,
+      widthStuds: TIER_A,
+      depthStuds: TIER_A,
+      heightCourses: TIER_A_COURSES,
+      bayStuds: BAY,
+    }),
+    'lower',
+  )
+  // Lattice height is its own two decks plus the columns between them.
+  cursor -= 2 * (2 * PLATE_LDU) + TIER_A_COURSES * BRICK_LDU
+
+  // -- upper ironwork tier -------------------------------------------------
+  const upperX = lowerX + Math.floor((TIER_A - TIER_B) / 2)
+  absorb(
+    planLattice({
+      originLdu: [upperX * STUD_LDU, cursor, upperX * STUD_LDU],
+      color: C.darkBluishGrey,
+      subassemblyId: 'upper',
+      stepId: 'step_1',
+      actor: HUMAN,
+      widthStuds: TIER_B,
+      depthStuds: TIER_B,
+      heightCourses: TIER_B_COURSES,
+      bayStuds: BAY,
+    }),
+    'upper',
+  )
+  cursor -= 2 * (2 * PLATE_LDU) + TIER_B_COURSES * BRICK_LDU
+  notes.push(`Ironwork is ${TIER_A_COURSES + TIER_B_COURSES} courses of open lattice on a ${BAY}-stud bay.`)
+
+  // -- clock stage ---------------------------------------------------------
+  // `planClockFaces` lays its own deck and four corner pedestals, each with a
+  // hand on a real hinge. Its footprint is the nominal sweep plus four studs.
+  const clockDiameter = rough ? 4 : 4
+  const clockSize = clockDiameter + 4
+  const clockX = upperX + Math.floor((TIER_B - clockSize) / 2)
+  absorb(
+    planClockFaces({
+      originLdu: [clockX * STUD_LDU, cursor, clockX * STUD_LDU],
+      color: C.white,
+      subassemblyId: 'clock',
+      stepId: 'step_1',
+      actor: HUMAN,
+      diameterStuds: clockDiameter,
+    }),
+    'clock',
+  )
+  notes.push('Clock stage carries four independently hinged hands, each driven by the joint solver.')
+
+  return { build, notes, warnings }
+}
+
+/**
+ * A shared compiler for the collection's large brick-built sculptures.
+ *
+ * The figure is not a mesh or an image pasted onto a base. Every cell is a
+ * catalog-backed 1 x 1 plate, and every occupied cell grows into a real stack
+ * of 1 x 1 bricks. That gives the animals enough resolution to read from a
+ * distance while keeping every piece editable, selectable and attached to the
+ * same cross-bonded plinth. The rough pass deliberately uses a one-layer
+ * foundation: its parallel plate runs look plausible but remain disconnected,
+ * which the published cross-bond fixes measurably.
+ */
+function largeSculpture(rough, design) {
+  const width = rough ? design.roughWidth : design.width
+  const depth = rough ? design.roughDepth : design.depth
+  const layers = rough ? 1 : 2
+  const build = new Build({
+    subassemblies: [
+      { id: 'foundation', name: 'Cross-bonded display plinth', accent: '#7f8c9b' },
+      { id: 'field', name: design.fieldName, accent: design.fieldAccent },
+      { id: 'body', name: design.bodyName, accent: design.bodyAccent },
+      { id: 'accent', name: design.accentName, accent: design.accentColor },
+    ],
+  })
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'foundation',
+        origin: [0, 0, 0],
+        color: design.plinthColor,
+        family: 'plate',
+        widthStuds: width,
+        footprintDepthStuds: depth,
+        layers,
+      }),
+    ),
+    'foundation',
+  )
+  const foundationTop = -layers * PLATE_LDU
+  let occupied = 0
+  let sculptureParts = 0
+
+  // A one-piece-per-stud finish is deliberate. It is the large build's editable
+  // scene rather than a painted rectangle, and it gives every sculpted column a
+  // known catalog-backed seat.
+  for (let z = 0; z < depth; z += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const finish = design.fieldColor(x, z, width, depth)
+      let surface = build.place('3024', finish, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, foundationTop, {
+        sub: 'field',
+        label: `${design.id} field ${x},${z}`,
+      })
+      const column = design.column(x, z, width, depth, rough)
+      if (!column || column.height < 1) continue
+      occupied += 1
+      for (let level = 0; level < column.height; level += 1) {
+        const accent = column.accentFrom !== undefined && level >= column.accentFrom
+        surface = build.place(
+          '3005',
+          accent ? column.accentColor : column.color,
+          (x + 0.5) * STUD_LDU,
+          (z + 0.5) * STUD_LDU,
+          surface,
+          {
+            sub: accent ? 'accent' : 'body',
+            label: `${design.id} voxel ${x},${z},${level}`,
+          },
+        )
+        sculptureParts += 1
+      }
+    }
+  }
+
+  notes.push(
+    `${design.title} occupies ${occupied.toLocaleString()} stud columns and ${sculptureParts.toLocaleString()} stacked body bricks on a ${width} x ${depth}-stud scene.`,
+  )
+  if (!rough) notes.push('The two-layer foundation cross-bonds every row into one editable, stable model.')
+  return { build, notes, warnings }
+}
+
+const ellipse = (x, z, cx, cz, rx, rz) => {
+  const dx = (x - cx) / rx
+  const dz = (z - cz) / rz
+  return dx * dx + dz * dz
+}
+
+function blueWhaleMonument(rough) {
+  return largeSculpture(rough, {
+    id: 'blue-whale-monument',
+    title: 'Blue Whale Monument',
+    width: 64,
+    depth: 30,
+    roughWidth: 42,
+    roughDepth: 22,
+    plinthColor: C.darkBluishGrey,
+    fieldName: 'Ocean mosaic',
+    fieldAccent: '#42a5c6',
+    fieldColor: (x, z) => ((x + z) % 5 === 0 ? C.transLightBlue : C.mediumBlue),
+    bodyName: 'Whale body, fins and flukes',
+    bodyAccent: '#497c9a',
+    accentName: 'Belly, eye and foam details',
+    accentColor: '#f7f3e8',
+    column: (x, z, width, depth, isRough) => {
+      const cx = width * 0.53
+      const cz = depth * 0.5
+      const body = ellipse(x, z, cx, cz, width * 0.34, depth * 0.25)
+      const head = ellipse(x, z, width * 0.77, cz, width * 0.15, depth * 0.29)
+      const tailStem = x > width * 0.1 && x < width * 0.24 && Math.abs(z - cz) < depth * 0.1
+      const upperFluke = ellipse(x, z, width * 0.1, cz - depth * 0.2, width * 0.11, depth * 0.13) < 1
+      const lowerFluke = ellipse(x, z, width * 0.1, cz + depth * 0.2, width * 0.11, depth * 0.13) < 1
+      const fin =
+        x > width * 0.48 && x < width * 0.66 && Math.abs(z - cz) > depth * 0.23 && Math.abs(z - cz) < depth * 0.4
+      if (body >= 1 && head >= 1 && !tailStem && !upperFluke && !lowerFluke && !fin) return null
+      const fullness = Math.max(0, 1 - Math.min(body, head))
+      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 5)))
+      const eye = x > width * 0.78 && x < width * 0.83 && z < cz && Math.abs(z - cz) > depth * 0.16
+      const foam = (upperFluke || lowerFluke) && (x + z) % 3 === 0
+      return {
+        height: fin || upperFluke || lowerFluke ? Math.min(height, isRough ? 2 : 3) : height,
+        color: C.mediumBlue,
+        accentFrom: eye || foam ? Math.max(0, height - 1) : undefined,
+        accentColor: eye ? C.black : C.white,
+      }
+    },
+  })
+}
+
+function copperMammoth(rough) {
+  return largeSculpture(rough, {
+    id: 'copper-mammoth',
+    title: 'Copper Canyon Mammoth',
+    width: 50,
+    depth: 32,
+    roughWidth: 34,
+    roughDepth: 22,
+    plinthColor: C.darkTan,
+    fieldName: 'Canyon floor mosaic',
+    fieldAccent: '#c8834b',
+    fieldColor: (x, z) => ((x * 3 + z) % 7 < 2 ? C.orange : C.sand),
+    bodyName: 'Mammoth body, legs and trunk',
+    bodyAccent: '#8a5a3b',
+    accentName: 'Ivory tusks and amber ears',
+    accentColor: '#f2ddab',
+    column: (x, z, width, depth, isRough) => {
+      const cz = depth * 0.5
+      const body = ellipse(x, z, width * 0.47, cz, width * 0.25, depth * 0.27)
+      const head = ellipse(x, z, width * 0.72, cz, width * 0.13, depth * 0.22)
+      const trunk = x > width * 0.77 && x < width * 0.89 && Math.abs(z - cz) < depth * 0.09
+      const legs =
+        x > width * 0.3 && x < width * 0.64 && Math.abs(z - cz) > depth * 0.15 && Math.abs(z - cz) < depth * 0.31
+      const ear =
+        x > width * 0.61 && x < width * 0.74 && Math.abs(z - cz) > depth * 0.16 && Math.abs(z - cz) < depth * 0.31
+      const tusk =
+        x > width * 0.79 && x < width * 0.94 && Math.abs(z - cz) > depth * 0.1 && Math.abs(z - cz) < depth * 0.19
+      if (body >= 1 && head >= 1 && !trunk && !legs && !ear && !tusk) return null
+      const fullness = Math.max(0, 1 - Math.min(body, head))
+      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 5)))
+      return {
+        height: tusk ? Math.min(height, 2) : trunk ? Math.min(height, isRough ? 2 : 4) : height,
+        color: ear ? C.orange : C.reddishBrown,
+        accentFrom: tusk ? 0 : undefined,
+        accentColor: C.white,
+      }
+    },
+  })
+}
+
+function colossalDuck(rough) {
+  return largeSculpture(rough, {
+    id: 'colossal-duck',
+    title: 'Colossal Duck Float',
+    width: 46,
+    depth: 34,
+    roughWidth: 32,
+    roughDepth: 24,
+    plinthColor: C.mediumBlue,
+    fieldName: 'Festival water mosaic',
+    fieldAccent: '#83e7ee',
+    fieldColor: (x, z) => ((x + z * 2) % 6 === 0 ? C.white : C.transLightBlue),
+    bodyName: 'Giant duck body and head',
+    bodyAccent: '#f4c542',
+    accentName: 'Orange bill and black eyes',
+    accentColor: '#f47b52',
+    column: (x, z, width, depth, isRough) => {
+      const cz = depth * 0.53
+      const body = ellipse(x, z, width * 0.43, cz, width * 0.3, depth * 0.3)
+      const head = ellipse(x, z, width * 0.69, depth * 0.39, width * 0.15, depth * 0.18)
+      const bill = x > width * 0.79 && x < width * 0.96 && z > depth * 0.31 && z < depth * 0.48
+      if (body >= 1 && head >= 1 && !bill) return null
+      const fullness = Math.max(0, 1 - Math.min(body, head))
+      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 6)))
+      const eye = x > width * 0.71 && x < width * 0.76 && z > depth * 0.27 && z < depth * 0.32
+      return {
+        height: bill ? Math.min(height, isRough ? 2 : 3) : height,
+        color: bill ? C.orange : C.yellow,
+        accentFrom: eye ? Math.max(0, height - 1) : undefined,
+        accentColor: C.black,
+      }
+    },
+  })
+}
+
+/** A display-scale original suspension bridge over a fully editable river. */
+function sunlineSuspensionBridge(rough) {
+  const width = rough ? 56 : 92
+  const depth = rough ? 22 : 34
+  const layers = rough ? 1 : 2
+  const build = new Build({
+    subassemblies: [
+      { id: 'river', name: 'River foundation', accent: '#42a5c6' },
+      { id: 'water', name: 'Editable river mosaic', accent: '#83e7ee' },
+      { id: 'deck', name: 'Suspended road deck', accent: '#7f8c9b' },
+      { id: 'towers', name: 'Twin gateway towers', accent: '#d66b55' },
+      { id: 'hangers', name: 'Stepped suspension hangers', accent: '#f7b04a' },
+    ],
+  })
+  const notes = []
+  const warnings = []
+  const absorb = (plan, sub) => {
+    build.addPlan(plan, { sub })
+    notes.push(...(plan.notes ?? []))
+    warnings.push(...(plan.warnings ?? []))
+    return plan
+  }
+
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'river',
+        origin: [0, 0, 0],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: width,
+        footprintDepthStuds: depth,
+        layers,
+      }),
+    ),
+    'river',
+  )
+  const riverTop = -layers * PLATE_LDU
+  for (let z = 0; z < depth; z += 1)
+    for (let x = 0; x < width; x += 1) {
+      build.place(
+        '3024',
+        (x + z) % 5 === 0 ? C.transLightBlue : C.mediumBlue,
+        (x + 0.5) * STUD_LDU,
+        (z + 0.5) * STUD_LDU,
+        riverTop,
+        { sub: 'water' },
+      )
+    }
+  const waterTop = riverTop - PLATE_LDU
+  if (rough) {
+    notes.push(
+      'The first site study lays the river on a single plate field; its parallel runs remain disconnected and no bridge spans them yet.',
+    )
+    return { build, notes, warnings }
+  }
+
+  const deckX = 6
+  const deckZ = Math.floor(depth / 2) - 4
+  const deckWidth = width - 12
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'deck',
+        origin: [deckX * STUD_LDU, waterTop, deckZ * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: deckWidth,
+        footprintDepthStuds: 8,
+        layers: 2,
+      }),
+    ),
+    'deck',
+  )
+  const deckTop = waterTop - 2 * PLATE_LDU
+
+  // The road surface remains editable one stud at a time. Studded edge lanes
+  // are left for the hanger columns; the centre becomes a smooth orange stripe.
+  const towerXs = [22, width - 28]
+  for (let x = deckX; x < deckX + deckWidth; x += 1)
+    for (let z = deckZ + 1; z < deckZ + 7; z += 1) {
+      // Towers land directly on the bonded deck. Leaving road tiles underneath
+      // would put a wall and a tile in the same vertical slice.
+      if (towerXs.some((towerX) => x >= towerX && x < towerX + 6)) continue
+      build.place(
+        '3070b',
+        z === deckZ + 3 || z === deckZ + 4 ? C.orange : C.lightBluishGrey,
+        (x + 0.5) * STUD_LDU,
+        (z + 0.5) * STUD_LDU,
+        deckTop,
+        { sub: 'deck' },
+      )
+    }
+
+  const towerCourses = 12
+  for (const x of towerXs) {
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'towers',
+          origin: [x * STUD_LDU, deckTop, (deckZ - 2) * STUD_LDU],
+          color: C.darkRed,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: 6,
+          footprintDepthStuds: 12,
+          courses: towerCourses,
+          floor: false,
+        }),
+      ),
+      'towers',
+    )
+    const towerTop = deckTop - towerCourses * BRICK_LDU
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'towers',
+          origin: [x * STUD_LDU, towerTop, (deckZ - 2) * STUD_LDU],
+          color: C.darkTan,
+          family: 'plate',
+          widthStuds: 6,
+          footprintDepthStuds: 12,
+          layers: 2,
+        }),
+      ),
+      'towers',
+    )
+  }
+
+  // Vertical stacks trace a stepped catenary on both sides. They are honest
+  // stud-connected columns, not diagonal bars floated between coordinates.
+  for (let x = deckX + 2; x < deckX + deckWidth - 2; x += 3) {
+    const distance = Math.min(...towerXs.map((towerX) => Math.abs(x - (towerX + 3))))
+    const courses = Math.max(1, 7 - Math.min(6, Math.floor(distance / 5)))
+    for (const z of [deckZ, deckZ + 7]) {
+      let surface = deckTop
+      for (let course = 0; course < courses; course += 1) {
+        surface = build.place('3005', C.yellow, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, { sub: 'hangers' })
+      }
+    }
+  }
+  notes.push(
+    `A ${deckWidth}-stud road crosses a ${width} x ${depth}-stud editable river between two twelve-course gateway towers.`,
+  )
+  return { build, notes, warnings }
+}
+
 const DEMOS = [
+  {
+    id: 'blue-whale-monument',
+    title: 'Blue Whale Monument',
+    discipline: 'Large animal sculpture',
+    category: 'animals',
+    tagline: 'A sixty-four-stud blue whale with fins, flukes and foam rising from an editable ocean mosaic.',
+    summary:
+      'A display-scale whale built as hundreds of individually editable stud columns over a fully tiled ocean scene. ' +
+      'The body swells in measured brick courses, the flukes spread across the water, and a white eye-and-foam pass keeps the silhouette readable from every orbit.',
+    techniques: [
+      'Voxel-sculpted animal anatomy',
+      'Cross-bonded 64 x 30-stud plinth',
+      'Editable ocean mosaic',
+      'Layered fins and flukes',
+    ],
+    refinement:
+      'The first candidate put a simplified whale on a one-layer plate field whose parallel runs stayed disconnected. ' +
+      'The published monument cross-bonds the complete ocean plinth and expands the body, fins, flukes and surface detail.',
+    camera: { yaw: 34, pitch: 48, zoom: 1.02 },
+    maxPartsPerStep: 96,
+    tensionAllowance: 0,
+    hero: false,
+    brief: {
+      prompt:
+        'A large brick-built blue whale monument with a readable body, broad flukes, side fins and white foam, mounted over an editable ocean mosaic.',
+      envelopeStuds: [64, null, 30],
+      palette: ['Medium Blue', 'Trans Light Blue', 'White', 'Dark Bluish Grey'],
+      functions: ['Large animal figure', 'Editable water scene', 'Verified build sequence'],
+    },
+    author: blueWhaleMonument,
+  },
+  {
+    id: 'sunline-suspension-bridge',
+    title: 'Sunline Suspension Bridge',
+    discipline: 'Landmark infrastructure',
+    category: 'landmarks',
+    tagline: 'Twin brick-red gateways carry a road and stepped golden hangers across a ninety-two-stud river.',
+    summary:
+      'An original city landmark on a fully editable river: a cross-bonded road deck, twin twelve-course gateway towers, ' +
+      'smooth traffic lanes and honest stud-connected hanger columns tracing the suspension profile on both edges.',
+    techniques: [
+      '92 x 34-stud river scene',
+      'Twin masonry gateway towers',
+      'Cross-bonded suspended deck',
+      'Stepped catenary hangers',
+    ],
+    refinement:
+      'The first candidate stopped at a one-layer river study, leaving its plate runs disconnected and no crossing between the banks. ' +
+      'The published build cross-bonds the river, adds the complete road deck, towers, lanes and two lines of suspension hangers.',
+    camera: { yaw: 32, pitch: 42, zoom: 0.98 },
+    maxPartsPerStep: 96,
+    tensionAllowance: 320,
+    tensionReason:
+      'The bonded tower caps rest on perimeter masonry and the statics pass counts their interior plates as tension-carried. ' +
+      'The allowance is bounded so a floating deck or tower still fails.',
+    hero: false,
+    brief: {
+      prompt:
+        'An original large suspension bridge with twin brick-red gateway towers, a long road deck, golden vertical hangers and a fully editable river beneath it.',
+      envelopeStuds: [92, null, 34],
+      palette: ['Dark Red', 'Yellow', 'Medium Blue', 'Light Bluish Grey'],
+      functions: ['Large landmark', 'Editable river scene', 'Verified build sequence'],
+    },
+    author: sunlineSuspensionBridge,
+  },
+  {
+    id: 'copper-mammoth',
+    title: 'Copper Canyon Mammoth',
+    discipline: 'Large animal sculpture',
+    category: 'animals',
+    tagline: 'A brick-built mammoth with a domed back, four legs, a long trunk, amber ears and paired ivory tusks.',
+    summary:
+      'A large animal figure shaped column by column over a copper-and-sand canyon floor. The broad body, lowered head, ' +
+      'grounded legs, trunk, ears and white tusks remain separate editable regions of the same physically connected model.',
+    techniques: [
+      'Voxel-sculpted quadruped anatomy',
+      'Grounded four-leg silhouette',
+      'Ivory tusk accents',
+      'Editable canyon mosaic',
+    ],
+    refinement:
+      'The first candidate used a smaller silhouette over loose plate runs. The published figure cross-bonds a fifty-stud scene ' +
+      'and resolves the mammoth into a fuller body, grounded legs, ears, trunk and paired tusks.',
+    camera: { yaw: 38, pitch: 45, zoom: 1.04 },
+    maxPartsPerStep: 96,
+    tensionAllowance: 0,
+    hero: false,
+    brief: {
+      prompt:
+        'A large brick-built woolly mammoth with a massive rounded body, four grounded legs, a lowered trunk, amber ears and white tusks on a canyon display plinth.',
+      envelopeStuds: [50, null, 32],
+      palette: ['Reddish Brown', 'Orange', 'White', 'Sand'],
+      functions: ['Large animal figure', 'Editable scenic base', 'Verified build sequence'],
+    },
+    author: copperMammoth,
+  },
+  {
+    id: 'colossal-duck',
+    title: 'Colossal Duck Float',
+    discipline: 'Playful public art',
+    category: 'creative',
+    tagline: 'A giant yellow duck, orange bill and all, bobbing over a forty-six-stud festival-water mosaic.',
+    summary:
+      'A deliberately ridiculous public-art build at landmark scale: a round yellow body, oversized head, orange bill and black eye ' +
+      'assembled from editable brick columns over a rippling blue festival basin.',
+    techniques: [
+      'Large-scale comic sculpture',
+      'Domed voxel body',
+      'Graphic bill and eye accents',
+      'Editable festival-water scene',
+    ],
+    refinement:
+      'The first float was a small yellow mass on loose one-layer water. The published version cross-bonds the whole basin and ' +
+      'separates the body, head, bill and eyes into a clear, giant duck silhouette.',
+    camera: { yaw: 34, pitch: 46, zoom: 1.02 },
+    maxPartsPerStep: 96,
+    tensionAllowance: 0,
+    hero: false,
+    brief: {
+      prompt:
+        'A funny large-scale yellow duck public-art float with a huge rounded body, tall head, orange bill and black eyes on an editable blue festival basin.',
+      envelopeStuds: [46, null, 34],
+      palette: ['Yellow', 'Orange', 'Black', 'Trans Light Blue'],
+      functions: ['Funny creative landmark', 'Editable scenic base', 'Verified build sequence'],
+    },
+    author: colossalDuck,
+  },
+  {
+    id: 'iron-lattice-lookout',
+    title: 'Iron Lattice Lookout',
+    discipline: 'Landmark ironwork',
+    category: 'landmarks',
+    tagline: 'Two tiers of open lattice over an arched masonry plinth, topped by a clock stage with four hinged hands.',
+    summary:
+      'An original ironwork lookout: an arched plinth, two lattice tiers of columns and bonded decks stepping inward, ' +
+      'and a clock stage whose four hands each sit on a real revolute hinge. The lattice and the clock are built by ' +
+      'the kernel\u2019s own planners rather than drawn as solid walls with holes in them.',
+    techniques: [
+      'Open lattice: columns between bonded decks',
+      'Two tiers stepping inward',
+      'Arched masonry plinth',
+      'Four independently hinged clock hands',
+    ],
+    refinement:
+      'The first candidate stood the ironwork straight on the open plinth, so the lower lattice deck rested on a ' +
+      'one-stud wall rim and nothing else \u2014 most of that deck measures as unsupported. The published set caps the ' +
+      'plinth with two cross-bonded plate layers before the tiers go on, which is what carries the tower.',
+    camera: { yaw: 30, pitch: 22, zoom: 0.98 },
+    maxPartsPerStep: 64,
+    tensionAllowance: 320,
+    tensionReason:
+      'Each lattice deck rests on the columns beneath it at their tops rather than clutching down into them, and the ' +
+      'clock hands hang from their hinge knuckles. The statics pass counts both as tension-carried; the allowance is ' +
+      'bounded so a genuinely unsupported deck still fails the gate.',
+    hero: false,
+    brief: {
+      prompt:
+        'An ironwork lookout tower: an arched stone plinth, two tiers of open lattice stepping inward, and a clock stage near the top whose hands actually turn.',
+      envelopeStuds: [32, null, 32],
+      palette: ['Sand', 'Light Bluish Grey', 'Dark Bluish Grey', 'White'],
+      functions: ['Open lattice structure', 'Articulated clock hands', 'Arched ground level'],
+    },
+    author: ironLatticeLookout,
+  },
+  {
+    id: 'harbour-control-tower',
+    title: 'Harbour Control Tower',
+    discipline: 'Play set',
+    category: 'architecture',
+    tagline:
+      'A quayside podium with drive-in vehicle bays, a metro platform, a glazed control shaft and a crane that luffs.',
+    summary:
+      'An original quayside play set rather than another facade: two full-height vehicle bays cut through the podium, ' +
+      'a metro platform along the seaward edge, a glazed control shaft with a control room on top, and a quay crane ' +
+      'built by the kernel\u2019s own planner on a real luffing hinge.',
+    techniques: [
+      'Full-height drive-in vehicle bays',
+      'Raised metro platform',
+      'Glazed control shaft',
+      'Crane on a real luffing hinge',
+      'One subassembly per programme element',
+    ],
+    refinement:
+      'The rough candidate was a single glazed block on a plain slab \u2014 a tower with nothing to do. The published ' +
+      'set cuts the podium open for vehicles, raises a platform along the quay, and puts a crane on the roof that ' +
+      'the joint solver can actually drive.',
+    camera: { yaw: 36, pitch: 28, zoom: 1.02 },
+    maxPartsPerStep: 72,
+    tensionAllowance: 420,
+    tensionReason:
+      'Glazing is seated inside its frames and the podium roof deck rests on the walls below it at the perimeter ' +
+      'rather than clutching down into them. The statics pass counts both as tension-carried; the allowance is ' +
+      'bounded so a genuinely unsupported deck still fails the gate.',
+    hero: false,
+    brief: {
+      prompt:
+        'A quayside control tower with two drive-in vehicle bays under the podium, a metro platform along the water, a glazed control shaft with a control room on top, and a working crane on the podium roof.',
+      envelopeStuds: [44, null, 30],
+      palette: ['Sand', 'White', 'Light Bluish Grey', 'Dark Bluish Grey', 'Yellow'],
+      functions: ['Drive-in vehicle bays', 'Metro platform', 'Luffing crane', 'Verified build sequence'],
+    },
+    author: harbourControlTower,
+  },
+  {
+    id: 'saucer-freighter',
+    title: 'Saucer Freighter',
+    discipline: 'Vehicle and mechanism',
+    category: 'vehicles',
+    tagline: 'A lozenge hull with sideways-stud skins, twin forward booms, a turret that turns and a ramp that opens.',
+    summary:
+      'An original freighter: a cross-bonded keel, a sideways-stud hull skin built by the kernel\u2019s own SNOT planner, ' +
+      'twin booms flanking a centred cockpit, and two real hinges \u2014 a dorsal turret and a boarding ramp \u2014 that the ' +
+      'joint solver drives in the editor.',
+    techniques: [
+      'Sideways-stud hull skin (SNOT)',
+      'Stepped lozenge planform',
+      'Twin booms, centred cockpit',
+      'Hinged boarding ramp',
+      'Hinged dorsal turret',
+    ],
+    refinement:
+      'The rough candidate was a single rectangular slab with the cockpit sitting on top of it \u2014 a box with a ' +
+      'windscreen. The published set steps the hull in at bow and stern, wraps it in a genuinely clutched sideways ' +
+      'skin, and replaces the moulded-on details with two hinges the kernel can actually drive.',
+    camera: { yaw: 42, pitch: 30, zoom: 1.04 },
+    maxPartsPerStep: 64,
+    tensionAllowance: 320,
+    tensionReason:
+      'The sideways skins hang from side-facing studs on the rim brackets and the hinged flaps rest on their ' +
+      'knuckles rather than clutching down into the deck. The statics pass counts both as tension-carried; the ' +
+      'allowance is bounded so an actually unsupported panel still fails the gate.',
+    hero: false,
+    brief: {
+      prompt:
+        'An original saucer freighter with a stepped lozenge hull, sideways-stud skins, twin forward booms either side of a centred cockpit, a dorsal turret that turns and a boarding ramp that opens.',
+      envelopeStuds: [42, null, 22],
+      palette: ['Light Bluish Grey', 'Dark Bluish Grey', 'Dark Tan'],
+      functions: ['Hinged boarding ramp', 'Hinged dorsal turret', 'Sideways-stud hull skin'],
+    },
+    author: saucerFreighter,
+  },
   {
     id: 'harbour-street',
     title: 'Harbour Street',
     discipline: 'Modular architecture',
+    category: 'architecture',
     tagline: 'A terrace of five shopfronts on a tiled street, every building and every floor separable.',
     summary: 'Five shopfronts on a tiled street. Every building lifts out, every floor lifts off.',
     techniques: [
@@ -1910,6 +3351,7 @@ const DEMOS = [
     id: 'meridian-tower',
     title: 'Meridian Tower',
     discipline: 'Modular architecture',
+    category: 'architecture',
     tagline: 'A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.',
     summary: 'Twenty-two storeys, each its own subassembly. Every floor lifts off the one below it.',
     techniques: [
@@ -1944,6 +3386,7 @@ const DEMOS = [
     id: 'illinois-main-quad',
     title: 'Illinois Main Quad campus',
     discipline: 'Campus architecture',
+    category: 'architecture',
     tagline:
       'A 120 × 80-stud university campus with seven landmarks, a tiled quad, trees, Morrow Plots and 21 LEGO characters.',
     summary:
@@ -2151,6 +3594,7 @@ for (const demo of DEMOS.filter((entry) => !ONLY.length || ONLY.includes(entry.i
     id: demo.id,
     title: demo.title,
     discipline: demo.discipline,
+    category: demo.category,
     tagline: demo.tagline,
     summary: demo.summary,
     techniques: demo.techniques,
@@ -2220,6 +3664,7 @@ const manifestPayload = {
   authoredAt: AUTHORED_AT,
   gates: [
     'catalog membership and compiled geometry for every part',
+    'large-scale collection floor: at least 1,000 editable parts',
     'triangle-confirmed collision, twice, with no unverified verdicts',
     'one connected component over the derived connection graph',
     'derived build order re-verified against its own guarantee',
@@ -2227,6 +3672,52 @@ const manifestPayload = {
     'a measurably worse first candidate, so the refinement shown is real',
   ],
   demos: results,
+}
+
+const summaryValidation = (validation) => ({
+  partCount: validation.partCount,
+  connectionCount: validation.connectionCount,
+  collisionCount: validation.collisionCount,
+  componentCount: validation.componentCount,
+  disconnectedPartCount: validation.disconnectedPartCount,
+  footprintStuds: validation.footprintStuds,
+  steps: validation.steps,
+  statics: {
+    massLabel: validation.statics.massLabel,
+    stable: validation.statics.stable,
+    tippingMarginLdu: validation.statics.tippingMarginLdu,
+    unsupportedParts: validation.statics.unsupportedParts,
+  },
+})
+
+const summaryPayload = {
+  schemaVersion: manifestPayload.schemaVersion,
+  catalogVersion: manifestPayload.catalogVersion,
+  generatedBy: manifestPayload.generatedBy,
+  authoredAt: manifestPayload.authoredAt,
+  gates: manifestPayload.gates,
+  demos: results.map((demo) => ({
+    id: demo.id,
+    title: demo.title,
+    discipline: demo.discipline,
+    category: demo.category,
+    tagline: demo.tagline,
+    hero: demo.hero,
+    brief: demo.brief,
+    camera: demo.camera,
+    catalogVersion: demo.catalogVersion,
+    assets: {
+      preview: demo.assets.preview,
+      roughPreview: demo.assets.roughPreview,
+      thumbnail: demo.assets.thumbnail,
+    },
+    validation: summaryValidation(demo.validation),
+    roughValidation: summaryValidation(demo.roughValidation),
+    delta: {
+      partsAdded: demo.delta.partsAdded,
+      connectionsAdded: demo.delta.connectionsAdded,
+    },
+  })),
 }
 
 if (ONLY.length) {
@@ -2255,6 +3746,22 @@ export default DEMO_MANIFEST
 `
 await emit(path.join(OUT_SRC, 'manifest.generated.ts'), generated)
 
+const generatedSummary = `/**
+ * GENERATED FILE — do not edit.
+ *
+ * Landing-safe projection of the validated demo manifest. Full BOMs,
+ * provenance and extended validation stay in the lazy Explore chunk.
+ *
+ * Rebuild with:  node tools/build-demos.mjs
+ */
+import type { DemoSummaryManifest } from './types'
+
+export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = ${JSON.stringify(summaryPayload, null, 2)}
+
+export default DEMO_SUMMARY_MANIFEST
+`
+await emit(path.join(OUT_SRC, 'summary.generated.ts'), generatedSummary)
+
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
@@ -2266,6 +3773,7 @@ process.stdout.write(`catalog ${catalog.version} · ${catalog.placeableCount} pl
 if (CHECK_MODE) {
   const committedPublic = path.join(ROOT, 'public', 'demos')
   const committedSrc = path.join(ROOT, 'src', 'demos', 'manifest.generated.ts')
+  const committedSummarySrc = path.join(ROOT, 'src', 'demos', 'summary.generated.ts')
   const drift = []
   for (const entry of written) {
     const relative = path.relative(OUT_PUBLIC, path.join(ROOT, entry.file))
@@ -2293,6 +3801,7 @@ if (CHECK_MODE) {
   }
   await walk(OUT_PUBLIC)
   await compare(path.join(OUT_SRC, 'manifest.generated.ts'), committedSrc)
+  await compare(path.join(OUT_SRC, 'summary.generated.ts'), committedSummarySrc)
   await rm(CHECK_ROOT, { recursive: true, force: true })
   if (drift.length) {
     process.stderr.write(`\nDeterminism check FAILED:\n  - ${drift.join('\n  - ')}\n`)

@@ -21,7 +21,8 @@ import {
 } from './controlSurface'
 import { DerivedRunner, graphOf } from './derived'
 import { documentRayFromCanvas, lduDirectionToScene, lduToScene, projectLdu } from './frame'
-import { boundsFrame } from './framing'
+import { cameraControlsOf, cameraTarget, frameCamera } from './cameraControl'
+import { CLICK_SLOP_PX, pointerRouterFor } from './pointerRouter'
 import { IdPass, OcclusionCycle } from './idPass'
 import { PickRegistry } from './ids'
 import {
@@ -71,7 +72,6 @@ import { NamedViewStore, resolveVisibility, type NamedView, type VisibilityState
  *     acceptance run exercises the same entry points an operator does.
  */
 
-const CLICK_SLOP_PX = 4
 
 export interface ViewportControlsHandle {
   readonly surface: RendererControlSurface
@@ -115,6 +115,15 @@ export interface ViewportControlsProps {
   onSweepChange?: (result: SweepResult | null) => void
 }
 
+/**
+ * How long a swept-collision check may take before the drag starts rationing it.
+ *
+ * Half a 60 Hz frame. Above this the sweep is competing with the render for the
+ * same 16 ms, and the render has to win — a stale legality readout is a smaller
+ * lie than a drag that stutters.
+ */
+const SWEEP_FRAME_BUDGET_MS = 8
+
 export function ViewportControls(props: ViewportControlsProps) {
   const {
     document: model,
@@ -144,6 +153,7 @@ export function ViewportControls(props: ViewportControlsProps) {
   } = props
 
   const { gl, scene, camera, size, controls } = useThree()
+  const router = pointerRouterFor(gl.domElement)
 
   // -- long-lived machinery -------------------------------------------------
   const idPass = useMemo(() => new IdPass(gl, scene, { registry }), [gl, scene, registry])
@@ -161,20 +171,34 @@ export function ViewportControls(props: ViewportControlsProps) {
     [derived, idPass],
   )
 
+  const warmState = useRef({ scheduled: false, complete: false, idle: 0, raf: 0 })
   useEffect(() => {
-    // First-click pick used to pay shader compile and target allocation. A
-    // throwaway sample after the beauty pass is up moves that cost off the
-    // operator's first selection.
-    const warm = () => {
-      idPass.pick(camera, -1, -1, { radius: 0 })
-    }
-    const supportsIdle = typeof window.requestIdleCallback === 'function'
-    const idle = supportsIdle ? window.requestIdleCallback(warm) : window.setTimeout(warm, 0)
+    const state = warmState.current
+    state.complete = false
     return () => {
-      if (supportsIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle)
-      else window.clearTimeout(idle)
+      cancelAnimationFrame(state.raf)
+      if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(state.idle)
+      else clearTimeout(state.idle)
+      state.scheduled = false
     }
-  }, [camera, idPass])
+  }, [camera, idPass, model.id, size.width, size.height])
+  useFrame(() => {
+    const state = warmState.current
+    if (state.scheduled || state.complete) return
+    let drawable = false
+    scene.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh && object.userData.pickIdBase !== undefined) drawable = true
+    })
+    if (!drawable) return
+    state.scheduled = true
+    // The next RAF is after this beauty frame. Idle warm-up compiles actual
+    // geometry, not the empty off-canvas pixel used by the old warm path.
+    state.raf = requestAnimationFrame(() => {
+      const warm = () => { idPass.warm(camera); state.complete = true; state.scheduled = false }
+      state.idle = typeof window.requestIdleCallback === 'function'
+        ? window.requestIdleCallback(warm, { timeout: 1500 }) : window.setTimeout(warm, 0)
+    })
+  })
 
   // Props read from callbacks that outlive a render. Refs rather than
   // dependencies, because rebuilding the pointer listeners on every document
@@ -300,7 +324,8 @@ export function ViewportControls(props: ViewportControlsProps) {
     request: JointDragRequest
     startPoses: Map<string, string>
     sweep: SweepResult | null
-    lastSweepAt: number
+    /** When the last sweep finished, so the next one can be timed against it. */
+    sweptAt: number
     commits: number
   } | null>(null)
 
@@ -367,6 +392,7 @@ export function ViewportControls(props: ViewportControlsProps) {
 
   const beginJoint = useCallback(
     (edgeId: string, handle: JointHandle, canvasX: number, canvasY: number): boolean => {
+      if (router.placementArmed || ['gizmo', 'section', 'marquee'].includes(router.owner) || jointDrag.current || sectionDrag.current) return false
       const joint = latest.current.joints.find((candidate) => candidate.edgeId === edgeId)
       if (!joint || !handlesFor(joint).includes(handle)) return false
       const grab = beginJointDragMath(joint, handle, rayAt(canvasX, canvasY))
@@ -384,15 +410,14 @@ export function ViewportControls(props: ViewportControlsProps) {
         request: { rotateDegrees: 0, slideLdu: 0 },
         startPoses,
         sweep: null,
-        lastSweepAt: 0,
+        sweptAt: 0,
         commits: 0,
       }
       suppressClick.current = true
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
+      router.claim('joint')
       return true
     },
-    [controls, rayAt],
+    [router, rayAt],
   )
 
   const updateJoint = useCallback(
@@ -400,23 +425,35 @@ export function ViewportControls(props: ViewportControlsProps) {
       const drag = jointDrag.current
       if (!drag) return publishJointDrag()
       drag.request = updateJointDragMath(drag.joint, drag.grab, rayAt(canvasX, canvasY))
+
+      // The visual moves every sample, unconditionally. It is `articulate` over
+      // the island — a few dozen matrix multiplies — and it is what the hand
+      // feels, so it is never the thing that gets skipped.
       const preview = previewTransforms(latest.current.model, drag.joint, drag.request)
       onJointPreview(preview.size ? preview : null, drag.joint.edgeId)
 
-      // The swept check is the expensive part of the drag, so it runs on its own
-      // cadence rather than per pointer move. Eleven hertz is fast enough that
-      // the readout tracks the hand and slow enough that the sweep never becomes
-      // the reason a frame is late.
+      // The legality oracle is not free at every scale. On a small model the
+      // swept-envelope neighbourhood is tens of parts and this runs every
+      // rendered sample; dragged through a dense region of an 11k-part model
+      // the same call can cost more than a frame, and paying it every sample
+      // would make the drag hitch precisely when the operator is threading a
+      // part through a tight space and needs the motion smooth.
+      //
+      // So the sweep runs when the last one says it fits, and otherwise waits
+      // until at least its own measured cost has passed — a duty cycle of about
+      // half, which keeps the readout live without owning the frame. Nothing is
+      // lost by skipping: `endJoint` re-sweeps unconditionally before it
+      // commits, so what lands in the document is always fully checked.
       const now = performance.now()
-      if (now - drag.lastSweepAt > 90) {
-        drag.lastSweepAt = now
+      const affordable = !drag.sweep || drag.sweep.elapsedMs <= SWEEP_FRAME_BUDGET_MS
+      if (affordable || now - drag.sweptAt >= drag.sweep!.elapsedMs) {
         drag.sweep = sweepJoint(latest.current.model, drag.joint, drag.request)
+        drag.sweptAt = performance.now()
         onSweepChange?.(drag.sweep)
-        onOverlay({
-          marquee: null,
-          lasso: null,
-          sweep: { text: describeSweep(drag.sweep, drag.request), blocked: Boolean(drag.sweep.blocking) },
-        })
+      }
+      if (drag.sweep) {
+        onOverlay({ marquee: null, lasso: null,
+          sweep: { text: describeSweep(drag.sweep, drag.request), blocked: Boolean(drag.sweep.blocking) } })
       }
       return publishJointDrag()
     },
@@ -427,12 +464,12 @@ export function ViewportControls(props: ViewportControlsProps) {
     (commit: boolean): JointDragReport => {
       const drag = jointDrag.current
       if (!drag) return publishJointDrag()
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = true
+      router.release('joint')
 
       suppressClick.current = false
       let commits = 0
       if (commit) {
+        drag.sweep = sweepJoint(latest.current.model, drag.joint, drag.request)
         // Commit the *permissible* motion when a sweep found a block, not the
         // pose the cursor reached. Committing through a collision and letting
         // validation flag it afterwards would make the tool complicit in a build
@@ -440,8 +477,8 @@ export function ViewportControls(props: ViewportControlsProps) {
         const request = drag.sweep?.blocking ? drag.sweep.permissible : drag.request
         const operations = jointOperations(latest.current.model, drag.joint, request)
         if (operations.length) {
-          commandBus.dispatch(jointCommitLabel(drag.joint, request), operations, 'human', undefined, 'joint-drag')
-          commits = 1
+          const result = commandBus.dispatch(jointCommitLabel(drag.joint, request), operations, 'human', undefined, 'joint-drag')
+          commits = result.ok ? 1 : 0
         }
       }
       drag.commits = commits
@@ -452,7 +489,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       onOverlay({ marquee: null, lasso: null, sweep: null })
       return report
     },
-    [controls, onJointPreview, onOverlay, onSweepChange, publishJointDrag],
+    [router, onJointPreview, onOverlay, onSweepChange, publishJointDrag],
   )
 
   // Escape restores the starting transforms, which costs nothing because they
@@ -467,17 +504,19 @@ export function ViewportControls(props: ViewportControlsProps) {
       if (sectionDrag.current) {
         const start = sectionDrag.current.start
         sectionDrag.current = null
+        router.release('section')
         suppressClick.current = false
         onSectionPlanesChange(latest.current.sectionPlanes.map((plane) => (plane.id === start.id ? start : plane)))
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [endJoint, onSectionPlanesChange])
+  }, [endJoint, onSectionPlanesChange, router])
 
   // -- section plane drags -------------------------------------------------
   const beginSection = useCallback(
     (id: string, mode: 'offset' | 'rotate', canvasX: number, canvasY: number): boolean => {
+      if (router.placementArmed || ['gizmo', 'joint', 'marquee'].includes(router.owner) || jointDrag.current || sectionDrag.current) return false
       const plane = latest.current.sectionPlanes.find((candidate) => candidate.id === id)
       if (!plane) return false
       const ray = rayAt(canvasX, canvasY)
@@ -499,11 +538,10 @@ export function ViewportControls(props: ViewportControlsProps) {
         }
       }
       suppressClick.current = true
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
+      router.claim('section')
       return true
     },
-    [controls, rayAt],
+    [router, rayAt],
   )
 
   const updateSection = useCallback(
@@ -541,11 +579,10 @@ export function ViewportControls(props: ViewportControlsProps) {
     const drag = sectionDrag.current
     sectionDrag.current = null
     suppressClick.current = false
-    const orbit = controls as { enabled?: boolean } | null
-    if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = true
+    router.release('section')
     if (!drag) return null
     return latest.current.sectionPlanes.find((plane) => plane.id === drag.id) ?? null
-  }, [controls])
+  }, [router])
 
   // -- picking -------------------------------------------------------------
   const pick = useCallback(
@@ -617,6 +654,13 @@ export function ViewportControls(props: ViewportControlsProps) {
     onOverlay,
   }
 
+  const pendingJointPoint = useRef<{x: number; y: number} | null>(null)
+  useFrame(() => {
+    const point = pendingJointPoint.current
+    pendingJointPoint.current = null
+    if (point && jointDrag.current) handlers.current.updateJoint(point.x, point.y)
+  })
+
   useEffect(() => {
     const element = gl.domElement
     let pressed: { x: number; y: number; button: number; shift: boolean; alt: boolean } | null = null
@@ -628,18 +672,16 @@ export function ViewportControls(props: ViewportControlsProps) {
     }
 
     const onDown = (event: PointerEvent) => {
-      if (!latest.current.enabled) return
+      if (!router.accepts(event) || !latest.current.enabled || !['select', 'orbit', 'marquee'].includes(router.owner)) return
       const point = local(event)
       pressed = { x: point.x, y: point.y, button: event.button, shift: event.shiftKey, alt: event.altKey }
       if (event.button !== 0) return
       if (event.altKey) {
         lasso = [[point.x, point.y]]
-        const orbit = controls as { enabled?: boolean } | null
-        if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
+        router.claim('marquee')
         handlers.current.onOverlay({ marquee: null, lasso, sweep: null })
       } else if (event.shiftKey) {
-        const orbit = controls as { enabled?: boolean } | null
-        if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = false
+        router.claim('marquee')
         handlers.current.onOverlay({
           marquee: { left: point.x, top: point.y, width: 0, height: 0 },
           lasso: null,
@@ -649,9 +691,10 @@ export function ViewportControls(props: ViewportControlsProps) {
     }
 
     const onMove = (event: PointerEvent) => {
+      if (!router.accepts(event)) return
       const point = local(event)
       if (jointDrag.current) {
-        handlers.current.updateJoint(point.x, point.y)
+        pendingJointPoint.current = point
         return
       }
       if (sectionDrag.current) {
@@ -684,14 +727,14 @@ export function ViewportControls(props: ViewportControlsProps) {
       }
     }
 
-    const restoreOrbit = () => {
-      const orbit = controls as { enabled?: boolean } | null
-      if (orbit && typeof orbit.enabled === 'boolean') orbit.enabled = true
-    }
+    const restoreOrbit = () => router.release('marquee')
 
     const onUp = (event: PointerEvent) => {
+      if (!router.accepts(event)) return
       const point = local(event)
       if (jointDrag.current) {
+        pendingJointPoint.current = null
+        handlers.current.updateJoint(point.x, point.y)
         handlers.current.endJoint(true)
         pressed = null
         return
@@ -756,18 +799,32 @@ export function ViewportControls(props: ViewportControlsProps) {
       handlers.current.onSelect(result.partId, event.shiftKey, event.detail > 1)
     }
 
-    const onCancel = () => {
+    const onCancel = (event?: Event) => {
+      if (event && 'pointerId' in event && !router.accepts(event as PointerEvent)) return
+      pendingJointPoint.current = null
+      if (jointDrag.current) handlers.current.endJoint(false)
+      if (sectionDrag.current) {
+        const start = sectionDrag.current.start
+        onSectionPlanesChange(latest.current.sectionPlanes.map((plane) => plane.id === start.id ? start : plane))
+        handlers.current.endSection()
+      }
       pressed = null
       lasso = null
       restoreOrbit()
       handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
     }
 
+    const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onEscape)
+    window.addEventListener('blur', onCancel)
     element.addEventListener('pointerdown', onDown)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
     return () => {
+      onCancel()
+      window.removeEventListener('keydown', onEscape)
+      window.removeEventListener('blur', onCancel)
       element.removeEventListener('pointerdown', onDown)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
@@ -775,7 +832,7 @@ export function ViewportControls(props: ViewportControlsProps) {
     }
     // Only the renderer and the orbit controls; everything else is read from
     // the ref above, so a re-render cannot interrupt a drag.
-  }, [controls, gl])
+  }, [router, gl, onSectionPlanesChange])
 
   // -- capture -------------------------------------------------------------
   const capture = useCallback(async (): Promise<CaptureMetadata & { dataUrl: string }> => {
@@ -847,7 +904,22 @@ export function ViewportControls(props: ViewportControlsProps) {
 
   // -- the published surface ----------------------------------------------
   const surface = useMemo<RendererControlSurface>(() => {
-    const measureStats = (): RendererStats => ({
+    const measureStats = (): RendererStats => {
+      let edgeVertices = 0
+      let batchEdgeVertices = 0
+      const instanceBuffers: {objectId: number; count: number; capacity: number}[] = []
+      scene.traverseVisible(object => {
+        if (object instanceof THREE.LineSegments) {
+          const drawn = Math.min(object.geometry.drawRange.count, object.geometry.getAttribute('position')?.count ?? 0)
+          edgeVertices += drawn
+          if (object.userData.partBatchEdges) batchEdgeVertices += drawn
+        }
+        if (object instanceof THREE.InstancedMesh && object.userData.pickIdBase !== undefined) {
+          instanceBuffers.push({objectId: object.id, count: object.count, capacity: object.instanceMatrix.count})
+        }
+      })
+      return ({
+      edgeVertices, batchEdgeVertices, instanceBuffers, identityWarmupComplete: warmState.current.complete,
       drawCalls: gl.info.render.calls,
       triangles: gl.info.render.triangles,
       geometries: gl.info.memory.geometries,
@@ -859,6 +931,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       contextLosses: stats.current.contextLosses,
       contextRestores: stats.current.contextRestores,
     })
+    }
 
     return {
       version: 1,
@@ -898,40 +971,22 @@ export function ViewportControls(props: ViewportControlsProps) {
           Math.max(...measured.map((entry) => entry.max[1])),
           Math.max(...measured.map((entry) => entry.max[2])),
         ]
-        const active = latest.current.camera
-        const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
-        const direction = active.position.clone().sub(orbit?.target ?? new THREE.Vector3())
-        const fit = boundsFrame(
-          active as THREE.PerspectiveCamera | THREE.OrthographicCamera,
-          { min, max },
-          latest.current.size,
-          direction,
-        )
-        active.far = fit.far
-        const centre = fit.target
-        active.position.copy(fit.position)
-        active.lookAt(centre)
-        if ((active as THREE.OrthographicCamera).isOrthographicCamera) {
-          ;(active as THREE.OrthographicCamera).zoom = fit.zoom
-        }
-        if (orbit?.target) {
-          orbit.target.copy(centre)
-          orbit.update?.()
-        }
-        active.updateProjectionMatrix()
-        active.updateMatrixWorld(true)
+        const control = cameraControlsOf(controls)
+        if (!control) return false
+        frameCamera(control, { min, max }, latest.current.size, motion.policy.animated)
         return true
       },
       cameraPose: () => {
         const active = latest.current.camera
-        const orbit = controls as { target?: THREE.Vector3 } | null
-        const aim = orbit?.target ?? new THREE.Vector3()
+        const aim = cameraTarget(controls)
         const offset = active.position.clone().sub(aim)
         const spherical = new THREE.Spherical().setFromVector3(offset)
         return {
           yawDeg: THREE.MathUtils.radToDeg(spherical.theta),
           pitchDeg: 90 - THREE.MathUtils.radToDeg(spherical.phi),
           distance: spherical.radius,
+          target: aim.toArray(), zoom: (active as THREE.PerspectiveCamera).zoom,
+          enabled: cameraControlsOf(controls)?.enabled ?? false, pointerOwner: router.owner,
         }
       },
 
@@ -961,7 +1016,7 @@ export function ViewportControls(props: ViewportControlsProps) {
 
       saveView: (name) => {
         const active = latest.current.camera
-        const target = (controls as { target?: THREE.Vector3 } | null)?.target ?? new THREE.Vector3()
+        const target = cameraTarget(controls)
         const view: NamedView = {
           name,
           position: [active.position.x, active.position.y, active.position.z],
@@ -975,18 +1030,11 @@ export function ViewportControls(props: ViewportControlsProps) {
       restoreView: (name) => {
         const view = views.get(name)
         if (!view) return false
-        const active = latest.current.camera
-        active.position.set(view.position[0], view.position[1], view.position[2])
-        const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null
-        if (orbit?.target) {
-          orbit.target.set(view.target[0], view.target[1], view.target[2])
-          orbit.update?.()
-        }
-        active.lookAt(view.target[0], view.target[1], view.target[2])
-        if ((active as THREE.OrthographicCamera).isOrthographicCamera) {
-          ;(active as THREE.OrthographicCamera).zoom = view.zoom
-        }
-        active.updateProjectionMatrix()
+        const control = cameraControlsOf(controls)
+        if (!control) return false
+        void control.setLookAt(...view.position, ...view.target, motion.policy.animated)
+        if (control.camera instanceof THREE.OrthographicCamera) void control.zoomTo(view.zoom, motion.policy.animated)
+        if (!motion.policy.animated) { control.update(0); control.camera.updateMatrixWorld(true) }
         return true
       },
       listViews: () => views.list(),
@@ -1072,6 +1120,7 @@ export function ViewportControls(props: ViewportControlsProps) {
     // callbacks: all of them are read through the ref, which is what keeps the
     // published object identical for the viewport's lifetime.
   }, [
+    router,
     beginJoint,
     beginSection,
     capture,

@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { cadEngine } from '../cad/engine'
+import { GlassPanel } from '../ui/liquid'
 import { parseReferenceTokens, resolveReference, type SpatialReference } from './references'
 import { AgentSession, type SessionState } from './session'
 import type { AgentMode } from './modes'
@@ -154,7 +155,8 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
             : 'Ready'
 
   return (
-    <section
+    <GlassPanel
+      as="section"
       className="bw-agent"
       aria-label="Design partner"
       data-collapsed={isCollapsed}
@@ -445,7 +447,7 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
           </ol>
         </details>
       </div>
-    </section>
+    </GlassPanel>
   )
 }
 

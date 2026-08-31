@@ -2,16 +2,19 @@ import { catalog } from './catalog'
 import { basisFromEulerDegrees, type Vec3 } from './math'
 import type { ModelDocument } from './types'
 
+/**
+ * The pre-IndexedDB document, read once and retired.
+ *
+ * Nothing writes this any more: the store is IndexedDB, and `session.ts` imports
+ * only `loadLocalDocument` and `clearLocalDocument` — it migrates a document
+ * left by an older build and then clears the key. There *was* a
+ * `saveLocalDocument` beside them, which had no caller and implied the app still
+ * kept a copy here; it is gone, so the shape of this file states the truth. The
+ * share viewer is held away from the whole module by
+ * `src/features/share/viewer/viewer.test.tsx`, which is a stronger guard than
+ * naming any one function.
+ */
 const STORAGE_KEY = 'brickwright.document.v1'
-
-export function saveLocalDocument(document: ModelDocument) {
-  try {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))
-  } catch {
-    // Local persistence is best-effort; the editable document remains in memory.
-  }
-}
 
 export function loadLocalDocument(): ModelDocument | null {
   try {

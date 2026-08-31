@@ -1,3 +1,4 @@
+import type { PointerOwner } from './pointerRouter'
 import type { ArticulatedJoint } from '../../cad/articulation'
 import type { EnvironmentName } from '../environment'
 import type { CaptureMetadata } from './capture'
@@ -105,6 +106,10 @@ export interface JointDragReport {
 export interface RendererStats {
   readonly drawCalls: number
   readonly triangles: number
+  readonly edgeVertices: number
+  readonly batchEdgeVertices: number
+  readonly identityWarmupComplete: boolean
+  readonly instanceBuffers: readonly { objectId: number; count: number; capacity: number }[]
   readonly geometries: number
   readonly programs: number
   readonly fps: number
@@ -136,10 +141,10 @@ export interface RendererControlSurface {
   screenPositionOf(partId: string): { x: number; y: number; behindCamera: boolean } | null
   /** The same, for an arbitrary document-space point. */
   projectPoint(pointLdu: readonly [number, number, number]): { x: number; y: number; behindCamera: boolean }
-  /** Frames the camera on a set of parts and settles synchronously. */
+  /** Frames parts through CameraControls; transitions unless motion is reduced. Call settle() for deterministic capture. */
   frameParts(partIds: readonly string[]): boolean
   /** Spherical pose relative to the orbit target, for keyboard e2e. */
-  cameraPose(): { yawDeg: number; pitchDeg: number; distance: number }
+  cameraPose(): { yawDeg: number; pitchDeg: number; distance: number; target: readonly number[]; zoom: number; enabled: boolean; pointerOwner: PointerOwner }
 
   setVisibility(patch: VisibilityPatch): Promise<VisibilityReport>
   getVisibility(): VisibilityReport

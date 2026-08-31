@@ -3,6 +3,7 @@ import '@fontsource/chakra-petch/600.css'
 import '@fontsource-variable/manrope'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { LiquidStage } from './ui/liquid'
 import { AppShell } from './platform/AppShell'
 import { registerRoute } from './platform/routes'
 
@@ -33,6 +34,8 @@ registerRoute('projects', () => import('./features/projects/ProjectsPage'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppShell />
+    <LiquidStage>
+      <AppShell />
+    </LiquidStage>
   </StrictMode>,
 )

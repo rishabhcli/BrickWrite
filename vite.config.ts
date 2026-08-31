@@ -1,8 +1,49 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
+/**
+ * Where Vite looks for `.env` files.
+ *
+ * Under test, nowhere. Several cloud tests assert the *unconfigured* path — the
+ * honest local-only mode a visitor with no deployment gets — and they can only
+ * do that if the harness has no deployment either. A developer's own
+ * `.env.local` would otherwise decide whether they pass, so the tests most
+ * likely to fail are the ones belonging to whoever is actually working on the
+ * cloud path. It also keeps a real deployment URL and any other local secret out
+ * of the module graph the suite runs against.
+ *
+ * `test.env` is not enough on its own: it reaches `process.env`, but
+ * `import.meta.env` is assembled from the `.env` files at config time, and
+ * `vi.stubEnv` does not reach it either — measured, not assumed. Only pointing
+ * `envDir` at a directory that holds no env files actually clears it.
+ */
+const envDir = process.env.VITEST ? new URL('./src/test', import.meta.url).pathname : undefined
+
+/*
+ * Under test, no `VITE_*` variable from the surrounding shell reaches the app.
+ *
+ * `envDir` above stops `.env` *files* from deciding the suite's answers, and it
+ * is not enough on its own: Vite also exposes any shell variable matching
+ * `envPrefix`, so `VITE_CONVEX_URL=… npx vitest run src/cloud` still failed the
+ * unconfigured-path tests — measured, after the `envDir` change was already in
+ * place. Deleting them here works because this module runs before Vite resolves
+ * the env it hands to `import.meta.env`.
+ *
+ * Nothing legitimate is lost. A test cannot rely on a `VITE_*` value in
+ * `import.meta.env` anyway: `test.env` reaches only `process.env`, and
+ * `vi.stubEnv` does not reach `import.meta.env` at all. Injection goes through a
+ * constructor argument instead — `createConvexCloud({ url })` — which is how the
+ * configured-path tests already do it.
+ */
+if (process.env.VITEST) {
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('VITE_')) delete process.env[key]
+  }
+}
+
 export default defineConfig({
   plugins: [react()],
+  envDir,
   // The assistant and generation routes hold the model API key, so they run in
   // a separate Node process rather than in Vite's module graph. Proxying keeps
   // the browser talking to one origin in development. Production must provide
@@ -68,6 +109,24 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
+    /*
+     * A worker cap, because the default one loses tests on a large machine.
+     *
+     * Several suites load the shipped 48 MB catalog per worker —
+     * `manifest.test.ts` and the part-ranker's real-catalog fixture — so the
+     * limit here is memory and import bandwidth, not cores. Measured on a
+     * 14-core box: the default spawns enough workers to time out **10** tests
+     * with `import` alone at 290 s; `maxWorkers=7` still loses 3; `4` passes all
+     * 2,906 in 208 s, which is also *faster* than the `--maxWorkers=2` that had
+     * been used as a workaround.
+     *
+     * A percentage rather than a literal, so it scales down to a two-core CI
+     * runner instead of over-subscribing it. This lives in the config rather
+     * than in the npm script so that `npx vitest run` — what anyone debugging a
+     * single file actually types — gets the same pool as CI.
+     */
+    maxWorkers: '25%',
+    // `process.env` only; `import.meta.env` is cleared by `envDir` above.
     env: {
       VITE_HEXCLAVE_PROJECT_ID: '',
       HEXCLAVE_PROJECT_ID: '',

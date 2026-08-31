@@ -92,7 +92,51 @@ export function clutchCapacityWeight(a: ConnectionFamily, b: ConnectionFamily): 
  * without a floor the moment capacity would be zero and every hanging part
  * would fail in rotation. This is an assumption, reported as one.
  */
+/**
+ * Min and max of a numeric list, in one pass.
+ *
+ * Not `Math.max(...values)`. These lists are one entry per part, and a spread is
+ * both an order of magnitude slower and a hard ceiling: it throws
+ * `RangeError: Maximum call stack size exceeded` past roughly 100,000 arguments,
+ * measured on this engine. A statics report that crashes on a large imported
+ * model is worse than one that takes a moment.
+ */
+function extentOf(values: readonly number[]): { low: number; high: number } {
+  let low = Infinity
+  let high = -Infinity
+  for (const value of values) {
+    if (value < low) low = value
+    if (value > high) high = value
+  }
+  return { low, high }
+}
+
 export const MIN_RESISTING_ARM_LDU = 12
+
+/**
+ * How to name a weighted connection count in a sentence.
+ *
+ * `studs` is a *stud-equivalent* total: families do not hold equally, so two
+ * pins count 2.8 and three bar-and-clip pairs count 2.1. Printing that as
+ * "2.1 studs" describes something that does not exist — the model has three
+ * clips — so a fractional total says so, and only a whole one is called studs.
+ *
+ * It also has to be rounded. `0.7 * 3` is `2.0999999999999996` in binary
+ * floating point, and this string is the one place the operator is asked to
+ * trust a number: a report that says "hang from 2.0999999999999996 studs,
+ * assumed to hold 209.99999999999997 g" has undermined itself before it gets to
+ * the advice.
+ *
+ * Exported for its own test. A fractional total needs load carried through pins,
+ * clips or a hinge rather than studs, and every fixture that reliably *overloads*
+ * in this suite does so through plain stacking — so an integration test for this
+ * would assert over an empty list and prove nothing, which is exactly what the
+ * first attempt did.
+ */
+export function describeStudEquivalents(value: number): string {
+  const shown = Math.round(value * 10) / 10
+  return Number.isInteger(shown) ? `${shown} stud${shown === 1 ? '' : 's'}` : `${shown} stud-equivalents`
+}
 
 export interface MassReport {
   /** Total measured mass in grams, over parts with compiled geometry. */
@@ -338,7 +382,7 @@ export function computeSupport(document: ModelDocument, mass: MassReport): Suppo
   if (!bounds.length) return null
 
   // LDraw is Y-down, so the ground is the greatest Y anything reaches.
-  const groundY = Math.max(...bounds.map((entry) => entry.box.max[1]))
+  const groundY = extentOf(bounds.map((entry) => entry.box.max[1])).high
   const resting = bounds.filter((entry) => Math.abs(entry.box.max[1] - groundY) <= 8)
 
   const corners: Array<[number, number]> = []
@@ -400,7 +444,7 @@ export function computeOverloads(
 
   // LDraw is Y-down: the ground is the greatest Y anything reaches, and one
   // part rests on another when its underside meets that part's top.
-  const groundY = Math.max(...measured.map((part) => boxes.get(part.id)!.max[1]))
+  const groundY = extentOf(measured.map((part) => boxes.get(part.id)!.max[1])).high
   const carried = new Set<string>()
   const queue: string[] = []
   for (const part of measured) {
@@ -496,9 +540,9 @@ export function computeOverloads(
 
     const message =
       leverage && leverageOver && !forceOver
-        ? `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang ${Math.round(armLdu)} LDU out from ${studs} stud${studs === 1 ? '' : 's'} spanning ${Math.round(spanLdu)} LDU. The weight is within what those studs can hold, but the leverage is not — bring the load back over a support, or widen the attachment.`
+        ? `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang ${Math.round(armLdu)} LDU out from ${describeStudEquivalents(studs)} spanning ${Math.round(spanLdu)} LDU. The weight is within what those connections can hold, but the leverage is not — bring the load back over a support, or widen the attachment.`
         : `${cluster.length} part${cluster.length === 1 ? '' : 's'} weighing ${Math.round(grams)} g hang from `
-          + `${studs} stud${studs === 1 ? '' : 's'}, assumed to hold ${capacity} g. `
+          + `${describeStudEquivalents(studs)}, assumed to hold ${Math.round(capacity)} g. `
           + 'Add another attachment point, or bring the load back over a support.'
 
     overloaded.push({
@@ -506,7 +550,9 @@ export function computeOverloads(
       hangingPartIds: [...cluster],
       grams: Math.round(grams * 10) / 10,
       studs,
-      capacityGrams: capacity,
+      // Whole grams: the 100 g figure it derives from is an assumption, so
+      // sub-gram precision is noise that only ever shows up as `209.99999999999997`.
+      capacityGrams: Math.round(capacity),
       severity: forceOver
         ? grams > capacity * 2
           ? 'over-capacity'
@@ -553,7 +599,9 @@ export function describeSupport(support: SupportReport | null): string {
   if (!support) return 'nothing measured'
   const xs = support.polygon.map((point) => point[0])
   const zs = support.polygon.map((point) => point[1])
-  const width = (Math.max(...xs) - Math.min(...xs)) / STUD_LDU
-  const depth = (Math.max(...zs) - Math.min(...zs)) / STUD_LDU
+  const across = extentOf(xs)
+  const along = extentOf(zs)
+  const width = (across.high - across.low) / STUD_LDU
+  const depth = (along.high - along.low) / STUD_LDU
   return `${width.toFixed(1)} × ${depth.toFixed(1)} studs`
 }

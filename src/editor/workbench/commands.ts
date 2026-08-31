@@ -113,7 +113,11 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'edit.delete': () => editSelection(w.deleteSelection),
     'edit.quarter-turn': () =>
       w.placement ? run(() => w.rotatePlacement(-1)) : editSelection(() => w.rotateSelection(90)),
-    'edit.mirror': () => editSelection(() => w.runSharedMutation('mirror_selection', { axisLdu: 0 })),
+    // Across X, about the selection's own centre — the same defaults the
+    // Mirror panel opens with, so the shortcut is the fast path to that command
+    // rather than a second one. Reflecting through the world origin is still
+    // reachable from the panel.
+    'edit.mirror': () => editSelection(() => w.runSharedMutation('mirror_selection', { axis: 'x', about: 'selection' })),
     'edit.array': () => run(() => w.setModal('core:command-deck:linear_array')),
     'edit.protect': () => editSelection(w.toggleProtectSelection),
     'edit.paint': () => editSelection(() => w.recolorSelection(w.activeColor)),

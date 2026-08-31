@@ -26,24 +26,40 @@ export {
 } from './routes'
 
 export {
+  BOOT_MEASURE_PREFIX,
   BootCancelledError,
   BootLevelError,
   bootForRoute,
   bootLevelRank,
+  bootPhaseMs,
+  bootTimeline,
   bootTo,
+  catalogLoaderSupportsNarrowedLoad,
   isBooting,
   peekBootStage,
   requireCatalogStage,
   requireEditorStage,
   resetBoot,
+  searchIndexHandle,
   type BootLevel,
   type BootOptions,
+  type BootPhase,
+  type BootPhaseName,
   type BootStage,
   type BootStageCatalog,
   type BootStageEditor,
   type BootStageNone,
+  type BootStageParts,
+  type BootStageWithCatalog,
+  type SearchIndexHandle,
 } from './boot'
-export { BootStageProvider, useBootStage, useCatalogStage, useEditorStage } from './boot-context'
+export {
+  BootStageProvider,
+  useBootStage,
+  useCatalogStage,
+  useEditorStage,
+  useSearchIndex,
+} from './boot-context'
 
 export {
   PLATFORM_PATHS,

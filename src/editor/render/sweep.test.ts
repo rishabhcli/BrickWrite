@@ -237,3 +237,25 @@ describe.skipIf(!HAVE_PACK)('sweep scope', () => {
     expect(Object.keys(scope.document.connections).length).toBeGreaterThan(0)
   })
 })
+
+describe.skipIf(!HAVE_PACK)('the cost the caller has to budget against', () => {
+  it('reports how long it took, so a drag can decide whether it can afford another', () => {
+    const document = hinge()
+    const joint = jointOf(document)
+    const result = sweepJoint(document, joint, { rotateDegrees: 90, slideLdu: 0 }, { provide })
+
+    // Not asserted to be fast — it is fast on six parts and need not be on
+    // eleven thousand. Asserted to be *measured*, because the drag rations the
+    // sweep against this number and a zero would mean it never rations.
+    expect(result.elapsedMs).toBeGreaterThan(0)
+    expect(Number.isFinite(result.elapsedMs)).toBe(true)
+    expect(result.samples).toBeGreaterThan(0)
+  })
+
+  it('costs nothing to report nothing', () => {
+    const document = hinge()
+    const result = sweepJoint(document, jointOf(document), { rotateDegrees: 0, slideLdu: 0 }, { provide })
+    expect(result.elapsedMs).toBe(0)
+    expect(result.samples).toBe(0)
+  })
+})

@@ -1,29 +1,45 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
-import { DEMOS, DEMO_MANIFEST, heroDemo, type DemoEntry } from '../../demos'
+import {
+  forwardRef,
+  useEffect,
+  useState,
+  type AnchorHTMLAttributes,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
+import { Link as RouterLink, useInRouterContext } from 'react-router-dom'
+import {
+  DEMO_SUMMARIES as DEMOS,
+  DEMO_SUMMARY_MANIFEST as DEMO_MANIFEST,
+  getDemoSummary as getDemo,
+  heroDemoSummary as heroDemo,
+  type DemoSummary,
+} from '../../demos/summary'
 import { setKnownDemoIds, trackLanding } from './analytics'
 import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
 import { CountUp, PlateAtmosphere } from './plate'
 import { FILM_STAGES, useFilmStage, usePointerField, usePointerTilt, useReveal } from './reveal'
 import { useReducedMotion } from '../explore/motion'
-import { BrickSculpture } from './BrickSculpture'
 import './landing.css'
 import './studio.css'
 
 /**
  * The product front door.
  *
- * A playful, lightweight SVG sculpture opens the page. The real editable
- * campus and its measured results follow; the sculpture never impersonates
- * validated geometry. Every product figure comes from the demo manifest and
- * every call to action resolves to an operable surface.
+ * Real generated assets open the page, followed by their measured results.
+ * Every product figure comes from the demo manifest and every call to action
+ * resolves to an operable surface.
  */
 
 setKnownDemoIds(DEMOS.map((demo) => demo.id))
 
 export function LandingPage() {
-  const hero = heroDemo()
-  const showcase = hero.showcase
+  const hero = getDemo('blue-whale-monument') ?? heroDemo()
+  const spotlightDemos = diverseSpotlights()
+  const [spotlightId, setSpotlightId] = useState(hero.id)
+  const spotlight = getDemo(spotlightId) ?? hero
+  const collectionParts = DEMOS.reduce((sum, demo) => sum + demo.validation.partCount, 0)
   const reduced = useReducedMotion()
   const [paused, setPaused] = useState(false)
   const motionPaused = reduced || paused
@@ -48,7 +64,7 @@ export function LandingPage() {
           <div className="bw-studio-topline">
             <span>
               <i aria-hidden="true" /> {hero.validation.partCount.toLocaleString()} pieces · {hero.validation.steps}{' '}
-              verified build steps
+              steps in the featured build · {DEMOS.length} megabuilds total
             </span>
             <button
               type="button"
@@ -65,63 +81,63 @@ export function LandingPage() {
           <div className="bw-studio-intro">
             <div className="bw-studio-copy">
               <h1 id="bw-hero-title">
-                Rebuild the
+                Build something
                 <br />
-                <em>whole campus.</em>
+                <em>enormous.</em>
               </h1>
               <p className="bw-studio-description">
-                Every piece is a real LDraw part. Nothing lands unless it clutches something already standing.
+                Start with a whale, a skyline, a giant duck or an entire city block. Every piece is real, connected, and
+                ready for you to change.
               </p>
               <div className="bw-hero-actions">
-                <a
+                <LandingLink
                   className="bw-button primary"
-                  href={hrefFor({ kind: 'editor', blank: true })}
-                  onClick={link({ kind: 'editor', blank: true }, () => {
+                  target={{ kind: 'explore' }}
+                  onFollow={() => trackLanding({ name: 'landing.cta_selected', cta: 'explore-demos' })}
+                >
+                  Explore the megabuilds <span aria-hidden="true">↗</span>
+                </LandingLink>
+                <LandingLink
+                  className="bw-studio-text-link"
+                  target={{ kind: 'editor', blank: true }}
+                  onFollow={() => {
                     trackLanding({ name: 'landing.cta_selected', cta: 'start-blank' })
                     trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
-                  })}
+                  }}
                 >
-                  Start building <span aria-hidden="true">↗</span>
-                </a>
-                <a
-                  className="bw-studio-text-link"
-                  href={hrefFor({ kind: 'describe' })}
-                  onClick={link({ kind: 'describe' }, () =>
-                    trackLanding({ name: 'landing.cta_selected', cta: 'describe-build' }),
-                  )}
-                >
-                  Describe an idea <span aria-hidden="true">↗</span>
-                </a>
+                  Start from scratch <span aria-hidden="true">↗</span>
+                </LandingLink>
               </div>
-              <p className="bw-studio-footnote">IN YOUR BROWSER. OUT OF THE ORDINARY.</p>
+              <p className="bw-studio-footnote">{collectionParts.toLocaleString()} EDITABLE PARTS. ZERO TINY DEMOS.</p>
             </div>
-            <BrickSculpture paused={motionPaused} />
+            <BuildConstellation demos={spotlightDemos} />
           </div>
           <div className="bw-studio-baseline">
-            <a href="#bw-campus-title" className="bw-scroll-cue">
-              <span aria-hidden="true">↓</span> A little imagination goes a long way
+            <a href="#bw-collection-title" className="bw-scroll-cue">
+              <span aria-hidden="true">↓</span> Pick a world and make it stranger
             </a>
-            <span>REAL PARTS. REAL CONNECTIONS. YOUR WORLD.</span>
+            <span>LANDMARKS. BUILDINGS. ANIMALS. WEIRD IDEAS.</span>
           </div>
         </section>
 
-        <section className="bw-campus-section" aria-labelledby="bw-campus-title">
+        <section className="bw-campus-section" aria-labelledby="bw-collection-title">
           <div className="bw-campus-heading">
-            <span className="bw-studio-label">01 / BUILT HERE, BRICK BY BRICK</span>
-            <h2 id="bw-campus-title">
-              A whole campus.
+            <span className="bw-studio-label">01 / THE LARGE-SCALE STARTING LIBRARY</span>
+            <h2 id="bw-collection-title">
+              Big worlds.
               <br />
-              <em>Not a single shortcut.</em>
+              <em>Already built.</em>
             </h2>
             <p>
-              From a little “what if” to {hero.validation.partCount.toLocaleString()} pieces. Explore the Illinois Main
-              Quad, then make it your own.
+              Every example clears a four-digit part-count floor, physical validation, and a verified build order.
+              Choose one below, orbit it, then copy the complete model into your editor.
             </p>
           </div>
           <div className="bw-campus-layout">
             <div className="bw-simple-hero-model">
               <Hero
-                demo={hero}
+                key={spotlight.id}
+                demo={spotlight}
                 initialStage="validated"
                 autoPlay={!motionPaused}
                 motionPaused={motionPaused}
@@ -129,41 +145,103 @@ export function LandingPage() {
               />
             </div>
             <div className="bw-campus-notes">
-              <span className="bw-studio-label">THE ILLINOIS MAIN QUAD</span>
+              <span className="bw-studio-label">{spotlight.discipline.toUpperCase()}</span>
               <p className="bw-campus-big-number">
-                {showcase?.landmarkCount ?? 7}
+                {spotlight.validation.partCount.toLocaleString()}
                 <span>
-                  landmarks.
+                  editable parts.
                   <br />
-                  One extraordinary little world.
+                  One enormous head start.
                 </span>
               </p>
-              <p>
-                {showcase?.characterCount ?? 21} brick characters. {hero.validation.steps} verified build steps. A{' '}
-                {hero.validation.footprintStuds[0]} × {hero.validation.footprintStuds[1]}-stud site you can orbit,
-                inspect, and edit.
-              </p>
-              <a
+              <p>{spotlight.tagline}</p>
+              <div className="bw-spotlight-picker" role="group" aria-label="Featured large builds">
+                {spotlightDemos.map((demo) => (
+                  <button
+                    type="button"
+                    key={demo.id}
+                    aria-pressed={spotlight.id === demo.id}
+                    onClick={() => setSpotlightId(demo.id)}
+                  >
+                    <span>{demo.category}</span>
+                    {demo.title}
+                  </button>
+                ))}
+              </div>
+              <LandingLink
                 className="bw-button primary"
-                href={hrefFor({ kind: 'explore', demoId: hero.id })}
-                onClick={link({ kind: 'explore', demoId: hero.id }, () =>
-                  trackLanding({ name: 'demo.viewed', demoId: hero.id, surface: 'landing' }),
-                )}
+                target={{ kind: 'explore', demoId: spotlight.id }}
+                onFollow={() => trackLanding({ name: 'demo.viewed', demoId: spotlight.id, surface: 'landing' })}
               >
-                Explore the campus <span aria-hidden="true">↗</span>
-              </a>
-              <span className="bw-campus-caption">Not a video. Try dragging the model.</span>
+                Open this build <span aria-hidden="true">↗</span>
+              </LandingLink>
+              <span className="bw-campus-caption">Not a video. Drag the model, then edit a copy.</span>
             </div>
           </div>
         </section>
 
-        <ProofStrip demo={hero} />
-        <AssemblyFilm demo={hero} />
+        <ProofStrip demo={spotlight} />
+        <AssemblyFilm demo={spotlight} />
         <FeaturedBuilds />
         <ClosingSection />
       </div>
 
       <Colophon />
+    </div>
+  )
+}
+
+function diverseSpotlights(): DemoSummary[] {
+  const preferred = ['blue-whale-monument', 'sunline-suspension-bridge', 'colossal-duck', 'meridian-tower']
+    .map((id) => getDemo(id))
+    .filter((demo): demo is DemoSummary => Boolean(demo))
+  if (preferred.length >= 4) return preferred
+  const seen = new Set(preferred.map((demo) => demo.category))
+  for (const demo of DEMOS) {
+    if (preferred.some((entry) => entry.id === demo.id) || seen.has(demo.category)) continue
+    preferred.push(demo)
+    seen.add(demo.category)
+    if (preferred.length === 4) break
+  }
+  return preferred.length ? preferred : [...DEMOS].slice(0, 4)
+}
+
+/** Four real generated assets in one editorial stack—not a mascot pretending to be the product. */
+function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
+  return (
+    <div className="bw-build-constellation" aria-label="A sample of editable large-scale builds">
+      <div className="bw-constellation-orbit" aria-hidden="true" />
+      {demos.map((demo, index) => {
+        const target = { kind: 'explore' as const, demoId: demo.id }
+        return (
+          <LandingLink
+            className="bw-constellation-card"
+            data-index={index}
+            target={target}
+            onFollow={() => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' })}
+            key={demo.id}
+          >
+            <img
+              src={demo.assets.thumbnail.url}
+              alt={`${demo.title}, ${demo.validation.partCount.toLocaleString()} editable parts.`}
+              width={720}
+              height={450}
+              decoding="async"
+              loading="lazy"
+              fetchPriority="low"
+            />
+            <span>{demo.category}</span>
+            <strong>{demo.title}</strong>
+            <small>{demo.validation.partCount.toLocaleString()} parts</small>
+          </LandingLink>
+        )
+      })}
+      <p>
+        <span aria-hidden="true">↗</span>
+        Four directions.
+        <br />
+        No tiny builds.
+      </p>
     </div>
   )
 }
@@ -178,7 +256,7 @@ export function LandingPage() {
  * advances alongside it. The DOM scene is deliberately lightweight; the live
  * LDraw envelope above remains the source of actual model geometry.
  */
-function AssemblyFilm({ demo }: { demo: DemoEntry }) {
+function AssemblyFilm({ demo }: { demo: DemoSummary }) {
   const film = useFilmStage()
   const good = demo.validation
   const rough = demo.roughValidation
@@ -323,15 +401,13 @@ function AssemblyFilm({ demo }: { demo: DemoEntry }) {
                 {chapter.metric}
               </p>
               {chapter.stage === 'validated' ? (
-                <a
+                <LandingLink
                   className="bw-button primary bw-magnet"
-                  href={hrefFor({ kind: 'explore', demoId: demo.id })}
-                  onClick={link({ kind: 'explore', demoId: demo.id }, () =>
-                    trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' }),
-                  )}
+                  target={{ kind: 'explore', demoId: demo.id }}
+                  onFollow={() => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' })}
                 >
                   Inspect the accepted model <span className="bw-key">&rarr;</span>
-                </a>
+                </LandingLink>
               ) : null}
             </article>
           ))}
@@ -377,7 +453,7 @@ const ASSEMBLY_BRICKS: AssemblyBrick[] = Array.from({ length: 8 * 12 }, (_, inde
   }
 })
 
-function ProofStrip({ demo }: { demo: DemoEntry }) {
+function ProofStrip({ demo }: { demo: DemoSummary }) {
   const validation = demo.validation
   return (
     <section className="bw-proof-strip" aria-label="Verified build measurements" data-testid="hero-facts">
@@ -415,12 +491,12 @@ function FeaturedBuilds() {
               <em>Endless starting points.</em>
             </h2>
           </div>
-          <a className="bw-button ghost" href={hrefFor({ kind: 'explore' })} onClick={link({ kind: 'explore' })}>
+          <LandingLink className="bw-button ghost" target={{ kind: 'explore' }}>
             Explore all {DEMOS.length}
-          </a>
+          </LandingLink>
         </div>
         <div className="bw-demo-grid bw-demo-grid-featured">
-          {DEMOS.slice(0, 3).map((demo, index) => (
+          {DEMOS.slice(0, 6).map((demo, index) => (
             <DemoCard key={demo.id} demo={demo} index={index} />
           ))}
         </div>
@@ -434,18 +510,18 @@ function FeaturedBuilds() {
   )
 }
 
-function DemoCard({ demo, index }: { demo: DemoEntry; index: number }) {
+function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
   const reveal = useReveal<HTMLAnchorElement>(index * 70)
   usePointerTilt(reveal.ref)
   const target = { kind: 'explore' as const, demoId: demo.id }
   return (
-    <a
+    <LandingLink
       ref={reveal.ref}
       {...reveal.props}
       className={`bw-demo-card bw-lit ${reveal.props.className}`}
       data-flagship={demo.hero ? 'true' : 'false'}
-      href={hrefFor(target)}
-      onClick={link(target, () => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' }))}
+      target={target}
+      onFollow={() => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' })}
     >
       <figure>
         <img
@@ -472,7 +548,7 @@ function DemoCard({ demo, index }: { demo: DemoEntry; index: number }) {
           <span className="ok">verified</span>
         </p>
       </div>
-    </a>
+    </LandingLink>
   )
 }
 
@@ -480,26 +556,33 @@ function ClosingSection() {
   return (
     <section className="bw-section bw-section-close bw-simple-close" aria-labelledby="bw-close-title">
       <div className="bw-shell bw-close">
-        <span className="bw-studio-label">NO INSTRUCTIONS FOR YOUR IMAGINATION.</span>
+        <span className="bw-studio-label">START FROM SOMETHING ALREADY WORTH ORBITING.</span>
         <h2 className="bw-display x1 bw-close-mark" id="bw-close-title">
-          Your next big thing.
+          Take a giant.
           <br />
-          <em>Starts small.</em>
+          <em>Make it yours.</em>
         </h2>
         <div className="bw-hero-actions">
-          <a
+          <LandingLink
             className="bw-button primary bw-magnet"
-            href={hrefFor({ kind: 'editor' })}
-            onClick={link({ kind: 'editor' }, () => {
+            target={{ kind: 'editor' }}
+            onFollow={() => {
               trackLanding({ name: 'landing.cta_selected', cta: 'open-editor' })
               trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
-            })}
+            }}
           >
             Open the editor{' '}
             <span className="bw-key" aria-hidden="true">
               &rarr;
             </span>
-          </a>
+          </LandingLink>
+          <LandingLink
+            className="bw-studio-text-link"
+            target={{ kind: 'describe' }}
+            onFollow={() => trackLanding({ name: 'landing.cta_selected', cta: 'describe-build' })}
+          >
+            Describe another idea <span aria-hidden="true">↗</span>
+          </LandingLink>
         </div>
       </div>
     </section>
@@ -523,9 +606,40 @@ function Colophon() {
   )
 }
 
+interface LandingLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href' | 'onClick' | 'target'> {
+  target: Parameters<typeof navigate>[0]
+  onFollow?: () => void
+}
+
+/** Uses the router in-app and keeps a real-anchor fallback for isolated rendering. */
+const LandingLink = forwardRef<HTMLAnchorElement, LandingLinkProps>(({ target, onFollow, children, ...props }, ref) => {
+  const inRouter = useInRouterContext()
+  const href = hrefFor(target)
+  const follow = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+    onFollow?.()
+  }
+
+  if (inRouter) {
+    return (
+      <RouterLink ref={ref} to={href} {...props} onClick={follow}>
+        {children}
+      </RouterLink>
+    )
+  }
+
+  return (
+    <a ref={ref} href={href} {...props} onClick={link(target, onFollow)}>
+      {children}
+    </a>
+  )
+})
+
+LandingLink.displayName = 'LandingLink'
+
 /** Intercepts a real anchor so navigation is one history entry, not a reload. */
 function link(target: Parameters<typeof navigate>[0], side?: () => void) {
-  return (event: React.MouseEvent) => {
+  return (event: ReactMouseEvent<HTMLAnchorElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
     event.preventDefault()
     side?.()

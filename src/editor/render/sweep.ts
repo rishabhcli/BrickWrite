@@ -48,6 +48,16 @@ export interface SweepResult {
   readonly blocking: SweepBlock | null
   /** Samples actually evaluated, so a caller can report the resolution used. */
   readonly samples: number
+  /**
+   * Wall-clock cost of this sweep, milliseconds.
+   *
+   * Reported because the caller has to decide whether it can afford another one
+   * before the next frame. The sweep is scoped to the swept-envelope
+   * neighbourhood, which is tens of parts on a small model and can be hundreds
+   * on a dense one — the same code is cheap or expensive depending on what the
+   * island is dragged through, so the only honest budget is a measured one.
+   */
+  readonly elapsedMs: number
   /** True when some sample was judged from bounding boxes alone. */
   readonly unverified: boolean
 }
@@ -58,6 +68,7 @@ const CLEAR: SweepResult = {
   blocking: null,
   samples: 0,
   unverified: false,
+  elapsedMs: 0,
 }
 
 const scaleRequest = (request: JointDragRequest, fraction: number): JointDragRequest => ({
@@ -180,6 +191,7 @@ export function sweepJoint(
   options: SweepOptions = {},
 ): SweepResult {
   if (!request.rotateDegrees && !request.slideLdu) return CLEAR
+  const startedAt = performance.now()
   const scope = sweepNeighbourhood(document, joint, request)
   if (!scope) return CLEAR
 
@@ -258,6 +270,7 @@ export function sweepJoint(
       blocking: null,
       samples: evaluated,
       unverified,
+      elapsedMs: performance.now() - startedAt,
     }
   }
 
@@ -292,6 +305,7 @@ export function sweepJoint(
       : null,
     samples: evaluated,
     unverified,
+    elapsedMs: performance.now() - startedAt,
   }
 }
 

@@ -11,7 +11,7 @@ import type { CloudErrorShape } from './protocol'
  * in; TypeScript checks the two agree at that seam.
  */
 export interface CloudWorkbenchApi {
-  readonly snapshot: { readonly document: ModelDocument }
+  readonly snapshot: { readonly document: ModelDocument; readonly selection: readonly string[] }
   /** False when the browser reports the network is unreachable. */
   readonly online: boolean
   readonly activeModal: string | null
@@ -19,6 +19,8 @@ export interface CloudWorkbenchApi {
   openModal(contributionId: string | null): void
   /** The shared planner every writer goes through. Used only for `rename_document`. */
   runCapability(capability: 'rename_document', args?: Record<string, unknown>): boolean
+  /** Selects parts locally. Used to jump to what a collaborator has picked. */
+  select(partIds: readonly string[]): void
 }
 
 /** The id the version-history dialog registers under, and `openModal` opens. */

@@ -28,15 +28,29 @@ export const massingBoxSchema = z.object({
   role: z.string().min(1).max(40),
   atXStuds: z.number().int().min(0).max(256),
   atZStuds: z.number().int().min(0).max(256),
-  widthStuds: z.number().int().min(1).max(256),
-  depthStuds: z.number().int().min(1).max(256),
+  // The client cannot realise a perimeter below 3 x 3. Rejecting it here gives
+  // the provider's corrective retry a chance to fix the proposal instead of
+  // silently stretching a schema-valid answer into a different volume later.
+  widthStuds: z.number().int().min(3).max(256),
+  depthStuds: z.number().int().min(3).max(256),
   courses: z.number().int().min(1).max(64),
-  level: z.number().int().min(0).max(8),
+  // The browser clamps to five storeys (0..4); the server must not bless a
+  // value the client will rewrite. Cross-field support is audited client-side.
+  level: z.number().int().min(0).max(4),
   fill: z.enum(['shell', 'solid']),
 })
 
+/**
+ * Eight volumes was enough for a building.
+ *
+ * A freighter with a keel, two hull halves, a cockpit, an engine block and a
+ * ramp is six before any greeble; a landmark's stages plus its platforms run
+ * past that. Kept in step with `MAX_MASSING_BOXES` in `src/generation/phases.ts`
+ * — the client clamps, this refuses, and they have to agree or a legal answer
+ * gets rejected by the half that did not hear about the change.
+ */
 export const massingSchema = z.object({
-  boxes: z.array(massingBoxSchema).min(1).max(8),
+  boxes: z.array(massingBoxSchema).min(1).max(16),
 })
 
 /** One surface feature: a part intent and the stud it hangs from. */
@@ -50,7 +64,10 @@ export const detailFeatureSchema = z.object({
 })
 
 export const detailSchema = z.object({
-  features: z.array(detailFeatureSchema).max(24),
+  // `parseDetail` requires at least one feature. Keeping the server validator
+  // in lockstep turns an empty answer into the existing corrective retry rather
+  // than a client-only failure after the request has already completed.
+  features: z.array(detailFeatureSchema).min(1).max(24),
 })
 
 export const designBriefSchema = z.object({

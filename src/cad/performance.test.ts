@@ -5,7 +5,14 @@ import { IDENTITY_BASIS } from './math'
 import { createEmptyDocument } from './sample'
 import { findSnapCandidates } from './snapping'
 import { deriveConnections } from './snapping'
-import { validateDocument } from './validation'
+import {
+  airbornePartIds,
+  floatingPartIds,
+  hoverVerdictFor,
+  poseRefusal,
+  unclutchedRestPartIds,
+  validateDocument,
+} from './validation'
 import type { CadOperation, ModelDocument, PartInstance } from './types'
 
 /**
@@ -50,6 +57,25 @@ const BUDGETS = {
   incrementalFraction: 0.85,
   snapQueryMs: 40,
   undoMs: 60,
+  // Asking the hovering question about *one* part must not cost what asking it
+  // about the whole document costs.
+  //
+  // A ratio for the same reason `incrementalFraction` is one: an absolute
+  // ceiling would measure the runner. Measured ~0.33 with the scoped path and
+  // ~1.0 with the three whole-document calls it replaced, so 0.85 separates a
+  // working scope from a reverted one on either machine.
+  scopedHoverFraction: 0.85,
+  // A commit must not derive the connector world for the document it just
+  // produced, so it is judged against exactly that: one `deriveConnections`
+  // over the same model, in the same run, on the same machine. Deriving is a
+  // floor a commit cannot get under, so a commit that pays it lands above 1
+  // whatever the hardware. Measured ~0.25 with the incremental path and ~2.2
+  // with the derivation back in the collision and clutch gates.
+  commitAgainstDerivationFraction: 0.7,
+  // The same test for the pose gate, which `firstLegalSnap` and
+  // `legalConnectCandidates` run once per snap candidate. Measured ~0.15 with
+  // the scoped path and ~1.15 with a derivation per preview document.
+  poseGateAgainstDerivationFraction: 0.7,
 } as const
 
 const part = (id: string, position: [number, number, number], definitionId = '3024'): PartInstance => ({
@@ -111,6 +137,22 @@ const median = (values: number[]): number => {
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
 }
+
+/**
+ * The least contaminated sample, for the ratios between two CPU-bound costs.
+ *
+ * A median resists one outlier. It does not resist a *window*: when the machine
+ * is running five other builds, whole runs of samples are inflated together, and
+ * these ratios were seen at 1.01 and 1.21 with both sides three- to elevenfold
+ * over their real cost. The minimum of each side is bounded below by the real
+ * cost of that side and can only be spoiled downwards by a measurement that is
+ * impossibly fast, so it is the robust estimator here — while a genuine
+ * regression raises the floor and still fails the assertion.
+ *
+ * The absolute budgets above stay on medians: there, an unusually fast sample
+ * would be exactly the wrong thing to judge a ceiling by.
+ */
+const fastest = (values: number[]): number => Math.min(...values)
 
 describe('kernel at scale', () => {
   const COUNT = 1000
@@ -176,6 +218,45 @@ describe('kernel at scale', () => {
       .sort()
     expect(persisted).toEqual(derived)
   }, 30_000)
+
+  it('keeps the connector index in step when a transaction is refused', () => {
+    // A refused commit must leave nothing behind.
+    //
+    // The index has to be advanced to the *candidate* before the gates run —
+    // that is what makes the connection diff incremental — and every gate after
+    // that point can still refuse. It used to be advanced and never rolled back,
+    // and the damage was silent rather than loud: the next edit's incremental
+    // diff mated against connectors at a pose the document does not hold.
+    //
+    // Reproduced as the second case. Lifting a brick into empty air is refused
+    // as DISCONNECTED, which left that brick's connectors 1000 LDU below where
+    // it actually is; the brick then stacked onto it found no mates at all, and
+    // the document recorded 0 connections where the geometry has 8.
+    const engine = new CadEngine(createEmptyParts())
+    let revision = engine.getSnapshot().document.revision
+    const commit = (label: string, operations: CadOperation[]) => {
+      const result = engine.execute(label, operations, 'human', revision)
+      if (result.ok) revision = result.value.resultRevision
+      return result
+    }
+
+    commit('anchor', [{ type: 'part.add', part: part('anchor', [0, 0, 0]) }])
+    commit('neighbour', [{ type: 'part.add', part: part('neighbour', [200, 0, 0]) }])
+
+    const refused = commit('lift the anchor into the air', [
+      { type: 'part.transform', partId: 'anchor', transform: { position: [0, -1000, 0], basis: IDENTITY_BASIS } },
+    ])
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error.code).toBe('DISCONNECTED')
+    expect(engine.getSnapshot().document.parts.anchor.transform.position).toEqual([0, 0, 0])
+
+    const stacked = commit('stack onto the anchor', [{ type: 'part.add', part: part('stack', [0, -8, 0]) }])
+    expect(stacked.ok).toBe(true)
+
+    const document = engine.getSnapshot().document
+    expect(Object.keys(document.connections).length).toBe(deriveConnections(document).pairs.length)
+    expect(Object.keys(document.connections).length).toBeGreaterThan(0)
+  })
 
   it('validates a full model within budget', () => {
     const document = withParts(parts)
@@ -256,6 +337,150 @@ describe('kernel at scale', () => {
       report.collisions.map((issue) => [issue.partA, issue.partB].sort().join('|')).sort()
     expect(key(incrementally)).toEqual(key(fromScratch))
   })
+
+  it('answers the hovering question about one part far faster than about all of them', () => {
+    // What the realiser actually asks. It places one part and needs to know
+    // whether *that* part is supported; the three whole-document functions
+    // computed the answer for every part in the model to tell it, and
+    // `airbornePartIds` walked a connected component per part while doing so.
+    const one = ['p400']
+    const many = Array.from({ length: 20 }, (_, index) => `p${index * 40}`)
+    // One set of part instances, many document objects built from it.
+    //
+    // That is the production shape: `applyMutations` shares every untouched part
+    // by reference, so the document a commit or a realiser hands to these
+    // functions holds the same `PartInstance` objects the last one did, and the
+    // per-part memos hit. Rebuilding the lattice per sample instead made both
+    // sides pay a cold 900-part bounds pass, which is shared cost — it pushed the
+    // ratio to ~0.7 by inflating the numerator and the denominator equally, and
+    // measured the bounds pass rather than the scoping.
+    const hoverParts = lattice(900)
+
+    // Warm both paths before either is timed: whichever ran first would
+    // otherwise pay for the other's cold start and the ratio would be fiction.
+    for (let round = 0; round < 3; round += 1) {
+      const warm = withParts(hoverParts)
+      floatingPartIds(warm)
+      airbornePartIds(warm)
+      unclutchedRestPartIds(warm)
+      hoverVerdictFor(withParts(hoverParts), one)
+    }
+
+    const wholeTimes: number[] = []
+    const scopedTimes: number[] = []
+    const manyTimes: number[] = []
+    for (let round = 0; round < 9; round += 1) {
+      // A fresh document per sample, and its connector derivation paid *before*
+      // the clock starts.
+      //
+      // The derivation used to be left cold deliberately, because the realiser
+      // misses that memo on every placement. That was the right call while the
+      // whole-document trio's dominant cost was `airbornePartIds` walking a
+      // connected component per part. It is the wrong call now: the trio no
+      // longer does that, the derivation is the only large thing left, and both
+      // sides pay exactly one of it — so the ratio measured the shared floor and
+      // drifted to 0.95 while the scoping it exists to guard got *better*.
+      // Warming it measures the thing being compared.
+      const whole = withParts(hoverParts)
+      deriveConnections(whole)
+      wholeTimes.push(
+        timed(() => {
+          floatingPartIds(whole)
+          airbornePartIds(whole)
+          unclutchedRestPartIds(whole)
+        }).ms,
+      )
+      const scopedDocument = withParts(hoverParts)
+      deriveConnections(scopedDocument)
+      scopedTimes.push(timed(() => hoverVerdictFor(scopedDocument, one)).ms)
+      const manyDocument = withParts(hoverParts)
+      deriveConnections(manyDocument)
+      manyTimes.push(timed(() => hoverVerdictFor(manyDocument, many)).ms)
+    }
+    const whole = fastest(wholeTimes)
+    const scoped = fastest(scopedTimes)
+    const many20 = fastest(manyTimes)
+
+    console.log(`HOVER whole=${whole.toFixed(3)} scoped=${scoped.toFixed(3)} many20=${many20.toFixed(3)} ratio=${(scoped/whole).toFixed(3)} many/one=${(many20/scoped).toFixed(2)}`)
+    expect(scoped / whole).toBeLessThan(BUDGETS.scopedHoverFraction)
+    // Twenty parts must not cost twenty times one: the derivation, the bounds
+    // pass and the ground plane are shared, and each island is walked once.
+    expect(many20).toBeLessThan(scoped * 2.5)
+  })
+
+  it('commits an edit without deriving the connector world for the result', () => {
+    // Both commit gates need to know what is mated to what. The collision gate
+    // needs mating clearance for the pairs it looks at; the clutch gate needs
+    // adjacency. Getting either by deriving the connector world for the document
+    // the commit has just produced is the most expensive thing the kernel can
+    // do, and that document is microseconds old — the connector index the engine
+    // keeps across revisions and the edges the transaction itself recorded
+    // answer the same question for the cost of the edit.
+    //
+    // On the 11,493-part campus demo this was 435 ms of a 520 ms commit before
+    // the derivation was made cheaper, and 114 ms of 250 ms after; taking it off
+    // the path entirely left 32 ms.
+    //
+    // Judged against one derivation over the same model, in the same run: it is
+    // a floor a commit that derives cannot get under, so such a commit lands
+    // above 1 on any hardware, while this one lands well below.
+    const engine = new CadEngine(withParts(parts))
+    let revision = engine.getSnapshot().document.revision
+    const addAt = (index: number) => {
+      const item = part(`probe_${index}`, [4000 + (index % 20) * 400, 0, 4000 + Math.floor(index / 20) * 400])
+      const result = engine.execute(`probe ${index}`, [{ type: 'part.add', part: item }], 'human', revision)
+      expect(result.ok).toBe(true)
+      if (result.ok) revision = result.value.resultRevision
+    }
+
+    for (let index = 0; index < 3; index += 1) addAt(index)
+
+    // The two sides are interleaved, not measured in two blocks.
+    //
+    // "Same run" is not enough on a shared runner: a garbage-collection pause or
+    // a scheduling stall lands inside whichever block is unlucky, and with five
+    // other processes on the machine this ratio was seen at 1.01 with both sides
+    // inflated three- to elevenfold. Alternating puts both sides in the same
+    // noise window, and `fastest` then reads the floor of each.
+    //
+    // Each derivation gets a fresh document object built from the part instances
+    // the engine holds, so it misses its memo exactly as it would for a document
+    // a commit had just produced.
+    const commitTimes: number[] = []
+    const deriveTimes: number[] = []
+    for (let round = 0; round < 9; round += 1) {
+      commitTimes.push(timed(() => addAt(3 + round)).ms)
+      deriveTimes.push(timed(() => deriveConnections(withParts(parts))).ms)
+    }
+
+    expect(fastest(commitTimes)).toBeLessThan(fastest(deriveTimes) * BUDGETS.commitAgainstDerivationFraction)
+  }, 60_000)
+
+  it('gates a candidate pose without deriving the connector world for it', () => {
+    // `firstLegalSnap` and `legalConnectCandidates` call `poseRefusal` once per
+    // snap candidate — up to 24 — and every candidate is a different speculative
+    // document. Deriving a connector world for each one made filtering one
+    // drag's candidates cost seconds on a large model.
+    //
+    // Moving one part moves nothing else, so the live document's index is
+    // already the right index for every other part, and the same-run derivation
+    // below is the floor the per-candidate shape could not get under.
+    const document = withParts(parts)
+    deriveConnections(document)
+    const pose = { position: [0, -400, 0] as [number, number, number], basis: IDENTITY_BASIS }
+    poseRefusal(document, 'p500', pose)
+
+    // Interleaved and taken as a median, for the reason the commit guard above
+    // spells out: a shared runner's stalls have to land on both sides.
+    const gateTimes: number[] = []
+    const deriveTimes: number[] = []
+    for (let round = 0; round < 9; round += 1) {
+      gateTimes.push(timed(() => poseRefusal(document, `p${500 + round}`, pose)).ms)
+      deriveTimes.push(timed(() => deriveConnections(withParts(parts))).ms)
+    }
+
+    expect(fastest(gateTimes)).toBeLessThan(fastest(deriveTimes) * BUDGETS.poseGateAgainstDerivationFraction)
+  }, 30_000)
 
   it('queries snap candidates against a dense model within budget', () => {
     const moving = part('moving', [20, -12, 20])

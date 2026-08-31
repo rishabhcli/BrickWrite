@@ -23,7 +23,7 @@ import { describeScope, parseReferenceTokens, resolveReference, type ViewportPin
 import type { WaveLedger } from './modes'
 import type { TraceLedger } from './trace'
 import { ASSISTANT_TOOLS, type AssistantToolDeclaration } from './toolschemas'
-import { nextAgentAction, situationFromLive, type AgentSituation } from './guidance'
+import { classifyRequest, nextAgentAction, situationFromLive, type AgentSituation } from './guidance'
 import type { ToolCall, ToolResult } from './protocol'
 
 /**
@@ -60,6 +60,16 @@ export interface ToolHostOptions {
   encode?: (image: RasterImage) => string
   /** The live viewport canvas, when the renderer has published one. */
   canvas?: () => HTMLCanvasElement | undefined
+  /**
+   * The builder's most recent message.
+   *
+   * Read only to answer one question: did they ask for a *thing* or for an
+   * *edit*? On an empty document those two want completely different tools, and
+   * the kernel cannot tell them apart from the document alone — an empty plate
+   * looks the same whether the next sentence was "build me a harbour tower" or
+   * "give me a baseplate".
+   */
+  requestText?: () => string | null | undefined
 }
 
 export interface ToolFailure {
@@ -72,6 +82,17 @@ export interface ToolFailure {
 const fail = (code: string, message: string, repair: string, details?: unknown): { error: ToolFailure } => ({
   error: { code, message, repair, ...(details === undefined ? {} : { details }) },
 })
+
+/**
+ * The generation pipeline, loaded on first use.
+ *
+ * Imported dynamically for the same reason the WebMCP gateway does it: the
+ * pipeline, its scorer and its silhouette rasteriser are a large chunk that a
+ * conversation which only reads the scene should never pay for. It is also why
+ * this file does not reach into `src/webmcp/**` — the two agent surfaces share
+ * `src/generation/host.ts`, not each other.
+ */
+const generationModule = () => import('../generation/host')
 
 const CAMERA_VIEWS = ['isometric', 'front', 'rear', 'left', 'right', 'top'] as const
 
@@ -240,12 +261,18 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
 
   const liveNext = (extra: Partial<AgentSituation> = {}) => {
     const state = cadEngine.getSnapshot()
+    const request = classifyRequest(options.requestText?.())
     return nextAgentAction(
       situationFromLive(state.document, {
         partCount: state.validation.partCount,
         selectionCount: state.selection.length,
         collisions: state.validation.collisions.length,
         disconnectedParts: state.validation.disconnectedPartIds.length,
+        subject: request.subject,
+        designRequest: request.designRequest,
+        generationPending: options.waves
+          .pending()
+          .some((wave) => wave.capability === 'generate_from_brief' || wave.capability === 'generate_region'),
         ...extra,
       }),
     )
@@ -657,10 +684,121 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
       }
     },
 
-    preflight_capability: (input) => {
+    generation_compile: async (input) => {
+      const generation = await generationModule()
+      try {
+        return await generation.getGenerationHost().compileFromServer(input.prompt as string | undefined)
+      } catch (cause) {
+        const refusal = generation.refusalOf(cause)
+        if (!refusal) throw cause
+        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
+      }
+    },
+
+    generation_compile_local: async (input) => {
+      const generation = await generationModule()
+      try {
+        return generation.getGenerationHost().compileLocal(input.prompt as string | undefined)
+      } catch (cause) {
+        const refusal = generation.refusalOf(cause)
+        if (!refusal) throw cause
+        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
+      }
+    },
+
+    generation_set: async (input) => {
+      const generation = await generationModule()
+      try {
+        return generation.getGenerationHost().set(input as Parameters<ReturnType<typeof generation.getGenerationHost>['set']>[0])
+      } catch (cause) {
+        const refusal = generation.refusalOf(cause)
+        if (!refusal) throw cause
+        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
+      }
+    },
+
+    generation_run: async (input) => {
+      const generation = await generationModule()
+      try {
+        const state = await generation.getGenerationHost().run({ useModel: input.useModel as boolean | undefined })
+        const best = state.candidates[0]
+        const continuation = best && 'continuation' in best ? best.continuation : undefined
+        return {
+          ...state,
+          nextAction: best
+            ? `Preview candidate ${best.id} (${best.partCount} parts) as one wave. Do not place its parts individually.${
+                continuation
+                  ? ` It hit the part ceiling with ${continuation.remainingRoles.join(', ')} still unbuilt — after the builder accepts it, call preflight_capability generate_region for the rest.`
+                  : ''
+              }`
+            : 'No candidate survived the gates. Read notes and rejected, then adjust the brief with generation_set and run again.',
+          nextTool: best ? 'generation_preview' : 'generation_set',
+          nextArgs: best ? { candidateId: best.id } : {},
+        }
+      } catch (cause) {
+        const refusal = generation.refusalOf(cause)
+        if (!refusal) throw cause
+        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
+      }
+    },
+
+    generation_state: async () => (await generationModule()).getGenerationHost().state(),
+
+    generation_cancel: async () => (await generationModule()).getGenerationHost().cancel(),
+
+    generation_preview: async (input) => {
+      const generation = await generationModule()
+      const document = cadEngine.getSnapshot().document
+
+      let plan
+      try {
+        plan = generation.getGenerationHost().planWave(String(input.candidateId ?? ''))
+      } catch (cause) {
+        const refusal = generation.refusalOf(cause)
+        if (!refusal) throw cause
+        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
+      }
+
+      // The same ledger `preflight_capability` uses. A generated model and a
+      // hand-planned wall arrive in the review queue as the same kind of thing,
+      // so one accept — and one undo — covers the whole candidate.
+      const result = options.waves.propose({
+        label: typeof input.label === 'string' ? input.label : plan.label,
+        operations: plan.operations,
+        capability: 'generate_from_brief',
+        summary: plan.summary,
+        expectedRevision: document.revision,
+      })
+      if (!result.ok) return { error: result.error }
+
+      return {
+        documentRevision: document.revision,
+        waveId: result.wave.id,
+        label: result.wave.label,
+        candidateId: plan.candidateId,
+        strategy: plan.strategy,
+        capability: 'generate_from_brief',
+        summary: plan.summary,
+        operations: plan.operations.length,
+        partCount: plan.partCount,
+        changedPartIds: result.wave.changedPartIds.slice(0, 60),
+        previewValidation: result.wave.validation,
+        ...(plan.notes.length ? { notes: plan.notes } : {}),
+        status: 'awaiting review — the document is unchanged at revision ' + document.revision,
+      }
+    },
+
+    preflight_capability: async (input) => {
+      const capabilityId = String(input.capability ?? '')
+      // `generate_from_brief` and `generate_region` plan by running the
+      // pipeline, which lives in the lazily-loaded generation chunk and
+      // registers its planner when it arrives. Loading it here is what lets a
+      // model discover generation through capability_search and then use it,
+      // without the pipeline riding along in every conversation.
+      if (capabilityId.startsWith('generate_')) await generationModule()
+
       const state = cadEngine.getSnapshot()
       const document = state.document
-      const capabilityId = String(input.capability ?? '')
       const definition = sharedCapability(capabilityId)
       if (!definition || definition.kind !== 'mutate') {
         return fail(

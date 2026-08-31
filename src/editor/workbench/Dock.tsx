@@ -29,41 +29,60 @@ export function DockSplitter({
   const vertical = dock !== 'bottom'
   const limits = DOCK_LIMITS[dock]
 
-  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    dragging.current = true
-    origin.current = { pointer: vertical ? event.clientX : event.clientY, size: latest.current }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [vertical])
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      dragging.current = true
+      origin.current = { pointer: vertical ? event.clientX : event.clientY, size: latest.current }
+      event.currentTarget.setPointerCapture(event.pointerId)
+    },
+    [vertical],
+  )
 
-  const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging.current) return
-    const delta = (vertical ? event.clientX : event.clientY) - origin.current.pointer
-    // The left dock grows rightwards, the right and bottom docks grow the other
-    // way, so the sign of the drag is per dock rather than global.
-    const signed = dock === 'left' ? delta : -delta
-    onResize(origin.current.size + signed)
-  }, [dock, onResize, vertical])
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return
+      const delta = (vertical ? event.clientX : event.clientY) - origin.current.pointer
+      // The left dock grows rightwards, the right and bottom docks grow the other
+      // way, so the sign of the drag is per dock rather than global.
+      const signed = dock === 'left' ? delta : -delta
+      onResize(origin.current.size + signed)
+    },
+    [dock, onResize, vertical],
+  )
 
   const onPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     dragging.current = false
     event.currentTarget.releasePointerCapture(event.pointerId)
   }, [])
 
-  const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = event.shiftKey ? 32 : 8
-    const grow = vertical ? 'ArrowRight' : 'ArrowDown'
-    const shrink = vertical ? 'ArrowLeft' : 'ArrowUp'
-    const towardsLarger = dock === 'left' ? grow : shrink
-    const towardsSmaller = dock === 'left' ? shrink : grow
-    if (event.key === towardsLarger) { event.preventDefault(); onResize(latest.current + step) }
-    else if (event.key === towardsSmaller) { event.preventDefault(); onResize(latest.current - step) }
-    else if (event.key === 'Home') { event.preventDefault(); onResize(limits.min) }
-    else if (event.key === 'End') { event.preventDefault(); onResize(limits.max) }
-  }, [dock, limits.max, limits.min, onResize, vertical])
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 32 : 8
+      const grow = vertical ? 'ArrowRight' : 'ArrowDown'
+      const shrink = vertical ? 'ArrowLeft' : 'ArrowUp'
+      const towardsLarger = dock === 'left' ? grow : shrink
+      const towardsSmaller = dock === 'left' ? shrink : grow
+      if (event.key === towardsLarger) {
+        event.preventDefault()
+        onResize(latest.current + step)
+      } else if (event.key === towardsSmaller) {
+        event.preventDefault()
+        onResize(latest.current - step)
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        onResize(limits.min)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        onResize(limits.max)
+      }
+    },
+    [dock, limits.max, limits.min, onResize, vertical],
+  )
 
   return (
     <div
       className={`dock-splitter ${vertical ? 'vertical' : 'horizontal'}`}
+      data-dock={dock}
       role="separator"
       tabIndex={0}
       aria-orientation={vertical ? 'vertical' : 'horizontal'}

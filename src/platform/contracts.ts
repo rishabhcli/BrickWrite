@@ -25,8 +25,18 @@ export type RouteId = 'landing' | 'explore' | 'editor' | 'projects' | 'account' 
 export interface RouteModule {
   id: RouteId
   path: string
-  /** 'none' — no kernel; 'catalog' — catalog only; 'editor' — catalog + kernel + renderer. */
-  boot: 'none' | 'catalog' | 'editor'
+  /**
+   * 'none' — no kernel; 'parts' — compiled geometry, colour and identity, not
+   * searchable; 'catalog' — 'parts' plus a resident browse index; 'editor' —
+   * 'parts' plus the kernel, the session and warmed geometry.
+   *
+   * `parts` and `catalog` differ by `search.json`: 423 KiB gzip and ~24 ms of
+   * main-thread work that only searching and browsing need. A surface that
+   * names parts it was already given (a published model, a project card) wants
+   * `parts`; a surface that has to answer "does this part exist?" wants
+   * `catalog`. See the table in `src/platform/boot.ts`.
+   */
+  boot: 'none' | 'parts' | 'catalog' | 'editor'
   /** Rendered inside the shell's suspense boundary. */
   load: () => Promise<{ default: React.ComponentType }>
   /** Requires a signed-in Hexclave user; the shell redirects when absent. */

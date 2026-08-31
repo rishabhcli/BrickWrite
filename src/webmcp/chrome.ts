@@ -228,7 +228,17 @@ export function withChromeReveal<T extends object>(surface: ChromeSurface, paylo
   return { ...payload, revealed: revealChrome(surface) }
 }
 
-/** Right-dock sections that compete for the same 300px column. Opening one closes the others. */
+/**
+ * Right-dock sections that compete for the same 300px column. Opening one closes
+ * the others — but see `applyWorkbenchReveal`, which deliberately exempts the
+ * three Design sheets, because Generate, Refine and the design partner are one
+ * intentional stack rather than rivals for the column.
+ *
+ * There was also an `applyExclusiveDock` here, collapsing a *restored* layout to
+ * a single sheet. It was removed rather than kept: nothing called it, and it
+ * folded over this whole list, so reviving it would have quietly closed two of
+ * the three Design panels that the default layout deliberately opens.
+ */
 export const DOCK_FOCUS_SECTIONS = [
   'selection',
   'model.explorer',
@@ -253,14 +263,6 @@ export function applyDockFocus<T extends { sections: Readonly<Record<string, boo
     sections[id] = open
   }
   return { ...layout, sections }
-}
-
-/** Collapse competing right-dock sheets so a restored layout is never a stack. */
-export function applyExclusiveDock<T extends { sections: Readonly<Record<string, boolean>> }>(layout: T): T {
-  const open = DOCK_FOCUS_SECTIONS.filter((id) => layout.sections[id] === true)
-  if (open.length <= 1) return layout
-  const keep = open.includes('selection') ? 'selection' : open[0]
-  return applyDockFocus(layout, keep, true)
 }
 
 export function applyChromeReveal<T extends {

@@ -1,10 +1,12 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import {
+  BootLevelError,
   requireCatalogStage,
   requireEditorStage,
   type BootStage,
-  type BootStageCatalog,
+  type BootStageWithCatalog,
   type BootStageEditor,
+  type SearchIndexHandle,
 } from './boot'
 
 /**
@@ -29,12 +31,42 @@ export function useBootStage(): BootStage {
   return useContext(StageContext)
 }
 
-/** The compiled catalog, for surfaces whose route declared `boot: 'catalog'`. */
-export function useCatalogStage(): BootStageCatalog | BootStageEditor {
+/**
+ * The compiled parts tier, for surfaces whose route declared at least `parts`.
+ *
+ * Part identity, geometry and colour — everything `catalog.get()` answers from.
+ * Not the browse index: see {@link useSearchIndex}.
+ */
+export function useCatalogStage(): BootStageWithCatalog {
   return requireCatalogStage(useContext(StageContext))
 }
 
 /** Catalog, kernel and session, for surfaces whose route declared `boot: 'editor'`. */
 export function useEditorStage(): BootStageEditor {
   return requireEditorStage(useContext(StageContext))
+}
+
+/**
+ * The browse index's residency, for anything that searches or lists parts.
+ *
+ * `catalog.search()`, `catalog.describe()` and `catalog.categories` are only
+ * authoritative once `ready` is true. A `boot: 'catalog'` route is handed a
+ * stage that has already waited for it, so `ready` is true on first render
+ * there. `/editor` is not: it paints a restored document's geometry without the
+ * index, so a panel that reads the index must either render an honest loading
+ * state from `ready`, or suspend:
+ *
+ * ```tsx
+ * const index = useSearchIndex()
+ * if (!index.ready) throw index.whenReady()   // Suspense fallback shows
+ * ```
+ *
+ * Reading the index while `ready` is false is not a crash — it is worse. It is
+ * an empty result set that looks like "this build has no such part", which is
+ * the one answer Brickwright is not allowed to give unless it is true.
+ */
+export function useSearchIndex(): SearchIndexHandle {
+  const stage = useContext(StageContext)
+  if (stage.level === 'none') throw new BootLevelError('catalog', stage.level)
+  return stage.searchIndex
 }

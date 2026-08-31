@@ -48,6 +48,30 @@ const COMPATIBLE_PAIRS = new Set([
   'generic:generic',
 ])
 
+/**
+ * The same table, indexed both ways for lookup without a key.
+ *
+ * `connectorsCompatible` is the innermost filter of the connection derivation —
+ * 131,432 calls for one pass over the campus demo — and building
+ * `[a.family, b.family].sort().join(':')` allocated an array and a string on
+ * every one of them. The pair list above stays the declaration; this is its
+ * index, derived from it so the two cannot disagree.
+ */
+const COMPATIBLE_BY_FAMILY: ReadonlyMap<string, ReadonlySet<string>> = (() => {
+  const index = new Map<string, Set<string>>()
+  const link = (from: string, to: string) => {
+    const bucket = index.get(from)
+    if (bucket) bucket.add(to)
+    else index.set(from, new Set([to]))
+  }
+  for (const pair of COMPATIBLE_PAIRS) {
+    const [left, right] = pair.split(':')
+    link(left, right)
+    link(right, left)
+  }
+  return index
+})()
+
 /** Connectors that accept exactly one mate; a stud cannot carry two parts. */
 const EXCLUSIVE_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFamily>([
   'stud',
@@ -66,8 +90,7 @@ type CompatKey = Pick<ConnectionFeature, 'family' | 'gender'> & { group?: string
 
 export function connectorsCompatible(a: CompatKey, b: CompatKey): boolean {
   if (a.gender === b.gender && a.gender !== 'neutral') return false
-  const key = [a.family, b.family].sort().join(':')
-  if (!COMPATIBLE_PAIRS.has(key)) return false
+  if (!COMPATIBLE_BY_FAMILY.get(a.family)?.has(b.family)) return false
   // A generic connector's LDCad group is the only thing distinguishing, say, a
   // turntable interface from a door hinge of similar dimensions.
   if (a.family === 'generic' || b.family === 'generic') return Boolean(a.group) && a.group === b.group
@@ -82,7 +105,7 @@ export function connectorsCompatible(a: CompatKey, b: CompatKey): boolean {
  * bricks upside down.
  */
 export function allowsAxialFlip(a: ConnectionFamily, b: ConnectionFamily): boolean {
-  const pair = [a, b].sort().join(':')
+  const pair = a < b ? `${a}:${b}` : `${b}:${a}`
   return pair === 'axle:axle-hole' || pair === 'bar:clip' || pair === 'pin:pin-hole'
 }
 
@@ -94,7 +117,7 @@ export function allowsAxialFlip(a: ConnectionFamily, b: ConnectionFamily): boole
  * reports `unknown` rather than being assumed rigid.
  */
 export function jointFor(a: ConnectionFeature, b: ConnectionFeature): JointFreedom {
-  const pair = [a.family, b.family].sort().join(':')
+  const pair = a.family < b.family ? `${a.family}:${b.family}` : `${b.family}:${a.family}`
   const slides = Boolean(a.slide || b.slide)
   const axialRange = Math.max(a.axial ?? 0, b.axial ?? 0)
 

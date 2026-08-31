@@ -33,3 +33,21 @@ BRICKWRIGHT_E2E_URL=http://127.0.0.1:4174 node tools/e2e/cad-editing.mjs
 ```
 
 The browser suite drives actual controls and pointer gestures, checks document revisions/poses, reloads to verify local persistence, and writes screenshots/results under `artifacts/cad-editing/`. It is also discovered by `test:e2e:all`. No cloud delivery is exercised by this local editor suite.
+
+## Fluid camera and pointer ownership (August 2026)
+
+- A left click selects; a left drag becomes orbit after **4 px**. Right-drag pans, middle-drag dollies, and the wheel zooms toward the cursor (also in orthographic projection). Right-click still opens the part menu, but a pan does not.
+- Named directions, framing and dock-resize adjustments now use the same damped CameraControls rig. Reduced motion jumps directly to the destination. Escape stops camera motion as well as cancelling an active edit.
+- Placement, move/rotate gizmos, joints, section handles and marquee selection have exclusive pointer ownership. A second finger cannot finish the first finger's edit; camera-owned gestures retain native multi-touch. Pointer cancellation and loss of window focus cancel edit previews without committing them.
+- Move/rotate handles adapt toward a 112 px projected extent (at least 96 px in the tested desktop layout). Snapping and placement sampling are coalesced to animation frames; the final pointer position is resolved synchronously before committing. A placement ghost interpolates its display pose only: the kernel still decides legality at the actual candidate pose.
+- Joint dragging sweeps each rendered sample and checks the final pose again before one undoable transaction. There is no physics simulation or new winch/cable joint in this version.
+- Large models no longer lose all batch edges at 6,000 parts. Edges are sampled and assigned a quality-dependent, projected-size budget; selection highlights do not recreate the unselected instance buffers in Select/Connect mode.
+
+### Mechanism planner scope
+
+The shared capabilities `build_crane`, `build_lattice`, `build_snot_hull` and `build_clock_faces` use ordinary kernel transactions and real compiled connector geometry. Missing required geometry is an explicit `GEOMETRY_UNAVAILABLE` error, not a placeholder brick.
+
+- **Crane:** four-course mast with a real luffing hinge and bonded boom. No hoist, hook, cable, counterweight or load rating.
+- **Lattice:** orthogonal columns and bonded decks, not diagonal X-bracing.
+- **SNOT hull:** rectangular bonded deck with real side-stud skins, not a curved saucer.
+- **Clock faces:** an open square frame with four independently hinged plate hands. No finished tile-mosaic dials, numerals, gear train or timekeeping.

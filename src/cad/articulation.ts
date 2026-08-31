@@ -42,6 +42,16 @@ const ARTICULATED_FAMILIES: ReadonlySet<ConnectionFamily> = new Set<ConnectionFa
 
 export const isArticulatedFamily = (family: ConnectionFamily) => ARTICULATED_FAMILIES.has(family)
 
+/**
+ * Freedoms no connector pair produces, so their presence means somebody said so.
+ *
+ * `jointFor` only ever returns fixed, revolute, prismatic, cylindrical,
+ * spherical or unknown. Anything else on an edge arrived through
+ * `ModelDocument.jointOverrides`, which is a statement of intent and outranks
+ * what the families imply.
+ */
+const isAssertedFreedom = (joint: JointFreedom): boolean => joint.kind === 'winch'
+
 export interface ArticulatedJoint {
   readonly edgeId: string
   readonly joint: JointFreedom
@@ -73,7 +83,10 @@ function rigidAdjacency(document: ModelDocument): Map<string, Set<string>> {
   if (cached) return cached
   const adjacency = new Map<string, Set<string>>(Object.keys(document.parts).map((id) => [id, new Set<string>()]))
   for (const edge of Object.values(document.connections)) {
-    if (isArticulatedFamily(edge.family)) continue
+    // An asserted freedom is not a rigid link either. Without this the two
+    // sides of an overridden joint land in one rigid group, and a joint whose
+    // ends cannot move relative to each other is not offered at all.
+    if (isArticulatedFamily(edge.family) || isAssertedFreedom(edge.joint)) continue
     adjacency.get(edge.a.partId)?.add(edge.b.partId)
     adjacency.get(edge.b.partId)?.add(edge.a.partId)
   }
@@ -119,6 +132,8 @@ const describeJoint = (joint: JointFreedom): string => {
       return 'slides'
     case 'spherical':
       return 'ball joint'
+    case 'winch':
+      return `winds ${(joint.drumRadiusLdu * Math.PI * 2).toFixed(0)} LDU per turn`
     default:
       return 'freedom not modelled'
   }
@@ -147,7 +162,11 @@ export function findArticulatedJoints(document: ModelDocument, selectedPartIds: 
 
   const joints: ArticulatedJoint[] = []
   for (const edge of Object.values(document.connections)) {
-    if (!isArticulatedFamily(edge.family)) continue
+    // Family decides what a *derived* joint can do. An asserted one has already
+    // overruled the family — the point of asserting a winch on an axle is that
+    // the connectors do not say so — and gating it on the family again would
+    // make the override unreachable.
+    if (!isArticulatedFamily(edge.family) && !isAssertedFreedom(edge.joint)) continue
     if (edge.joint.kind === 'fixed') continue
 
     const aInside = group.has(edge.a.partId)
@@ -224,6 +243,14 @@ export function articulate(
     case 'spherical':
       slide = 0
       break
+    case 'winch':
+      // The drum turns and the load travels: one degree of freedom expressed in
+      // two places. The moving island is the load, so it translates along the
+      // payout axis and does not spin — a hook that rotated with the drum would
+      // be a hook welded to the shaft.
+      slide = clamp(degreesToRadians(degrees) * freedom.drumRadiusLdu + slide, freedom.minLdu, freedom.maxLdu)
+      degrees = 0
+      break
     default:
       // Freedom is not modelled, so nothing is driven rather than guessed.
       return []
@@ -232,7 +259,10 @@ export function articulate(
   if (!degrees && !slide) return []
 
   const radians = degreesToRadians(degrees)
-  const offset: Vec3 = [joint.axis[0] * slide, joint.axis[1] * slide, joint.axis[2] * slide]
+  // A winch travels along its own payout direction; everything else travels
+  // along the connector axis it rotates about.
+  const travelAxis = freedom.kind === 'winch' ? freedom.payoutAxis : joint.axis
+  const offset: Vec3 = [travelAxis[0] * slide, travelAxis[1] * slide, travelAxis[2] * slide]
 
   return joint.movingPartIds.flatMap((partId): CadOperation[] => {
     const part = document.parts[partId]

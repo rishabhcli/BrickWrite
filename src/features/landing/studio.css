@@ -357,6 +357,129 @@ body:has(.bw-studio) #pf-main {
   animation-delay: 0.36s;
 }
 
+/* The hero shows the actual generated collection, layered like oversized
+   editorial contact sheets. Each panel is a working deep link. */
+.bw-build-constellation {
+  min-width: 0;
+  min-height: 560px;
+  position: relative;
+  align-self: stretch;
+  isolation: isolate;
+}
+.bw-constellation-orbit {
+  position: absolute;
+  inset: 8% 3% 5% 8%;
+  border: 1px solid #93a08848;
+  border-radius: 50%;
+  transform: rotate(-9deg);
+}
+.bw-constellation-orbit::before,
+.bw-constellation-orbit::after {
+  content: '';
+  position: absolute;
+  border: 1px dashed #93a08835;
+  border-radius: inherit;
+}
+.bw-constellation-orbit::before {
+  inset: 8%;
+}
+.bw-constellation-orbit::after {
+  inset: 19%;
+}
+.bw-constellation-card {
+  position: absolute;
+  width: 47%;
+  padding: 7px 7px 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  color: #e9e7dc;
+  background: #202920;
+  border: 1px solid #ffffff25;
+  text-decoration: none;
+  box-shadow: 0 20px 45px #080c0994;
+  transition:
+    transform 0.35s cubic-bezier(0.18, 0.75, 0.2, 1),
+    border-color 0.2s ease,
+    z-index 0s;
+}
+.bw-constellation-card img {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+  margin-bottom: 6px;
+  background: #101513;
+}
+.bw-constellation-card > span,
+.bw-constellation-card > small {
+  color: #99a28f;
+  font: 500 7px/1.4 var(--bw-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.bw-constellation-card > strong {
+  font:
+    600 11px/1.2 'Manrope Variable',
+    sans-serif;
+}
+.bw-constellation-card > small {
+  align-self: end;
+}
+.bw-constellation-card[data-index='0'] {
+  right: 2%;
+  top: 7%;
+  width: 56%;
+  z-index: 3;
+  transform: rotate(2.5deg);
+}
+.bw-constellation-card[data-index='1'] {
+  left: 1%;
+  top: 33%;
+  width: 51%;
+  z-index: 4;
+  transform: rotate(-3deg);
+}
+.bw-constellation-card[data-index='2'] {
+  right: 5%;
+  bottom: 2%;
+  width: 39%;
+  z-index: 5;
+  transform: rotate(4deg);
+}
+.bw-constellation-card[data-index='3'] {
+  left: 11%;
+  top: 2%;
+  width: 34%;
+  z-index: 2;
+  transform: rotate(-5deg);
+}
+.bw-constellation-card:hover,
+.bw-constellation-card:focus-visible {
+  z-index: 9;
+  border-color: #f47b52;
+  transform: rotate(0) translateY(-8px);
+}
+.bw-build-constellation > p {
+  position: absolute;
+  right: 0;
+  top: 46%;
+  z-index: 7;
+  margin: 0;
+  color: #c4c9bb;
+  font: 500 8px/1.65 var(--bw-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+.bw-build-constellation > p span {
+  color: #f47b52;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
 /* Proof is a second, deliberately quieter space. */
 .bw-campus-section {
   background: var(--studio-paper);
@@ -490,6 +613,38 @@ body:has(.bw-studio) #pf-main {
   font-size: 13px;
   line-height: 1.9;
   max-width: 310px;
+}
+.bw-spotlight-picker {
+  display: grid;
+  margin: 22px 0 4px;
+  border-top: 1px solid #bfc1b4;
+}
+.bw-spotlight-picker button {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px 0;
+  text-align: left;
+  color: #74796d;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #c9cabf;
+  font:
+    600 11px/1.35 'Manrope Variable',
+    sans-serif;
+}
+.bw-spotlight-picker button span {
+  color: #8a8d81;
+  font: 600 7px/1.5 var(--bw-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.bw-spotlight-picker button:hover,
+.bw-spotlight-picker button[aria-pressed='true'] {
+  color: #252c24;
+}
+.bw-spotlight-picker button[aria-pressed='true'] span {
+  color: #d85f3c;
 }
 .bw-campus-notes .bw-button {
   margin-top: 22px;
@@ -842,6 +997,20 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
   .bw-sculpture-toggle {
     margin-top: -30px;
   }
+  .bw-build-constellation {
+    width: min(100%, 560px);
+    min-height: 460px;
+    margin: 26px auto 0;
+  }
+  .bw-constellation-card[data-index='0'] {
+    width: 58%;
+  }
+  .bw-constellation-card[data-index='1'] {
+    width: 52%;
+  }
+  .bw-build-constellation > p {
+    display: none;
+  }
   .bw-studio-baseline {
     padding: 18px 0;
   }
@@ -900,6 +1069,9 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
   }
   .bw-campus-notes > p:not(.bw-campus-big-number) {
     max-width: 420px;
+  }
+  .bw-spotlight-picker {
+    max-width: 520px;
   }
   .bw-studio .bw-proof-strip {
     padding-bottom: 40px;

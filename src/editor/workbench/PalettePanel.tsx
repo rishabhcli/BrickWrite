@@ -4,7 +4,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  CircleDot,
   Clock3,
   LayoutGrid,
   List,
@@ -13,11 +12,13 @@ import {
   Rows3,
   Search,
   SearchX,
+  SlidersHorizontal,
   Star,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { catalog, getColor, searchCatalogPage } from '../../cad/catalog'
+import { geometryCache } from '../../cad/mesh'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../../cad/catalog-loader'
 import type { CatalogSearchPage, CatalogSearchRecord, CatalogTier, ConnectionFamily } from '../../cad/types'
 import { usePersistentState } from './persistence'
@@ -133,11 +134,12 @@ export interface PalettePanelProps {
   onColorChange: (color: number) => void
   onAdd: (record: CatalogSearchRecord) => void
   onArm: (record: CatalogSearchRecord) => void
-  /** Drag-and-drop drop into the viewport. Returns true when it was consumed. */
-  onDropPart?: (record: CatalogSearchRecord, clientX: number, clientY: number) => void
+  onDragPart?: (record: CatalogSearchRecord) => boolean
+  onDropPart?: (record: CatalogSearchRecord, clientX: number, clientY: number) => boolean
+  onDragEnd?: () => void
 }
 
-export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm }: PalettePanelProps) {
+export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm, onDragPart, onDropPart, onDragEnd }: PalettePanelProps) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All parts')
   const [tier, setTier] = useState<CatalogTier | 'all'>('placeable')
@@ -159,6 +161,62 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
   )
   const searchRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const pointerDrag = useRef<{
+    record: CatalogSearchRecord
+    pointerId: number
+    startX: number
+    startY: number
+    active: boolean
+  } | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+
+  const remember = useCallback(
+    (record: CatalogSearchRecord) => {
+      setRecents((current) => [record.id, ...current.filter((id) => id !== record.id)].slice(0, 24))
+    },
+    [setRecents],
+  )
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const drag = pointerDrag.current
+      if (!drag || drag.pointerId !== event.pointerId) return
+      if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
+        if (onDragPart?.(drag.record) === false) {
+          pointerDrag.current = null
+          return
+        }
+        drag.active = true
+        setDraggingId(drag.record.id)
+        document.body.classList.add('part-dragging')
+        remember(drag.record)
+      }
+      if (!drag.active) return
+      event.preventDefault()
+      window.dispatchEvent(new CustomEvent('brickwright:part-drag', {
+        detail: { clientX: event.clientX, clientY: event.clientY },
+      }))
+    }
+    const end = (event: PointerEvent) => {
+      const drag = pointerDrag.current
+      if (!drag || drag.pointerId !== event.pointerId) return
+      pointerDrag.current = null
+      document.body.classList.remove('part-dragging')
+      setDraggingId(null)
+      if (!drag.active) return
+      const target = document.elementFromPoint(event.clientX, event.clientY)
+      if (!target?.closest('.viewport-shell') || !onDropPart?.(drag.record, event.clientX, event.clientY)) onDragEnd?.()
+    }
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      document.body.classList.remove('part-dragging')
+    }
+  }, [onDragEnd, onDragPart, onDropPart, remember])
 
   const categories = useMemo(() => {
     // Categories that actually contain placeable parts, most populous first.
@@ -237,12 +295,24 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
     return page.records
   }, [activeSet, customPalettes, favourites, page.records, recents])
 
-  const remember = useCallback(
-    (record: CatalogSearchRecord) => {
-      setRecents((current) => [record.id, ...current.filter((id) => id !== record.id)].slice(0, 24))
-    },
-    [setRecents],
-  )
+  // Warm only visible cards, not the whole catalogue. The actual shape is ready
+  // before pickup, including on a cold page and when scrolling to another row.
+  useEffect(() => {
+    if (!gridRef.current || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const id = (entry.target as HTMLElement).dataset.partId
+        const definition = id ? catalog.get(id) : undefined
+        if (definition) void geometryCache.load(definition)
+        observer.unobserve(entry.target)
+      }
+    }, { root: gridRef.current, rootMargin: '100px' })
+    gridRef.current.querySelectorAll('[data-part-id]').forEach((card) => observer.observe(card))
+    return () => observer.disconnect()
+  }, [shownRecords])
+
+
 
   const arm = useCallback(
     (record: CatalogSearchRecord) => {
@@ -320,7 +390,6 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
   }, [cursor])
 
   const tierHint = TIERS.find((entry) => entry.id === tier)!.hint
-  const indexTotal = catalog.totalIdentityCount
   const facetCount = (connectorFacet === 'any' ? 0 : 1) + (sizeFacet === 'any' ? 0 : 1) + (colourFacet ? 1 : 0)
   const advancedCount = facetCount + (tier === 'placeable' ? 0 : 1) + (activeSet ? 1 : 0)
   const paletteColours = paletteOpen
@@ -334,7 +403,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           {/* No eyebrow here. This panel already sits inside a dock labelled
               "Library" and a section labelled "Parts"; a third "BUILD LIBRARY"
               above "Parts catalog" named the same thing a fourth time. */}
-          <h2>Parts catalog</h2>
+          <h2>Parts</h2>
         </div>
         <div className="palette-views" role="radiogroup" aria-label="Palette layout">
           {(
@@ -369,7 +438,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onSearchKeyDown}
-          placeholder="2 x 4, slope, 3001, minifig head…"
+          placeholder="Search parts…"
           aria-label="Search parts"
           aria-keyshortcuts="Meta+K Control+K"
           aria-describedby="palette-keyboard-help"
@@ -379,9 +448,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}>
             <X size={12} />
           </button>
-        ) : (
-          <kbd>⌘ K</kbd>
-        )}
+        ) : null}
       </label>
       <p id="palette-keyboard-help" className="visually-hidden">
         Arrow keys move through results, Enter arms the highlighted part for placement, Shift and Enter adds it
@@ -409,8 +476,9 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
           aria-expanded={facetsOpen}
           aria-controls="palette-facets"
           title="Filter by category, size, connector family and colour availability"
+          aria-label="FILTERS"
         >
-          FILTERS{advancedCount ? ` · ${advancedCount}` : ''}
+          <SlidersHorizontal size={13} />{advancedCount ? ` ${advancedCount}` : ''}
         </button>
       </div>
 
@@ -564,10 +632,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
         </div>
       )}
 
-      <div className="catalog-meta">
-        <span title={tierHint}>
-          {page.total.toLocaleString()} of {indexTotal.toLocaleString()} identities
-        </span>
+      <div className="catalog-meta" title={tierHint}>
         {catalogueState === 'loading' && (
           <span className="catalog-loading">
             <LoaderCircle size={10} /> indexing the wider catalogue
@@ -578,24 +643,28 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
             <CircleAlert size={10} /> catalogue index unavailable
           </span>
         )}
-        {catalogueState !== 'loading' && catalogueState !== 'failed' && (
-          <span className="status-ready">
-            <CircleDot size={10} /> {catalog.placeableCount} placeable
-          </span>
-        )}
       </div>
 
       <div className={`parts-grid view-${view}`} data-testid="parts-grid" ref={gridRef}>
         {shownRecords.map((record, index) => (
           <article
-            className={`part-card tier-${record.tier} ${record.geometryAvailable ? '' : 'unplaceable'} ${armedId === record.id ? 'armed' : ''} ${cursor === index ? 'cursor' : ''}`}
+            className={`part-card tier-${record.tier} ${record.geometryAvailable ? '' : 'unplaceable'} ${armedId === record.id ? 'armed' : ''} ${draggingId === record.id ? 'dragging' : ''} ${cursor === index ? 'cursor' : ''}`}
             key={record.id}
+            data-part-id={record.id}
             title={describeRecord(record)}
-            draggable={record.geometryAvailable}
-            onDragStart={(event) => {
-              event.dataTransfer.setData('application/x-brickwright-part', record.id)
-              event.dataTransfer.setData('text/plain', record.id)
-              event.dataTransfer.effectAllowed = 'copy'
+            onPointerDown={(event) => {
+              if (!record.geometryAvailable || event.button !== 0) return
+              pointerDrag.current = {
+                record,
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                active: false,
+              }
+            }}
+            onPointerEnter={() => {
+              const definition = catalog.get(record.id)
+              if (definition) void geometryCache.load(definition)
             }}
           >
             <button
@@ -704,7 +773,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
 
       <div className={`palette-dock ${paletteOpen ? 'expanded' : ''}`}>
         <div className="palette-label">
-          <span>PROJECT PALETTE · {getColor(activeColor).name}</span>
+          <span>{getColor(activeColor).name}</span>
           <button
             type="button"
             aria-expanded={paletteOpen}

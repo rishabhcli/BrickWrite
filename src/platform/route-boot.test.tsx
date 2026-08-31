@@ -78,18 +78,21 @@ describe('route-aware boot', () => {
     goTo('/')
     render(<AppShell />)
 
-    await screen.findByText('Build real LEGO models in the browser')
+    await screen.findByText('Build real LEGO models in the browser', undefined, { timeout: 10_000 })
     expect(cad.imported, `landing pulled in: ${cad.imported.join(', ')}`).toEqual([])
-  })
+    // Generous, because this asserts a module graph and not a duration: the
+    // record is empty or it is not, and a saturated machine must not be able
+    // to turn that into a failure.
+  }, 30_000)
 
   it('proves the recorder works: the editor route does import all of them', async () => {
     registerRoute('editor', async () => ({ default: () => <p>Cockpit</p> }))
     goTo('/editor')
     render(<AppShell />)
 
-    await screen.findByText('Cockpit')
+    await screen.findByText('Cockpit', undefined, { timeout: 10_000 })
     expect(cad.imported).toContain('cad/catalog-loader')
     expect(cad.imported).toContain('cad/engine')
     expect(cad.imported).toContain('cad/session')
-  })
+  }, 30_000)
 })

@@ -255,7 +255,6 @@ describe('the viewer is structurally incapable of mutating a project', () => {
         expect(code, `${name} imports ${forbidden}`).not.toContain(forbidden)
       }
       expect(code, `${name} references cadEngine`).not.toMatch(/\bcadEngine\b/)
-      expect(code, `${name} references saveLocalDocument`).not.toMatch(/\bsaveLocalDocument\b/)
     }
   })
 

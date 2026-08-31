@@ -78,7 +78,15 @@ export interface CatalogManifest {
 export interface CatalogPayload {
   manifest: CatalogManifest
   parts: PartDefinition[]
-  search: RawSearchEntry[]
+  /**
+   * The browse index. Optional, because it can arrive after the parts tier.
+   *
+   * Omitting it installs a catalog that can place, paint and export but cannot
+   * yet answer "what parts are there" — which is the split the boot sequence
+   * wants, since `/editor` needs geometry and colours to paint a restored model
+   * and does not need 3.3 MB of identity records to do it.
+   */
+  search?: RawSearchEntry[]
   colors: ColorDefinition[]
   /** Retired LDraw part number → its current replacement, e.g. 3023 → 3023b. */
   aliases?: Record<string, string>
@@ -145,15 +153,49 @@ export class CatalogRegistry {
   private aliases = new Map<string, string>()
   private entriesById = new Map<string, IndexedEntry>()
   private manifest: CatalogManifest | null = null
+  private searchResident = false
 
   install(payload: CatalogPayload) {
     this.manifest = payload.manifest
     this.definitions = new Map(payload.parts.map((part) => [part.canonicalId, part]))
-    this.modelled = payload.search.map(indexModelled)
     this.catalogued = []
-    this.entriesById = new Map(this.modelled.map((entry) => [entry.id, entry]))
     this.colorsByCode = new Map(payload.colors.map((color) => [color.code, color]))
     this.aliases = new Map(Object.entries(payload.aliases ?? {}))
+    this.modelled = []
+    this.entriesById = new Map()
+    this.searchResident = false
+    if (payload.search) this.installSearchIndex(payload.search)
+  }
+
+  /**
+   * Adds the browse index on top of an installed parts tier.
+   *
+   * Separate from `install` because it is 3.3 MB of identity records that only
+   * search and browse read, so nothing that paints a model should wait for it.
+   * Additive and re-runnable: installing it after the wider catalogue has
+   * already arrived re-applies the same precedence `installExternalIndex` uses
+   * in the other order — a modelled identity outranks a catalogued one, because
+   * it carries shape and connections rather than only a name.
+   */
+  installSearchIndex(entries: RawSearchEntry[]) {
+    this.modelled = entries.map(indexModelled)
+    const modelledIds = new Set(this.modelled.map((entry) => entry.id))
+    this.catalogued = this.catalogued.filter((entry) => !modelledIds.has(entry.id))
+    this.entriesById = new Map(this.modelled.map((entry) => [entry.id, entry]))
+    for (const entry of this.catalogued) this.entriesById.set(entry.id, entry)
+    this.searchResident = true
+  }
+
+  /**
+   * True once `search`, `searchPage`, `categories` and the identity tier of
+   * `describe` are authoritative.
+   *
+   * Read it before reporting an empty result set. A search that returns nothing
+   * because the index has not arrived looks exactly like a search that returns
+   * nothing because the part does not exist, and those are not the same answer.
+   */
+  get searchIndexLoaded(): boolean {
+    return this.searchResident
   }
 
   /**
@@ -222,16 +264,28 @@ export class CatalogRegistry {
   /** Compact record, following LDraw renames. Covers every catalog identity. */
   describe(id: string): CatalogSearchRecord | undefined {
     const entry = this.entriesById.get(id) ?? this.entriesById.get(this.resolveId(id))
-    return entry ? toRecord(entry) : undefined
+    if (entry) return toRecord(entry)
+    // The browse index covers every identity including the pack's, so this
+    // fallback is unreachable once it is resident. Before then, a *placeable*
+    // part is still fully described by its pack record, and answering from that
+    // is strictly better than reporting a part this build can build with as
+    // unknown.
+    const definition = this.get(id)
+    return definition ? recordForDefinition(definition) : undefined
   }
 
   get placeableCount(): number {
     return this.definitions.size
   }
 
-  /** Identities this build models: shape and connections are known. */
+  /**
+   * Identities this build models: shape and connections are known.
+   *
+   * Read from the manifest until the index is resident, because the number is a
+   * fact about the build rather than about what has finished downloading.
+   */
   get identityCount(): number {
-    return this.modelled.length
+    return this.searchResident ? this.modelled.length : (this.manifest?.counts.parts ?? 0)
   }
 
   /** Every identity the index can answer for, modelled or merely catalogued. */
@@ -241,6 +295,10 @@ export class CatalogRegistry {
 
   get categories(): string[] {
     const names = new Set<string>()
+    // The pack's own categories, so a facet list before the index arrives is a
+    // narrower truth rather than an empty one. Once it is resident this adds
+    // nothing: every pack identity is in the index.
+    for (const definition of this.definitions.values()) names.add(definition.category)
     for (const entry of this.modelled) names.add(entry.category)
     for (const entry of this.catalogued) names.add(entry.category)
     return Array.from(names).sort()
@@ -353,6 +411,27 @@ export class CatalogRegistry {
   /** Every placeable definition, ordered by real-world usage. */
   placeable(): PartDefinition[] {
     return Array.from(this.definitions.values()).sort((a, b) => b.frequency - a.frequency)
+  }
+}
+
+/**
+ * The record `search.json` would carry for a pack part, read off its pack entry.
+ *
+ * Field for field what `tools/catalog-compiler.mjs` writes into the index for
+ * the same identity, so the answer does not change when the index lands.
+ */
+function recordForDefinition(definition: PartDefinition): CatalogSearchRecord {
+  return {
+    id: definition.canonicalId,
+    name: definition.name,
+    category: definition.category,
+    dimensions: definition.dimensions?.studs ?? null,
+    frequency: definition.frequency,
+    connectorFamilies: Array.from(new Set(definition.connectors.map((feature) => feature.family))),
+    geometryAvailable: definition.geometryStatus === 'certified' || definition.geometryStatus === 'partial',
+    connectionsAvailable: definition.connectionStatus === 'ldcad-authoritative',
+    helper: definition.helper,
+    tier: 'placeable',
   }
 }
 

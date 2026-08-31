@@ -347,4 +347,51 @@ describe('shared human/agent capabilities', () => {
     expect(poses.a[1]).toBe(0)
     expect(poses.b[1]).toBe(0)
   })
+
+  it('mirrors front-to-back, which builders do as often as left-to-right', () => {
+    // The command reflected across X and only X for as long as it existed, so a
+    // front-to-back symmetry — the other half of almost every vehicle and
+    // facade — could not be asked for at all.
+    const document = withParts(part('a', [0, 0, 400]), part('b', [0, 0, 480]))
+    const plan = planSharedMutation(
+      'mirror_selection',
+      { axis: 'z', about: 'selection' },
+      { document, selection: ['a', 'b'], actor: 'human' },
+    )
+    const poses = Object.fromEntries(
+      plan.operations.flatMap((operation) =>
+        operation.type === 'part.transform' ? [[operation.partId, operation.transform.position]] : [],
+      ),
+    ) as Record<string, [number, number, number]>
+    expect(poses.a[2]).toBeCloseTo(480, 6)
+    expect(poses.b[2]).toBeCloseTo(400, 6)
+    expect(poses.a[0]).toBe(0)
+  })
+
+  it('names the parts a reflection cannot carry faithfully, and still places them', () => {
+    // A 45° slope mirrored across its own ramp wants the opposite-hand element,
+    // which this build carries no table to name. The pose emitted is a real
+    // placement of a real part — the determinant stays positive, so nothing
+    // unbuyable reaches the BOM — but it is not a true reflection of the shape,
+    // and saying so is the whole point. Reported, never blocking: the operator
+    // gets the part count they asked for and knows which ones to swap by hand.
+    const slope: PartInstance = { ...part('s', [0, 0, 0]), definitionId: '3039' }
+    const document = withParts(slope, part('b', [200, 0, 0]))
+    const plan = planSharedMutation(
+      'mirror_selection',
+      { axis: 'z' },
+      { document, selection: ['s', 'b'], actor: 'human' },
+    )
+    expect(plan.operations).toHaveLength(2)
+    expect(plan.summary).toContain('not a true mirror')
+    expect(plan.summary).toContain('s')
+    // The plain brick is symmetric front-to-back and is not accused.
+    expect(plan.summary).not.toContain('b,')
+  })
+
+  it('says nothing about faithfulness when every part is symmetric about the plane', () => {
+    const document = withParts(part('a', [0, 0, 0]), part('b', [200, 0, 0]))
+    const plan = planSharedMutation('mirror_selection', {}, { document, selection: ['a', 'b'], actor: 'human' })
+    expect(plan.summary).not.toContain('true mirror')
+  })
 })

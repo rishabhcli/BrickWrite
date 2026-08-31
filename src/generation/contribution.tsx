@@ -4,23 +4,43 @@ import { useRegisterContribution } from '../editor/workbench'
 import { CompareDialog } from './CompareDialog'
 import { COMPARE_MODAL_ID, GeneratePanel } from './GeneratePanel'
 import { GenerationStatus } from './GenerationStatus'
-import { disposeGenerationHost, getGenerationSession } from './mcpHost'
+import { disposeGenerationHost, getGenerationSession } from './host'
 import type { GenerationSessionOptions } from './session'
 
 /**
- * Mounts generation into the editor shell.
+ * Focuses the prompt when the landing page sent somebody here to describe a
+ * build.
  *
- * One component registers the dock panel, the status readout and the
- * side-by-side comparison dialog, all reading one session. WebMCP uses the
- * same host so an agent's candidates appear in the panel. The adapter (and
- * this contribution on unmount) disposes it so a remount cannot inherit the
- * previous editor's ghost.
- *
- * `src/App.tsx` lists this component in `<Workbench contributions={[…]} />`.
+ * `?intent=describe` is written by the landing page's "describe it" call to
+ * action. The workbench shell owns that query parameter — it reveals the
+ * Generate surface and then consumes the parameter from the address bar — so
+ * reading the URL here as well would be a race against that consumption, won
+ * only by the order React happens to run effects in. Instead the shell
+ * announces the intent and this listens for it, which is the seam the two
+ * workstreams agreed on.
  */
+function useDescribeIntent(): void {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const focusPrompt = () => {
+      // After the reveal has had a frame to open the section. A focus call into
+      // a panel that is still collapsed lands on nothing.
+      requestAnimationFrame(() => {
+        window.document.querySelector<HTMLTextAreaElement>('textarea[data-generation-prompt]')?.focus()
+      })
+    }
+    // For a panel already mounted when the intent arrives. A panel that mounts
+    // *because* of the intent cannot hear this — the shell focuses the prompt
+    // itself for that case, which needs no cooperation from here.
+    window.addEventListener('brickwright:intent-describe', focusPrompt)
+    return () => window.removeEventListener('brickwright:intent-describe', focusPrompt)
+  }, [])
+}
+
 export function GeneratePanelContribution({ options }: { options?: GenerationSessionOptions } = {}) {
   const session = useMemo(() => getGenerationSession(options), [options])
   useEffect(() => () => disposeGenerationHost(), [session])
+  useDescribeIntent()
 
   useRegisterContribution({
     id: 'generation.panel',

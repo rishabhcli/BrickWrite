@@ -20,7 +20,21 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
 function staticSpecifiers(source: string): string[] {
   const found: string[] = []
   const withoutDynamic = source.replace(/\bimport\s*\(/g, 'DYNAMIC_IMPORT(')
-  const pattern = /(?:^|\n)\s*(?:import|export)\b[^;\n]*?from\s*['"]([^'"]+)['"]/g
+  // A brace list may span lines; anything else may not.
+  //
+  // The previous pattern used `[^;\n]*?`, which stopped at the first newline —
+  // so a multi-line `import { a, b } from '…'`, which is how this codebase
+  // imports more than one name, was invisible. That left the whole guard blind
+  // to the regression it exists to catch: the adapter reaches
+  // `src/cad/capabilities.ts` through exactly such an import, and the old
+  // pattern reported it unreachable.
+  //
+  // Letting `[\s\S]*?` run for every statement would over-match instead — a
+  // bare `export function` would lazily swallow lines until it found some later
+  // `from`, inventing edges. Crossing lines is therefore allowed only inside
+  // `{ … }`, which is the only place a real specifier list wraps.
+  const pattern =
+    /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:\{[\s\S]*?\}|[^;\n]*?)\s*from\s*['"]([^'"]+)['"]/g
   let match: RegExpExecArray | null
   while ((match = pattern.exec(withoutDynamic)) !== null) found.push(match[1])
   const bare = /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g
@@ -73,5 +87,25 @@ describe('WebMCP adapter import graph', () => {
     expect(graph).not.toContain('src/webmcp/surfaces/shareHost.ts')
     expect(graph).not.toContain('src/generation/mcpHost.ts')
     expect(graph).not.toContain('src/refinement/mcpHost.ts')
+  })
+
+  it('sees dependencies imported through a multi-line specifier list', () => {
+    // The guard is only worth anything if it can read the imports this codebase
+    // actually writes. `adapter.ts` reaches the shared capability vocabulary
+    // through a wrapped `import { … } from '../cad/capabilities'`, and a
+    // line-bounded pattern missed it — reporting a graph of 42 files that was
+    // really larger, and silently excusing anything reachable only that way.
+    expect(graph).toContain('src/cad/capabilities.ts')
+    expect(graph).toContain('src/cad/engine.ts')
+  })
+
+  it('does not invent edges from statements that are not imports', () => {
+    // The opposite failure: a pattern permissive enough to cross lines will,
+    // from a bare `export function`, swallow whatever comes next until it finds
+    // a `from` and report a dependency that does not exist.
+    const invented = staticSpecifiers(
+      ["export function nothing() {", "  return 1", "}", "", "const x = 2", "import { a } from './real'"].join('\n'),
+    )
+    expect(invented).toEqual(['./real'])
   })
 })

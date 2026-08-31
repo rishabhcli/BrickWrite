@@ -1,5 +1,5 @@
 import { findCollisions, type CollisionContact } from './collision'
-import { deriveConnections } from './snapping'
+import { deriveConnections, type MatedPair } from './snapping'
 import type { ModelDocument, PartInstance } from './types'
 
 const collisionPairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`)
@@ -22,13 +22,26 @@ export function introducedCollisions(
   before: ModelDocument,
   after: ModelDocument,
   touchedPartIds: readonly string[],
-  options: { placing?: boolean } = {},
+  options: {
+    placing?: boolean
+    /**
+     * Mated pairs for the pairs each scoped check will look at, on the terms
+     * `CollisionOptions.mates` sets out — complete for those pairs, or omitted.
+     *
+     * A caller that maintains a connector index across revisions has these for
+     * the cost of the edit; without them each side re-derives the whole
+     * connector world, which on the 11,493-part campus demo is 114 ms of the
+     * ~250 ms an edit used to take.
+     */
+    beforeMates?: ReadonlyMap<string, readonly MatedPair[]>
+    afterMates?: ReadonlyMap<string, readonly MatedPair[]>
+  } = {},
 ): CollisionContact[] {
   const placing = Boolean(options.placing)
   const existingTouched = touchedPartIds.filter((id) => before.parts[id])
-  const afterHits = findCollisions(after, { onlyPartIds: touchedPartIds })
+  const afterHits = findCollisions(after, { onlyPartIds: touchedPartIds, mates: options.afterMates })
   const beforeHits = existingTouched.length
-    ? findCollisions(before, { onlyPartIds: existingTouched })
+    ? findCollisions(before, { onlyPartIds: existingTouched, mates: options.beforeMates })
     : []
   const beforeKeys = new Set(beforeHits.map((contact) => collisionPairKey(contact.partA, contact.partB)))
   const bulk = touchedPartIds.length > 1

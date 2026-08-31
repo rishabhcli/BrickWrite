@@ -93,6 +93,21 @@ describe('unknown address', () => {
   })
 })
 
+describe('client-side navigation', () => {
+  it('replaces the landing surface when Explore is selected', async () => {
+    registerRoute('landing', async () => ({ default: () => <h1>Landing surface</h1> }))
+    registerRoute('explore', async () => ({ default: () => <h1>Explore surface</h1> }))
+    goTo('/')
+    render(<AppShell />)
+
+    await screen.findByRole('heading', { name: 'Landing surface' })
+    fireEvent.click(screen.getByRole('link', { name: /^Explore$/ }))
+
+    await screen.findByRole('heading', { name: 'Explore surface' })
+    expect(window.location.pathname).toBe('/explore')
+  })
+})
+
 describe('offline', () => {
   it('announces the degradation without blocking local work', async () => {
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
@@ -121,8 +136,8 @@ describe('offline', () => {
 describe('loading', () => {
   it('announces a boot in progress with a busy, labelled region', async () => {
     cad.mode = 'defer'
-    registerRoute('explore', async () => ({ default: () => <p>Explore</p> }))
-    goTo('/explore')
+    registerRoute('share', async () => ({ default: () => <p>Shared model</p> }))
+    goTo('/share/demo')
     render(<AppShell />)
 
     const busy = await screen.findByRole('status')
@@ -130,15 +145,15 @@ describe('loading', () => {
     expect(busy.textContent).toMatch(/Loading the compiled catalog/)
 
     cad.release?.()
-    await screen.findByText('Explore')
+    await screen.findByText('Shared model')
   })
 })
 
 describe('boot failure', () => {
   it('refuses to invent parts, explains why, and offers a real retry', async () => {
     cad.mode = 'reject'
-    registerRoute('explore', async () => ({ default: () => <p>Explore</p> }))
-    goTo('/explore')
+    registerRoute('share', async () => ({ default: () => <p>Shared model</p> }))
+    goTo('/share/demo')
     render(<AppShell />)
 
     const alert = await screen.findByRole('alert')
@@ -148,7 +163,7 @@ describe('boot failure', () => {
 
     cad.mode = 'resolve'
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
-    await screen.findByText('Explore')
+    await screen.findByText('Shared model')
   })
 })
 

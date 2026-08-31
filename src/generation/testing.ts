@@ -24,6 +24,48 @@ export interface TestProviderOptions {
   readonly onRequest?: (request: ModelRequest<unknown>) => void
   /** Forces the first N responses to violate the schema, for the retry path. */
   readonly malformedResponses?: number
+  /**
+   * What the double answers when asked for surface detail.
+   *
+   * `'legal'` proposes features against the volumes named in the prompt;
+   * `'illegal'` answers with a payload `parseDetail` refuses, which is how the
+   * fallback to the deterministic surface gets exercised without a network.
+   */
+  readonly detail?: 'legal' | 'illegal'
+}
+
+const DOUBLE_DETAIL_QUERIES = ['grille tile 1 x 2', 'round plate 1 x 1', 'tile 1 x 2', 'slope brick 2 x 2'] as const
+
+/**
+ * A surface that varies with the variation seed, like a model's would.
+ *
+ * Two things matter here. The roles are read back out of the prompt rather than
+ * invented, so a proposal never names a volume that does not exist and the
+ * fallback host cannot make a test pass for the wrong reason. And the count and
+ * the queries are derived from the seed, because a double that answered
+ * identically for every candidate would quietly flatten the one property the
+ * candidate search exists to provide — that the options genuinely differ.
+ */
+function doubleDetail(prompt: string): Array<Record<string, unknown>> {
+  const volumes = (prompt.match(/Volumes: (.+)\./)?.[1] ?? '')
+    .split(';')
+    .map((entry) => entry.trim().split(' ')[0])
+    .filter(Boolean)
+  const roles = volumes.length ? volumes : ['base']
+  const seed = readNumber(prompt, /Variation seed:\s*(\d+)/i, 0)
+  const count = 2 + (hash32(`detail|${seed}`) % 3)
+
+  return Array.from({ length: count }, (_, index) => {
+    const pick = hash32(`detail|${seed}|${index}`)
+    return {
+      id: `greeble_${index}`,
+      role: roles[index % roles.length],
+      query: DOUBLE_DETAIL_QUERIES[pick % DOUBLE_DETAIL_QUERIES.length],
+      atXStuds: 1 + (pick % 3),
+      atZStuds: 0,
+      quarterTurns: 0,
+    }
+  })
 }
 
 const readNumber = (text: string, pattern: RegExp, fallback: number): number => {
@@ -122,6 +164,11 @@ export function createTestModelProvider(options: TestProviderOptions = {}): Mode
           evidence: [{ field: 'subject', phrase: request.prompt.slice(0, 120) }],
           conflicts: [],
         }
+      } else if ('features' in properties) {
+        raw =
+          options.detail === 'illegal'
+            ? { features: [{ id: 'greeble', role: 'base' }] }
+            : { features: doubleDetail(request.prompt) }
       } else {
         throw new Error('The test double was asked for a schema it does not implement.')
       }

@@ -72,17 +72,29 @@ async function loadSurface(id: RouteId): Promise<{ default: ComponentType }> {
 /**
  * Every top-level surface, with the stage it is allowed to boot to.
  *
- * `landing`, `account` and `gallery` are `none`: they are HTML and account
- * chrome, and downloading a compiled LEGO catalog to read them would be
- * indefensible. `explore`, `projects` and `share` are `catalog`, because each
- * one names real parts and the catalog is the only thing that can say whether a
- * part is real. `editor` is the only `editor` stage — it is the only surface
+ * `landing`, `explore`, `account` and `gallery` are `none`: they draw immutable,
+ * content-addressed demo metadata and envelope previews, and downloading a
+ * compiled LEGO catalog to browse those cards would be indefensible. The demo
+ * compiler already proved catalog membership before publishing the bytes.
+ * `projects` and `share` are `catalog`; `editor` is the only `editor` stage — it is the only surface
  * that mutates a document, so it is the only one that needs the kernel, the
  * session and warmed geometry.
+ *
+ * `parts` is declared by no route *yet*, and that is a pending decision rather
+ * than a spare rung. It is the compiled pack without `search.json` — 423 KiB
+ * gzip and ~24 ms of main-thread parse and index-build less than `catalog` (see
+ * the table in `boot.ts`) — and `editor` already boots through it. A route
+ * belongs at `parts` when it only ever names parts it was handed: measured
+ * against the current sources, everything `/share` reaches uses `catalog.get`,
+ * `catalog.color` and `catalog.version` and nothing uses `catalog.search`,
+ * `catalog.describe` or `catalog.categories`, which makes it the obvious first
+ * candidate. Moving it is the share workstream's call to confirm, not a
+ * unilateral saving, because getting it wrong means an empty result set that
+ * reads as "no such part".
  */
 export const PLATFORM_ROUTES: readonly RouteModule[] = Object.freeze([
   { id: 'landing', path: '/', boot: 'none', load: () => loadSurface('landing') },
-  { id: 'explore', path: '/explore', boot: 'catalog', load: () => loadSurface('explore') },
+  { id: 'explore', path: '/explore', boot: 'none', load: () => loadSurface('explore') },
   { id: 'editor', path: '/editor', boot: 'editor', load: () => loadSurface('editor') },
   { id: 'projects', path: '/projects', boot: 'catalog', load: () => loadSurface('projects'), requiresAuth: true },
   { id: 'account', path: '/account', boot: 'none', load: () => loadSurface('account'), requiresAuth: true },

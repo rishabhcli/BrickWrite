@@ -157,6 +157,36 @@ export interface JointManipulatorProps {
  * promise the model cannot keep, and an operator who drags it concludes the tool
  * is broken rather than that the joint is rigid.
  */
+
+/**
+ * The line a winch's load travels along.
+ *
+ * A rotate ring says the drum turns. It cannot say *where the load goes*, and
+ * on a winch that is the whole mechanism — the drum spins about one axis and
+ * the hook travels along another. This draws that second axis over the joint's
+ * declared range, so the freedom is legible before anyone drags it.
+ *
+ * It is an affordance, not a simulation: a straight line over `minLdu…maxLdu`,
+ * not a catenary, and it carries no load. It is drawn in model units rather
+ * than inside the screen-scaled handle group, because a cable that grew as the
+ * camera pulled back would be describing a different mechanism at every zoom.
+ */
+function WinchCable({ joint, tint }: { joint: ArticulatedJoint; tint: string }) {
+  const geometry = useMemo(() => {
+    if (joint.joint.kind !== 'winch') return null
+    const direction = lduDirectionToScene(joint.joint.payoutAxis)
+    const from = direction.clone().multiplyScalar(joint.joint.minLdu * MODEL_ROOT_SCALE)
+    const to = direction.clone().multiplyScalar(joint.joint.maxLdu * MODEL_ROOT_SCALE)
+    return new THREE.BufferGeometry().setFromPoints([from, to])
+  }, [joint.joint])
+  if (!geometry) return null
+  return (
+    <lineSegments geometry={geometry} position={lduToScene(joint.pivotLdu)} renderOrder={5}>
+      <lineBasicMaterial color={tint} depthTest={false} transparent opacity={0.7} />
+    </lineSegments>
+  )
+}
+
 export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: JointManipulatorProps) {
   const { camera } = useThree()
   // Handles are sized against camera distance so they stay usable whether the
@@ -177,7 +207,9 @@ export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: Joi
         const scale = scaleFor(position)
         const tint = blocked && active ? '#ff5c48' : active ? '#ffd27a' : HANDLE_COLOURS.rotate
         return (
-          <group key={joint.edgeId} position={position} quaternion={quaternion} scale={scale}>
+          <group key={joint.edgeId}>
+            {joint.joint.kind === 'winch' && <WinchCable joint={joint} tint={tint} />}
+            <group position={position} quaternion={quaternion} scale={scale}>
             {handles.includes('rotate') && (
               <>
                 <mesh
@@ -253,6 +285,7 @@ export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: Joi
                 />
               </mesh>
             )}
+            </group>
           </group>
         )
       })}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useMemo } from 'react'
 import * as THREE from 'three'
 import { getColor } from '../cad/catalog'
-import { geometryCache, MAIN_COLOUR, type PartGeometry } from '../cad/mesh'
+import { MAIN_COLOUR } from '../cad/mesh'
+import { usePartGeometry } from './render/usePartGeometry'
 import type { PartDefinition } from '../cad/types'
 
 export type PartAppearance = 'solid' | 'selected' | 'ghost' | 'removed' | 'silhouette' | 'invalid'
@@ -13,6 +14,8 @@ interface PartVisualProps {
   showEdges?: boolean
   /** Opacity multiplier for ghosted context, 0–1. */
   fade?: number
+  /** Held parts must never impersonate their shape with a bounding box. */
+  placeholder?: boolean
 }
 
 /**
@@ -168,6 +171,9 @@ export function surfaceMaterialFor(
       envMapIntensity: chrome ? 1.6 : metallic ? 1.35 : 1,
       transparent: transparent || fade < 1,
       opacity: (transparent ? Math.max(0.72, color.alpha) : 1) * fade,
+      polygonOffset: appearance === 'selected',
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
       emissive: appearance === 'selected' ? '#3a2606' : '#000000',
       emissiveIntensity: appearance === 'selected' ? 0.55 : 0,
     })
@@ -209,23 +215,7 @@ function edgeMaterial(colorCode: number, appearance: PartAppearance): THREE.Line
   return material
 }
 
-/** Subscribes to the shared cache so a part appears as soon as its mesh lands. */
-function usePartGeometry(definition: PartDefinition): PartGeometry | null {
-  const [geometry, setGeometry] = useState<PartGeometry | null>(() => geometryCache.get(definition))
-  useEffect(() => {
-    let cancelled = false
-    setGeometry(geometryCache.get(definition))
-    void geometryCache.load(definition).then((loaded) => {
-      if (!cancelled) setGeometry(loaded)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [definition])
-  return geometry
-}
-
-export function PartVisual({ definition, colorCode, appearance = 'solid', showEdges = true, fade = 1 }: PartVisualProps) {
+export const PartVisual = memo(function PartVisual({ definition, colorCode, appearance = 'solid', showEdges = true, fade = 1, placeholder = true }: PartVisualProps) {
   const geometry = usePartGeometry(definition)
 
   const materials = useMemo(() => {
@@ -239,6 +229,7 @@ export function PartVisual({ definition, colorCode, appearance = 'solid', showEd
   }, [geometry, colorCode, appearance, fade])
 
   if (!geometry) {
+    if (!placeholder) return null
     // Placeholder while the mesh streams in: an accurate wireframe box from the
     // compiled bounds, never invented brick-shaped geometry.
     const bounds = definition.dimensions?.bounds
@@ -271,4 +262,4 @@ export function PartVisual({ definition, colorCode, appearance = 'solid', showEd
       )}
     </group>
   )
-}
+})

@@ -1,3 +1,4 @@
+import { MECHANISM_SCHEMAS } from '../cad/mechanismSchemas'
 import { z } from 'zod'
 import {
   SHARED_CAPABILITIES,
@@ -52,6 +53,7 @@ const generatorBase = {
 }
 
 const CAPABILITY_SCHEMAS = {
+  ...MECHANISM_SCHEMAS,
   // ---- reads ----------------------------------------------------------
   export_ldraw: z.strictObject({}),
   export_mpd: z.strictObject({}),
@@ -71,8 +73,9 @@ const CAPABILITY_SCHEMAS = {
   }),
   mirror_selection: z.strictObject({
     partIds: partIds.optional(),
+    axis: z.enum(['x', 'y', 'z']).optional().describe('Which coordinate the mirror reflects. Default x (left-right). z is front-to-back; y is vertical.'),
     axisLdu: z.number().finite().optional(),
-    about: z.enum(['world', 'selection']).optional().describe('world is x=axisLdu (default 0). selection is the measured centre X.'),
+    about: z.enum(['world', 'selection']).optional().describe('world is axis=axisLdu (default 0). selection is the measured centre of the selection along that axis.'),
   }),
   linear_array: z.strictObject({
     partIds: partIds.optional(),
@@ -196,6 +199,26 @@ const CAPABILITY_SCHEMAS = {
   // ---- sequence and project ------------------------------------------
   apply_build_order: z.strictObject({ maxPartsPerStep: z.number().int().min(1).max(100).optional() }),
   rename_document: z.strictObject({ name: z.string().trim().min(1).max(120) }),
+
+  // === AGENT-ML-OWNED (Opus) ===
+  generate_from_brief: z.strictObject({
+    prompt: z.string().min(1).max(4000).describe('The build request in plain words. Compiled into a design brief, evidence and all.'),
+    candidateCount: z.number().int().min(1).max(6).optional().describe('How many structural strategies to try. Defaults to 1.'),
+    useModel: z
+      .literal(false)
+      .optional()
+      .describe('Only false is accepted here; this capability is the deterministic path. For model-backed massing call the generation_run tool.'),
+    partBudget: z.number().int().min(1).max(4000).optional().describe('Overrides the budget the brief inferred.'),
+    envelopeStuds: vec3.optional().describe('Overrides the envelope the brief inferred, in studs [width, height, depth].'),
+  }),
+  generate_region: z.strictObject({
+    prompt: z.string().min(1).max(4000).describe('What to build into the region — "a boarding ramp", "another storey", "a crane deck".'),
+    anchorPartId: partId.optional().describe('Existing part the region is generated onto. Copy from scene_query; do not invent XYZ.'),
+    envelopeStuds: vec3
+      .optional()
+      .describe('Region size in studs [width, height, depth]. Defaults to the measured extent around the anchor.'),
+    partBudget: z.number().int().min(1).max(4000).optional(),
+  }),
 } as const satisfies Record<SharedCapabilityId, z.ZodType>
 
 export type CapabilitySchemas = typeof CAPABILITY_SCHEMAS

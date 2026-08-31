@@ -26,6 +26,14 @@ const IDS = [
   '60592', '60593', '60594', '60596', '60616b',
   // Panes, so a glazed window can be tested rather than only a frame.
   '60601', '38320',
+  // A clip that declares an axial extent, so a *sliding* joint can be derived
+  // at all. Without one, `jointFor` clamps every prismatic and cylindrical
+  // freedom to a zero-length range, and `articulate`'s translation path — the
+  // offset arithmetic, the clamping, the emitted transform — is never once
+  // exercised with a real value. Across the whole compiled catalog only clips
+  // carry `axial`, and only some of them, so this has to be chosen rather than
+  // assumed.
+  '60897',
 ]
 
 const [, , catalogRoot = 'public', version = '2026-07', out = 'src/cad/__fixtures__/catalog.fixture.json'] = process.argv

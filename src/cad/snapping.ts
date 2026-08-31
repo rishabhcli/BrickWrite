@@ -21,7 +21,14 @@ import {
   type Vec3,
 } from './math'
 import { nearbyParts } from './geometry'
-import type { ConnectionEdge, ConnectionFamily, ConnectionFeature, ModelDocument, PartInstance } from './types'
+import type {
+  ConnectionEdge,
+  ConnectionFamily,
+  ConnectionFeature,
+  JointFreedom,
+  ModelDocument,
+  PartInstance,
+} from './types'
 
 export interface WorldConnector {
   readonly id: string
@@ -77,14 +84,40 @@ const SCORE_WEIGHTS = {
 
 const worldAxis = (frame: RigidTransform): Vec3 => [frame.basis[1], frame.basis[4], frame.basis[7]]
 
-/** Transforms one part's compiled connectors into document space. */
+/**
+ * A placed part's connectors in document space, memoized on part identity.
+ *
+ * The kernel treats a `PartInstance` as immutable — every mutation goes through
+ * `applyMutations`, which returns a new object and shares the untouched ones by
+ * reference — so a part's world connectors are a pure function of the object and
+ * a `WeakMap` on it is exactly as safe as the `deriveConnections` memo it feeds.
+ *
+ * It is what makes a *fresh document* cheap. Every commit produces a new
+ * document object, which misses the `deriveConnections` memo and rebuilds the
+ * whole connector world; but 11,492 of the 11,493 part objects in it are the
+ * same objects as before, so all but the edited part's connectors are already
+ * computed. Measured on the campus demo: the connector-and-index build inside
+ * `deriveConnections` drops from 34.2 ms to 8.7 ms, and the returned arrays are
+ * read-only for every consumer, so sharing them is not observable.
+ *
+ * Only the default pose is memoized. `findSimultaneousMates` asks for a
+ * *candidate* transform, which is not the part's own and must not be cached
+ * against it.
+ */
+const worldConnectorCache = new WeakMap<PartInstance, WorldConnector[]>()
+
 export function getWorldConnectors(
   part: PartInstance,
   transform: RigidTransform = part.transform,
 ): WorldConnector[] {
+  const memoizable = transform === part.transform
+  if (memoizable) {
+    const cached = worldConnectorCache.get(part)
+    if (cached) return cached
+  }
   const definition = catalog.get(part.definitionId)
   if (!definition) return []
-  return definition.connectors.map((feature) => {
+  const connectors = definition.connectors.map((feature) => {
     const frame = composeTransform(transform, featureFrame(feature))
     return {
       id: feature.id,
@@ -98,6 +131,8 @@ export function getWorldConnectors(
       feature,
     }
   })
+  if (memoizable) worldConnectorCache.set(part, connectors)
+  return connectors
 }
 
 /**
@@ -111,10 +146,14 @@ export function getWorldConnectors(
 export function framesMate(a: WorldConnector, b: WorldConnector): boolean {
   if (distance(a.frame.position, b.frame.position) > CONTACT_TOLERANCE_LDU) return false
   const alignment = dotVec(a.axis, b.axis)
+  // Aligned axes mate whatever the joint is, and only the antiparallel case
+  // needs to know which joint it would be, so the freedom is derived on the
+  // branch that actually reads it. Every ordinary stud stack takes the first
+  // return, which is the overwhelming majority of the mates in a model.
+  if (alignment >= AXIS_TOLERANCE) return true
+  if (alignment > -AXIS_TOLERANCE) return false
   const joint = jointFor(a.feature, b.feature)
-  const antiparallelAllowed =
-    joint.kind === 'cylindrical' || (joint.kind === 'revolute' && joint.continuous) || joint.kind === 'spherical'
-  return alignment >= AXIS_TOLERANCE || (antiparallelAllowed && alignment <= -AXIS_TOLERANCE)
+  return joint.kind === 'cylindrical' || (joint.kind === 'revolute' && joint.continuous) || joint.kind === 'spherical'
 }
 
 const cellKey = (position: Vec3, size: number) =>
@@ -172,17 +211,34 @@ export class ConnectorSpatialIndex {
     }
   }
 
+  /**
+   * Connectors within `radius` of a point.
+   *
+   * The cell range comes from the query *box*, not from a symmetric
+   * `±ceil(radius / cellSize)` reach. A connector within `radius` differs by at
+   * most `radius` on every axis, so it can only sit in a cell whose index lies
+   * between `floor((p − r) / size)` and `floor((p + r) / size)` — the same
+   * answer, from far fewer buckets, in the same ascending order.
+   *
+   * The old reach rule rounded any radius up to a whole cell and then swept
+   * symmetrically, so the 0.75-LDU contact query that `deriveConnections` runs
+   * once per connector always visited 3³ = 27 cells to find candidates that in
+   * all but a boundary case live in exactly one. Measured over the 11,493-part
+   * campus demo: 2,117,826 cell visits against 94,722, a 22× reduction, and it
+   * is 27 template-string keys per query that are not built.
+   */
   query(position: Vec3, radius = STUD_LDU): WorldConnector[] {
-    const reach = Math.ceil(radius / this.cellSize)
-    const base = [
-      Math.floor(position[0] / this.cellSize),
-      Math.floor(position[1] / this.cellSize),
-      Math.floor(position[2] / this.cellSize),
-    ]
+    const size = this.cellSize
+    const lowX = Math.floor((position[0] - radius) / size)
+    const highX = Math.floor((position[0] + radius) / size)
+    const lowY = Math.floor((position[1] - radius) / size)
+    const highY = Math.floor((position[1] + radius) / size)
+    const lowZ = Math.floor((position[2] - radius) / size)
+    const highZ = Math.floor((position[2] + radius) / size)
     const result: WorldConnector[] = []
-    for (let x = base[0] - reach; x <= base[0] + reach; x += 1) {
-      for (let y = base[1] - reach; y <= base[1] + reach; y += 1) {
-        for (let z = base[2] - reach; z <= base[2] + reach; z += 1) {
+    for (let x = lowX; x <= highX; x += 1) {
+      for (let y = lowY; y <= highY; y += 1) {
+        for (let z = lowZ; z <= highZ; z += 1) {
           const bucket = this.cells.get(`${x}:${y}:${z}`)
           if (!bucket) continue
           for (const connector of bucket) {
@@ -247,22 +303,33 @@ export function deriveConnections(document: ModelDocument): DerivedConnections {
   const pairsByParts = new Map<string, MatedPair[]>()
   const seen = new Set<string>()
 
+  // Endpoint keys are built once per connector rather than once per candidate,
+  // and the canonical pair key is ordered by comparison instead of by
+  // `[a, b].sort().join(…)`, which allocates a two-element array per candidate.
+  // The scan sees 131,432 candidates on the campus demo, so both are per-pair
+  // allocations in the innermost loop of the most expensive derived value the
+  // kernel has.
   for (const connector of connectors) {
+    const selfKey = `${connector.partId}/${connector.id}`
     for (const other of index.query(connector.frame.position, CONTACT_TOLERANCE_LDU)) {
       if (other.partId === connector.partId) continue
       if (!connectorsCompatible(connector, other)) continue
       if (!framesMate(connector, other)) continue
 
-      const key = [`${connector.partId}/${connector.id}`, `${other.partId}/${other.id}`].sort().join('|')
+      const otherKey = `${other.partId}/${other.id}`
+      const key = selfKey < otherKey ? `${selfKey}|${otherKey}` : `${otherKey}|${selfKey}`
       if (seen.has(key)) continue
       seen.add(key)
 
-      if (isExclusiveFamily(connector.family)) occupied.add(`${connector.partId}/${connector.id}`)
-      if (isExclusiveFamily(other.family)) occupied.add(`${other.partId}/${other.id}`)
+      if (isExclusiveFamily(connector.family)) occupied.add(selfKey)
+      if (isExclusiveFamily(other.family)) occupied.add(otherKey)
 
       const pair: MatedPair = { a: connector, b: other }
       pairs.push(pair)
-      const partKey = [connector.partId, other.partId].sort().join('|')
+      const partKey =
+        connector.partId < other.partId
+          ? `${connector.partId}|${other.partId}`
+          : `${other.partId}|${connector.partId}`
       const bucket = pairsByParts.get(partKey)
       if (bucket) bucket.push(pair)
       else pairsByParts.set(partKey, [pair])
@@ -285,12 +352,33 @@ export const connectionEdgeId = (a: string, b: string) => `edge_${[a, b].sort().
  * to attribute them to. Both need the graph to be part of the document rather
  * than something only the engine knows.
  */
+/**
+ * The freedoms a document asserts, keyed the way edges are.
+ *
+ * Built once per derivation rather than searched per edge: a model with a
+ * thousand connections and three overrides should pay for three, not three
+ * thousand lookups. Keying by `connectionEdgeId` gives endpoint-order
+ * independence for free, which is the same property the edges themselves rely
+ * on.
+ */
+export function jointOverrideIndex(document: ModelDocument): ReadonlyMap<string, JointFreedom> {
+  const index = new Map<string, JointFreedom>()
+  for (const override of document.jointOverrides ?? []) {
+    index.set(
+      connectionEdgeId(`${override.a.partId}/${override.a.featureId}`, `${override.b.partId}/${override.b.featureId}`),
+      override.joint,
+    )
+  }
+  return index
+}
+
 export function deriveConnectionEdges(
   document: ModelDocument,
   revision: number,
   source: ConnectionEdge['source'],
 ): Record<string, ConnectionEdge> {
   const edges: Record<string, ConnectionEdge> = {}
+  const overrides = jointOverrideIndex(document)
   for (const pair of deriveConnections(document).pairs) {
     const id = connectionEdgeId(`${pair.a.partId}/${pair.a.id}`, `${pair.b.partId}/${pair.b.id}`)
     edges[id] = {
@@ -298,7 +386,11 @@ export function deriveConnectionEdges(
       a: { partId: pair.a.partId, featureId: pair.a.id },
       b: { partId: pair.b.partId, featureId: pair.b.id },
       family: pair.a.family,
-      joint: jointFor(pair.a.feature, pair.b.feature),
+      // An asserted freedom wins over the derived one. Everything else about
+      // the edge still comes from geometry — which parts, which connectors,
+      // which family — so an override changes what the joint *does*, never
+      // whether it exists.
+      joint: overrides.get(id) ?? jointFor(pair.a.feature, pair.b.feature),
       createdAtRevision: revision,
       source,
     }
@@ -489,6 +581,61 @@ export function findSimultaneousMates(
     }
   }
   return matches
+}
+
+/**
+ * Mates one part would have at a candidate pose, against everything else where
+ * it already is.
+ *
+ * Moving one part moves nothing else, so the connector index derived for
+ * `document` — memoized on its identity, and hot for the document a drag is
+ * running against — is already the correct index for every other part. That
+ * makes a speculative pose answerable in the moving part's own connector count
+ * rather than by deriving a whole connector world for a document that differs
+ * from this one by a single transform.
+ *
+ * This is what the pose gate needs. `poseRefusal` is called once per snap
+ * candidate — up to 24 per drag — and each candidate built a fresh preview
+ * document and paid a full derivation for it: 130 ms each on the 11,493-part
+ * campus demo, so three seconds to filter one drag's candidates.
+ */
+export function matesForPose(
+  document: ModelDocument,
+  part: PartInstance,
+  transform: RigidTransform = part.transform,
+): MatedPair[] {
+  const world = deriveConnections(document)
+  const pairs: MatedPair[] = []
+  const seen = new Set<string>()
+  for (const moving of getWorldConnectors(part, transform)) {
+    const selfKey = `${moving.partId}/${moving.id}`
+    for (const other of world.index.query(moving.frame.position, CONTACT_TOLERANCE_LDU)) {
+      if (other.partId === part.id) continue
+      if (!connectorsCompatible(moving, other)) continue
+      if (!framesMate(moving, other)) continue
+      const otherKey = `${other.partId}/${other.id}`
+      const key = selfKey < otherKey ? `${selfKey}|${otherKey}` : `${otherKey}|${selfKey}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      pairs.push({ a: moving, b: other })
+    }
+  }
+  return pairs
+}
+
+/** Mated pairs keyed as `DerivedConnections.pairsByParts` keys them. */
+export function matesByPartPair(pairs: readonly MatedPair[]): Map<string, MatedPair[]> {
+  const map = new Map<string, MatedPair[]>()
+  for (const pair of pairs) {
+    const key =
+      pair.a.partId < pair.b.partId
+        ? `${pair.a.partId}|${pair.b.partId}`
+        : `${pair.b.partId}|${pair.a.partId}`
+    const bucket = map.get(key)
+    if (bucket) bucket.push(pair)
+    else map.set(key, [pair])
+  }
+  return map
 }
 
 export function bestSnapTransform(
@@ -733,6 +880,60 @@ export class IncrementalConnectorWorld {
     this.tracked.add(part.id)
   }
 
+  /**
+   * Reads the index as it would look for `candidate`, then puts it back.
+   *
+   * The index tracks the *committed* document. A commit has to ask about a
+   * candidate it may still refuse — by a hard constraint, a collision or the
+   * clutch gate — and an index left pointing at a refused candidate is a silent
+   * corruption rather than a slow path: the next edit's incremental diff would
+   * mate against a part the document does not contain, or fail to find the mates
+   * of one it does. Applying the candidate poses, reading, and rolling back keeps
+   * the invariant a caller can actually rely on, and each sync costs what the
+   * edit costs — 0.03 ms for one part against the 11,493-part campus demo.
+   */
+  speculate<T>(
+    committed: ModelDocument,
+    candidate: ModelDocument,
+    touchedPartIds: readonly string[],
+    read: (world: IncrementalConnectorWorld) => T,
+  ): T {
+    this.sync(candidate, touchedPartIds)
+    try {
+      return read(this)
+    } finally {
+      this.sync(committed, touchedPartIds)
+    }
+  }
+
+  /**
+   * Mated pairs for every pair with an endpoint in `partIds`, keyed as
+   * `DerivedConnections.pairsByParts` keys them.
+   *
+   * This is the shape `findCollisions` wants for its `mates` option, and it is
+   * complete for exactly the pairs a scoped collision check looks at: every such
+   * pair has at least one endpoint in `partIds`, and this walks every mate of
+   * every one of those. Supplying it is what keeps `deriveConnections` — 114 ms
+   * on the campus demo, and the single most expensive derived value the kernel
+   * has — off the commit path.
+   */
+  scopedMates(document: ModelDocument, partIds: readonly string[]): Map<string, MatedPair[]> {
+    const found: MatedPair[] = []
+    const seen = new Set<string>()
+    for (const partId of partIds) {
+      for (const pair of this.matesFor(partId, document)) {
+        const a = `${pair.a.partId}/${pair.a.id}`
+        const b = `${pair.b.partId}/${pair.b.id}`
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`
+        // Two touched parts mated to each other are reached from both sides.
+        if (seen.has(key)) continue
+        seen.add(key)
+        found.push(pair)
+      }
+    }
+    return matesByPartPair(found)
+  }
+
   /** Mated connector pairs involving `partId`, against everything else indexed. */
   matesFor(partId: string, document: ModelDocument): MatedPair[] {
     const part = document.parts[partId]
@@ -740,11 +941,13 @@ export class IncrementalConnectorWorld {
     const pairs: MatedPair[] = []
     const seen = new Set<string>()
     for (const moving of getWorldConnectors(part)) {
+      const selfKey = `${moving.partId}/${moving.id}`
       for (const other of this.index.query(moving.frame.position, CONTACT_TOLERANCE_LDU)) {
         if (other.partId === partId) continue
         if (!connectorsCompatible(moving, other)) continue
         if (!framesMate(moving, other)) continue
-        const key = [`${moving.partId}/${moving.id}`, `${other.partId}/${other.id}`].sort().join('|')
+        const otherKey = `${other.partId}/${other.id}`
+        const key = selfKey < otherKey ? `${selfKey}|${otherKey}` : `${otherKey}|${selfKey}`
         if (seen.has(key)) continue
         seen.add(key)
         pairs.push({ a: moving, b: other })

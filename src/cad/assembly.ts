@@ -158,6 +158,25 @@ export type BrickFamily = 'brick' | 'plate' | 'tile'
 /** Measured stud height of each family, used to pick parts by shape not by name. */
 const FAMILY_HEIGHT_STUDS: Record<BrickFamily, number> = { brick: 3.5, plate: 1.5, tile: 1 }
 
+/**
+ * The catalog categories a structural run may be built from.
+ *
+ * Height, depth and connector families are not enough to identify a plain
+ * rectangular block. A `Plate Special 1 x 1 with Tooth` measures 1 x 1 and
+ * carries a stud and an anti-stud, so it satisfies every test below — and then
+ * its tooth intersects whatever is laid beside it. `Brick Sloped 45° 2 x 1`
+ * passes the same way and leaves a wedge in the middle of a wall. A
+ * `Plate Round 1 x 1` fills none of the square it claims.
+ *
+ * This is not hypothetical: against the production catalog the old selector
+ * chose `3040b` (a slope) as the one-stud brick at depth 2, and the demo
+ * compiler rejected the results as collisions and unsupported islands. It never
+ * showed up in tests because the test fixture holds 59 identities and the
+ * shipped catalog holds 900 — the shaped parts it could pick simply were not
+ * there to be picked.
+ */
+const STRUCTURAL_CATEGORIES: Record<BrickFamily, string> = { brick: 'Bricks', plate: 'Plates', tile: 'Tiles' }
+
 export interface FamilyLibrary {
   readonly family: BrickFamily
   readonly depthStuds: number
@@ -185,6 +204,10 @@ export function familyLibrary(family: BrickFamily, depthStuds: number): FamilyLi
     const [length, height, depth] = studs
     if (!Number.isInteger(length) || length < 1) continue
     if (Math.abs(height - targetHeight) > 0.01 || Math.abs(depth - depthStuds) > 0.01) continue
+    // A plain block, not merely something of the right size. `Plates Special`,
+    // `Bricks Sloped`, `Plates Wedged` and the round-plate categories all
+    // contain parts that measure correctly and do not stack.
+    if (definition.category !== STRUCTURAL_CATEGORIES[family]) continue
     // Everything laid has to sit on studs; everything laid *on* needs studs of
     // its own, which is exactly the difference between a tile and a plate.
     const families = new Set(definition.connectors.map((feature) => feature.family))
@@ -911,4 +934,201 @@ function layField(builder: PlanBuilder, spec: FieldSpec) {
       ? `${rows} row(s) across ${layers} cross-bonded layers, so the slab is rigid rather than loose plates.`
       : `${rows} row(s) laid in one layer. A single layer is held only where something is built on it — pass layers: 2 for a rigid slab.`,
   )
+}
+
+// ---- Sol-1 mechanism planners ---------------------------------------------
+/** Metadata defaults match a blank document; origin is a support-plane corner. */
+export interface MechanismSpec {
+  readonly originLdu?: Vec3
+  readonly color?: number
+  readonly subassemblyId?: string
+  readonly stepId?: string
+  readonly actor?: Actor
+}
+
+export class MechanismGeometryError extends Error {
+  readonly code = 'GEOMETRY_UNAVAILABLE'
+  readonly repair: string
+  constructor(readonly definitionId: string) {
+    super(`GEOMETRY_UNAVAILABLE: ${definitionId} needs compiled placeable geometry and connectors.`)
+    this.name = 'MechanismGeometryError'
+    this.repair = `Compile and load geometry for ${definitionId}; no substitute or ghost parts were generated.`
+  }
+}
+
+function mechanismPart(id: string): PartDefinition {
+  const part = catalog.get(id)
+  if (!part || !part.geometryAsset || !part.dimensions?.bounds || !part.connectors.length || !catalog.placeable().includes(part)) {
+    throw new MechanismGeometryError(id)
+  }
+  return part
+}
+
+function mechanismBase(spec: MechanismSpec): AssemblySpec {
+  const origin = spec.originLdu ?? [0, 0, 0]
+  if (origin.length !== 3 || origin.some((value) => !Number.isFinite(value))) {
+    throw new AssemblyError('INVALID_SPEC', 'originLdu must contain three finite coordinates.', 'Send [x,y,z] in LDU.')
+  }
+  const color = spec.color ?? 71
+  if (!Number.isInteger(color) || color < 0 || color > 999999) {
+    throw new AssemblyError('INVALID_SPEC', 'color must be an integer LDraw code.', 'Send color in 0–999999.')
+  }
+  return { origin, color, subassemblyId: spec.subassemblyId ?? 'main', stepId: spec.stepId ?? 'step_1', actor: spec.actor ?? 'human' }
+}
+
+function mechanismSize(value: number, name: string, min: number, max: number): number {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new AssemblyError('INVALID_SPEC', `${name} must be an integer in ${min}–${max}.`, `Correct ${name} before planning.`)
+  }
+  return value
+}
+
+/** Merge only fully planned sub-builds, checking all emitted geometry. */
+function mechanismPlan(plans: AssemblyPlan[], notes: string[]): AssemblyPlan {
+  const operations = plans.flatMap((plan) => plan.operations)
+  const partIds = plans.flatMap((plan) => plan.partIds)
+  if (partIds.length > MAX_GENERATED_PARTS) throw new AssemblyError('RESOURCE_LIMIT', 'Mechanism exceeds 4000 parts.', 'Reduce its dimensions.')
+  const counts = new Map<string, number>()
+  for (const op of operations) if (op.type === 'part.add') {
+    mechanismPart(op.part.definitionId)
+    counts.set(op.part.definitionId, (counts.get(op.part.definitionId) ?? 0) + 1)
+  }
+  return {
+    operations, partIds, partCount: partIds.length,
+    courses: Math.max(0, ...plans.map((plan) => plan.courses)),
+    bill: [...counts].map(([definitionId, count]) => ({ definitionId, count, name: mechanismPart(definitionId).name })).sort((a, b) => b.count - a.count),
+    unbondedCourses: plans.reduce((sum, plan) => sum + plan.unbondedCourses, 0),
+    notes: [...plans.flatMap((plan) => plan.notes), ...notes], warnings: plans.flatMap((plan) => plan.warnings),
+  }
+}
+
+export interface CraneSpec extends MechanismSpec { readonly boomStuds: number }
+/** Fixed four-course mast with a real 3937/3938 luffing joint; no winch or load rating. */
+export function planCrane(spec: CraneSpec): AssemblyPlan {
+  const base = mechanismBase(spec)
+  const reach = mechanismSize(spec.boomStuds, 'boomStuds', 2, 64)
+  mechanismPart('3937'); mechanismPart('3938')
+  const [x, y, z] = base.origin
+  return mechanismPlan([
+    planBrickField({ ...base, widthStuds: 4, footprintDepthStuds: 4, layers: 2 }),
+    planWall({ ...base, origin: [x + 20, y - 16, z + 20], axis: 'x', lengthStuds: 2, courses: 4 }),
+    mechanismArm(base, [x + 20, y - 112, z + 20], reach),
+  ], ['Crane v1: four-course mast, two-stud-wide plate boom and one real luffing hinge. No cable, winch, counterweight or load-bearing claim.'])
+}
+
+export interface LatticeSpec extends MechanismSpec {
+  readonly widthStuds: number
+  readonly depthStuds: number
+  readonly heightCourses: number
+  readonly bayStuds: number
+}
+/** Orthogonal open frame: stud columns and cross-bonded top/bottom decks. */
+export function planLattice(spec: LatticeSpec): AssemblyPlan {
+  const base = mechanismBase(spec)
+  const width = mechanismSize(spec.widthStuds, 'widthStuds', 3, 32)
+  const depth = mechanismSize(spec.depthStuds, 'depthStuds', 3, 32)
+  const height = mechanismSize(spec.heightCourses, 'heightCourses', 1, 16)
+  const bay = mechanismSize(spec.bayStuds, 'bayStuds', 2, 16)
+  if ((width - 1) % bay || (depth - 1) % bay) throw new AssemblyError('INVALID_SPEC', 'Lattice dimensions minus one must be multiples of bayStuds.', 'Use widthStuds = bays × bayStuds + 1, and likewise depthStuds.')
+  const [x, y, z] = base.origin
+  const plans = [planBrickField({ ...base, widthStuds: width, footprintDepthStuds: depth, layers: 2 })]
+  for (let i = 0; i < width; i += bay) for (let j = 0; j < depth; j += bay) {
+    plans.push(planWall({ ...base, origin: [x + i * 20, y - 16, z + j * 20], axis: 'x', lengthStuds: 1, courses: height }))
+  }
+  plans.push(planBrickField({ ...base, origin: [x, y - 16 - height * 24, z], widthStuds: width, footprintDepthStuds: depth, layers: 2 }))
+  return mechanismPlan(plans, ['Orthogonal lattice v1 uses vertical columns between bonded decks; no diagonal trusses or structural load guarantee.'])
+}
+
+export interface SnotHullSpec extends MechanismSpec {
+  readonly widthStuds: number
+  readonly depthStuds: number
+  /** Number of sideways plate layers, not brick courses. */
+  readonly layers: number
+}
+/** Open rectangular hull, its four skins genuinely clutched to side-facing studs. */
+export function planSnotHull(spec: SnotHullSpec): AssemblyPlan {
+  const base = mechanismBase(spec)
+  const width = mechanismSize(spec.widthStuds, 'widthStuds', 3, 32)
+  const depth = mechanismSize(spec.depthStuds, 'depthStuds', 3, 32)
+  const layers = mechanismSize(spec.layers, 'layers', 1, 2)
+  const bracket = mechanismPart('87087')
+  const skin = mechanismPart('3024')
+  const [x, y, z] = base.origin
+  const builder = new PlanBuilder(base)
+  // A proper rotation: local +Y (underside) becomes inward +Z.
+  const skinBasis = [1, 0, 0, 0, 0, -1, 0, 1, 0] as const
+  const sides = [
+    { count: width, corner: [x + 10, y - 40, z + 10] as Vec3, turn: 0 },
+    { count: width, corner: [x + (width - 0.5) * 20, y - 40, z + (depth - 0.5) * 20] as Vec3, turn: 2 },
+    { count: depth - 2, corner: [x + 10, y - 40, z + (depth - 1.5) * 20] as Vec3, turn: 1 },
+    { count: depth - 2, corner: [x + (width - 0.5) * 20, y - 40, z + 30] as Vec3, turn: 3 },
+  ]
+  for (const side of sides) for (let i = 0; i < side.count; i++) {
+    const yaw = QUARTER_TURN_BASES[side.turn]
+    const local = mechanismRotate(yaw, [i * 20, 0, 0])
+    const p: Vec3 = [side.corner[0] + local[0], side.corner[1], side.corner[2] + local[2]]
+    mechanismPlace(builder, bracket, p, yaw)
+    for (let layer = 0; layer < layers; layer++) {
+      const offset = mechanismRotate(yaw, [0, 10, -18 - layer * 8])
+      mechanismPlace(builder, skin, [p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]], mechanismMultiply(yaw, skinBasis))
+    }
+  }
+  return mechanismPlan([
+    planBrickField({ ...base, widthStuds: width, footprintDepthStuds: depth, layers: 2 }), builder.finish(),
+  ], ['Open SNOT hull v1: a bonded deck and one-brick-high side-stud rim with individually attached 1×1 plate skins. width/depth measure the deck, excluding exterior skins.'])
+}
+
+// Local exact matrix helpers keep arbitrary mechanism poses out of the old wall API.
+type MechanismBasis = PartInstance['transform']['basis']
+function mechanismRotate(b: MechanismBasis, p: Vec3): Vec3 {
+  return [b[0]*p[0]+b[1]*p[1]+b[2]*p[2], b[3]*p[0]+b[4]*p[1]+b[5]*p[2], b[6]*p[0]+b[7]*p[1]+b[8]*p[2]]
+}
+function mechanismMultiply(a: MechanismBasis, b: MechanismBasis): MechanismBasis {
+  const out = Array.from({ length: 9 }, (_, i) => {
+    const row = Math.floor(i / 3) * 3; const col = i % 3
+    return a[row]*b[col] + a[row+1]*b[col+3] + a[row+2]*b[col+6]
+  })
+  return out as unknown as MechanismBasis
+}
+function mechanismPlace(builder: PlanBuilder, part: PartDefinition, position: Vec3, basis: MechanismBasis) {
+  builder.placeAt(part, ...position, false)
+  const index = builder.operations.length - 1
+  const operation = builder.operations[index]
+  if (operation.type === 'part.add') builder.operations[index] = { ...operation, part: { ...operation.part, transform: { position, basis } } }
+}
+
+export interface ClockFacesSpec extends MechanismSpec { readonly diameterStuds: number }
+/** Four independent vertical-plane hand mechanisms around an open square frame. */
+export function planClockFaces(spec: ClockFacesSpec): AssemblyPlan {
+  const base = mechanismBase(spec)
+  const diameter = mechanismSize(spec.diameterStuds, 'diameterStuds', 4, 16)
+  mechanismPart('3937'); mechanismPart('3938')
+  const reach = Math.floor(diameter / 2)
+  const size = diameter + 4
+  const [x, y, z] = base.origin
+  const plans = [planBrickField({ ...base, widthStuds: size, footprintDepthStuds: size, layers: 2 })]
+  // The hinge axis (local X) faces radially outwards; each plate hand swings
+  // in a vertical tangent plane. Four non-overlapping corner pedestals.
+  const starts: Vec3[] = [[20, 0, 20], [(size - 1)*20, 0, 20], [(size - 1)*20, 0, (size - 1)*20], [20, 0, (size - 1)*20]]
+  for (let turn = 0; turn < 4; turn++) {
+    const yaw = QUARTER_TURN_BASES[(4 - turn) % 4]
+    const localBase = { ...base, origin: [0, 0, 0] as Vec3 }
+    const pedestal = planWall({ ...localBase, axis: 'x', lengthStuds: 2, courses: 3 })
+    const hand = mechanismArm(localBase, [0, -72, 0], reach)
+    const plan = mechanismPlan([pedestal, hand], [])
+    plans.push({ ...plan, operations: plan.operations.map((op) => {
+      if (op.type !== 'part.add') return op
+      const p = mechanismRotate(yaw, op.part.transform.position)
+      return { ...op, part: { ...op.part, transform: { position: [x + starts[turn][0] + p[0], y - 16 + p[1], z + starts[turn][2] + p[2]] as Vec3, basis: mechanismMultiply(yaw, op.part.transform.basis) } } }
+    }) })
+  }
+  return mechanismPlan(plans, ['Clock v1: four open square-frame faces, each with one independent plate hand on a real revolute hinge. diameterStuds sets nominal sweep, not a circular dial. No numerals, second hand, gearing or timekeeping.'])
+}
+
+/** A short root plate plus a two-layer bonded arm: no disconnected sheet strips. */
+function mechanismArm(base: AssemblySpec, origin: Vec3, reach: number): AssemblyPlan {
+  return mechanismPlan([
+    planHingedFlap({ ...base, origin, widthStuds: 2, reachStuds: 1 }),
+    planBrickField({ ...base, origin: [origin[0], origin[1] - 32, origin[2]], widthStuds: 2, footprintDepthStuds: reach, layers: 2 }),
+  ], [])
 }

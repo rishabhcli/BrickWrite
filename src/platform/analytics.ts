@@ -193,12 +193,29 @@ export function maskedContentProps(kind: CadContentKind): {
 
 /* --- Named product events ------------------------------------------------ */
 
-export type BootLevelName = 'none' | 'catalog' | 'editor'
+export type BootLevelName = 'none' | 'parts' | 'catalog' | 'editor'
 
 export type PlatformAnalyticsEvent =
   | { name: 'route.viewed'; route: RouteId; boot: BootLevelName }
   | { name: 'route.not_installed'; route: RouteId }
-  | { name: 'boot.completed'; boot: BootLevelName; elapsedMs: number }
+  /**
+   * `elapsedMs` is the gate the operator actually waited on; the rest is the
+   * breakdown, so a slow boot names its own cause instead of needing a repro.
+   * All optional: a `boot: 'none'` route has none of these phases.
+   */
+  | {
+      name: 'boot.completed'
+      boot: BootLevelName
+      elapsedMs: number
+      /** Fetch, verify, parse and install of the compiled parts tier. */
+      catalogMs?: number
+      /** Downloading and evaluating the kernel and session chunks. */
+      kernelMs?: number
+      /** Restoring the operator's project, including `?project=`/`?doc=blank`. */
+      sessionMs?: number
+      /** Warming the meshes the restored document references. */
+      geometryMs?: number
+    }
   | { name: 'boot.failed'; boot: BootLevelName; failure: 'catalog' | 'kernel' | 'cancelled' | 'unknown' }
   | { name: 'auth.sign_in_opened'; route: RouteId }
   | { name: 'auth.sign_up_opened'; route: RouteId }
@@ -240,7 +257,7 @@ export const PLATFORM_EVENT_VOCABULARY: Readonly<Record<string, readonly string[
     'shell.recovered_from_error',
   ],
   route: ROUTE_IDS,
-  boot: ['none', 'catalog', 'editor'],
+  boot: ['none', 'parts', 'catalog', 'editor'],
   failure: ['catalog', 'kernel', 'cancelled', 'unknown'],
   restriction: ['anonymous', 'email_not_verified', 'restricted_by_administrator', 'unknown'],
 })

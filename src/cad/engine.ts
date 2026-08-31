@@ -3,10 +3,25 @@ import { jointFor } from './connections'
 import { createId } from './ids'
 import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from './math'
 import { applyMutations, invertMutations, mutationsForOperations, touchedBy, type DocumentPatch, type EntityMutation } from './patch'
-import { connectionEdgeId as edgeId, deriveConnections, IncrementalConnectorWorld, type MatedPair } from './snapping'
+import {
+  connectionEdgeId as edgeId,
+  deriveConnections,
+  IncrementalConnectorWorld,
+  jointOverrideIndex,
+  type MatedPair,
+} from './snapping'
 import { createEmptyDocument, createShowcaseDocument } from './sample'
 import { introducedCollisions } from './collisionGate'
-import { evaluateConstraints, floatingPartIds, unclutchedRestCode, unclutchedRestPartIds, validateDocument } from './validation'
+import {
+  adjacencyFromRecordedEdges,
+  evaluateConstraints,
+  floatingPartIds,
+  hoverVerdictFor,
+  restCodeForSupport,
+  unclutchedRestCode,
+  unclutchedRestPartIds,
+  validateDocument,
+} from './validation'
 import type {
   Actor,
   AutonomyMode,
@@ -20,6 +35,7 @@ import type {
   EngineErrorShape,
   EngineSnapshot,
   ModelDocument,
+  PartInstance,
   Proposal,
   Transaction,
 } from './types'
@@ -73,6 +89,10 @@ function connectionMutations(
 ): EntityMutation[] {
   const previous = document.connections ?? {}
   const mutations: EntityMutation[] = []
+  // The incremental path has to honour asserted freedoms exactly as the bulk
+  // derivation does, or a winch would revert to a plain axle the next time a
+  // part near it moved.
+  const overrides = jointOverrideIndex(document)
 
   const edgeFor = (pair: MatedPair): ConnectionEdge => {
     const id = edgeId(`${pair.a.partId}/${pair.a.id}`, `${pair.b.partId}/${pair.b.id}`)
@@ -81,7 +101,7 @@ function connectionMutations(
       a: { partId: pair.a.partId, featureId: pair.a.id },
       b: { partId: pair.b.partId, featureId: pair.b.id },
       family: pair.a.family,
-      joint: jointFor(pair.a.feature, pair.b.feature),
+      joint: overrides.get(id) ?? jointFor(pair.a.feature, pair.b.feature),
       createdAtRevision: revision,
       source,
     }
@@ -99,7 +119,11 @@ function connectionMutations(
         if (!previous[edge.id]) mutations.push({ kind: 'connection', id: edge.id, value: edge })
       }
     }
-    for (const [id, edge] of Object.entries(previous)) {
+    // Iterated by key rather than through `Object.entries`, which allocates a
+    // two-element array per edge: the campus demo carries 26,496 of them and
+    // this scan runs on every commit.
+    for (const id in previous) {
+      const edge = previous[id]
       const involved = touched.has(edge.a.partId) || touched.has(edge.b.partId)
       if (involved && !live.has(id)) mutations.push({ kind: 'connection', id, value: null })
     }
@@ -113,7 +137,7 @@ function connectionMutations(
     live.add(edge.id)
     if (!previous[edge.id]) mutations.push({ kind: 'connection', id: edge.id, value: edge })
   }
-  for (const id of Object.keys(previous)) {
+  for (const id in previous) {
     if (!live.has(id)) mutations.push({ kind: 'connection', id, value: null })
   }
   return mutations
@@ -157,11 +181,58 @@ function checkColor(
   return null
 }
 
+/**
+ * The batch's view of the part table, as an overlay rather than a copy.
+ *
+ * `validateOperations` has to see the batch's own earlier operations — add then
+ * recolour is one legal command — which it did by loading every part into a
+ * `Map` on entry. That is 2.8 ms of pure setup per commit on the 11,493-part
+ * campus demo, to support a batch that usually touches one part.
+ *
+ * `null` in the overlay records a removal, which is what distinguishes "not
+ * written by this batch" (`undefined`) from "deleted by this batch".
+ */
+class PartOverlay {
+  private readonly written = new Map<string, PartInstance | null>()
+
+  constructor(private readonly base: Readonly<Record<string, PartInstance>>) {}
+
+  has(id: string): boolean {
+    const written = this.written.get(id)
+    return written === undefined ? this.base[id] !== undefined : written !== null
+  }
+
+  get(id: string): PartInstance | undefined {
+    const written = this.written.get(id)
+    if (written !== undefined) return written ?? undefined
+    return this.base[id]
+  }
+
+  set(id: string, value: PartInstance) {
+    this.written.set(id, value)
+  }
+
+  delete(id: string) {
+    this.written.set(id, null)
+  }
+
+  /** Only `steps.replace` needs this, so the base count is walked on demand. */
+  get size(): number {
+    let count = Object.keys(this.base).length
+    for (const [id, value] of this.written) {
+      const inBase = this.base[id] !== undefined
+      if (value === null && inBase) count -= 1
+      else if (value !== null && !inBase) count += 1
+    }
+    return count
+  }
+}
+
 function validateOperations(document: ModelDocument, operations: CadOperation[], actor: Actor): CommandResult<true> {
   // Validate in operation order, just like the patch builder applies the batch.
   // This permits add→recolor and add-subassembly→assign in one atomic command
   // while still rejecting references to entities that have not been created yet.
-  const parts = new Map(Object.entries(document.parts))
+  const parts = new PartOverlay(document.parts)
   const subassemblies = new Map(Object.entries(document.subassemblies))
   const noteIds = new Set(document.notes.map((note) => note.id))
   const constraints = new Map(document.constraints.map((constraint) => [constraint.id, constraint]))
@@ -400,15 +471,17 @@ function buildPatch(
   const operationMutations = mutationsForOperations(document, operations, actor, transactionId).map(normalizeMutation)
   const candidate = applyMutations(document, operationMutations)
   const touchedPartIds = touchedBy(operationMutations).partIds
-  if (connectorWorld) connectorWorld.sync(candidate, touchedPartIds)
+  // The index is read *speculatively*: this patch may still be refused by a
+  // constraint, a collision or the clutch gate, and an index left holding a
+  // refused pose would silently corrupt the next edit's incremental diff. The
+  // caller advances it for real once the transaction commits.
   const forward = [
     ...operationMutations,
-    ...connectionMutations(
-      candidate,
-      resultRevision,
-      edgeSource,
-      connectorWorld ? { world: connectorWorld, touchedPartIds } : undefined,
-    ),
+    ...(connectorWorld
+      ? connectorWorld.speculate(document, candidate, touchedPartIds, (world) =>
+          connectionMutations(candidate, resultRevision, edgeSource, { world, touchedPartIds }),
+        )
+      : connectionMutations(candidate, resultRevision, edgeSource)),
   ]
   const inverse = invertMutations(document, forward)
   const next = applyMutations(document, forward)
@@ -451,6 +524,7 @@ export class CadEngine {
   private autonomy: AutonomyMode = 'propose'
   private selection: string[] = []
   private snapshot: EngineSnapshot
+  private validationByDocument = new WeakMap<ModelDocument, ValidationReport>()
   /** Last report plus what the commit that produced it touched. */
   private lastValidation: { report: ValidationReport; touchedPartIds: readonly string[] } | null = null
   /** Connector index kept alive across revisions for the commit path. */
@@ -474,7 +548,8 @@ export class CadEngine {
   private buildSnapshot(touchedPartIds?: readonly string[]): EngineSnapshot {
     const document = this.document
     const previous = this.lastValidation
-    let computed: ValidationReport | null = null
+    const validationCache = this.validationByDocument
+    let computed: ValidationReport | null = validationCache.get(document) ?? null
 
     const snapshot: EngineSnapshot = {
       document,
@@ -485,6 +560,7 @@ export class CadEngine {
       autonomy: this.autonomy,
       selection: this.selection,
       get validation() {
+        computed ??= validationCache.get(document) ?? null
         if (computed) return computed
         // A commit that reported what it touched only needs its own
         // neighbourhood rechecked; anything else revalidates from scratch.
@@ -492,6 +568,7 @@ export class CadEngine {
           document,
           touchedPartIds && previous ? { incremental: { previous: previous.report, touchedPartIds } } : {},
         )
+        validationCache.set(document, computed)
         return computed
       },
     }
@@ -516,6 +593,7 @@ export class CadEngine {
 
   /** Discards cached validation, forcing the next pass to recompute in full. */
   private invalidateValidation() {
+    this.validationByDocument = new WeakMap()
     this.lastValidation = null
   }
 
@@ -662,7 +740,15 @@ export class CadEngine {
     const touched = [...patch.touched.partIds]
     if (touched.length) {
       const placing = operations.some((operation) => operation.type === 'part.add')
-      const introduced = introducedCollisions(this.document, after, touched, { placing })
+      // Both sides' mating clearances come from the connector index this engine
+      // keeps across revisions, for the cost of the edit. Without them each side
+      // rebuilds the whole connector world — 114 ms on the 11,493-part campus
+      // demo, against 0.03 ms for these two scoped reads.
+      const beforeMates = this.connectorWorld.scopedMates(this.document, touched)
+      const afterMates = this.connectorWorld.speculate(this.document, after, touched, (world) =>
+        world.scopedMates(after, touched),
+      )
+      const introduced = introducedCollisions(this.document, after, touched, { placing, beforeMates, afterMates })
       if (introduced.length) {
         return error(
           'COLLISION',
@@ -682,10 +768,23 @@ export class CadEngine {
     const idsToGate = [...movedIds]
     if (addedIds.length === 1 && movedIds.length === 0) idsToGate.push(addedIds[0]!)
     if (idsToGate.length) {
-      const beforeFloating = new Set(floatingPartIds(this.document))
-      const afterFloating = new Set(floatingPartIds(after))
-      const beforeRest = new Set(unclutchedRestPartIds(this.document))
-      const afterRest = unclutchedRestPartIds(after)
+      // The hovering verdicts, asked about the parts this edit moved rather than
+      // about every part in the model, and asked against the *recorded*
+      // connection graph rather than by re-deriving the connector world.
+      //
+      // `after` carries the edge mutations this very transaction produced, and
+      // `this.document` is the committed graph, so both are current by
+      // construction — which is the precondition `adjacencyFromRecordedEdges`
+      // states. On the campus demo the four whole-document passes this replaces
+      // cost 46 ms plus a 114 ms derivation of a document a microsecond old.
+      const beforeAdjacency = adjacencyFromRecordedEdges(this.document)
+      const afterAdjacency = adjacencyFromRecordedEdges(after)
+      const beforeVerdict = hoverVerdictFor(this.document, idsToGate, beforeAdjacency)
+      const afterVerdict = hoverVerdictFor(after, idsToGate, afterAdjacency)
+      const beforeFloating = new Set(beforeVerdict.floating)
+      const afterFloating = new Set(afterVerdict.floating)
+      const beforeRest = new Set(beforeVerdict.unclutchedRests.map((entry) => entry.partId))
+      const afterRest = new Map(afterVerdict.unclutchedRests.map((entry) => [entry.partId, entry.supportId]))
       for (const id of idsToGate) {
         if (!beforeFloating.has(id) && afterFloating.has(id)) {
           return error(
@@ -695,8 +794,8 @@ export class CadEngine {
             { partIds: [id] },
           )
         }
-        if (!beforeRest.has(id) && afterRest.includes(id)) {
-          const code = unclutchedRestCode(after, id)
+        if (!beforeRest.has(id) && afterRest.has(id)) {
+          const code = restCodeForSupport(after, afterRest.get(id) ?? null)
           return error(
             code,
             `Transaction would rest ${id} on another part without clutching.`,
@@ -724,6 +823,9 @@ export class CadEngine {
     }
 
     this.document = after
+    // The index tracks the committed document, so it advances here rather than
+    // inside `buildPatch`: every gate above can still refuse.
+    this.connectorWorld.sync(after, patch.touched.partIds)
     this.transactions = [...this.transactions, transaction]
     this.undoStack.push(transaction)
     this.redoStack = []

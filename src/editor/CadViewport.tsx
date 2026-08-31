@@ -1,26 +1,26 @@
 import {
-  ContactShadows,
-  GizmoHelper,
-  GizmoViewport,
   Grid,
-  OrbitControls,
   OrthographicCamera,
   PerspectiveCamera,
-  TransformControls,
 } from '@react-three/drei'
 import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { ArticulatedJoint } from '../cad/articulation'
 import { catalog } from '../cad/catalog'
 import { getPartBounds } from '../cad/geometry'
-import { canonicalTransform } from '../cad/math'
 import { resolvePlacement, type PlacementRequest, type ResolvedPlacement } from '../cad/placement'
-import { findSnapCandidates, getWorldConnectors } from '../cad/snapping'
+import { getWorldConnectors } from '../cad/snapping'
 import type { Bounds, CadOperation, ModelDocument, PartInstance, Proposal, Transform, Vec3 } from '../cad/types'
-import { poseRefusal, validateDocument } from '../cad/validation'
-import { EDGE_RENDER_BUDGET, INDIVIDUAL_SELECTION_LIMIT, PartBatch, planBatches, type BatchMember } from './PartBatch'
+import { validateDocument } from '../cad/validation'
+import {
+  MAX_LENSED_QUALITY_INDEX,
+  luminanceGrid,
+  SAMPLE_BUDGET_MS,
+  SAMPLE_INTERVAL_MS,
+  useLiquidPerformance,
+} from '../ui/liquid'
+import { INDIVIDUAL_SELECTION_LIMIT, PartBatch, planBatches, type BatchMember } from './PartBatch'
 import { createStudioEnvironment, type EnvironmentName } from './environment'
 import { PartVisual, setTransmissionEnabled, TRANSMISSION_DRAW_BUDGET, type PartAppearance } from './PartVisual'
 import { BlockingMarker, JointManipulators, SectionManipulators } from './render/Manipulators'
@@ -31,29 +31,31 @@ import {
   type ViewportControlsHandle,
 } from './render/ViewportControls'
 import { ViewportKeyboard } from './render/ViewportKeyboard'
+import { useCadSnapshot } from './useCad'
+import { EdgeLodProvider } from './render/EdgeLod'
+import { CameraRig } from './render/CameraRig'
+import { SelectionManipulator } from './render/SelectionManipulator'
+import { StaticShadows } from './render/StaticShadows'
+import { cameraControlsOf, cameraTarget } from './render/cameraControl'
+import { pointerRouterFor } from './render/pointerRouter'
+import { proposalDelta } from './render/proposalDelta'
+import { PlacementGhost } from './render/PlacementGhost'
 import type { RendererControlSurface } from './render/controlSurface'
 import {
-  documentTransformOf,
-  lduToScene,
   MODEL_ROOT_ROTATION,
   MODEL_ROOT_SCALE,
-  ROOT_MATRIX,
-  ROOT_MATRIX_INVERSE,
   sceneMatrix,
   sceneToLdu,
 } from './render/frame'
-import { boundsFrame } from './render/framing'
 import { registerPickable, unregisterPickable } from './render/idPass'
 import { PickRegistry } from './render/ids'
 import { MotionController, MOTION_DURATIONS, playbackStepAt, staggeredProgress, turntableAngle } from './render/motion'
-import { QUALITY_TIERS, type QualityTier } from './render/quality'
+import { edgeBudgetForTier, QUALITY_TIERS, type QualityTier } from './render/quality'
 import type { SectionPlane } from './render/sectionPlanes'
 import type { SweepResult } from './render/sweep'
 import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
 import {
   DEFAULT_MANIPULATION,
-  manipulationPose,
-  planGizmoTransforms,
   type ManipulationOptions,
 } from './workbench/transform'
 
@@ -116,191 +118,19 @@ function PartObject({ part, appearance, displayTransform, interactive, idBase, f
       matrixAutoUpdate={false}
       matrix={sceneMatrix(rendered)}
       userData={{ partId: part.id }}
-      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+      onPointerDown={interactive ? (event: ThreeEvent<PointerEvent>) => {
         if (!interactive) return
         event.stopPropagation()
         onSelect(part.id, event.nativeEvent.shiftKey, event.nativeEvent.detail > 1)
-      }}
-      onDoubleClick={(event) => {
+      } : undefined}
+      onDoubleClick={interactive ? (event) => {
         if (!interactive) return
         event.stopPropagation()
         onSelect(part.id, false, true)
-      }}
+      } : undefined}
     >
       <PartVisual definition={definition} colorCode={part.color} appearance={appearance} fade={fade} />
     </group>
-  )
-}
-
-/**
- * The translate/rotate gizmo, deliberately rendered outside the model root.
- *
- * `TransformControls` sizes its handles from the camera distance and then
- * inherits its parent's scale like any other object. Inside a root scaled to
- * 1/20 that made the gizmo twenty times too small to see or hit, so direct
- * manipulation looked simply absent. Here it attaches to a proxy that carries
- * the selection's pose in *scene* space, and every pose read back out is
- * mapped through the root's inverse before it reaches the document.
- *
- * One part snaps to connectors. Two or more move as one rigid body about the
- * selection centre — per-origin snaps would walk a clutched stack off its studs.
- */
-function SelectionManipulator({
-  parts,
-  tool,
-  gridLdu,
-  document: model,
-  onPreview,
-  onCommitPart,
-  onCommitGroup,
-  preferences,
-}: {
-  parts: readonly PartInstance[]
-  tool: 'move' | 'rotate'
-  preferences: ManipulationOptions
-  gridLdu: number
-  document: ModelDocument
-  onPreview: (preview: ReadonlyMap<string, Transform> | null) => void
-  onCommitPart: (partId: string, transform: Transform) => void
-  onCommitGroup: (operations: CadOperation[]) => void
-}) {
-  const part = parts[0]
-  const startPose = useMemo(() => manipulationPose(parts, preferences), [parts, preferences])
-  const [proxy, setProxy] = useState<THREE.Object3D | null>(null)
-  const controls = useRef<({ getHelper?: () => THREE.Object3D; reset?: () => void } & THREE.Object3D) | null>(null)
-  const dragging = useRef(false)
-  const latest = useRef<CadOperation[]>([])
-  const { camera, size, gl } = useThree()
-
-  useEffect(() => {
-    const probe = () => {
-      const helper = controls.current?.getHelper?.() ?? controls.current
-      if (!helper || !proxy) return { attached: false, screenPixels: 0 }
-      const box = new THREE.Box3()
-      helper.traverseVisible((node) => {
-        const mesh = node as THREE.Mesh
-        if (!mesh.isMesh) return
-        const material = mesh.material as THREE.Material | THREE.Material[]
-        const opacity = Array.isArray(material) ? Math.max(...material.map((entry) => entry.opacity)) : material.opacity
-        if (opacity < 0.2) return
-        box.expandByObject(mesh)
-      })
-      if (box.isEmpty()) return { attached: true, screenPixels: 0 }
-      const corners: THREE.Vector3[] = []
-      for (const x of [box.min.x, box.max.x])
-        for (const y of [box.min.y, box.max.y])
-          for (const z of [box.min.z, box.max.z]) {
-            corners.push(new THREE.Vector3(x, y, z).project(camera))
-          }
-      const xs = corners.map((corner) => ((corner.x + 1) / 2) * size.width)
-      const ys = corners.map((corner) => ((1 - corner.y) / 2) * size.height)
-      const origin = proxy.getWorldPosition(new THREE.Vector3()).project(camera)
-      return {
-        attached: true,
-        screenPixels: Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)),
-        centre: [((origin.x + 1) / 2) * size.width, ((1 - origin.y) / 2) * size.height],
-      }
-    }
-    ;(window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo = probe
-    return () => {
-      delete (window as unknown as { __brickwrightGizmo?: () => unknown }).__brickwrightGizmo
-    }
-  }, [camera, proxy, size.height, size.width])
-
-  const resetProxy = useCallback(() => {
-    if (!proxy) return
-    ROOT_MATRIX.clone().multiply(sceneMatrix(startPose)).decompose(proxy.position, proxy.quaternion, proxy.scale)
-    proxy.updateMatrixWorld(true)
-  }, [proxy, startPose])
-
-  useEffect(() => {
-    if (!dragging.current) resetProxy()
-  }, [resetProxy, tool])
-
-  useEffect(() => {
-    const cancel = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !dragging.current) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      dragging.current = false
-      controls.current?.reset?.()
-      // Release the native control too, otherwise pointer motion after Escape
-      // keeps moving its proxy and OrbitControls stays disabled until mouse-up.
-      gl.domElement.dispatchEvent(new PointerEvent('pointerup', { button: 0, bubbles: true }))
-      latest.current = []
-      onPreview(null)
-      resetProxy()
-    }
-    window.addEventListener('keydown', cancel, true)
-    return () => window.removeEventListener('keydown', cancel, true)
-  }, [gl, onPreview, resetProxy])
-
-  const resolve = useCallback((): CadOperation[] => {
-    if (!proxy) return []
-    proxy.updateMatrixWorld(true)
-    const raw = documentTransformOf(ROOT_MATRIX_INVERSE.clone().multiply(proxy.matrixWorld))
-    const operations = planGizmoTransforms(parts, startPose, raw, {
-      rotating: tool === 'rotate',
-      gridLdu,
-      locks: preferences.locks,
-    })
-    const operation = operations[0]
-    // A disabled snap must stay disabled. Axis locks cannot be defeated by a mate.
-    if (
-      parts.length === 1 &&
-      operation?.type === 'part.transform' &&
-      tool === 'move' &&
-      preferences.connectorSnap &&
-      !Object.values(preferences.locks).some(Boolean)
-    ) {
-      const candidates = findSnapCandidates(part, model, operation.transform, { radiusLdu: Math.max(6, gridLdu * 0.8) })
-      const candidate = candidates.find((entry) => !poseRefusal(model, part.id, entry.transform))
-      if (candidate) return [{ ...operation, transform: candidate.transform }]
-    }
-    return operations
-  }, [gridLdu, model, part, parts, preferences, proxy, startPose, tool])
-
-  if (!proxy || !part) return <object3D ref={setProxy} />
-
-  return (
-    <>
-      <object3D ref={setProxy} />
-      <TransformControls
-        ref={controls as never}
-        object={proxy}
-        mode={tool === 'rotate' ? 'rotate' : 'translate'}
-        space="local"
-        showX={tool === 'rotate' || !preferences.locks.x}
-        showY={tool === 'rotate' || !preferences.locks.y}
-        showZ={tool === 'rotate' || !preferences.locks.z}
-        rotationSnap={(preferences.rotationStep * Math.PI) / 180}
-        size={1.05}
-        onMouseDown={() => {
-          dragging.current = true
-          latest.current = []
-        }}
-        onObjectChange={() => {
-          if (!dragging.current) return
-          const next = resolve()
-          latest.current = next
-          onPreview(
-            new Map(next.flatMap((op) => (op.type === 'part.transform' ? [[op.partId, op.transform] as const] : []))),
-          )
-        }}
-        onMouseUp={() => {
-          if (!dragging.current) return
-          dragging.current = false
-          const next = latest.current
-          latest.current = []
-          onPreview(null)
-          // Also restores the handle after a refused or zero-length drag.
-          resetProxy()
-          if (!next.length) return
-          if (parts.length === 1 && next[0]?.type === 'part.transform') onCommitPart(next[0].partId, next[0].transform)
-          else onCommitGroup(next)
-        }}
-      />
-    </>
   )
 }
 
@@ -342,6 +172,8 @@ function PlacementController({
 
   useEffect(() => {
     const element = gl.domElement
+    const router = pointerRouterFor(element)
+    let frame = 0
     const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
     const scratch = new THREE.Vector3()
 
@@ -388,30 +220,63 @@ function PlacementController({
       element.style.cursor = placement.legal ? 'crosshair' : 'not-allowed'
     }
 
-    const onMove = (event: PointerEvent) => {
+    const updatePointer = (event: { clientX: number; clientY: number }) => {
       const rect = element.getBoundingClientRect()
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       )
-      sample()
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; sample() })
+    }
+    const onMove = (event: PointerEvent) => {
+      if (router.accepts(event)) updatePointer(event)
+    }
+    // Native catalogue drags suppress pointermove. Sample dragover instead of
+    // waiting until drop; both paths resolve the exact same physical landing.
+    const onDragOver = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes('application/x-brickwright-part')) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+      updatePointer(event)
+    }
+    const onPartDrag = (event: Event) => {
+      const detail = (event as CustomEvent<{ clientX: number; clientY: number }>).detail
+      if (detail) updatePointer(detail)
+    }
+    const onLeave = () => {
+      cancelAnimationFrame(frame)
+      frame = 0
+      resolved.current = null
+      onPreview(null)
     }
     const onDown = (event: PointerEvent) => {
+      if (!router.accepts(event)) return
       if (event.button !== 0) return
+      if (router.owner !== 'placement') return
       onMove(event)
+      sample()
       pressedAt.current = { x: event.clientX, y: event.clientY }
     }
     const onUp = (event: PointerEvent) => {
+      if (!router.accepts(event)) return
       const start = pressedAt.current
       pressedAt.current = null
       // An orbit drag is not a placement. Only a click that stayed put commits.
       if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
       if (event.button !== 0) return
       onMove(event)
+      sample()
       if (resolved.current) onPlace(resolved.current.transform, resolved.current.legal, resolved.current.reason)
     }
 
+    const cancel = (event?: Event) => { if (!event || !('pointerId' in event) || router.accepts(event as PointerEvent)) pressedAt.current = null }
+    element.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
     element.addEventListener('pointermove', onMove)
+    element.addEventListener('dragover', onDragOver)
+    window.addEventListener('brickwright:part-drag', onPartDrag)
+    element.addEventListener('dragleave', onLeave)
+    element.addEventListener('pointerleave', onLeave)
     element.addEventListener('pointerdown', onDown)
     element.addEventListener('pointerup', onUp)
     element.style.cursor = 'crosshair'
@@ -438,7 +303,15 @@ function PlacementController({
     }
 
     return () => {
+      cancelAnimationFrame(frame)
+      cancel()
+      element.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cancel)
       element.removeEventListener('pointermove', onMove)
+      element.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('brickwright:part-drag', onPartDrag)
+      element.removeEventListener('dragleave', onLeave)
+      element.removeEventListener('pointerleave', onLeave)
       element.removeEventListener('pointerdown', onDown)
       element.removeEventListener('pointerup', onUp)
       element.style.cursor = ''
@@ -488,15 +361,11 @@ function GhostProposal({
   current: ModelDocument
   revealed: number
 }) {
-  const added = Object.values(proposal.previewDocument.parts).filter((part) => {
-    const original = current.parts[part.id]
-    return (
-      !original ||
-      original.color !== part.color ||
-      canonicalTransform(original.transform) !== canonicalTransform(part.transform)
-    )
-  })
-  const removed = Object.values(current.parts).filter((part) => !proposal.previewDocument.parts[part.id])
+  // `revealed` advances on every frame of the reveal wave, so this component
+  // re-renders every frame — and the delta was recomputed each time, building
+  // two canonical-transform *strings* per part in the proposal. Memoized, the
+  // wave costs one pass over the proposal instead of one per frame.
+  const { added, removed } = useMemo(() => proposalDelta(proposal, current), [proposal, current])
 
   return (
     <group>
@@ -587,203 +456,15 @@ function AnimationDriver({
     }
 
     if (turntable && animated) {
-      const target = (controls as { target?: THREE.Vector3 } | null)?.target ?? new THREE.Vector3()
+      const target = cameraTarget(controls)
       const offset = camera.position.clone().sub(target)
       const radius = Math.hypot(offset.x, offset.z)
       const angle = turntableAngle(elapsed)
-      camera.position.set(target.x + Math.cos(angle) * radius, camera.position.y, target.z + Math.sin(angle) * radius)
-      camera.lookAt(target)
+      void cameraControlsOf(controls)?.setLookAt(target.x + Math.cos(angle) * radius, camera.position.y, target.z + Math.sin(angle) * radius, ...target.toArray(), false)
     }
   })
 
   return null
-}
-
-function CameraRig({
-  bounds,
-  documentId,
-  hasParts,
-  exploded,
-  view,
-  resetKey,
-  motion,
-}: {
-  /** Bounds of what is actually drawn, which in exploded view is not the stored model. */
-  bounds: Bounds
-  documentId: string
-  hasParts: boolean
-  /** Exploding the model replaces what is on screen, so it earns a reframe. */
-  exploded: boolean
-  view: CameraView
-  resetKey: number
-  motion: MotionController
-}) {
-  const controls = useRef<OrbitControlsImpl>(null)
-  // The camera comes from the R3F store rather than the controls ref: the ref is
-  // not attached yet on the first commit, and this effect's dependencies would
-  // not change again, so reading it there left the camera at its default
-  // position inside the model.
-  const { camera, size } = useThree()
-
-  // Framing reads the current bounds but is not *triggered* by them. Reframing
-  // on every bounds change meant that placing a brick past the model's edge
-  // threw away the viewpoint the operator had just orbited to, which made the
-  // viewport feel like it was fighting them.
-  const latest = useRef({ bounds, width: size.width, height: size.height })
-  latest.current = { bounds, width: size.width, height: size.height }
-  const framed = useRef(false)
-
-  /**
-   * An in-flight camera flight, or null.
-   *
-   * A named view or a framing reset eases rather than cutting, because a cut
-   * costs the operator the relationship between where they were and where they
-   * are — on a large model that is genuinely disorienting. Under reduced motion
-   * or during a capture the flight has zero duration, which lands on exactly the
-   * same pose without any intermediate frame.
-   */
-  const flight = useRef<{
-    from: THREE.Vector3
-    to: THREE.Vector3
-    fromTarget: THREE.Vector3
-    toTarget: THREE.Vector3
-    startedAt: number
-    durationMs: number
-  } | null>(null)
-
-  useFrame(() => {
-    const current = flight.current
-    if (!current) return
-    const t = current.durationMs > 0 ? Math.min(1, (performance.now() - current.startedAt) / current.durationMs) : 1
-    const eased = 1 - (1 - t) ** 3
-    camera.position.lerpVectors(current.from, current.to, eased)
-    const target = new THREE.Vector3().lerpVectors(current.fromTarget, current.toTarget, eased)
-    camera.lookAt(target)
-    if (controls.current) {
-      controls.current.target.copy(target)
-      controls.current.update()
-    }
-    if (t >= 1) flight.current = null
-  })
-
-  useEffect(() => {
-    const { bounds: current, width, height } = latest.current
-    const center = lduToScene([
-      (current.min[0] + current.max[0]) / 2,
-      (current.min[1] + current.max[1]) / 2,
-      (current.min[2] + current.max[2]) / 2,
-    ])
-    const directions: Record<CameraView, THREE.Vector3> = {
-      isometric: new THREE.Vector3(0.86, 0.64, 1),
-      front: new THREE.Vector3(0, 0, 1),
-      rear: new THREE.Vector3(0, 0, -1),
-      left: new THREE.Vector3(-1, 0, 0),
-      right: new THREE.Vector3(1, 0, 0),
-      top: new THREE.Vector3(0, 1, 0.001),
-    }
-    const fit = boundsFrame(
-      camera as THREE.PerspectiveCamera | THREE.OrthographicCamera,
-      current,
-      { width, height },
-      directions[view],
-    )
-    camera.far = fit.far
-    const destination = fit.position
-    const duration = framed.current ? motion.duration('camera') : 0
-    if (duration > 0) {
-      flight.current = {
-        from: camera.position.clone(),
-        to: destination,
-        fromTarget: controls.current?.target.clone() ?? center.clone(),
-        toTarget: center.clone(),
-        startedAt: performance.now(),
-        durationMs: duration,
-      }
-    } else {
-      flight.current = null
-      camera.position.copy(destination)
-      camera.lookAt(center)
-      if (controls.current) {
-        controls.current.target.copy(center)
-        controls.current.update()
-      }
-    }
-    if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
-      ;(camera as THREE.OrthographicCamera).zoom = fit.zoom
-    }
-    camera.updateProjectionMatrix()
-    // An empty document has nothing to frame yet, so the opening frame is still
-    // owed once its parts arrive.
-    framed.current = hasParts
-    // Opening a different document, or exploding the one that is open, both
-    // replace what is on screen, so both are legitimate reasons to reframe.
-  }, [camera, documentId, exploded, resetKey, view])
-
-  // A document that arrives empty and is then filled — a fresh project, an
-  // import, a restored session — still needs its one opening frame.
-  useEffect(() => {
-    if (framed.current || !hasParts) return
-    const raf = requestAnimationFrame(() => {
-      if (!controls.current) return
-      const { bounds: current } = latest.current
-      const center = lduToScene([
-        (current.min[0] + current.max[0]) / 2,
-        (current.min[1] + current.max[1]) / 2,
-        (current.min[2] + current.max[2]) / 2,
-      ])
-      const fit = boundsFrame(
-        camera as THREE.PerspectiveCamera | THREE.OrthographicCamera,
-        current,
-        latest.current,
-        camera.position.clone().sub(controls.current.target),
-      )
-      camera.far = fit.far
-      camera.position.copy(fit.position)
-      if ((camera as THREE.OrthographicCamera).isOrthographicCamera)
-        (camera as THREE.OrthographicCamera).zoom = fit.zoom
-      camera.lookAt(center)
-      camera.updateProjectionMatrix()
-      controls.current.target.copy(center)
-      controls.current.update()
-      framed.current = true
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [camera, hasParts])
-
-  const previousSize = useRef(size)
-  useEffect(() => {
-    const previous = previousSize.current
-    previousSize.current = size
-    if (!previous.width || !previous.height || !controls.current) return
-    if (previous.width === size.width && previous.height === size.height) return
-    flight.current = null
-    if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
-      ;(camera as THREE.OrthographicCamera).zoom *=
-        Math.min(size.width, size.height) / Math.min(previous.width, previous.height)
-    } else {
-      const direction = camera.position.clone().sub(controls.current.target)
-      const before = boundsFrame(camera as THREE.PerspectiveCamera, latest.current.bounds, previous, direction)
-      const after = boundsFrame(camera as THREE.PerspectiveCamera, latest.current.bounds, size, direction)
-      const ratio = after.position.distanceTo(after.target) / before.position.distanceTo(before.target)
-      camera.position.sub(controls.current.target).multiplyScalar(ratio).add(controls.current.target)
-    }
-    camera.updateProjectionMatrix()
-    controls.current.update()
-  }, [camera, size])
-
-  return (
-    <OrbitControls
-      ref={controls}
-      makeDefault
-      enableDamping
-      dampingFactor={0.08}
-      minDistance={1}
-      maxDistance={100000}
-      onStart={() => {
-        flight.current = null
-      }}
-    />
-  )
 }
 
 /** Optional animation channels. Every one settles deterministically. */
@@ -846,7 +527,36 @@ interface CadViewportProps {
   onJoints?: (joints: readonly ArticulatedJoint[]) => void
 }
 
-export function CadViewport({
+type ViewportEventKey = Extract<keyof CadViewportProps, `on${string}`>
+const VIEWPORT_EVENTS: readonly ViewportEventKey[] = ['onPlacementPreview', 'onDropHandled', 'onSelect', 'onSelectMany',
+  'onClearSelection', 'onTransform', 'onCommitTransforms', 'onNudgeSelection', 'onPlace', 'onJointNudge', 'onCanvasReady',
+  'onVisibilityChange', 'onSectionPlanesChange', 'onRendererReady', 'onSweep', 'onJoints']
+
+/** Parent chrome may recreate closures; keep their implementations fresh without
+ * invalidating the scene on a toast, status change or dock hover. */
+export function CadViewport(props: CadViewportProps) {
+  const current = useRef(props)
+  useLayoutEffect(() => { current.current = props })
+  const present = VIEWPORT_EVENTS.map(key => typeof props[key] === 'function' ? '1' : '0').join('')
+  const events = useMemo(() => Object.fromEntries(VIEWPORT_EVENTS.map((key, index) => [key,
+    present[index] === '1' ? (...args: unknown[]) => {
+      const callback = current.current[key] as ((...values: unknown[]) => unknown) | undefined
+      return callback?.(...args)
+    } : undefined])) as Pick<CadViewportProps, ViewportEventKey>, [present])
+  return <MemoViewportScene {...props} {...events} />
+}
+const MemoViewportScene = memo(CadViewportScene, (previous, next) => {
+  for (const key of Object.keys(next) as Array<keyof CadViewportProps>) {
+    const a = previous[key], b = next[key]
+    if (a === b) continue
+    if ((key === 'selection' || key === 'proposals') && Array.isArray(a) && Array.isArray(b) &&
+      a.length === b.length && a.every((value, index) => value === b[index])) continue
+    return false
+  }
+  return Object.keys(previous).length === Object.keys(next).length
+})
+
+function CadViewportScene({
   document,
   selection,
   proposals,
@@ -882,7 +592,8 @@ export function CadViewport({
   onSweep,
   onJoints,
 }: CadViewportProps) {
-  const validation = useMemo(() => validateDocument(document), [document])
+  const kernelValidation = useCadSnapshot(snapshot => snapshot.document === document ? snapshot.validation : null)
+  const validation = useMemo(() => kernelValidation ?? validateDocument(document), [document, kernelValidation])
   const invalidIds = useMemo(
     () => new Set(validation.collisions.flatMap((issue) => [issue.partA, issue.partB])),
     [validation.collisions],
@@ -918,6 +629,161 @@ export function CadViewport({
   const [playbackStep, setPlaybackStep] = useState(0)
   const [tier, setTier] = useState<QualityTier>(QUALITY_TIERS[1])
   const controlsHandle = useRef<ViewportControlsHandle | null>(null)
+
+  /*
+   * Telling the chrome what the renderer is doing.
+   *
+   * The glass above this viewport refracts, and refraction is not free. It has
+   * to stand down when the renderer is already short of frame time and while a
+   * gesture is in flight — which is exactly when the operator is looking at the
+   * model rather than at the chrome.
+   *
+   * The direction is deliberate: src/ui/liquid never imports from src/editor,
+   * because main.tsx goes to real trouble to keep Three.js out of the landing
+   * bundle. The renderer pushes; the chrome never pulls. This hook is called on
+   * the DOM side of the tree rather than inside <Canvas>, so it does not depend
+   * on React context crossing into the three.js reconciler.
+   */
+  const reportPerformance = useLiquidPerformance()
+
+  // Read by the backdrop sampler below, which must not resubscribe every time
+  // the renderer changes gear.
+  const tierIndexRef = useRef<number | undefined>(undefined)
+
+  const handleQuality = useCallback(
+    (next: QualityTier, index: number) => {
+      setTier(next)
+      tierIndexRef.current = index
+      reportPerformance({ qualityTierIndex: index })
+    },
+    [reportPerformance],
+  )
+
+  const interactingRef = useRef(false)
+
+  useEffect(() => {
+    const onCanvas = (target: EventTarget | null) => target instanceof Element && target.closest('canvas') !== null
+    const begin = (event: PointerEvent) => {
+      if (!onCanvas(event.target)) return
+      interactingRef.current = true
+      reportPerformance({ interacting: true })
+    }
+    const end = () => {
+      interactingRef.current = false
+      reportPerformance({ interacting: false })
+    }
+    // A wheel burst has no down and up to bracket it, so each notch reports
+    // both. The stage promotes on a delay, which turns a stream of notches into
+    // one continuous interaction that settles once the wheel stops.
+    const wheel = (event: WheelEvent) => {
+      if (!onCanvas(event.target)) return
+      reportPerformance({ interacting: true })
+      reportPerformance({ interacting: false })
+    }
+
+    window.addEventListener('pointerdown', begin, { passive: true })
+    window.addEventListener('pointerup', end, { passive: true })
+    window.addEventListener('pointercancel', end, { passive: true })
+    window.addEventListener('wheel', wheel, { passive: true })
+    window.addEventListener('blur', end)
+    return () => {
+      window.removeEventListener('pointerdown', begin)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('wheel', wheel)
+      window.removeEventListener('blur', end)
+      // Leaving the viewport mounted-then-unmounted mid-drag must not strand
+      // the chrome on the cheap material forever.
+      interactingRef.current = false
+      reportPerformance({ interacting: false })
+    }
+  }, [reportPerformance])
+
+  /*
+   * What the chrome is actually sitting on.
+   *
+   * Glass that never changes with its backdrop is a grey rectangle with a
+   * gradient on it. Real glass over a white baseplate shows a dark rim and an
+   * inverted specular, and getting that requires *measuring* the scene rather
+   * than assuming it, because the scene is whatever the operator just built.
+   *
+   * `preserveDrawingBuffer: true` on the Canvas above is what makes this legal:
+   * without it the drawing buffer is undefined after compositing and drawImage
+   * returns cleared pixels. Sixteen by sixteen is plenty — this feeds a single
+   * luminance average and a threshold, not a histogram.
+   *
+   * Gated hard, because it stalls the GPU pipeline: never while a gesture is in
+   * flight, never on a hidden tab, never once the renderer has admitted it is
+   * short of frame time, and never again if a sample overruns its budget.
+   */
+  useEffect(() => {
+    // `document` is shadowed in this component by the ModelDocument prop, so
+    // the global has to be named explicitly.
+    const scratch = window.document.createElement('canvas')
+    /*
+     * Thirty-two squared, not sixteen.
+     *
+     * Measured on a framed model: at 16 the brightest cell in the whole scene
+     * read 0.283, because each cell averaged a bright brick face together with
+     * the dark gaps around it, and no surface could ever cross the over-light
+     * threshold. At 32 the same view resolves that face at 0.724. The readback
+     * costs the same — the stall is pipeline depth, not the kilobyte copied.
+     */
+    scratch.width = 32
+    scratch.height = 32
+    const context = scratch.getContext('2d', { willReadFrequently: true })
+    if (!context) return
+
+    let retired = false
+    let taken = 0
+    let overruns = 0
+
+    const sample = () => {
+      if (retired || window.document.hidden || interactingRef.current) return
+      const tier = tierIndexRef.current
+      if (tier !== undefined && tier > MAX_LENSED_QUALITY_INDEX) return
+      const canvas = window.document.querySelector('canvas')
+      if (!canvas || canvas.width === 0) return
+
+      const started = performance.now()
+      try {
+        context.drawImage(canvas, 0, 0, scratch.width, scratch.height)
+        const { data } = context.getImageData(0, 0, scratch.width, scratch.height)
+        const { left, top, width, height } = canvas.getBoundingClientRect()
+        reportPerformance({
+          backdrop: {
+            region: { left, top, width, height },
+            cells: luminanceGrid(data),
+            columns: scratch.width,
+            rows: scratch.height,
+          },
+        })
+      } catch {
+        // A tainted or lost canvas is not an error worth surfacing: the static
+        // per-surface tint is a perfectly good answer.
+        retired = true
+        return
+      }
+
+      /*
+       * Retiring takes a pattern, not one bad reading.
+       *
+       * The first sample allocates the readback path and measured 4 ms on a
+       * machine where later ones are well inside budget — retiring on it, which
+       * an earlier version did, disabled the adaptation everywhere on the one
+       * sample guaranteed to be slowest. So the warm-up is skipped and it takes
+       * three consecutive overruns, which is a machine that genuinely cannot
+       * afford this rather than a cold cache.
+       */
+      taken += 1
+      if (taken === 1) return
+      overruns = performance.now() - started > SAMPLE_BUDGET_MS ? overruns + 1 : 0
+      if (overruns >= 3) retired = true
+    }
+
+    const timer = setInterval(sample, SAMPLE_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [reportPerformance])
   // Environment, quality and transmission arrive as props but are also
   // reachable from the imperative surface, so the viewport keeps an override
   // and prefers it. A panel and an agent then drive the same state rather than
@@ -1026,18 +892,16 @@ export function CadViewport({
     [members, resolvedVisibility.ghosted],
   )
 
-  // Anything highlighted, flagged or under a gizmo leaves the batches so they
-  // stay stable while the operator interacts.
+  // A selection overlay does not change the source batches or their identity
+  // ranges. Only move/rotate tools pull parts out for a live transform preview.
+  const overlaySelection = tool === 'select' || tool === 'connect'
   const excluded = useMemo(() => {
-    // Only a small selection is worth pulling out of the batches; a large one
-    // batches by appearance instead, which is what keeps a stamped city block
-    // from costing one draw call per brick the moment it is selected.
-    const ids = new Set(selection.length <= INDIVIDUAL_SELECTION_LIMIT ? selection : [])
+    const ids = new Set(!overlaySelection && selection.length <= INDIVIDUAL_SELECTION_LIMIT ? selection : [])
     if (renderMode === 'violations' && invalidIds.size <= INDIVIDUAL_SELECTION_LIMIT) {
       for (const id of invalidIds) ids.add(id)
     }
     return ids
-  }, [selection, renderMode, invalidIds])
+  }, [overlaySelection, selection, renderMode, invalidIds])
 
   const appearanceFor = useCallback(
     (partId: string): PartAppearance => {
@@ -1051,21 +915,24 @@ export function CadViewport({
 
   // Framing follows what is drawn, so exploding the model reframes onto the
   // exploded extent rather than onto the assembled one it no longer shows.
+  // One pass, and no spread. `Math.min(...array)` over the drawn set built six
+  // intermediate arrays the length of the model on every commit, and — because
+  // a spread becomes argument slots — throws outright somewhere past a hundred
+  // thousand parts, which is a crash rather than a slow frame.
   const displayBounds = useMemo<Bounds>(() => {
-    const measured = members
-      .map((member) => getPartBounds({ ...member.part, transform: member.transform }))
-      .filter((item) => item.measured)
-    if (!measured.length) return { min: [0, 0, 0], max: [0, 0, 0], size: [0, 0, 0] }
-    const min: Vec3 = [
-      Math.min(...measured.map((item) => item.min[0])),
-      Math.min(...measured.map((item) => item.min[1])),
-      Math.min(...measured.map((item) => item.min[2])),
-    ]
-    const max: Vec3 = [
-      Math.max(...measured.map((item) => item.max[0])),
-      Math.max(...measured.map((item) => item.max[1])),
-      Math.max(...measured.map((item) => item.max[2])),
-    ]
+    const min: [number, number, number] = [Infinity, Infinity, Infinity]
+    const max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+    let any = false
+    for (const member of members) {
+      const bounds = getPartBounds({ ...member.part, transform: member.transform })
+      if (!bounds.measured) continue
+      any = true
+      for (let axis = 0; axis < 3; axis += 1) {
+        if (bounds.min[axis] < min[axis]) min[axis] = bounds.min[axis]
+        if (bounds.max[axis] > max[axis]) max[axis] = bounds.max[axis]
+      }
+    }
+    if (!any) return { min: [0, 0, 0], max: [0, 0, 0], size: [0, 0, 0] }
     return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] }
   }, [members])
 
@@ -1077,10 +944,23 @@ export function CadViewport({
     [displayBounds],
   )
 
+  const baseAppearance = useCallback((partId: string): PartAppearance => {
+    if (partId === placement?.movingPartId) return 'ghost'
+    if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
+    return renderMode === 'silhouette' ? 'silhouette' : 'solid'
+  }, [placement?.movingPartId, renderMode, invalidIds])
+  const emptyExclusions = useMemo(() => new Set<string>(), [])
+  const baseExclusions = overlaySelection && renderMode !== 'violations' ? emptyExclusions : excluded
+  const planAppearance = overlaySelection ? baseAppearance : appearanceFor
   const plan = useMemo(
-    () => planBatches(solidMembers, excluded, appearanceFor),
-    [solidMembers, excluded, appearanceFor],
+    () => planBatches(solidMembers, baseExclusions, planAppearance),
+    [solidMembers, baseExclusions, planAppearance],
   )
+  const selectionPlan = useMemo(() => {
+    const highlighted = overlaySelection && renderMode !== 'silhouette'
+      ? solidMembers.filter(member => selected.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id))) : []
+    return planBatches(highlighted, highlighted.length <= INDIVIDUAL_SELECTION_LIMIT ? selected : emptyExclusions, () => 'selected')
+  }, [overlaySelection, renderMode, solidMembers, selected, emptyExclusions, invalidIds])
   const ghostPlan = useMemo(() => planBatches(ghostMembers, new Set<string>()), [ghostMembers])
 
   /**
@@ -1102,8 +982,27 @@ export function CadViewport({
     return bases
   }, [plan, registry])
 
-  const edgesEnabled = tier.edges && members.length <= EDGE_RENDER_BUDGET
+  const edgesEnabled = tier.edges
   const placing = Boolean(placement)
+
+  /**
+   * Everything that changes what the shadow passes must draw and is *not*
+   * visible in the scene graph.
+   *
+   * `StaticShadows` recognises a moved brick, a hidden part or a rebuilt batch
+   * on its own. It cannot see a reallocated shadow map, a clipping plane that
+   * now cuts the model, or a capture asking for a settled frame, so those are
+   * folded in here.
+   */
+  const shadowRevision = useMemo(() => {
+    let value = Math.imul(captureFrameKey + 1, 0x01000193) + QUALITY_TIERS.indexOf(tier) + 1
+    for (const plane of sectionPlanes) {
+      value = Math.imul(value, 31) + (plane.enabled ? 1 : 0)
+      for (const axis of plane.origin) value = Math.imul(value, 31) + Math.round(axis)
+      for (const axis of plane.normal) value = Math.imul(value, 31) + Math.round(axis * 100)
+    }
+    return value | 0
+  }, [captureFrameKey, sectionPlanes, tier])
 
   // True transmission renders the scene again per transmissive draw. It is worth
   // that on a handful of trans-clear elements and ruinous on a glazed facade, so
@@ -1148,17 +1047,12 @@ export function CadViewport({
   const placementDefinition = placement ? catalog.get(placement.definitionId) : undefined
 
   const pendingProposal = useMemo(() => proposals.find((proposal) => proposal.status === 'pending'), [proposals])
-  const proposalPartCount = useMemo(() => {
-    if (!pendingProposal) return 0
-    return Object.values(pendingProposal.previewDocument.parts).filter((part) => {
-      const original = document.parts[part.id]
-      return (
-        !original ||
-        original.color !== part.color ||
-        canonicalTransform(original.transform) !== canonicalTransform(part.transform)
-      )
-    }).length
-  }, [document.parts, pendingProposal])
+  // The same delta the ghost draws, so the reveal counter and the reveal cannot
+  // disagree about how many parts there are to reveal.
+  const proposalPartCount = useMemo(
+    () => (pendingProposal ? proposalDelta(pendingProposal, document).added.length : 0),
+    [document, pendingProposal],
+  )
 
   const revealCount = animation?.proposalReveal === false ? proposalPartCount : revealed
 
@@ -1290,6 +1184,7 @@ export function CadViewport({
         <directionalLight position={[18, 9, -17]} intensity={0.42} color="#8cddeb" />
         <directionalLight position={[2, -8, -14]} intensity={0.22} color="#9fb6bd" />
 
+        <EdgeLodProvider enabled={edgesEnabled && renderMode !== 'silhouette'} budget={edgeBudgetForTier(tier)}>
         <group ref={root} rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
           {/* The bulk of the model renders as instanced batches; only parts that
             need individual treatment are drawn on their own. */}
@@ -1330,14 +1225,15 @@ export function CadViewport({
             />
           ))}
 
+          <group renderOrder={1}>
+            {selectionPlan.batches.map(descriptor => <PartBatch key={`selection:${descriptor.key}`}
+              descriptor={descriptor} showEdges={true} silhouette={false} interactive={false} onSelect={onSelect} />)}
+            {selectionPlan.individual.map(member => <PartObject key={`selection:${member.part.id}`}
+              part={member.part} displayTransform={member.transform} appearance="selected" interactive={false} onSelect={onSelect} />)}
+          </group>
+
           {placement && placementDefinition && placementPreview && (
-            <group matrixAutoUpdate={false} matrix={sceneMatrix(placementPreview.transform)}>
-              <PartVisual
-                definition={placementDefinition}
-                colorCode={placement.color}
-                appearance={placementPreview.legal ? 'ghost' : 'invalid'}
-              />
-            </group>
+            <PlacementGhost definition={placementDefinition} color={placement.color} placement={placementPreview} motion={motion} />
           )}
 
           {pendingProposal && (
@@ -1367,6 +1263,7 @@ export function CadViewport({
               )),
             )}
         </group>
+        </EdgeLodProvider>
 
         <ViewportControls
           document={document}
@@ -1379,7 +1276,7 @@ export function CadViewport({
           motion={motion}
           environment={environmentOverride ?? environment}
           quality={qualityOverride ?? quality}
-          onQuality={setTier}
+          onQuality={handleQuality}
           onEnvironmentRequest={setEnvironmentOverride}
           onQualityRequest={setQualityOverride}
           onTransmissionRequest={setTransmissionOverride}
@@ -1450,31 +1347,30 @@ export function CadViewport({
           infiniteGrid
         />
         {/* Contact shadow scaled to the model, so a city block is not sitting on
-          a 70-unit patch that ends halfway across it. */}
-        {tier.contactShadowResolution > 0 && (
-          <ContactShadows
-            position={[0, -0.014, 0]}
-            scale={Math.max(24, shadowExtent * 2.4)}
-            opacity={0.62}
-            blur={1.9}
-            far={Math.max(18, shadowExtent)}
-            resolution={tier.contactShadowResolution}
-            color="#000000"
-          />
-        )}
+          a 70-unit patch that ends halfway across it. Both shadow passes are
+          driven from the model's own content rather than from the frame clock:
+          see `render/StaticShadows`. */}
+        <StaticShadows
+          position={[0, -0.014, 0]}
+          scale={Math.max(24, shadowExtent * 2.4)}
+          opacity={0.62}
+          blur={1.9}
+          far={Math.max(18, shadowExtent)}
+          resolution={tier.contactShadowResolution}
+          color="#000000"
+          revision={shadowRevision}
+        />
         <CameraRig
           bounds={displayBounds}
           documentId={document.id}
           hasParts={members.length > 0}
           exploded={renderMode === 'exploded'}
           view={cameraView}
+          placing={placing}
           resetKey={cameraResetKey + captureFrameKey}
           motion={motion}
         />
         <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
-        <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
-          <GizmoViewport axisColors={['#ff6a55', '#8bcf65', '#6bbbd6']} labelColor="#0c1112" />
-        </GizmoHelper>
         <fog attach="fog" args={['#0b1012', 90, 220]} />
       </Canvas>
       {overlay.marquee && (
@@ -1568,6 +1464,7 @@ function SectionHandles({
   const { gl } = useThree()
   const onGrab = useCallback(
     (planeId: string, mode: 'offset' | 'rotate', event: ThreeEvent<PointerEvent>) => {
+      if (event.button !== 0 || !pointerRouterFor(gl.domElement).accepts(event.nativeEvent)) return
       const point = canvasPointOf(event, gl.domElement)
       controls.current?.surface.beginSectionDrag(planeId, mode, point.x, point.y)
     },
@@ -1596,6 +1493,7 @@ function JointHandles({
       handle: Parameters<RendererControlSurface['beginJointDrag']>[1],
       event: ThreeEvent<PointerEvent>,
     ) => {
+      if (event.button !== 0 || !pointerRouterFor(gl.domElement).accepts(event.nativeEvent)) return
       const point = canvasPointOf(event, gl.domElement)
       controls.current?.surface.beginJointDrag(edgeId, handle, point.x, point.y)
     },

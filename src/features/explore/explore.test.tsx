@@ -4,14 +4,21 @@ import { createHash } from 'node:crypto'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMOS, getDemo } from '../../demos'
-import { resetLandingAnalytics, setKnownDemoIds, setLandingAnalyticsSink, type RecordedLandingEvent } from '../landing/analytics'
+import {
+  resetLandingAnalytics,
+  setKnownDemoIds,
+  setLandingAnalyticsSink,
+  type RecordedLandingEvent,
+} from '../landing/analytics'
 import { installBrowserDoubles } from '../landing/testing'
 import { ExplorePage } from './ExplorePage'
 import { forkDemo, registerCloudProjectAdapter, type CloudForkInput } from './fork'
 
 const ROOT = path.resolve(__dirname, '..', '..', '..')
 const digestOf = (demoId: string) =>
-  createHash('sha256').update(readFileSync(path.join(ROOT, 'public/demos', demoId, 'document.json'))).digest('hex')
+  createHash('sha256')
+    .update(readFileSync(path.join(ROOT, 'public/demos', demoId, 'document.json')))
+    .digest('hex')
 
 let restore: () => void
 let events: RecordedLandingEvent[]
@@ -95,11 +102,14 @@ describe('the explorer', () => {
   })
 
   it('offers the model, the exploded view and the earlier candidate', async () => {
+    window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
     const group = screen.getByRole('group', { name: 'View' })
     const buttons = within(group).getAllByRole('button')
     expect(buttons.map((button) => button.textContent)).toEqual(['Model', 'Exploded', 'First candidate'])
-    await act(async () => { fireEvent.click(buttons[2]) })
+    await act(async () => {
+      fireEvent.click(buttons[2])
+    })
     expect(screen.getByText(/Showing the first candidate/)).toBeInTheDocument()
     expect(events.map((entry) => entry.event.name)).toContain('demo.view_changed')
   })
@@ -154,7 +164,9 @@ describe('forking a demo', () => {
     registerCloudProjectAdapter({
       id: 'test-adapter',
       isSignedIn: () => false,
-      createProject: async () => { throw new Error('must not be called') },
+      createProject: async () => {
+        throw new Error('must not be called')
+      },
     })
     const outcome = await forkDemo(getDemo('meridian-tower')!)
     expect(outcome.ok && outcome.destination).toBe('local')
@@ -164,7 +176,9 @@ describe('forking a demo', () => {
     registerCloudProjectAdapter({
       id: 'test-adapter',
       isSignedIn: () => true,
-      createProject: async () => { throw new Error('quota exceeded') },
+      createProject: async () => {
+        throw new Error('quota exceeded')
+      },
     })
     const outcome = await forkDemo(getDemo('illinois-main-quad')!)
     expect(outcome.ok).toBe(false)
@@ -189,12 +203,58 @@ describe('forking a demo', () => {
   it('drives the fork from the explorer and offers the editor handoff', async () => {
     window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Edit this build/ })) })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Edit this build/ }))
+    })
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Copied to a local project/))
     const handoff = screen.getByRole('link', { name: /Open it in the editor/ })
     expect(handoff.getAttribute('href')).toMatch(/^\/editor\?project=/)
     const names = events.map((entry) => entry.event.name)
     expect(names).toContain('demo.fork_started')
     expect(names).toContain('demo.fork_completed')
+  })
+})
+
+describe('the collection the explorer offers', () => {
+  it('opens as a large-build library with category filters and editable handoffs', () => {
+    render(<ExplorePage />)
+    expect(screen.getByRole('heading', { level: 1, name: /Don’t start from zero/ })).toBeInTheDocument()
+    expect(screen.getByText(`${DEMOS.length} kernel-verified starting points`)).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: /Preview & edit/ })).toHaveLength(DEMOS.length)
+    for (const demo of DEMOS) expect(demo.validation.partCount).toBeGreaterThanOrEqual(1_000)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Animals' }))
+    expect(screen.getAllByRole('article')).toHaveLength(DEMOS.filter((demo) => demo.category === 'animals').length)
+    expect(screen.getByText('Blue Whale Monument')).toBeInTheDocument()
+    expect(screen.getByText('Copper Canyon Mammoth')).toBeInTheDocument()
+  })
+
+  it('lists every published demo, so a new set does not need the page changing', () => {
+    render(<ExplorePage />)
+    // The page reads the generated manifest rather than a hand-kept list. This
+    // is what makes adding a demo a `tools/build-demos.mjs` change and nothing
+    // else — three sets were added without touching this component, and this is
+    // the assertion that would have caught it if they had not appeared.
+    for (const demo of DEMOS) {
+      expect(screen.getAllByText(demo.title).length, `${demo.id} is offered`).toBeGreaterThan(0)
+    }
+  })
+
+  it('offers more than one discipline', () => {
+    // The complaint that produced the newer sets was never that the demos were
+    // small — the hero is 11,473 parts. It was that they were all modular
+    // architecture. A collection that drifts back to one discipline has lost
+    // the thing these sets were added for.
+    const disciplines = new Set(DEMOS.map((demo) => demo.discipline))
+    expect(disciplines.size).toBeGreaterThan(1)
+  })
+
+  it('opens each published demo by deep link', async () => {
+    for (const demo of DEMOS) {
+      cleanup()
+      window.history.replaceState(null, '', `/explore?demo=${demo.id}`)
+      render(<ExplorePage />)
+      expect(screen.getByRole('heading', { level: 1 }).textContent, `${demo.id} heading`).toBe(demo.title)
+    }
   })
 })

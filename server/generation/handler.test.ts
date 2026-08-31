@@ -111,6 +111,19 @@ describe('the schema layer decides what the model is allowed to say', () => {
   it('accepts a well-formed decomposition', () => {
     expect(validatePayload('massing', goodBoxes).ok).toBe(true)
   })
+
+  it('rejects massing values the browser would otherwise have to rewrite', () => {
+    const tooSmall = { boxes: [{ ...goodBoxes.boxes[0], widthStuds: 2 }] }
+    const tooHigh = { boxes: [{ ...goodBoxes.boxes[0], level: 5 }] }
+    expect(validatePayload('massing', tooSmall).ok).toBe(false)
+    expect(validatePayload('massing', tooHigh).ok).toBe(false)
+  })
+
+  it('rejects empty detail so the provider can correct it before returning', () => {
+    const outcome = validatePayload('detail', { features: [] })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.problems?.join(' ')).toMatch(/feature|item|array/i)
+  })
 })
 
 describe('the provider validates, retries once, then refuses', () => {
@@ -138,6 +151,28 @@ describe('the provider validates, retries once, then refuses', () => {
     const retry = calls[1].messages as Array<{ role: string; content: string }>
     expect(retry).toHaveLength(3)
     expect(retry[2].content).toMatch(/did not satisfy the schema/)
+  })
+
+  it('corrects an empty detail answer instead of failing later in the browser', async () => {
+    const feature = {
+      id: 'vent',
+      role: 'base',
+      query: 'grille tile 1 x 2',
+      atXStuds: 1,
+      atZStuds: 0,
+      quarterTurns: 0,
+    }
+    const { client, calls } = stubClient([message({ features: [] }), message({ features: [feature] })])
+    const provider = new AnthropicGenerationProvider({ client })
+    const result = await provider.complete({
+      system: 's',
+      prompt: 'p',
+      schema: { type: 'object', properties: { features: { type: 'array' } } },
+    })
+
+    expect(result.attempts).toBe(2)
+    expect(result.value).toEqual({ features: [feature] })
+    expect(calls).toHaveLength(2)
   })
 
   it('refuses after two violations rather than salvaging part of the answer', async () => {

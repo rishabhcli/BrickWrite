@@ -30,6 +30,19 @@ jobs:
       - name: Unit tests, strict TypeScript and production build
         run: npm run check
 
+      # The showcase is generated, not authored, and 46 MB of it is committed —
+      # so "the generator still produces exactly this" is a property no unit test
+      # can assert. `manifest.test.ts` re-validates the committed documents
+      # against the kernel, which catches a hand-edited asset; it cannot catch
+      # the generator drifting away from what was published, because it reads the
+      # files rather than rebuilding them.
+      #
+      # `--check` builds into a temporary tree and diffs, so it can never dirty
+      # the checkout, and it needs only the catalog assets the step above has
+      # already verified. Roughly 15 s for six demos.
+      - name: Demo assets still rebuild byte-identically
+        run: npm run demos:check
+
   # Suites that assert on things a runner cannot change the answer to.
   #
   # `landing` gates the render-critical payload in bytes, `production` executes

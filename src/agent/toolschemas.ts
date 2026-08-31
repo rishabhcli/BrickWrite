@@ -61,6 +61,58 @@ export const CapabilitySearchInput = z.strictObject({
   capability: z.string().max(80).optional().describe('Exact capability id, to fetch its full argument schema.'),
 })
 
+/**
+ * Generation, mirrored from the WebMCP surface.
+ *
+ * Declared here rather than imported from `src/webmcp/surfaces/generation.ts`
+ * because this file may import nothing but Zod — the API process reads it — and
+ * because the two surfaces are allowed to diverge in what they *offer* while
+ * agreeing on what they *accept*. They do not diverge today: an external MCP
+ * client and the in-editor Design Partner send the same arguments to the same
+ * session.
+ */
+export const GenerationCompileInput = z.strictObject({
+  prompt: z.string().max(4000).optional().describe('The build request in plain words. Omit to compile whatever prompt the session already holds.'),
+})
+
+export const GenerationSetInput = z.strictObject({
+  prompt: z.string().max(4000).optional(),
+  candidateCount: z.number().int().min(1).max(6).optional().describe('How many candidates to search. More candidates cost more time and more model spend.'),
+  reason: z.string().min(1).max(200).optional().describe('Why the brief is being edited. Recorded on the brief.'),
+  brief: z
+    .object({
+      subject: z.string().min(1).max(200).optional(),
+      envelopeStuds: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]).nullable().optional(),
+      scale: z.enum(['micro', 'minifig', 'midi', 'large', 'unspecified']).optional(),
+      functions: z.array(z.string().min(1).max(80)).max(16).optional(),
+      palette: z.array(z.number().int().min(0).max(9999)).max(16).optional(),
+      symmetry: z.enum(['none', 'mirror-x', 'mirror-z', 'radial']).optional(),
+      partBudget: z.number().int().min(1).max(4000).nullable().optional(),
+      style: z.array(z.string().min(1).max(40)).max(12).optional(),
+    })
+    .optional(),
+  conflict: z
+    .object({
+      field: z.string().min(1).max(40),
+      choice: z.enum(['compiler', 'operator']),
+    })
+    .optional()
+    .describe('Settle one contradiction the compiler refused to decide. Every conflict must be settled before generation_run.'),
+})
+
+export const GenerationRunInput = z.strictObject({
+  useModel: z.boolean().optional().describe('false runs the deterministic strategies with no model call.'),
+})
+
+export const GenerationStateInput = z.strictObject({})
+
+export const GenerationCancelInput = z.strictObject({})
+
+export const GenerationPreviewInput = z.strictObject({
+  candidateId: z.string().min(1).max(120).describe('An id from the candidates array of generation_run or generation_state.'),
+  label: z.string().min(1).max(120).optional().describe('What a reviewer will read on this wave. Defaults to the brief subject.'),
+})
+
 export const NotesReadInput = z.strictObject({
   status: z.enum(['open', 'resolved', 'all']).optional(),
 })
@@ -168,6 +220,54 @@ export const ASSISTANT_TOOLS: readonly AssistantToolDeclaration[] = [
     schema: ValidateModelInput,
   },
   {
+    name: 'generation_compile',
+    kind: 'read',
+    description:
+      'Compile a build request in plain words into a DesignBrief: subject, envelope in studs, scale, palette, part budget, symmetry and functions, each with the evidence in the sentence that produced it. This is step one of building something whole — a tower, a freighter, a clock palace — and it is what "build me X" means. Contradictions are reported, never silently resolved. On MODEL_UNAVAILABLE, call generation_compile_local. Reads only.',
+    schema: GenerationCompileInput,
+  },
+  {
+    name: 'generation_compile_local',
+    kind: 'read',
+    description:
+      'Compile the same brief from rules in this browser, with no model call. Use when generation_compile reports MODEL_UNAVAILABLE. Reads only.',
+    schema: GenerationCompileInput,
+  },
+  {
+    name: 'generation_set',
+    kind: 'read',
+    description:
+      'Adjust the prompt, the candidate count, or brief fields, and settle the compiler/operator conflicts the brief reported. generation_run refuses while any conflict is open. Reads only.',
+    schema: GenerationSetInput,
+  },
+  {
+    name: 'generation_run',
+    kind: 'read',
+    description:
+      'Run the generation pipeline — massing, skeleton, packing, detail — and score the candidates. One run produces whole bonded assemblies of hundreds or thousands of parts, with running bond, real openings and kernel-verified clutch; no coordinate in the result was proposed by a model. useModel=false is the deterministic path. Writes nothing: candidates are reviewed with generation_preview.',
+    schema: GenerationRunInput,
+  },
+  {
+    name: 'generation_state',
+    kind: 'read',
+    description:
+      'Read the shared generation session: prompt, brief, unresolved conflicts, candidates with their part, collision and component counts, and what is under review. The Generate panel and this conversation are the same session, so a brief the builder typed is one you can read.',
+    schema: GenerationStateInput,
+  },
+  {
+    name: 'generation_cancel',
+    kind: 'read',
+    description: 'Stop an in-flight generation run. Nothing was written to the document.',
+    schema: GenerationCancelInput,
+  },
+  {
+    name: 'generation_preview',
+    kind: 'preflight',
+    description:
+      'Stage one generated candidate as a single reviewable wave — the entire model as one ghost and one undo step, not a stream of individual adds. The kernel verifies collisions and connectivity against the live revision first. A person accepts it, or Build mode does after re-checking; this never mutates the document.',
+    schema: GenerationPreviewInput,
+  },
+  {
     name: 'preflight_capability',
     kind: 'preflight',
     description:
@@ -178,7 +278,7 @@ export const ASSISTANT_TOOLS: readonly AssistantToolDeclaration[] = [
     name: 'preflight_placement',
     kind: 'preflight',
     description:
-      'Dry-run placing one catalog part against an existing anchor part. The document must already contain that anchor — on an empty plate use capability_search for build_field / build_enclosure instead. You choose the identity, the anchor and the face; the kernel’s connector solver computes the pose. A pose that does not mate is refused as NO_COMPATIBLE_CONNECTOR (tile / wrong family) or CONNECTOR_OCCUPIED (that face had studs and they are all taken). Produces a reviewable ghost wave and never mutates the document.',
+      'Dry-run placing ONE catalog part against ONE existing anchor part. This is for a single deliberate brick — a detail, a fix, a part a builder named. It is the wrong tool for constructing anything: never lay a building, a vehicle, a mechanism or a set brick by brick with it. To build something whole, call generation_compile then generation_run; for a wall, floor, enclosure or field, call preflight_capability with build_wall / build_enclosure / build_structure / build_field. The document must already contain the anchor — on an empty plate this tool has nothing to attach to. You choose the identity, the anchor and the face; the kernel’s connector solver computes the pose. A pose that does not mate is refused as NO_COMPATIBLE_CONNECTOR (tile / wrong family) or CONNECTOR_OCCUPIED (that face had studs and they are all taken). Produces a reviewable ghost wave and never mutates the document.',
     schema: PreflightPlacementInput,
   },
   {

@@ -79,11 +79,57 @@ export type JointFreedom =
       continuousRotation: boolean
     }
   | { kind: 'spherical' }
+  /**
+   * A drum that pays a load out along a line.
+   *
+   * One degree of freedom expressed in two places: the operator turns the drum
+   * about `axis`, and the load travels along `payoutAxis`, which is generally
+   * not the same direction — a crane winch spins about a horizontal shaft and
+   * the hook drops vertically. `drumRadiusLdu` is the conversion.
+   *
+   * No connector pair implies this. Unlike every other freedom here it cannot
+   * be derived from geometry, because nothing about an axle in an axle-hole
+   * says "this one is a winch". It reaches a document through
+   * `ModelDocument.jointOverrides`, and that is the only way it can.
+   */
+  | {
+      kind: 'winch'
+      /** Drum axis, in the shared connector frame. What the operator turns. */
+      axis: Vec3
+      /** Direction the load travels as the drum pays out. */
+      payoutAxis: Vec3
+      /** LDU of travel per radian of drum rotation. */
+      drumRadiusLdu: number
+      minLdu: number
+      maxLdu: number
+    }
   | { kind: 'unknown' }
 
 export interface ConnectionEndpoint {
   partId: string
   featureId: string
+}
+
+/**
+ * A joint freedom the builder asserted, rather than one the connectors imply.
+ *
+ * Connection edges are *derived*: `jointFor` maps a pair of connector families
+ * to a freedom, and the derivation runs again on every edit, so a freedom
+ * written onto an edge would not survive the next part being placed. That is
+ * the right default — geometry should decide what a stud can do — but it means
+ * a mechanism whose behaviour is a matter of intent rather than shape has no
+ * way to exist. A winch drum is an axle in an axle-hole. So is a plain axle.
+ *
+ * An override is keyed by the two endpoints rather than by edge id, because
+ * edge ids are derived too. The pair is stable for as long as both parts are.
+ * An override naming an edge that no longer exists is inert, not an error: the
+ * parts may come back, and refusing to load a document over it would be worse
+ * than carrying a line nothing reads.
+ */
+export interface JointOverride {
+  readonly a: ConnectionEndpoint
+  readonly b: ConnectionEndpoint
+  readonly joint: JointFreedom
 }
 
 /**
@@ -324,6 +370,14 @@ export interface ModelDocument {
    * existed still loads: absence means "none captured", not "unreadable".
    */
   modules?: ModuleDefinition[]
+  /**
+   * Joint freedoms the builder asserted, applied over the derived ones.
+   *
+   * Optional on the same terms as `modules`: absence means "every joint is what
+   * its connectors imply", which is what every document written before this
+   * field existed meant.
+   */
+  jointOverrides?: JointOverride[]
 }
 
 export type CadOperation =
@@ -334,6 +388,7 @@ export type CadOperation =
   | { type: 'part.recolor'; partId: string; color: number }
   | { type: 'part.protect'; partId: string; protected: boolean }
   | { type: 'part.assign-subassembly'; partId: string; subassemblyId: string }
+  | { type: 'joint.override'; override: JointOverride }
   | { type: 'subassembly.add'; subassembly: Subassembly }
   | { type: 'subassembly.rename'; subassemblyId: string; name: string }
   | { type: 'note.add'; note: BuilderNote }

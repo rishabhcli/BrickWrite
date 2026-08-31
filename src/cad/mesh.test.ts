@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 // The offline compiler is exercised directly so the packed container format and
 // the runtime decoder can never drift apart.
 import { compileMesh, parseLDrawSource } from '../../tools/ldraw-mesh.mjs'
-import { decodeMesh, MAIN_COLOUR } from './mesh'
+import { decodeMesh, GeometryCache, MAIN_COLOUR } from './mesh'
+import type { PartDefinition } from './types'
 
 /** Builds a resolver over an in-memory LDraw library. */
 const library = (files: Record<string, string>) => (reference: string) => {
@@ -168,5 +169,166 @@ describe('LDraw geometry compiler', () => {
     const indexOffset = 52 + sliceCount * 12 + vertexCount * 24
     view.setUint32(indexOffset, vertexCount, true)
     expect(() => decodeMesh(forged)).toThrow(/exceeds its .* vertices/i)
+  })
+})
+
+/**
+ * The cache is bounded, and bounding it must not blank the viewport.
+ *
+ * An unbounded cache leaks on both sides — decoded buffers on the heap, and the
+ * uploaded copies on the GPU, since dropping a `BufferGeometry` without
+ * disposing it frees neither. Eviction fixes that and introduces a worse
+ * failure if it is careless: disposing geometry something is still drawing
+ * empties it. These tests hold both ends — that it does evict, and that it
+ * refuses to evict what a caller has said it is using.
+ */
+describe('the bounded geometry cache', () => {
+  const CUBE = (size: number) =>
+    [
+      '0 Cube',
+      '0 BFC CERTIFY CCW',
+      ...Array.from({ length: size }, (_, index) => {
+        const y = index * 4
+        return `4 16 -10 ${y} -20 10 ${y} -20 10 ${y} 20 -10 ${y} 20`
+      }),
+    ].join('\n')
+
+  /** A part definition backed by a real compiled buffer, served by a stub fetch. */
+  const compiled = (id: string, quads: number) => {
+    const name = `${id}.dat`
+    const result = compileMesh(name, library({ [name]: CUBE(quads) }), { parseCache: new Map() })!
+    const buffer = new Uint8Array(result.buffer)
+    const definition = {
+      canonicalId: id,
+      geometryAsset: {
+        hash: `sha256:${result.hash}`,
+        file: `${id}.bwmesh`,
+        bytes: buffer.byteLength,
+        vertices: result.stats.vertices,
+        triangles: result.stats.triangles,
+        edgeSegments: result.stats.edgeSegments,
+        slices: result.stats.slices,
+      },
+    } as unknown as PartDefinition
+    return { definition, buffer }
+  }
+
+  const serve = (parts: Array<{ definition: PartDefinition; buffer: Uint8Array }>) => {
+    const byFile = new Map(parts.map((part) => [part.definition.geometryAsset!.file, part.buffer]))
+    return vi.fn(async (url: string) => {
+      const found = byFile.get(String(url).split('/').pop() ?? '')
+      if (!found) return { ok: false, status: 404, statusText: 'Not Found' } as unknown as Response
+      const copy = found.slice()
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength),
+      } as unknown as Response
+    })
+  }
+
+  it('measures decoded bytes and drops the least recently used when over budget', async () => {
+    const parts = [compiled('a', 24), compiled('b', 24), compiled('c', 24)]
+    vi.stubGlobal('fetch', serve(parts))
+    try {
+      const one = compiled('probe', 24)
+      vi.stubGlobal('fetch', serve([...parts, one]))
+      // Budget set to hold two of these three, so loading the third must evict.
+      const sizing = new GeometryCache('')
+      await sizing.load(one.definition)
+      const each = sizing.residentBytes
+      expect(each).toBeGreaterThan(0)
+
+      const cache = new GeometryCache('', each * 2 + 1)
+      await cache.load(parts[0].definition)
+      await cache.load(parts[1].definition)
+      // Touch the first so the *second* becomes the least recently used.
+      expect(cache.get(parts[0].definition)).not.toBeNull()
+      expect(cache.residentCount).toBe(2)
+
+      await cache.load(parts[2].definition)
+      expect(cache.residentCount).toBe(2)
+      expect(cache.residentBytes).toBeLessThanOrEqual(each * 2 + 1)
+      // The untouched one went; the touched one and the newest stayed.
+      expect(cache.getStatus(parts[1].definition)).toBe('unavailable')
+      expect(cache.getStatus(parts[0].definition)).toBe('ready')
+      expect(cache.getStatus(parts[2].definition)).toBe('ready')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('never evicts geometry a caller is still holding', async () => {
+    const parts = [compiled('d', 24), compiled('e', 24), compiled('f', 24), compiled('j', 24)]
+    vi.stubGlobal('fetch', serve(parts))
+    try {
+      const sizing = new GeometryCache('')
+      await sizing.load(parts[0].definition)
+      const each = sizing.residentBytes
+
+      const cache = new GeometryCache('', each * 2 + 1)
+      // Retained *before* it is resident, which is the ordinary case: a renderer
+      // retains on mount and the fetch lands afterwards.
+      const release = cache.retain(parts[0].definition)
+      await cache.load(parts[0].definition)
+      const surface = cache.get(parts[0].definition)!.surface
+      await cache.load(parts[1].definition)
+      await cache.load(parts[2].definition)
+
+      // It is now the least recently used of the three, and it is the one that
+      // survives: the sweep took the unretained neighbour instead. Its buffers
+      // are intact, which is the assertion that matters — a disposed geometry
+      // renders nothing.
+      expect(cache.getStatus(parts[0].definition)).toBe('ready')
+      expect(cache.getStatus(parts[1].definition)).toBe('unavailable')
+      expect(surface.getAttribute('position')).toBeTruthy()
+
+      // Released, it becomes the first thing the next sweep reaches for.
+      release()
+      await cache.load(parts[3].definition)
+      expect(cache.getStatus(parts[0].definition)).toBe('unavailable')
+      expect(cache.getStatus(parts[3].definition)).toBe('ready')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('counts holders, so the last release is the one that frees it', async () => {
+    const parts = [compiled('g', 24), compiled('h', 24)]
+    vi.stubGlobal('fetch', serve(parts))
+    try {
+      const sizing = new GeometryCache('')
+      await sizing.load(parts[0].definition)
+      const cache = new GeometryCache('', 1)
+      const first = cache.retain(parts[0].definition)
+      const second = cache.retain(parts[0].definition)
+      await cache.load(parts[0].definition)
+      first()
+      expect(cache.sweep()).toBe(0)
+      // Releasing twice from the same handle must not decrement someone else's
+      // hold — the balance is per handle, not per asset.
+      first()
+      expect(cache.sweep()).toBe(0)
+      second()
+      expect(cache.sweep()).toBe(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('disposes what it drops, so the GPU copy goes with the heap one', async () => {
+    const part = compiled('i', 24)
+    vi.stubGlobal('fetch', serve([part]))
+    try {
+      const cache = new GeometryCache('', 1)
+      await cache.load(part.definition)
+      const geometry = cache.get(part.definition)
+      // A budget of one byte means the arrival is swept immediately; nothing is
+      // holding it, so `get` reports it gone and starts a fresh fetch.
+      expect(geometry).toBeNull()
+      expect(cache.residentBytes).toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

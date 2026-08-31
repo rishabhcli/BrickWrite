@@ -414,6 +414,27 @@ export class IdPass {
     return clone!
   }
 
+  /** Compile the real visible identity draws, not an off-canvas patch which
+   * frustum-culls every brick and leaves the first real click cold. */
+  warm(camera: THREE.Camera): void {
+    const target = this.ensureTarget()
+
+    // The full-frame path, which `pickRegion` takes for a marquee.
+    this.renderPass(camera, target, [], null)
+    this.renderer.readRenderTargetPixels(target, 0, 0, 1, 1, new Uint8Array(4))
+
+    // And the windowed path, which `pick` takes for every click. These are not
+    // the same pass: a pick renders through `setViewOffset` and reads a
+    // `patch × patch` block out of the target's bottom-left corner, so warming
+    // only the full frame leaves the first real click paying for the offset
+    // projection and the larger readback. That was the whole cost the warm-up
+    // exists to remove, and measuring it is the only way to know it was.
+    const patch = PICK_RADIUS_PX * 2 + 1
+    this.renderPass(camera, target, [], { x: 0, y: 0, width: patch, height: patch })
+    if (this.patchBuffer.length < patch * patch * 4) this.patchBuffer = new Uint8Array(patch * patch * 4)
+    this.renderer.readRenderTargetPixels(target, 0, target.height - patch, patch, patch, this.patchBuffer)
+  }
+
   /**
    * Resolves the part under a canvas point.
    *

@@ -294,3 +294,44 @@
   flex-direction: column;
   gap: 5px;
 }
+
+/* Who is here.
+ *
+ * The dot carries a peer's server-assigned colour, which is the same colour a
+ * viewport cursor will use when that half lands — so the roster is already the
+ * legend for it. Everything else is deliberately quiet: presence is advisory,
+ * and a panel that shouts is a panel that gets read as model state. */
+.bw-cloud-peer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--bw-cloud-line);
+  border-radius: 3px;
+  background: var(--bw-cloud-panel-2);
+}
+.bw-cloud-peer[data-following='true'] { border-color: var(--bw-cloud-cyan); }
+.bw-cloud-peer-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  /* The colour comes from the peer record, so it is not guaranteed to read
+   * against this surface. The ring keeps a dark one visible. */
+  box-shadow: 0 0 0 1px var(--bw-cloud-line-hi);
+}
+.bw-cloud-peer-name { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.bw-cloud-peer-meta {
+  flex: 1;
+  color: var(--bw-cloud-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.bw-cloud-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--bw-cloud-faint);
+  font-size: 10px;
+}

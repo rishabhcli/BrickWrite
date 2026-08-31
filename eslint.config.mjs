@@ -19,6 +19,13 @@ export default tseslint.config(
       '.vercel/**',
       '.wrangler/**',
       '.sources/**',
+      // Agent scratch, untracked like every other entry above it. Without this,
+      // `npm run lint` — which is `eslint .` — gives a different answer
+      // depending on which spec-driven-development artifacts happen to be on
+      // your disk, and a stray debug script in someone's working copy reports as
+      // a lint failure in a repo that is clean. CI never sees the directory at
+      // all, so the only effect was to train people to ignore local lint.
+      '.superpowers/**',
     ],
   },
   {

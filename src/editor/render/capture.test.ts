@@ -95,6 +95,52 @@ describe('capture set integrity', () => {
     expect(failures[0]).toMatch(/not reproducible/)
   })
 
+  it('lets the violations view match beauty on a model with no collisions', () => {
+    // The case the old fixture dodged by giving `violations` its own hash. On a
+    // clean model the overlay has nothing to draw, so being pixel-identical to
+    // beauty is correct — requiring it to differ would require the diagnostic to
+    // invent something. This is the rule the acceptance run had worked out and
+    // this function contradicted.
+    expect(
+      checkCaptureSet(
+        [
+          { mode: 'beauty', revision: 5, hash: 'aaaa' },
+          { mode: 'silhouette', revision: 5, hash: 'bbbb' },
+          { mode: 'violations', revision: 5, hash: 'aaaa' },
+        ],
+        { collisions: 0 },
+      ),
+    ).toEqual([])
+  })
+
+  it('rejects a violations view that matches beauty when there are collisions', () => {
+    // The same coincidence is a real failure in the other direction: something
+    // to draw, and nothing drawn.
+    const failures = checkCaptureSet(
+      [
+        { mode: 'beauty', revision: 5, hash: 'aaaa' },
+        { mode: 'violations', revision: 5, hash: 'aaaa' },
+      ],
+      { collisions: 3 },
+    )
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toMatch(/3 collisions; the overlay is not drawing/)
+  })
+
+  it('still holds every other mode to being distinguishable on a clean model', () => {
+    // Holding `violations` out must not excuse the rest.
+    const failures = checkCaptureSet(
+      [
+        { mode: 'beauty', revision: 5, hash: 'aaaa' },
+        { mode: 'connections', revision: 5, hash: 'aaaa' },
+        { mode: 'violations', revision: 5, hash: 'aaaa' },
+      ],
+      { collisions: 0 },
+    )
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toMatch(/indistinguishable/)
+  })
+
   it('rejects two modes that cannot be told apart', () => {
     // A hash that collided across modes would let an agent conclude that
     // switching to the collision view showed it nothing new.

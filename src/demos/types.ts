@@ -133,10 +133,14 @@ export interface DemoShowcase {
   siteFinishParts: number
 }
 
+/** The broad shelf a large starting build occupies in Explore. */
+export type DemoCategory = 'landmarks' | 'architecture' | 'animals' | 'creative' | 'vehicles'
+
 export interface DemoEntry {
   id: string
   title: string
   discipline: string
+  category: DemoCategory
   tagline: string
   summary: string
   techniques: string[]
@@ -173,6 +177,45 @@ export interface DemoManifest {
   /** The gates every entry cleared, in the words the build uses. */
   gates: string[]
   demos: DemoEntry[]
+}
+
+/** The deliberately small subset shipped on the landing route. */
+export interface DemoSummary {
+  id: string
+  title: string
+  discipline: string
+  category: DemoCategory
+  tagline: string
+  hero: boolean
+  brief: DemoBrief | null
+  camera: DemoCamera
+  catalogVersion: string
+  assets: Pick<DemoAssets, 'preview' | 'roughPreview' | 'thumbnail'>
+  validation: {
+    partCount: number
+    connectionCount: number
+    collisionCount: number
+    componentCount: number
+    disconnectedPartCount: number
+    footprintStuds: number[]
+    steps: number
+    statics: Pick<DemoStaticsSummary, 'massLabel' | 'stable' | 'tippingMarginLdu' | 'unsupportedParts'>
+  }
+  roughValidation: {
+    partCount: number
+    connectionCount: number
+    collisionCount: number
+    componentCount: number
+    disconnectedPartCount: number
+    footprintStuds: number[]
+    steps: number
+    statics: Pick<DemoStaticsSummary, 'massLabel' | 'stable' | 'tippingMarginLdu' | 'unsupportedParts'>
+  }
+  delta: Pick<DemoRefinementDelta, 'partsAdded' | 'connectionsAdded'>
+}
+
+export interface DemoSummaryManifest extends Omit<DemoManifest, 'demos'> {
+  demos: DemoSummary[]
 }
 
 // ---------------------------------------------------------------------------

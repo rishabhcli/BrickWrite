@@ -414,3 +414,25 @@ The benchmark runs on its own page — an HTML shell served by intercepting a pa
 on the dev server's origin, importing `src/editor/render/benchmarkEntry.ts` — so
 a frame time is attributable to the renderer rather than to the renderer plus a
 React tree, a catalogue panel and a command deck.
+
+---
+
+## Camera and interaction update (August 2026)
+
+`render/CameraRig.tsx` now owns drei CameraControls, backed by the direct MIT-licensed `camera-controls@3.1.2` dependency (the same version already used by drei). This supersedes the earlier fixed-duration camera-flight description: named views, `frameParts`, keyboard camera input and resize corrections use the control's damped transitions (`smoothTime=0.35`, `draggingSmoothTime=0.06`, `restThreshold=0.002`). Reduced-motion policy sets both smoothing times to zero and settles pending motion. `settle()` also flushes CameraControls to its target. Optional turntable playback uses the rig; it remains off by default.
+
+`frameParts` starts a transition rather than awaiting its completion. Capture/tests requiring the destination synchronously must call `settle()` or enable reduced motion. The root LDraw-to-scene conversion is unchanged. Keyboard and imperative clients use the same target, distance and orthographic zoom state as pointer clients. `cameraPose()` additionally reports target, zoom, enabled state and pointer owner for diagnostics.
+
+`render/pointerRouter.ts` is the canvas arbiter. Placement outranks handles; left handles outrank modifier selection; ordinary left presses are provisional selections until 4 px of movement; right/middle presses remain native camera input. CameraControls is cancelled and disabled while another owner holds the pointer. A document-capture guard rejects secondary IDs before native TransformControls can consume them, while camera-owned multi-touch remains unfiltered. There are no replayed pointer events. The only deferred event is the macOS right-click **contextmenu**, delivered after a stationary release rather than opening during a pan.
+
+SelectionManipulator stays outside the scaled model root and resolves snaps once per animation frame, flushing at commit. PlacementGhost interpolates only a render pose, owns/disposes its cloned materials, and never supplies its interpolated pose as kernel truth. Joint previews coalesce pointer samples to frames, sweep each sample, and rerun the final sweep before dispatch. Document writes still occur only on committed edits, never camera motion or preview frames.
+
+### Selection and large-model cost
+
+- `useCadSnapshot(selector, isEqual = Object.is)` and convenience selection/revision/validation hooks coexist with `useCad()`. Validation is cached by immutable document identity and invalidated with derived state. The memoized viewport scene uses stable callback bridges; unrelated chrome updates need not rebuild it.
+- Select/Connect keep base batches stable and render selection as a nonpickable overlay. Move/Rotate temporarily exclude selected parts for transform previews. Render-only PartObject/PartBatch components have **no** R3F pointer handlers, so GPU-only picking does not also trigger instance-wide CPU raycasts.
+- InstancedMesh buffers use power-of-two high-water capacity (minimum 32), growing only past capacity and not shrinking with ordinary removals.
+- Each merged batch retains at most 600,000 sampled edge vertices. At 5 Hz the edge allocator ranks visible batches by projected extent and updates draw ranges without React state. Global drawn batch-edge budgets are 2.4 million vertices at ultra/high, 1.2 million balanced, 400,000 fast and 120,000 minimum. These are draw budgets, **not aggregate retained-memory limits**; individual, nonbatched PartVisual edges are outside that allocator. No per-part geometric/silhouette LOD is claimed.
+- After a drawable beauty frame, idle warm-up renders real visible identity geometry and reads one pixel. The previous off-canvas pick could frustum-cull everything and leave shaders cold. This reduces the initial compilation cliff, but does not promise zero allocation cost after every new geometry, context or size change.
+
+`stats()` now includes drawn `edgeVertices`, `batchEdgeVertices` (excluding helpers/grid), pickable `instanceBuffers` (`objectId`, count, capacity), and `identityWarmupComplete`. Warm-up resets on camera, document-id and viewport-size changes. Completion means a warm pass returned, not that every subsequently loaded geometry variant is warm. The CAD editing suite checks real pointer gestures, interpolation, selection-buffer identity, a crane hinge commit/undo and the existing 11k-part Illinois model. It requests hardware acceleration like the renderer benchmark and records the actual GPU; SwiftShader remains a fallback, not a performance-equivalent backend. These are local browser/kernel checks, not cloud or cross-device performance guarantees.

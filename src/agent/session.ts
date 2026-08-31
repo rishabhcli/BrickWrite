@@ -4,7 +4,7 @@ import { STUD_LDU } from '../cad/catalog'
 import { analyseStatics } from '../cad/statics'
 import type { DesignBrief } from '../platform/contracts'
 import { briefGrounding } from './brief'
-import { situationFromLive, nextAgentAction } from './guidance'
+import { classifyRequest, situationFromLive, nextAgentAction } from './guidance'
 import { ASSISTANT_TOOLS } from './toolschemas'
 import { WaveLedger, capabilitiesFor, setMode, type AgentMode, type Wave, type WaveFailure } from './modes'
 import type { AgentModelTransport } from './provider'
@@ -134,7 +134,15 @@ export class AgentSession {
     this.trace = options.trace ?? new TraceLedger()
     this.waves = options.waves ?? new WaveLedger(this.trace)
     this.toolHost =
-      options.toolHost ?? createToolHost({ waves: this.waves, trace: this.trace, pins: options.pins, view: options.view, ...options.render })
+      options.toolHost ??
+      createToolHost({
+        waves: this.waves,
+        trace: this.trace,
+        pins: options.pins,
+        view: options.view,
+        requestText: () => this.lastUserText(),
+        ...options.render,
+      })
     this.transport = options.transport ?? createAssistantTransport()
     this.maxToolTurns = options.maxToolTurns ?? DEFAULT_MAX_TOOL_TURNS
     this.brief = options.brief ?? null
@@ -244,11 +252,21 @@ export class AgentSession {
   // Grounding
   // -------------------------------------------------------------------
 
+  /** The builder's most recent turn, for "did they ask for a thing or an edit?". */
+  private lastUserText(): string | null {
+    for (let index = this.wire.length - 1; index >= 0; index -= 1) {
+      const message = this.wire[index]
+      if (message.role === 'user') return message.text
+    }
+    return null
+  }
+
   private grounding(references: readonly SpatialReference[]): Grounding {
     const snapshot = cadEngine.getSnapshot()
     const document = snapshot.document
     const validation = snapshot.validation
     const statics = analyseStatics(document)
+    const request = classifyRequest(this.lastUserText())
     const next = nextAgentAction(
       situationFromLive(document, {
         partCount: validation.partCount,
@@ -256,6 +274,11 @@ export class AgentSession {
         collisions: validation.collisions.length,
         disconnectedParts: validation.disconnectedPartIds.length,
         tipping: statics.support ? statics.support.marginLdu < 0 : null,
+        subject: request.subject,
+        designRequest: request.designRequest,
+        generationPending: this.waves
+          .pending()
+          .some((wave) => wave.capability === 'generate_from_brief' || wave.capability === 'generate_region'),
       }),
     )
     return {

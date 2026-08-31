@@ -163,6 +163,18 @@ export interface PartCorpus {
    * 1 x 2 x 5 never enters the candidate set to be scored.
    */
   byFootprint: ReadonlyMap<string, readonly number[]>
+  /**
+   * LDraw colour code to document indices, most-used first.
+   *
+   * A colour on its own is a real question - a child types "clear" and means
+   * "show me the see-through pieces" - and without this it has no answer, because
+   * a colour word carries no lexical or latent signal about *shape*: "clear"
+   * used to come back with a fabric cape, a bandana and a set of air tanks,
+   * which are simply the parts whose names look most like the word. Only the
+   * compiled pack carries observed colours, so this covers ~900 identities and
+   * says so rather than guessing at the rest.
+   */
+  byColor: ReadonlyMap<number, readonly number[]>
   /** True when the wider catalogued tier was folded in. */
   includesCatalogued: boolean
 }
@@ -419,7 +431,20 @@ export function buildPartCorpus(
     bucket.sort((a, b) => documents[b].frequency - documents[a].frequency)
   }
 
-  return { catalogVersion, documents, byId, byFootprint, includesCatalogued: external.length > 0 }
+  const byColor = new Map<number, number[]>()
+  documents.forEach((document, index) => {
+    if (!document.colors) return
+    for (const code of document.colors) {
+      const bucket = byColor.get(code)
+      if (bucket) bucket.push(index)
+      else byColor.set(code, [index])
+    }
+  })
+  for (const bucket of byColor.values()) {
+    bucket.sort((a, b) => documents[b].frequency - documents[a].frequency)
+  }
+
+  return { catalogVersion, documents, byId, byFootprint, byColor, includesCatalogued: external.length > 0 }
 }
 
 /**

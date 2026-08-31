@@ -3,7 +3,6 @@ import { defaultLayout, type WorkbenchLayout } from '../editor/workbench/layout'
 import {
   applyChromeReveal,
   applyDockFocus,
-  applyExclusiveDock,
   focusModelHealth,
   focusProposalReview,
   focusWorkspace,
@@ -52,22 +51,6 @@ describe('chrome reveal', () => {
     expect(next.sections.transform).toBe(false)
     expect(next.sections.inspector).toBe(false)
     expect(next.sections.palette).toBe(true)
-  })
-
-  it('collapses a restored stack down to one focused sheet', () => {
-    const stacked: WorkbenchLayout = {
-      ...defaultLayout(),
-      sections: {
-        ...defaultLayout().sections,
-        selection: true,
-        transform: true,
-        inspector: true,
-      },
-    }
-    const next = applyExclusiveDock(stacked)
-    expect(next.sections.selection).toBe(true)
-    expect(next.sections.transform).toBe(false)
-    expect(next.sections.inspector).toBe(false)
   })
 
   it('uncollapses the timeline without inventing a section id', () => {

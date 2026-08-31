@@ -1,9 +1,10 @@
-import { Cloud, Users } from 'lucide-react'
+import { Cloud, Radio, Users } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useRegisterContribution, type WorkbenchApi } from '../editor/workbench'
 import { browserCloudRuntime } from './browserRuntime'
 import { CloudSyncProvider } from './CloudSyncProvider'
 import { CloudMembersPanel } from './MembersPanel'
+import { CloudPresencePanel } from './PresencePanel'
 import { CloudProjectsPanel } from './ProjectsPanel'
 import type { CloudRuntime } from './runtime'
 import { CloudSyncStatus } from './SyncStatus'
@@ -14,7 +15,7 @@ import { VERSION_HISTORY_MODAL_ID, type CloudWorkbenchApi } from './surface'
  * The cloud layer's surfaces, mounted into the editor shell.
  *
  * One zero-prop component for the composition root to list. It resolves the
- * runtime once and hands the same instance to all four registrations, so the
+ * runtime once and hands the same instance to all five registrations, so the
  * status line, the panels and the dialog can never disagree about whether there
  * is a deployment or who is signed in.
  *
@@ -25,7 +26,7 @@ import { VERSION_HISTORY_MODAL_ID, type CloudWorkbenchApi } from './surface'
  * runtime's lifetime; the ones inside `render` are pure context.
  *
  * `WorkbenchApi` is passed straight through as `CloudWorkbenchApi`, the subset
- * these panels use. TypeScript checks the two agree at these four lines and
+ * these panels use. TypeScript checks the two agree at these five lines and
  * nowhere else, which is what keeps the panels testable without the editor.
  */
 export function CloudProjectsContribution({ runtime }: { runtime?: CloudRuntime } = {}) {
@@ -35,6 +36,7 @@ export function CloudProjectsContribution({ runtime }: { runtime?: CloudRuntime 
       <CloudSyncStatusContribution runtime={resolved} />
       <CloudProjectsPanelContribution runtime={resolved} />
       <CloudMembersPanelContribution runtime={resolved} />
+      <CloudPresencePanelContribution runtime={resolved} />
       <CloudVersionHistoryContribution runtime={resolved} />
     </CloudSyncProvider>
   )
@@ -84,6 +86,23 @@ export function CloudMembersPanelContribution({ runtime }: { runtime?: CloudRunt
     render: (api: WorkbenchApi) => (
       <CloudSyncProvider runtime={resolved} lifecycle={false}>
         <CloudMembersPanel api={api satisfies CloudWorkbenchApi} />
+      </CloudSyncProvider>
+    ),
+  })
+  return null
+}
+
+export function CloudPresencePanelContribution({ runtime }: { runtime?: CloudRuntime } = {}) {
+  const resolved = useCloudRuntimeInstance(runtime)
+  useRegisterContribution({
+    id: 'cloud.presence',
+    slot: 'panel-left',
+    priority: 122,
+    title: 'Here now',
+    icon: <Radio size={11} />,
+    render: (api: WorkbenchApi) => (
+      <CloudSyncProvider runtime={resolved} lifecycle={false}>
+        <CloudPresencePanel api={api satisfies CloudWorkbenchApi} />
       </CloudSyncProvider>
     ),
   })

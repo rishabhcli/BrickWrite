@@ -89,8 +89,18 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
     // Let React paint the progress state before the CPU renderer starts.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
+    // Held for the whole render, not just the load.
+    //
+    // The cache is bounded and sweeps on each arrival, so without this a large
+    // enough model would evict the parts loaded first before the booklet reads
+    // them — and `geometry()` below answers null for a missing part, which would
+    // quietly print a guide with holes in it rather than fail. If the export's
+    // own working set is larger than the budget, the budget yields: a correct
+    // booklet outranks a memory target, and the space comes back on release.
+    const holds: Array<() => void> = []
     try {
       for (const [index, definition] of definitions.entries()) {
+        holds.push(geometryCache.retain(definition))
         await geometryCache.load(definition)
         setGuide({ kind: 'loading', loaded: index + 1, total: definitions.length, phase: 'geometry' })
       }
@@ -138,6 +148,8 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
         title: 'Build guide failed',
         detail: cause instanceof Error ? cause.message : String(cause),
       })
+    } finally {
+      for (const release of holds) release()
     }
   }
 

@@ -181,6 +181,19 @@ Rejected candidates are kept and reported with their failures rather than
 discarded: "we generated three and are showing you none" and "we generated
 nothing" are different situations.
 
+Candidate attempts are also fault-isolated. A schema or transport failure in
+one strategy is recorded in `GenerationRun.failed`; other candidates continue
+through the kernel and remain reviewable. Run-level configuration failures such
+as a missing or rejected credential still stop the run so the UI can offer the
+explicit, labelled deterministic path rather than repeating the same failure
+for every candidate. Abort remains run-wide.
+
+`Candidate.inference` and `GenerationRun.inference` report successful structured
+request count plus input/output token totals. Corrective schema retries are
+already included in the provider's token totals. Failed calls for which the
+provider returned no usage are not guessed, so these fields are observed usage,
+not a billing estimate.
+
 ### `provider.ts` — the browser client
 
 `createGenerationProvider(options) → ModelProvider` and
@@ -188,6 +201,21 @@ nothing" are different situations.
 reads the newline-delimited event stream, and **never holds a credential**. A
 server 503 with `model_provider_unavailable` becomes a
 `ModelProviderUnavailableError`.
+
+### Grounding model-proposed detail
+
+Structured output proves the shape of a detail proposal, not that its open-text
+part query or volume role exists. Before a feature enters the build graph, the
+pipeline now requires both:
+
+1. the named massing volume was actually built; and
+2. the query resolves to a geometry-carrying `placeable` catalog identity.
+
+Grounded features are pinned to that identity for realisation. Ungrounded
+features are individually reported and skipped; if none survive, the
+deterministic surface pass runs and records `detail:fallback`. A syntactically
+valid hallucination therefore cannot masquerade as successful detail or attach
+itself to an unrelated fallback volume.
 
 ### `testing.ts` — the in-test double
 
@@ -492,17 +520,22 @@ Stated plainly, because each of these is a real limit on the claims above.
    along X or Z and lay rectangles; a rotated region is not expressible and is
    not pretended to be. Single parts are fully 6-DOF through the snap solver.
 
-7. **Functional requirements are only partly honoured.** A brief asking for doors
-   or windows produces real seated frames and glazing through `planEnclosure`
-   openings. A brief asking for wheels that turn, a roof that lifts off or a
-   winch is recorded in `brief.functions` and surfaced, but no articulated
-   mechanism is generated — `planHingedFlap` exists in the kernel and is not
-   wired in.
+7. **Functional requirements are partly honoured.** A brief asking for doors or
+   windows produces real seated frames and glazing through `planEnclosure`
+   openings. A brief naming something that *opens* — a ramp, a hatch, a gangway,
+   a canopy — now produces a real hinge: the detail phase emits a `hinged-flap`
+   region and `planHingedFlap` builds it, so the kernel can drive it as a
+   revolute joint. Wheels that turn and a winch that winds are still recorded in
+   `brief.functions` and surfaced without being generated.
 
-8. **The detail phase does not consult the model.** `server/generation/schema.ts`
-   carries a validated `detail` payload kind and the route will serve it, but
-   `phases.ts` builds the detail delta deterministically. Massing is the phase the
-   model actually drives.
+8. **The detail phase consults the model, and falls back when the answer is not
+   usable.** `proposeDetail` sends `DETAIL_SCHEMA` — the same `features` payload
+   `server/generation/schema.ts` has always validated — and a legal answer
+   becomes part nodes the realiser resolves. A model proposes a *query* against
+   a named volume and a stud on that volume, never an identity and never a world
+   coordinate, so the worst a bad proposal can do is match no part. Anything
+   unparseable falls back to the deterministic tiles and records
+   `detail:fallback` in the candidate notes.
 
 9. **`fitBoxHeights` reserves a flat 4 LDU for the topmost studs.** That is the
    LDraw stud height and is correct for studded courses; a build topped by tiles
@@ -521,3 +554,174 @@ of these in any route module takes down the whole API process, not just that
 route. `server/generation/anthropic.ts` declares its fields and assigns them in
 the constructor body for this reason. Worth knowing before adding a class to a
 route module; it is not caught by `tsc`.
+
+
+## The Design Partner surface
+
+Generation used to be reachable only from the Generate panel and from an
+external WebMCP client. The in-editor Design Partner — the chat in the
+workbench, running through `src/agent/session.ts` — could not call it, so a
+builder who typed "build me a harbour tower" got an agent laying single bricks
+through `preflight_placement` against an eight-turn budget it could never
+finish inside. That is the hole this closes.
+
+`src/generation/host.ts` holds the session and the operations on it. WebMCP
+reaches it through `mcpHost.ts`, which now only re-exports; the Design Partner
+reaches it through `src/agent/tools.ts`, which imports it with a dynamic
+`import()` so a conversation that only reads the scene never loads the pipeline.
+Both doors drive **one** `GenerationSession` per workbench mount, so a brief the
+builder typed into the panel is one the assistant can read back, and a brief the
+assistant compiled appears in the panel.
+
+### Tools
+
+| Tool | Kind | What it does |
+| --- | --- | --- |
+| `generation_compile` | read | Prose → `DesignBrief` through `/api/brief`. |
+| `generation_compile_local` | read | The same brief from rules in the browser, no model call. |
+| `generation_set` | read | Prompt, candidate count, brief fields, conflict resolutions. |
+| `generation_run` | read | Runs the pipeline. Writes nothing. |
+| `generation_state` | read | The compact session: brief, candidates, ghost, outcome. |
+| `generation_cancel` | read | Stops an in-flight run. |
+| `generation_preview` | preflight | Stages one candidate as a single reviewable wave. |
+
+There is no apply tool, in any mode — the same rule the rest of the assistant
+surface follows. `generation_preview` goes through the agent's `WaveLedger`,
+which is `commandBus.preflight` and nothing else, so a 900-part candidate
+arrives in the review queue as one wave with one accept and one undo. A person
+accepts it, or Build mode does after re-reading the revision.
+
+Two shared capabilities cover the same ground for callers that plan in the
+capability vocabulary rather than in tools:
+
+- `generate_from_brief` — compile and generate deterministically, in one
+  synchronous plan. `useModel: true` is refused here and pointed at
+  `generation_run`.
+- `generate_region` — generate into a measured envelope on an existing part,
+  leaving every part already placed byte-identical.
+
+Both are planned by `src/generation/capability.ts`, which registers itself with
+`src/cad/capabilities.ts` when the generation chunk loads. The registration seam
+exists because `capabilities.ts` is reached statically from the WebMCP adapter
+and from the agent's tool host: importing the pipeline there would put the
+massing strategies, the realiser, the scorer and the silhouette rasteriser in
+the first chunk, and `src/webmcp/imports.test.ts` would not catch it, because it
+reads static imports with a regex that does not match multi-line ones.
+
+### Generate first
+
+`nextAgentAction` in `src/agent/guidance.ts` classifies the builder's last
+message with `classifySubject` — the brief compiler's own keywords, so the two
+halves cannot disagree about what a subject is — and routes on it:
+
+| Situation | Next tool |
+| --- | --- |
+| Empty document, a subject was named | `generation_compile` |
+| Empty document, no subject ("a blank plate") | `capability_search` → `build_field` |
+| A generated candidate is staged for review | `generation_state`, and wait |
+| Everything else | unchanged |
+
+The standing prompt in `server/assistant/prompt.ts` carries the same table in
+prose, and `preflight_placement` now says in its own description that it places
+one part and is the wrong tool for constructing anything.
+
+### Massing strategies
+
+Three of these describe a building, which is why a freighter and a clock tower
+used to come out of the pipeline as houses. `strategyOrderFor` picks the first
+one from the archetype and offers the rest as second opinions.
+
+| Strategy | Chosen for | Volumes it names |
+| --- | --- | --- |
+| `framed-shell` | building (default) | base, storey1, storey2 |
+| `stacked-slab` | building (alternative) | base, slab1, slab2 |
+| `spine-and-ribs` | creature, vehicle (alternative) | base, crest |
+| `play-program` | building with a stated programme | plinth, bay-left, bay-right, shaft, crown |
+| `hull-and-keel` | vehicle | keel, port, starboard, cockpit, engine |
+| `tower-stages` | sculpture / landmark | base, clock-stage, belfry, spire |
+| `machine-frame` | mechanism | bed, mast, boom |
+
+A decomposition may name up to `MAX_MASSING_BOXES` (16) volumes, raised from 8;
+`server/generation/schema.ts` enforces the same bound and the two have to move
+together. Each volume becomes one unlocked subassembly named after its role, so
+a builder can lock the keel and generate into what is left.
+
+`scale: large` now selects proportions rather than a uniform multiple: a large
+vehicle is `48 × 16 × 40` studs and a large building `32 × 40 × 32`, because
+multiplying a 14 × 8 × 8 runabout by 2.2 produces a cube with nowhere to put a
+keel, two hull halves and a cockpit.
+
+### Why the realiser retries
+
+The phases build coarse to fine, and that ordering has a consequence that cost
+the pipeline every upper storey it ever proposed. `massingDelta` emits the deck
+of *every* level at once, so the deck for level 1 is attempted during the
+massing phase — while the walls of level 0 exist only as a plan — and the
+kernel correctly refuses it for hovering in mid-air. `GraphRealizer.extend`
+used to record that refusal permanently, so every volume above it then failed
+with "its host node was not placed" and a three-storey request came back one
+storey tall from every strategy, `framed-shell` included.
+
+`extend` now retries a node whose failure was **transient** — it hovered, it
+rested without clutching, or its host had not been placed yet — because a later
+phase may have added exactly what it was waiting for. Failures that no later
+phase can repair are terminal and reported once: a collision (adding parts
+cannot un-overlap two that already intersect), an identity the catalog does not
+carry, an envelope breach, a spent budget. `NodeOutcome.retryable` carries the
+distinction, set where the rejection is raised rather than inferred from its
+wording.
+
+Measured, deterministic path, before → after:
+
+| Brief | Before | After |
+| --- | --- | --- |
+| three-storey shop 20 × 16 × 18 | 115 parts, 1 storey | 326 parts, base + storey1 + storey2 |
+| saucer freighter 40 × 16 × 24 | 360 parts, keel only | 908 parts, keel + port + starboard + cockpit + engine |
+| lattice spire 20 × 20 × 44 | 399 parts, base only | 839 parts, base + clock-stage + belfry + spire |
+| harbour control tower 24 × 24 × 40 | — | 1,072 parts, plinth + two bays + shaft + crown |
+
+All four are collision-free and single-component.
+
+### The default part budget follows the envelope
+
+Once upper storeys started building, `DEFAULT_PART_BUDGET` (420) became the
+binding constraint on anything with a roof: the lattice spire spent 399 parts on
+its base and was truncated. A budget is a *hard gate*, so a default that is too
+small does not produce a smaller model — it produces a truncated one.
+
+When the brief states an envelope, `defaultPartBudget` now derives the fallback
+from it: two cross-bonded plate layers per deck, a one-stud perimeter in 1 × 4
+bricks for the full course height, and a 1.4 margin for bracing and surface,
+floored at 420 and capped at `MAX_GENERATED_PARTS`. A builder who names a piece
+count still wins outright.
+
+### Continuation
+
+`MAX_GENERATED_PARTS` is 4,000 and a landmark is not. When the ceiling stops a
+build, the candidate carries a `continuation` naming the volumes that were
+massed and not built, and the call that builds them:
+
+```json
+{ "reason": "part-ceiling", "placedParts": 412, "remainingRoles": ["shaft", "crown"],
+  "suggestedTool": "generate_region", "suggestedPrompt": "The shaft, crown of a city tower" }
+```
+
+`generation_run` puts that in its `nextAction`, so the model is told to finish
+the job in a second wave rather than presenting a third of a model as the whole
+answer.
+
+### `?intent=describe`
+
+The landing page has always written this query parameter and nothing read it.
+`src/generation/contribution.tsx` now honours it on mount: it calls
+`revealChrome('generation')` — the same channel WebMCP uses to open a panel, so
+no dock-layout code is touched — and focuses the prompt textarea, which carries
+a `data-generation-prompt` attribute for the purpose.
+
+### What is still not true
+
+- **Massing is still axis-aligned boxes.** A saucer is massed as a keel and two
+  flanking volumes, not as a curve.
+- **The detail phase asks once per candidate.** Surface features are proposed
+  against the massing roles, before the realiser has said which of them were
+  actually placed.

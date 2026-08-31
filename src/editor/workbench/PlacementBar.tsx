@@ -1,82 +1,48 @@
-import { Check, RotateCcw, RotateCw, X } from 'lucide-react'
+import { Check, CircleAlert, Repeat2, RotateCcw, RotateCw, X } from 'lucide-react'
 import type { ResolvedPlacement } from '../../cad/placement'
+import { GlassIsland } from '../../ui/liquid'
 import type { Workbench } from './useWorkbench'
 
 export const placementMessage = (preview: ResolvedPlacement | null) => {
-  if (!preview) return 'Point at a surface to preview the landing'
+  if (!preview) return 'Choose a spot'
   switch (preview.reason) {
-    case 'mated':
-      return 'Snapped to connectors · click to place'
-    case 'ground':
-      return 'On the ground · click to place'
-    case 'collision':
-      return 'Blocked by another part · try a clear spot'
-    case 'occupied':
-      return 'Connectors occupied · try a free stud'
-    default:
-      return 'No clutch on this face · try studs or the ground'
+    case 'mated': return 'Snapped'
+    case 'ground': return 'Ready to place'
+    case 'collision': return 'Blocked — choose a clear spot'
+    case 'occupied': return 'Studs occupied'
+    default: return 'No connection on this face'
   }
 }
 
 export function PlacementBar({ workbench: w, preview }: { workbench: Workbench; preview: ResolvedPlacement | null }) {
   if (!w.placement || !w.placementDefinition) return null
-  const moving = Boolean(w.placement.movingPartId)
+  const message = placementMessage(preview)
   return (
-    <div
+    <GlassIsland
       className="placement-bar"
       data-legal={preview ? String(preview.legal) : 'pending'}
+      role="toolbar"
       aria-label="Placement controls"
     >
-      <div className="placement-bar-heading">
-        <span className="placement-state-dot" />
-        <div>
-          <small>{moving ? 'REPOSITIONING' : 'BUILDING'}</small>
-          <strong>{w.placementDefinition.name}</strong>
-        </div>
-        <button aria-label="Cancel placement" title="Cancel (Esc)" onClick={w.cancelPlacement}>
-          <X size={15} />
+      <span className="placement-feedback" role="status" aria-label={message} title={message}>
+        {preview && !preview.legal ? <CircleAlert size={16} /> : <Check size={16} />}
+        <span className="visually-hidden">{message}</span>
+      </span>
+      <button aria-label="Rotate placement counterclockwise" title="Rotate left (Shift+R)" onClick={() => w.rotatePlacement(-1)}>
+        <RotateCcw size={16} />
+      </button>
+      <output className="visually-hidden" aria-label="Placement angle">{(((w.placement.quarterTurns % 4) + 4) % 4) * 90}°</output>
+      <button aria-label="Rotate placement clockwise" title="Rotate right (R)" onClick={() => w.rotatePlacement(1)}>
+        <RotateCw size={16} />
+      </button>
+      {!w.placement.movingPartId && (
+        <button aria-label="Keep building" title="Repeat placement" aria-pressed={w.repeatPlacement} onClick={() => w.setRepeatPlacement(!w.repeatPlacement)}>
+          <Repeat2 size={16} />
         </button>
-      </div>
-      <p className="placement-feedback" role="status">
-        {placementMessage(preview)}
-      </p>
-      <div className="placement-bar-actions">
-        <div className="placement-turns" role="group" aria-label="Placement rotation">
-          <button
-            aria-label="Rotate placement counterclockwise"
-            title="Turn back (Shift+R)"
-            onClick={() => w.rotatePlacement(-1)}
-          >
-            <RotateCcw size={14} />
-          </button>
-          <output aria-label="Placement angle">{(((w.placement.quarterTurns % 4) + 4) % 4) * 90}°</output>
-          <button aria-label="Rotate placement clockwise" title="Turn (R)" onClick={() => w.rotatePlacement(1)}>
-            <RotateCw size={14} />
-          </button>
-        </div>
-        {!moving && (
-          <label className="placement-repeat">
-            <input
-              type="checkbox"
-              checked={w.repeatPlacement}
-              onChange={(e) => w.setRepeatPlacement(e.target.checked)}
-            />
-            Keep building
-          </label>
-        )}
-        <button className="placement-done" onClick={w.cancelPlacement}>
-          <Check size={13} />
-          {moving ? 'Put back' : 'Done'}
-        </button>
-      </div>
-      {preview && (
-        <output className="placement-coordinates" aria-label="Placement coordinates">
-          {preview.transform.position
-            .map((value, i) => `${['X', 'Y', 'Z'][i]} ${Math.round(value * 100) / 100}`)
-            .join('   ·   ')}{' '}
-          LDU
-        </output>
       )}
-    </div>
+      <button aria-label="Cancel placement" title="Cancel placement (Esc)" onClick={w.cancelPlacement}>
+        <X size={16} />
+      </button>
+    </GlassIsland>
   )
 }

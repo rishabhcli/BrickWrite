@@ -3,18 +3,32 @@ import {
   DEFAULT_GLASS_COLOR,
   DEFAULT_TRIM_COLOR,
   MAX_GENERATED_PARTS,
+  MechanismGeometryError,
   planBrickField,
+  planClockFaces,
+  planCrane,
   planEnclosure,
+  planHingedFlap,
+  planLattice,
+  planSnotHull,
   planWall,
   type AssemblyPlan,
   type BrickFamily,
 } from '../cad/assembly'
 import { catalog, getPartDefinition, originForSurface, searchCatalog, STUD_LDU } from '../cad/catalog'
 import { findCollisions, residentGeometryProvider, type GeometryProvider } from '../cad/collision'
-import { featureFrame } from '../cad/connections'
+import { featureFrame, isExclusiveFamily } from '../cad/connections'
 import { getDocumentBounds, getPartBounds } from '../cad/geometry'
 import { composeTransform, invertTransform, rotationAboutAxis, IDENTITY_BASIS } from '../cad/math'
-import { deriveConnectionEdges, deriveConnections, findSnapCandidates, type WorldConnector } from '../cad/snapping'
+import {
+  deriveConnectionEdges,
+  deriveConnections,
+  findSnapCandidates,
+  getWorldConnectors,
+  IncrementalConnectorWorld,
+  type MatedPair,
+  type WorldConnector,
+} from '../cad/snapping'
 import type {
   CadOperation,
   ModelDocument,
@@ -23,7 +37,7 @@ import type {
   Subassembly,
   Vec3,
 } from '../cad/types'
-import { connectedComponent, floatingPartIds, unclutchedRestPartIds, airbornePartIds } from '../cad/validation'
+import { connectedComponent, hoverVerdictFor, type PartAdjacency } from '../cad/validation'
 import {
   incomingEdge,
   topologicalOrder,
@@ -80,6 +94,18 @@ export interface NodeOutcome {
   readonly partIds: readonly string[]
   /** Why a node was repaired, rejected or skipped. Absent when realised cleanly. */
   readonly reason?: string
+  /**
+   * Whether a later phase could plausibly fix this failure.
+   *
+   * The phases build coarse to fine, and a node can fail purely because the
+   * thing that would hold it up has not been proposed yet: a storey deck is
+   * emitted during massing, when the walls of the storey below exist only as a
+   * plan. Those failures are transient and the node is tried again after each
+   * later phase. A collision, a missing identity or an envelope breach is not
+   * transient — adding more parts cannot un-collide two that already overlap —
+   * so those stay refused and are reported once.
+   */
+  readonly retryable?: boolean
   /**
    * Every attempt that failed, in order.
    *
@@ -379,6 +405,43 @@ export class GraphRealizer {
   private truncated = false
   private readonly stepId: string
 
+  /**
+   * The committed document's connector index, and the adjacency it implies.
+   *
+   * `deriveConnections` is memoized on document *object identity*, which is the
+   * right key — a revision key would go stale mid-realisation, since the
+   * revision does not move while parts are being added. But the realiser builds
+   * a fresh candidate document for every placement, so it misses that memo every
+   * time and derives the whole model to ask about one part. Measured on a
+   * detail-heavy brief: **8.4 s of a 9.2 s candidate**, across 403 calls, all of
+   * it inside `findCollisions`.
+   *
+   * So the committed state is kept instead, synced only for the parts that just
+   * landed. A candidate borrows it and overlays whatever it is asking about —
+   * one detail part or a whole region — and every consumer is fed from that same
+   * overlay: the collision check, the hovering verdict, the host-connector
+   * search and the did-it-reach-its-host walk. Feeding only some of them would
+   * move the derivation rather than remove it, because it is the same
+   * derivation, and that is exactly how it kept coming back.
+   *
+   * `realize.incremental.test.ts` requires this to give the same answers as a
+   * full derivation on real models: a cheaper verdict is only worth having if it
+   * is the same verdict.
+   */
+  private readonly world = new IncrementalConnectorWorld()
+  private readonly adjacency = new Map<string, Set<string>>()
+  /**
+   * `partId/featureId` of every committed exclusive connector already mated.
+   *
+   * The third thing a derivation was being bought for, alongside the adjacency
+   * and the mates: `hostConnectors` needs to know which studs are already taken
+   * before it offers one. It falls out of the same pairs the adjacency is built
+   * from, so it is maintained in the same two places and never separately
+   * computed.
+   */
+  private readonly occupied = new Set<string>()
+
+
   private graph: BuildGraph = { version: 1, strategy: 'empty', nodes: [], edges: [] }
 
   constructor(base: ModelDocument, private readonly options: RealizeOptions = {}) {
@@ -394,6 +457,51 @@ export class GraphRealizer {
     }
     this.stepId = step.id
     for (const id of Object.keys(base.subassemblies)) this.subassemblies.add(id)
+    // Seeded here, not on first commit: a graph realised onto an existing model
+    // must see the parts already there, or its first placement looks unsupported.
+    this.world.sync(base)
+    for (const id of Object.keys(base.parts)) this.adjacency.set(id, new Set())
+    for (const pair of deriveConnections(base).pairs) {
+      this.adjacency.get(pair.a.partId)?.add(pair.b.partId)
+      this.adjacency.get(pair.b.partId)?.add(pair.a.partId)
+      this.markOccupied(pair)
+    }
+  }
+
+  /**
+   * Whether any of `partIds` ended up in the host part's connected component.
+   *
+   * Deliberately the same walk `connectedComponent` performs, over the same
+   * graph, stopping as soon as the answer is known — the question is a boolean,
+   * so enumerating the rest of a nine-hundred-part component is work nobody
+   * reads. It runs against the overlay the collision gate just built, and falls
+   * back to a derivation only when there was no overlay to build.
+   */
+  private joinsHost(next: ModelDocument, hostPartId: string, partIds: readonly string[]): boolean {
+    const adjacency = this.lastCandidateAdjacency
+    if (!adjacency) {
+      const attached = connectedComponent(next, [hostPartId])
+      return partIds.some((id) => attached.includes(id))
+    }
+    const wanted = new Set(partIds)
+    if (wanted.has(hostPartId)) return true
+    const seen = new Set([hostPartId])
+    const queue = [hostPartId]
+    for (let head = 0; head < queue.length; head += 1) {
+      for (const neighbour of adjacency.get(queue[head]) ?? []) {
+        if (seen.has(neighbour)) continue
+        if (wanted.has(neighbour)) return true
+        seen.add(neighbour)
+        queue.push(neighbour)
+      }
+    }
+    return false
+  }
+
+  /** Records both ends of a mated pair whose family accepts only one mate. */
+  private markOccupied(pair: MatedPair) {
+    if (isExclusiveFamily(pair.a.family)) this.occupied.add(`${pair.a.partId}/${pair.a.id}`)
+    if (isExclusiveFamily(pair.b.family)) this.occupied.add(`${pair.b.partId}/${pair.b.id}`)
   }
 
   /** The document as realised so far, including the base. */
@@ -426,7 +534,32 @@ export class GraphRealizer {
 
     for (const node of topologicalOrder(this.graph)) {
       throwIfAborted(this.options.signal, `realising node ${node.id}`)
-      if (this.placed.has(node.id) || this.nodes.some((outcome) => outcome.nodeId === node.id)) continue
+      if (this.placed.has(node.id)) continue
+
+      // A node that failed for a transient reason gets another go once a later
+      // phase has added geometry.
+      //
+      // The phases build coarse to fine, and that ordering is the whole reason
+      // a storey deck used to be impossible: `massingDelta` proposes the deck
+      // of every level at once, so the deck for level 1 is attempted while the
+      // walls of level 0 are still only a plan, and it is correctly refused for
+      // hovering in mid-air. Without a retry that refusal was permanent — every
+      // volume above the ground floor then failed with "its host node was not
+      // placed", and a three-storey request came out one storey tall no matter
+      // which strategy produced it.
+      //
+      // Retrying is safe because a retry is just another placement attempt
+      // against the current document: it can only succeed where the kernel now
+      // says yes. Terminal failures — a collision, an identity the catalog does
+      // not have, an envelope breach — are not retried, so a doomed node is
+      // still reported once rather than re-attempted every phase.
+      const priorIndex = this.nodes.findIndex((outcome) => outcome.nodeId === node.id)
+      if (priorIndex >= 0) {
+        if (!this.nodes[priorIndex].retryable) continue
+        this.nodes.splice(priorIndex, 1)
+        const edgeIndex = this.edges.findIndex((outcome) => outcome.edgeId === incomingEdge(this.graph, node.id)?.id)
+        if (edgeIndex >= 0) this.edges.splice(edgeIndex, 1)
+      }
       if (node.kind === 'protected') {
         this.adoptProtected(node)
         continue
@@ -569,15 +702,23 @@ export class GraphRealizer {
    * something and a failure has a reason repair can name.
    */
   private hostConnectors(placed: PlacedNode, reference: ConnectorRef): HostConnector[] {
-    const owned = new Set(placed.partIds)
-    const world = deriveConnections(this.document)
-    const pool = world.connectors.filter(
-      (connector) =>
-        owned.has(connector.partId) &&
-        connector.family === reference.family &&
-        (!reference.gender || connector.gender === reference.gender) &&
-        !world.occupied.has(`${connector.partId}/${connector.id}`),
-    )
+    // The node's own parts, not the document's. Asking `deriveConnections` for
+    // every connector in the model and then discarding all but this node's cost
+    // 22% of a candidate — a whole-model derivation, missing its identity memo
+    // because the document object moves on every commit, to answer a question
+    // about a hundred bricks. Occupancy is maintained on commit instead, so the
+    // answer is the same one with none of the derivation.
+    const pool: WorldConnector[] = []
+    for (const partId of placed.partIds) {
+      const part = this.document.parts[partId]
+      if (!part) continue
+      for (const connector of getWorldConnectors(part)) {
+        if (connector.family !== reference.family) continue
+        if (reference.gender && connector.gender !== reference.gender) continue
+        if (this.occupied.has(`${connector.partId}/${connector.id}`)) continue
+        pool.push(connector)
+      }
+    }
     if (pool.length < 2) return pool.map((connector) => ({ handle: `${connector.partId}/${connector.id}`, connector }))
 
     const byHandle = (a: WorldConnector, b: WorldConnector) =>
@@ -712,7 +853,7 @@ export class GraphRealizer {
     const next = withParts(this.document, [part])
     const rejection = this.rejectionFor(next, [part.id])
     if (rejection) {
-      this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason: rejection })
+      this.nodes.push({ nodeId: node.id, kind: 'part', status: 'rejected', partIds: [], reason: rejection, retryable: this.lastRejectionRetryable })
       return
     }
     this.commit(next, [part])
@@ -872,7 +1013,7 @@ export class GraphRealizer {
       const host = this.placed.get(edge.from)
       if (!host) {
         const reason = `its host node ${edge.from} was not placed`
-        this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason })
+        this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason, retryable: true })
         this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: 0, reason })
         return
       }
@@ -912,6 +1053,7 @@ export class GraphRealizer {
 
     const byHandle = new Map(hosts.map((entry) => [entry.handle, entry.connector]))
     const log: string[] = []
+    let transient = false
     for (let index = 0; index < attempts.length; index += 1) {
       const attempt = attempts[index]
       const connector = attempt.parentFeatureId ? byHandle.get(attempt.parentFeatureId) : null
@@ -921,6 +1063,7 @@ export class GraphRealizer {
       }
       const outcome = this.tryRegion(node, attempt, connector ?? null, colour, subassemblyId)
       if (outcome.ok) {
+        transient = false
         const status = attempt.kind === 'primary' ? 'realized' : 'repaired'
         const reason = status === 'repaired' ? `${log[0] ?? 'the requested region failed'}; ${attempt.description}` : undefined
         this.nodes.push({
@@ -945,10 +1088,11 @@ export class GraphRealizer {
         return
       }
       log.push(`${attempt.kind}: ${outcome.reason}`)
+      if (outcome.retryable) transient = true
     }
 
     const reason = `all ${attempts.length} attempt(s) failed; the requested region ${log[0] ?? 'could not be built'}`
-    this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason, attemptLog: log })
+    this.nodes.push({ nodeId: node.id, kind: 'region', status: 'rejected', partIds: [], reason, attemptLog: log, retryable: transient })
     if (edge) this.edges.push({ edgeId: edge.id, status: 'rejected', attempts: attempts.length, reason, attemptLog: log })
   }
 
@@ -958,7 +1102,7 @@ export class GraphRealizer {
     hostConnector: WorldConnector | null,
     colour: number,
     subassemblyId: string,
-  ): { ok: true; partIds: string[]; warnings: string[] } | { ok: false; reason: string } {
+  ): { ok: true; partIds: string[]; warnings: string[] } | { ok: false; reason: string; retryable?: boolean } {
     const region = attempt.region
     const offset = region.offsetStuds ?? [0, 0]
     let origin: Vec3
@@ -982,6 +1126,11 @@ export class GraphRealizer {
       plan = this.planRegion(region, origin, colour, subassemblyId)
     } catch (cause) {
       if (cause instanceof AssemblyError) return { ok: false, reason: `${cause.message} ${cause.repair}` }
+      // A mechanism the compiled catalog cannot build is a missing part, not a
+      // broken candidate: the node is skipped with the reason recorded and the
+      // rest of the model still gets built. A ramp nobody has geometry for
+      // should not cost the builder the freighter.
+      if (cause instanceof MechanismGeometryError) return { ok: false, reason: `${cause.message} ${cause.repair}` }
       throw cause
     }
 
@@ -992,6 +1141,11 @@ export class GraphRealizer {
 
     const remaining = this.remainingBudget()
     if (parts.length > remaining) {
+      // The ceiling stopped this, not the geometry. Recorded as truncation so
+      // the candidate can report what is left to build rather than presenting a
+      // fragment as if it were the whole answer — a region too big to fit and a
+      // region skipped after the budget ran out are the same situation.
+      this.truncated = true
       return { ok: false, reason: `it needs ${parts.length} parts and only ${remaining} remain in the budget` }
     }
 
@@ -1004,16 +1158,13 @@ export class GraphRealizer {
     const partIds = renamed.map((part) => part.id)
 
     const rejection = this.rejectionFor(next, partIds)
-    if (rejection) return { ok: false, reason: rejection }
+    if (rejection) return { ok: false, reason: rejection, retryable: this.lastRejectionRetryable }
 
-    if (hostConnector) {
-      const attached = connectedComponent(next, [hostConnector.partId])
-      const joined = partIds.filter((id) => attached.includes(id)).length
-      if (joined === 0) {
-        return {
-          ok: false,
-          reason: 'the region landed clear of its host: none of its parts mate with anything already built',
-        }
+    if (hostConnector && !this.joinsHost(next, hostConnector.partId, partIds)) {
+      return {
+        ok: false,
+        reason: 'the region landed clear of its host: none of its parts mate with anything already built',
+        retryable: true,
       }
     }
 
@@ -1058,6 +1209,54 @@ export class GraphRealizer {
         ...(region.openings?.length ? { openings: region.openings } : {}),
       })
     }
+    if (region.shape === 'hinged-flap') {
+      return planHingedFlap({
+        ...base,
+        // The planner rounds up to whole 1 x 2 hinge bricks, so an odd width
+        // here would silently become a wider flap than the graph asked for.
+        widthStuds: Math.max(2, Math.trunc(region.widthStuds / 2) * 2),
+        reachStuds: Math.max(1, Math.trunc(region.reachStuds ?? region.depthStuds)),
+      })
+    }
+
+    // Sol-1's mechanism planners take their origin under a different name and
+    // do not take a brick family; everything else about the seam is the same.
+    const mechanismBase = {
+      originLdu: origin,
+      color: colour,
+      subassemblyId,
+      stepId: this.stepId,
+      actor: 'agent' as const,
+    }
+    if (region.shape === 'lattice') {
+      const bay = Math.max(2, Math.trunc(region.bayStuds ?? 4))
+      const fit = (studs: number) => Math.max(bay + 1, Math.round((studs - 1) / bay) * bay + 1)
+      return planLattice({
+        ...mechanismBase,
+        widthStuds: fit(Math.trunc(region.widthStuds)),
+        depthStuds: fit(Math.trunc(region.depthStuds)),
+        heightCourses: Math.max(1, Math.min(16, Math.trunc(region.courses))),
+        bayStuds: bay,
+      })
+    }
+    if (region.shape === 'snot-hull') {
+      return planSnotHull({
+        ...mechanismBase,
+        widthStuds: Math.max(3, Math.min(32, Math.trunc(region.widthStuds))),
+        depthStuds: Math.max(3, Math.min(32, Math.trunc(region.depthStuds))),
+        layers: Math.max(1, Math.min(2, Math.trunc(region.layers ?? 1))),
+      })
+    }
+    if (region.shape === 'crane') {
+      return planCrane({ ...mechanismBase, boomStuds: Math.max(2, Math.min(64, Math.trunc(region.boomStuds ?? region.widthStuds))) })
+    }
+    if (region.shape === 'clock-faces') {
+      return planClockFaces({
+        ...mechanismBase,
+        diameterStuds: Math.max(4, Math.min(16, Math.trunc(region.diameterStuds ?? region.widthStuds))),
+      })
+    }
+
     return planBrickField({
       ...base,
       // A field picks its own row depth from the pack; forcing one would reject
@@ -1080,24 +1279,136 @@ export class GraphRealizer {
    * are declared design limits, and reporting "it collides" for something that
    * merely left the envelope would send repair after the wrong problem.
    */
+  /**
+   * Set by `rejectionFor` when the reason it returned is transient.
+   *
+   * Carried on the instance rather than in the return type because
+   * `rejectionFor` has eight call sites that all treat its result as "a string
+   * or null", and widening that shape everywhere to move one boolean would be a
+   * worse trade than reading it immediately after the call, which is what every
+   * caller does.
+   */
+  private lastRejectionRetryable = false
+
+  /**
+   * The committed connector state with an uncommitted placement overlaid.
+   *
+   * Copy-on-write, and only where it must be: the outer adjacency map is rebuilt
+   * (a thousand references, microseconds) and only the sets of the new parts and
+   * their direct mates are copied, so a candidate that is thrown away cannot
+   * have mutated the committed state.
+   *
+   * A region is a hundred bricks landing at once, and the committed index knows
+   * nothing about the mates *among* them — which is why this used to refuse
+   * anything but a single part and let the whole document be re-derived instead.
+   * Understating a region's own bond is not a rounding error: for the hovering
+   * verdict it calls a properly bonded wall unclutched, and for the collision
+   * check it reports the wall's own legitimate stud overlaps as intersections.
+   *
+   * So the missing half is supplied rather than paid for. A throwaway index
+   * holding only the new parts answers new-to-new; the committed index answers
+   * new-to-committed. Together they cover every pair with a new part on at least
+   * one side, which is exactly the set `findCollisions` looks at under
+   * `onlyPartIds` and the only set either consumer can ask about. Cost is
+   * proportional to the parts that just landed instead of to the whole model:
+   * measured across six briefs, 10.6 s of derivation became 0.6 s.
+   */
+  private candidateConnectors(
+    next: ModelDocument,
+    newPartIds: readonly string[],
+  ): { adjacency: Map<string, Set<string>>; mates: Map<string, MatedPair[]> } | null {
+    if (!newPartIds.length) return null
+    for (const partId of newPartIds) {
+      if (!next.parts[partId] || this.adjacency.has(partId)) return null
+    }
+
+    // Indexed as the loop advances rather than all at once, so a new part is
+    // only ever queried against the new parts *before* it. Each new-to-new pair
+    // is then found exactly once instead of once from each end, which halves the
+    // query work and leaves nothing to deduplicate.
+    const amongNew = newPartIds.length > 1 ? new IncrementalConnectorWorld() : null
+
+    const mates = new Map<string, MatedPair[]>()
+    const adjacency = new Map<string, Set<string>>(this.adjacency)
+    const copied = new Set<string>()
+    const linksOf = (partId: string): Set<string> => {
+      if (!copied.has(partId)) {
+        adjacency.set(partId, new Set(this.adjacency.get(partId) ?? []))
+        copied.add(partId)
+      }
+      return adjacency.get(partId)!
+    }
+    // Present even with no mates: an unattached new part has to read as
+    // unclutched rather than as absent from the graph.
+    for (const partId of newPartIds) linksOf(partId)
+
+    for (const partId of newPartIds) {
+      const found = amongNew
+        ? [...this.world.matesFor(partId, next), ...amongNew.matesFor(partId, next)]
+        : this.world.matesFor(partId, next)
+      for (const pair of found) {
+        const other = pair.a.partId === partId ? pair.b.partId : pair.a.partId
+        linksOf(partId).add(other)
+        linksOf(other).add(partId)
+        const key = partId < other ? `${partId}|${other}` : `${other}|${partId}`
+        // Every mate between the pair is kept, not just the first: the clearance
+        // the overlap has to fit inside is the most generous of them.
+        const list = mates.get(key)
+        if (list) list.push(pair)
+        else mates.set(key, [pair])
+      }
+      amongNew?.sync(next, [partId])
+    }
+
+    return { adjacency, mates }
+  }
+
+  /**
+   * The overlay `rejectionFor` built, for the one caller that needs it again.
+   *
+   * `tryRegion` asks a second question about the same candidate document —
+   * whether the region actually reached its host — and answering it through
+   * `connectedComponent` re-derived the whole connection graph for a walk over
+   * the graph the gate had just finished assembling. Nine percent of a
+   * candidate. Handed over the same way `lastRejectionRetryable` is, for the
+   * same reason: one field beats widening a return type that eight call sites
+   * read as "a string or null". Null when the overlay could not be built, which
+   * is the case that still needs the derivation.
+   */
+  private lastCandidateAdjacency: PartAdjacency | null = null
+
   private rejectionFor(next: ModelDocument, newPartIds: readonly string[]): string | null {
-    const collisions = findCollisions(next, { provide: this.provide, onlyPartIds: [...newPartIds] })
+    this.lastRejectionRetryable = false
+    const connectors = this.candidateConnectors(next, newPartIds)
+    this.lastCandidateAdjacency = connectors?.adjacency ?? null
+    const collisions = findCollisions(next, {
+      provide: this.provide,
+      onlyPartIds: [...newPartIds],
+      ...(connectors ? { mates: connectors.mates } : {}),
+    })
     if (collisions.length) {
       const introduced = new Set(newPartIds)
       const first = collisions[0]
       const other = introduced.has(first.partA) && !introduced.has(first.partB) ? first.partB : first.partA
       return `it collides with ${other} (${first.certainty} verdict, ${collisions.length} contact${collisions.length === 1 ? '' : 's'})`
     }
-    const floating = new Set(floatingPartIds(next))
-    const airborne = new Set(airbornePartIds(next))
-    const hovering = newPartIds.filter((id) => floating.has(id) || airborne.has(id))
+    // One scoped pass rather than three whole-document ones. `hoverVerdictFor`
+    // is defined to be the same answer restricted to these parts, and
+    // `validation.scoped.test.ts` holds that by running both and comparing —
+    // which matters here, because this is the check that decides whether a
+    // generated model is buildable.
+    const verdict = hoverVerdictFor(next, newPartIds, connectors?.adjacency)
+    const hovering = [...new Set([...verdict.floating, ...verdict.airborne])]
     if (hovering.length) {
+      // Retryable: what this needed underneath it may simply not have been
+      // built yet. This is the exact failure that used to cost every model its
+      // upper storeys.
+      this.lastRejectionRetryable = true
       return `it would hover with no clutch and no ground under ${hovering[0]} (${hovering.length} floating part${hovering.length === 1 ? '' : 's'})`
     }
-    const rest = new Set(unclutchedRestPartIds(next))
-    const sitting = newPartIds.filter((id) => rest.has(id))
-    if (sitting.length) {
-      return `it would rest ${sitting[0]} on another part without clutching`
+    if (verdict.unclutchedRests.length) {
+      this.lastRejectionRetryable = true
+      return `it would rest ${verdict.unclutchedRests[0].partId} on another part without clutching`
     }
     const envelope = checkEnvelope(next, this.constraints.envelopeStuds)
     if (!envelope.ok) return envelope.detail!
@@ -1105,8 +1416,33 @@ export class GraphRealizer {
   }
 
   private commit(next: ModelDocument, parts: readonly PartInstance[]) {
-    this.document = next
+    // Membership kept in step with the parts, not left for the command bus to
+    // reconcile on apply. Everything downstream of a candidate — the scorer,
+    // the Compare dialog, the subassembly the agent is told to lock — reads
+    // this preview document, and one that lists empty assemblies while its
+    // parts point at them describes a model nobody would get.
+    const subassemblies = { ...next.subassemblies }
+    for (const part of parts) {
+      const owner = subassemblies[part.subassemblyId]
+      if (owner) subassemblies[part.subassemblyId] = { ...owner, partIds: [...owner.partIds, part.id] }
+    }
+    this.document = { ...next, subassemblies }
     for (const part of parts) this.operations.push({ type: 'part.add', part })
+    // Index every new part before asking any of them for mates, so parts that
+    // landed together can see each other. One at a time would miss a region's
+    // internal bond, which is what decides whether the region is clutched.
+    for (const part of parts) {
+      if (!this.adjacency.has(part.id)) this.adjacency.set(part.id, new Set())
+    }
+    this.world.sync(this.document, parts.map((part) => part.id))
+    for (const part of parts) {
+      for (const pair of this.world.matesFor(part.id, this.document)) {
+        const other = pair.a.partId === part.id ? pair.b.partId : pair.a.partId
+        this.adjacency.get(part.id)?.add(other)
+        this.adjacency.get(other)?.add(part.id)
+        this.markOccupied(pair)
+      }
+    }
   }
 }
 

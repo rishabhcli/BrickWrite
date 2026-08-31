@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { findArticulatedJoints } from '../../cad/articulation'
 import { planSharedMutation, SharedCapabilityError, type SharedMutationId } from '../../cad/capabilities'
-import { catalog, originForSurface, STUD_LDU, surfaceAbove } from '../../cad/catalog'
+import { catalog, STUD_LDU } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { createId } from '../../cad/ids'
+import { geometryCache } from '../../cad/mesh'
 import { parseLDraw, describeLDrawImport } from '../../cad/ldraw'
-import { IDENTITY_BASIS } from '../../cad/math'
 import { session, type SessionStatus } from '../../cad/session'
 import { firstLegalSnap, resolveQuickAdd, type PlacementRequest } from '../../cad/placement'
 import type {
@@ -122,6 +122,16 @@ export function useWorkbench() {
 
   const [activeColor, setActiveColor] = useState(72)
   const [tool, setToolRaw] = useState<EditorTool>('select')
+  /**
+   * How many times the operator has *asked* for a tool.
+   *
+   * Several flows switch tools on the operator's behalf — quick-add and a plain
+   * click both hand over the Move handles — and the shell needs to tell those
+   * apart from a deliberate reach for Move or Rotate, because only the second
+   * one is a request for exact numbers. Comparing the tool alone cannot: both
+   * arrive as the same value. Only `setTool` advances this.
+   */
+  const [toolPicks, setToolPicks] = useState(0)
   const [gridLdu, setGridLdu] = useState(STUD_LDU)
   const [cameraView, setCameraView] = useState<CameraView>('isometric')
   const [renderMode, setRenderMode] = useState<RenderMode>('beauty')
@@ -130,7 +140,8 @@ export function useWorkbench() {
   const [playbackStep, setPlaybackStep] = useState<number | null>(null)
   const [toast, setToast] = useState<WorkbenchNotice | null>(null)
   const [placement, setPlacement] = useState<PlacementRequest | null>(null)
-  const [repeatPlacement, setRepeatPlacement] = usePersistentState('placement.repeat.v1', true)
+  const [repeatPlacement, setRepeatPlacement] = usePersistentState('placement.repeat.v2', false)
+  const partDrag = useRef<'idle' | 'holding' | 'dropping'>('idle')
   const [clipboard, setClipboard] = useState<PartClipboard | null>(null)
   // Where a catalogue drag was released, when the armed part came from a drop.
   // The viewport commits it from its own mount effect; see `dropPart`.
@@ -285,6 +296,7 @@ export function useWorkbench() {
     setPlacement(null)
     setDropPoint(null)
     setToolRaw(next)
+    setToolPicks((count) => count + 1)
     requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }))
     // Leaving Connect abandons a half-finished mate rather than leaving a stale
     // source connector armed behind an unrelated tool.
@@ -330,26 +342,43 @@ export function useWorkbench() {
             ? snapshot.selection.filter((id) => id !== partId)
             : [...snapshot.selection, partId],
         )
-      } else {
-        cadEngine.setSelection([partId])
+        return
       }
+      cadEngine.setSelection([partId])
+      // Clicking a brick hands over its handles.
+      //
+      // Select drew no manipulator, so a newcomer who clicked a part and then
+      // dragged it moved nothing at all and had no way to learn that a separate
+      // Move mode existed: measured at five actions to shift one brick. Quick-add
+      // already ends in Move for exactly this reason; a direct click now agrees
+      // with it. Select survives as the mode Escape returns to and as the cheap
+      // overlay-highlight path for selections too large to pull out of a batch,
+      // but nobody has to find it to start building.
+      if (tool === 'select') setToolRaw('move')
     },
     [tool],
   )
 
   /** Region select. Additive by default, because it is reached by holding shift. */
-  const handleSelectMany = useCallback((partIds: string[], additive: boolean) => {
-    const snapshot = cadEngine.getSnapshot()
-    const next = additive ? new Set([...snapshot.selection, ...partIds]) : new Set(partIds)
-    cadEngine.setSelection([...next])
-    if (partIds.length) {
-      setToast({
-        kind: 'info',
-        title: `${partIds.length} part${partIds.length === 1 ? '' : 's'} selected`,
-        detail: `${next.size} in the selection. Shift-drag again to add more, or click empty space to clear.`,
-      })
-    }
-  }, [])
+  const handleSelectMany = useCallback(
+    (partIds: string[], additive: boolean) => {
+      const snapshot = cadEngine.getSnapshot()
+      const next = additive ? new Set([...snapshot.selection, ...partIds]) : new Set(partIds)
+      cadEngine.setSelection([...next])
+      if (partIds.length) {
+        setToast({
+          kind: 'info',
+          title: `${partIds.length} part${partIds.length === 1 ? '' : 's'} selected`,
+          detail: `${next.size} in the selection. Shift-drag again to add more, or click empty space to clear.`,
+        })
+      }
+      // Same rule as a single click: selecting in the viewport hands over the
+      // handles. Boxing a wall and then finding the drag inert is the same dead
+      // end, reached by a different gesture.
+      if (tool === 'select' && partIds.length) setToolRaw('move')
+    },
+    [tool],
+  )
 
   const applySelectionMode = useCallback(
     (mode: SelectionMode) => {
@@ -520,6 +549,7 @@ export function useWorkbench() {
         return false
       }
       const color = activeColor
+      void geometryCache.load(definition)
       setPlacement({ definitionId: definition.canonicalId, color, quarterTurns: 0 })
       setDropPoint(null)
       setToolRaw('select')
@@ -670,45 +700,37 @@ export function useWorkbench() {
     [activeColor, buildPartAt, dispatch, gridLdu],
   )
 
-  /**
-   * Drag-and-drop from the palette.
-   *
-   * The viewport owns pointer resolution — it is the only thing that knows what
-   * is under the cursor in 3D — so a drop arms the part and then replays the
-   * equivalent pointer sequence on the canvas. If that does not resolve to a
-   * surface the part simply stays armed and one click finishes the job, which is
-   * the same fallback a mis-aimed drop deserves.
-   */
-  /**
-   * Arm the dropped part and record where it was released.
-   *
-   * This used to replay synthetic pointer events onto the canvas two frames
-   * later, betting that the placement controller had mounted and attached its
-   * listeners by then. It had not: the events landed on nothing, the part was
-   * left armed under the cursor, and the operator's next click read as a second
-   * placement. The drop point is handed to the viewport instead, which commits
-   * it from the same effect that attaches those listeners — so there is no
-   * window in which the events can miss.
-   */
+  // Picking up, previewing and releasing all use the same placement request.
+  // Drag-end may run before React consumes the drop, so keep that handoff alive.
+  const beginPartDrag = useCallback((record: Pick<CatalogSearchRecord, 'id' | 'name'>) => {
+    if (!armPart(record)) return false
+    partDrag.current = 'holding'
+    return true
+  }, [armPart])
+
+  const endPartDrag = useCallback(() => {
+    if (partDrag.current === 'holding') {
+      setPlacement(null)
+      setDropPoint(null)
+    }
+    if (partDrag.current !== 'dropping') partDrag.current = 'idle'
+  }, [])
+
   const dropPart = useCallback(
     (record: Pick<CatalogSearchRecord, 'id' | 'name'>, clientX: number, clientY: number) => {
-      if (!armPart(record)) return false
+      if (partDrag.current !== 'holding' && !armPart(record)) return false
+      partDrag.current = 'dropping'
       setDropPoint({ clientX, clientY })
       return true
     },
     [armPart],
   )
 
-  /**
-   * The viewport has consumed the drop point.
-   *
-   * A drag that landed a part is a finished gesture, so the ghost is put away:
-   * leaving it armed after a drop is what made a drop feel like two placements.
-   * A drag released over nothing stays armed, so the operator can still click.
-   */
-  const finishDrop = useCallback((committed: boolean) => {
+  /** A release ends the gesture, including refused landings. No surprise second placement. */
+  const finishDrop = useCallback(() => {
+    partDrag.current = 'idle'
     setDropPoint(null)
-    if (committed) setPlacement(null)
+    setPlacement(null)
   }, [])
 
   // -- everyday edits -------------------------------------------------------
@@ -906,68 +928,6 @@ export function useWorkbench() {
 
   const rejectProposal = useCallback((id: string) => {
     cadEngine.rejectProposal(id)
-  }, [])
-
-  /**
-   * Stands in for a native `build_preflight` call so the collaboration loop can
-   * be exercised without the agent attached. It goes through the exact same
-   * command bus, revision guard and validation the agent uses.
-   */
-  const createDemoProposal = useCallback(() => {
-    const snapshot = cadEngine.getSnapshot()
-    // Find a real exposed stud plane on the rear deck rather than assuming one:
-    // the surface is derived from the plate that is actually there.
-    const deckPlate = Object.values(snapshot.document.parts)
-      .filter((part) => part.subassemblyId === 'deck' && catalog.get(part.definitionId)?.category === 'Plates')
-      .sort((a, b) => b.transform.position[2] - a.transform.position[2])[0]
-    const plateDefinition = deckPlate ? catalog.get(deckPlate.definitionId) : undefined
-    const surface = plateDefinition ? surfaceAbove(plateDefinition, deckPlate!.transform.position[1]) : null
-    if (surface === null || surface === undefined) {
-      setToast({
-        kind: 'error',
-        title: 'No exposed studs',
-        detail: 'The rear deck has no free stud plane to build on.',
-      })
-      return
-    }
-    const upright = catalog.get('3004')
-    if (!upright) {
-      setToast({
-        kind: 'error',
-        title: '[GEOMETRY_UNAVAILABLE]',
-        detail: 'Brick 1 × 2 is not in the compiled geometry pack.',
-      })
-      return
-    }
-    const y = originForSurface(upright, surface)
-    const subassemblyId =
-      Object.values(snapshot.document.subassemblies).find((item) => item.id === 'deck' && !item.locked)?.id ??
-      Object.values(snapshot.document.subassemblies).find((item) => !item.locked)?.id ??
-      'deck'
-    const stepId = snapshot.document.steps.at(-1)?.id ?? 'step_1'
-    const operations: CadOperation[] = [-60, 60].map((x, index) => ({
-      type: 'part.add',
-      part: {
-        id: createId(`agent_rack_${index}`),
-        definitionId: upright.canonicalId,
-        color: 25,
-        transform: { position: [x, y, deckPlate!.transform.position[2] - 10] as Vec3, basis: IDENTITY_BASIS },
-        subassemblyId,
-        stepId,
-        provenance: 'agent',
-        protected: false,
-      },
-    }))
-    const result = cadEngine.preflight('Add rear cargo rack uprights', operations, 'agent', snapshot.document.revision)
-    setToast(
-      result.ok
-        ? {
-            kind: 'info',
-            title: 'Ghost proposal ready',
-            detail: 'Rotate around the model, then accept or reject it in shared history.',
-          }
-        : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message },
-    )
   }, [])
 
   const importModel = useCallback(async (file: File) => {
@@ -1183,6 +1143,7 @@ export function useWorkbench() {
   }, [])
 
   const cancelPlacement = useCallback(() => {
+    partDrag.current = 'idle'
     setPlacement(null)
     setDropPoint(null)
   }, [])
@@ -1199,6 +1160,7 @@ export function useWorkbench() {
     selectedDefinition,
     activeColor,
     setActiveColor,
+    toolPicks,
     tool,
     setTool,
     gridLdu,
@@ -1260,6 +1222,8 @@ export function useWorkbench() {
     armPart,
     addPart,
     dropPart,
+    beginPartDrag,
+    endPartDrag,
     placeArmed,
     duplicateSelection,
     clipboard,
@@ -1274,7 +1238,6 @@ export function useWorkbench() {
     toggleProtectSelection,
     acceptProposal,
     rejectProposal,
-    createDemoProposal,
     importModel,
     hideSelection,
     showEverything,

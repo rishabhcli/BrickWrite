@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { catalog } from '../cad/catalog'
 import { cadEngine } from '../cad/engine'
 import { IDENTITY_BASIS } from '../cad/math'
-import { createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import { createBlankDocument, createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import { replayBrick } from '../generation/__fixtures__/run'
+import { disposeGenerationHost, getGenerationSession } from '../generation/host'
 import type { PartInstance } from '../cad/types'
 import { WaveLedger } from './modes'
 import { createToolHost } from './tools'
@@ -278,5 +280,111 @@ describe('tool host', () => {
     expect(body.next.args?.capability).toBe('connect_parts')
     expect(body.next.args?.args?.movingPartId).toBe('ghost')
     expect(body.next.args?.args?.targetPartId).toBe('anchor')
+  })
+})
+
+describe('generation through the Design Partner', () => {
+  const ARMCHAIR = 'A green armchair 6 x 6 studs, 6 studs tall, at most 90 pieces'
+
+  beforeEach(() => {
+    cadEngine.replaceDocument(createBlankDocument('Design Partner generation'))
+    cadEngine.setAutonomy('propose')
+    getGenerationSession({ tickMs: 0, runner: replayBrick })
+  })
+
+  afterEach(() => {
+    disposeGenerationHost()
+    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.setAutonomy('propose')
+  })
+
+  const body = (result: { content: string }) => JSON.parse(result.content) as Record<string, never>
+
+  const drive = async (host: ReturnType<typeof createToolHost>) => {
+    const compiled = body(await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } }))
+    for (const field of (compiled.unresolvedConflicts as string[]) ?? []) {
+      await host.execute({ id: `s_${field}`, name: 'generation_set', input: { conflict: { field, choice: 'compiler' } } })
+    }
+    return body(await host.execute({ id: 'r1', name: 'generation_run', input: { useModel: false } }))
+  }
+
+  it('compiles a sentence, runs the pipeline and stages the candidate as one wave', async () => {
+    const waves = new WaveLedger()
+    const host = createToolHost({ waves })
+
+    const ran = await drive(host)
+    expect(ran.runPhase).toBe('ready')
+    expect(ran.usedModel).toBe(false)
+    // The kernel's own instruction after a run is to review the candidate, not
+    // to start placing its parts.
+    expect(ran.nextTool).toBe('generation_preview')
+    expect(ran.nextAction).toMatch(/Do not place its parts individually/)
+
+    const preview = body(await host.execute({ id: 'p1', name: 'generation_preview', input: { candidateId: ran.candidates[0].id } }))
+    expect(preview.waveId).toEqual(expect.any(String))
+    expect(preview.status).toMatch(/awaiting review/)
+    expect(preview.capability).toBe('generate_from_brief')
+
+    // One wave, holding the whole candidate. Not one wave per part.
+    expect(waves.pending()).toHaveLength(1)
+    expect(waves.pending()[0].operations.length).toBe(preview.operations)
+    expect(cadEngine.getDocument().revision).toBe(preview.documentRevision)
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+  })
+
+  it('labels the wave from the brief subject so a reviewer reads what they asked for', async () => {
+    const waves = new WaveLedger()
+    const host = createToolHost({ waves })
+    const ran = await drive(host)
+    await host.execute({ id: 'p1', name: 'generation_preview', input: { candidateId: ran.candidates[0].id } })
+    expect(waves.pending()[0].label).toMatch(/^Generated: /)
+  })
+
+  it('shares one session with the Generate panel', async () => {
+    const host = createToolHost({ waves: new WaveLedger() })
+    await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } })
+    expect(getGenerationSession().getState().prompt).toBe(ARMCHAIR)
+
+    getGenerationSession().setPrompt('A harbour control tower')
+    const state = body(await host.execute({ id: 's1', name: 'generation_state', input: {} }))
+    expect(state.prompt).toBe('A harbour control tower')
+  })
+
+  it('reads in Inspect but refuses to stage anything there', async () => {
+    cadEngine.setAutonomy('inspect')
+    const host = createToolHost({ waves: new WaveLedger() })
+    const compiled = await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } })
+    expect(compiled.ok).toBe(true)
+    expect((await host.execute({ id: 's1', name: 'generation_state', input: {} })).ok).toBe(true)
+
+    const preview = await host.execute({ id: 'p1', name: 'generation_preview', input: { candidateId: 'cand_brick' } })
+    expect(preview.ok).toBe(false)
+    expect(body(preview).error.code).toBe('READ_ONLY_MODE')
+  })
+
+  it('names an unknown candidate rather than staging an empty wave', async () => {
+    const waves = new WaveLedger()
+    const host = createToolHost({ waves })
+    await drive(host)
+    const refused = await host.execute({ id: 'p1', name: 'generation_preview', input: { candidateId: 'cand_invented' } })
+    expect(refused.ok).toBe(false)
+    expect(body(refused).error).toMatchObject({ code: 'INVALID_INPUT', message: expect.stringMatching(/not in the current run/) })
+    expect(waves.pending()).toHaveLength(0)
+  })
+
+  it('offers no commit tool, in any mode', () => {
+    cadEngine.setAutonomy('build')
+    const host = createToolHost({ waves: new WaveLedger() })
+    const names = host.declarations.map((tool) => tool.name)
+    expect(names).toContain('generation_preview')
+    expect(names).not.toContain('generation_apply')
+  })
+
+  it('tells the model that preflight_placement is one brick and never a build strategy', () => {
+    const host = createToolHost({ waves: new WaveLedger() })
+    const placement = host.declarations.find((tool) => tool.name === 'preflight_placement')!
+    expect(placement.description).toMatch(/ONE catalog part/)
+    expect(placement.description).toMatch(/never lay a building, a vehicle, a mechanism or a set brick by brick/)
+    expect(placement.description).toMatch(/generation_compile/)
   })
 })

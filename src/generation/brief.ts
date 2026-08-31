@@ -46,11 +46,15 @@ const ARCHETYPE_KEYWORDS: Record<Exclude<SubjectArchetype, 'unknown'>, readonly 
     'airplane', 'jet', 'helicopter', 'boat', 'ship', 'submarine', 'rover', 'buggy', 'tractor',
     'spaceship', 'starship', 'shuttle', 'rocket', 'motorcycle', 'bike', 'racer', 'speeder', 'tank',
     'forklift', 'ambulance', 'firetruck', 'skiff',
+    'freighter', 'saucer', 'cruiser', 'hauler', 'gunship', 'dropship', 'trawler', 'ferry', 'airship',
+    'hovercraft', 'tug', 'barge',
   ],
   building: [
     'house', 'home', 'building', 'tower', 'castle', 'cottage', 'shop', 'store', 'cafe', 'station',
     'garage', 'barn', 'church', 'temple', 'lighthouse', 'hut', 'cabin', 'skyscraper', 'facade',
     'warehouse', 'workshop', 'library', 'museum', 'bunker', 'outpost', 'fort', 'windmill',
+    'palace', 'belfry', 'metro', 'hangar', 'terminal', 'depot', 'observatory', 'pavilion',
+    'silo', 'hall', 'apartment', 'clocktower',
   ],
   furniture: [
     'chair', 'table', 'desk', 'bed', 'sofa', 'couch', 'bookshelf', 'shelf', 'cabinet', 'dresser',
@@ -68,6 +72,7 @@ const ARCHETYPE_KEYWORDS: Record<Exclude<SubjectArchetype, 'unknown'>, readonly 
   sculpture: [
     'sculpture', 'statue', 'mosaic', 'portrait', 'logo', 'sign', 'monument', 'ornament', 'trophy',
     'vase', 'abstract', 'artwork', 'bust', 'obelisk', 'pillar',
+    'lattice', 'spire', 'landmark', 'arch', 'pylon', 'mast',
   ],
 }
 
@@ -120,6 +125,23 @@ const ARCHETYPE_SHAPE: Record<SubjectArchetype, { readonly width: number; readon
   unknown: { width: 12, height: 10, depth: 10 },
 }
 
+/**
+ * What a *large* subject is shaped like, when no dimensions were given.
+ *
+ * Not `ARCHETYPE_SHAPE × factor`: a large vehicle is not a desk model enlarged,
+ * it is longer and wider against its height, and multiplying a 14 × 8 × 8
+ * runabout by 2.2 produces a cube with nowhere to put a keel, two hull halves
+ * and a cockpit. Anything not listed keeps the uniform factor, because a large
+ * chair really is a chair, scaled.
+ */
+const LARGE_SHAPE: Partial<Record<SubjectArchetype, { readonly width: number; readonly height: number; readonly depth: number }>> = {
+  vehicle: { width: 48, height: 16, depth: 40 },
+  building: { width: 32, height: 40, depth: 32 },
+  mechanism: { width: 28, height: 32, depth: 28 },
+  sculpture: { width: 24, height: 48, depth: 24 },
+  creature: { width: 24, height: 28, depth: 20 },
+}
+
 const SCALE_WORDS: Array<{ readonly scale: DesignBrief['scale']; readonly pattern: RegExp; readonly factor: number }> = [
   { scale: 'micro', pattern: /\b(micro|microscale|micro-scale|tiny|miniature)\b/i, factor: 0.45 },
   { scale: 'minifig', pattern: /\b(minifig|minifigure|minifig-scale|playset)\b/i, factor: 1 },
@@ -141,12 +163,73 @@ const STYLE_WORDS = [
   'abstract', 'geometric', 'organic', 'ornamental', 'sculptural', 'classical', 'stylised', 'stylized',
 ] as const
 
+/**
+ * Words that are never the thing that moves.
+ *
+ * The general "<something> that <verb>s" pattern captures the words before
+ * `that`, and a lazy run of letters and spaces will happily swallow the whole
+ * clause: "A shop with doors that open" yielded the function
+ * "A shop with doors opens", which is not a function, alongside the correct
+ * "doors open" from the specific door rule. Trimming connectives off the front
+ * of the capture leaves the noun, and the noun is what moves.
+ */
+const FUNCTION_STOP_WORDS = new Set(['a', 'an', 'the', 'with', 'and', 'of', 'for', 'its', 'it', 'has', 'have', 'that'])
+
+/**
+ * The thing being described, from a phrase that may carry a whole clause.
+ *
+ * The last unbroken run of meaningful words, capped at two. A connective splits
+ * the phrase rather than being trimmed from its front: "a shop with doors" is
+ * about the doors, not about a shop, and stripping only leading stop words
+ * leaves "with doors".
+ */
+function subjectOf(phrase: string): string {
+  const runs: string[][] = [[]]
+  for (const word of phrase.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
+    if (FUNCTION_STOP_WORDS.has(word)) runs.push([])
+    else runs[runs.length - 1].push(word)
+  }
+  const last = runs.filter((run) => run.length).at(-1) ?? []
+  return last.slice(-2).join(' ')
+}
+
 const FUNCTION_PATTERNS: Array<{ readonly pattern: RegExp; readonly describe: (match: RegExpMatchArray) => string }> = [
-  { pattern: /\b([a-z][a-z ]{0,20}?)\s+that\s+(turn|spin|rotate|open|close|lift|slide|fold|swing|move|steer)s?\b/i, describe: (m) => `${m[1].trim()} ${m[2].toLowerCase()}s` },
-  { pattern: /\b(working|moving|opening|rotating|sliding|folding|articulated|hinged|steerable|posable)\s+([a-z][a-z ]{0,20}?)\b(?=[.,;]|\s+(?:and|with|that|for|in|on)\b|$)/i, describe: (m) => `${m[1].toLowerCase()} ${m[2].trim()}` },
+  { pattern: /\b(working|moving|opening|rotating|sliding|folding|articulated|hinged|steerable|posable)\s+([a-z][a-z ]{0,20}?)\b(?=[.,;]|\s+(?:and|with|that|for|in|on)\b|$)/i, describe: (m) => `${m[1].toLowerCase()} ${subjectOf(m[2])}` },
   { pattern: /\b(roof|lid|canopy|hatch|top)\s+(?:that\s+)?(lifts?\s+off|comes?\s+off|removable)\b/i, describe: (m) => `${m[1].toLowerCase()} lifts off` },
   { pattern: /\b(doors?|shutters?|gates?|windows?)\s+(?:that\s+)?(open|swing)s?\b/i, describe: (m) => `${m[1].toLowerCase()} open` },
   { pattern: /\b(wheels?|axles?|turntables?|rotors?)\s+(?:that\s+)?(turn|spin|rotate)s?\b/i, describe: (m) => `${m[1].toLowerCase()} turn` },
+  // Last, and deliberately: the specific rules above phrase their subjects the
+  // way a builder would ("doors open", "roof lifts off"). This one is the
+  // catch-all for anything they miss, and running it first would let its
+  // clumsier wording win a race it should lose.
+  { pattern: /\b([a-z][a-z ]{0,20}?)\s+that\s+(turn|spin|rotate|open|close|lift|slide|fold|swing|move|steer)s?\b/i, describe: (m) => `${subjectOf(m[1])} ${m[2].toLowerCase()}s` },
+]
+
+/**
+ * Named features that survive into the brief even though nothing in the
+ * sentence says they move.
+ *
+ * `FUNCTION_PATTERNS` above only catches motion — "doors that open", "a working
+ * crane". A builder who writes "a saucer freighter with a boarding ramp" has
+ * named a requirement just as concretely, and until it lands in
+ * `brief.functions` the pipeline never hears about it: the massing cannot plan
+ * for it, the detail phase cannot hinge it, and the model comes back without
+ * the one thing that was asked for by name.
+ *
+ * Longest first, so "boarding ramp" is recorded rather than "ramp".
+ */
+const FEATURE_WORDS: readonly string[] = [
+  // Doors and windows first, because they are the features most often named
+  // plainly and the ones the massing can actually act on: `openingsFor` cuts a
+  // real seated frame for each. Without them here, "a shop with a door"
+  // recorded no function and the shop came out with a blank wall — the opening
+  // system was unreachable from any phrasing that did not also describe motion.
+  'doors', 'door', 'windows', 'window', 'gates', 'gate', 'shutters', 'shutter',
+  'observation deck', 'boarding ramp', 'landing gear', 'landing pad', 'loading bay', 'vehicle bay',
+  'metro station', 'control room', 'clock face', 'clock faces', 'roof terrace', 'fire escape',
+  'gangway', 'drawbridge', 'staircase', 'balcony', 'chimney', 'conveyor', 'elevator', 'turntable',
+  'belfry', 'cockpit', 'turret', 'antenna', 'winch', 'crane', 'hatch', 'canopy', 'ramp', 'metro',
+  'stairs', 'porch', 'spire', 'mast', 'boom', 'lift', 'clock',
 ]
 
 const BUDGET_PATTERNS: RegExp[] = [
@@ -196,7 +279,13 @@ export function matchColours(text: string): ColourMatch[] {
     if (!entry.key) continue
     const at = haystack.indexOf(` ${entry.key} `)
     if (at < 0) continue
-    const span: [number, number] = [at, at + entry.key.length + 2]
+    // The span covers the name, not the spaces around it. Two adjacent colour
+    // words share the single space between them — "tan white" is " tan " at
+    // 2..7 and " white " at 6..13 — so counting delimiters as claimed made
+    // every neighbouring pair collide. Longest-first then meant "white" took
+    // the space and "tan" was dropped without a word, which is how "a tan,
+    // white and dark bluish grey tower" compiled to a two-colour brief.
+    const span: [number, number] = [at + 1, at + 1 + entry.key.length]
     // A longer name already claimed these characters — "dark bluish grey" must
     // not also register as "grey".
     if (consumed.some(([from, to]) => span[0] < to && from < span[1])) continue
@@ -503,7 +592,11 @@ export function compileBriefDeterministically(text: string): DesignBrief {
   const factor = scaleHits.length ? scaleHits[0].factor : 1
 
   // -- envelope ------------------------------------------------------------
-  const shape = ARCHETYPE_SHAPE[classification.archetype]
+  const shape =
+    (scale === 'large' ? LARGE_SHAPE[classification.archetype] : undefined) ?? ARCHETYPE_SHAPE[classification.archetype]
+  // A shape that already means "large" must not then be multiplied by the
+  // large factor as well.
+  const shapeFactor = scale === 'large' && LARGE_SHAPE[classification.archetype] ? 1 : factor
   let envelopeStuds: [number, number, number] | null = null
   const triple = source.match(DIMENSION_TRIPLE)
   const pair = source.match(DIMENSION_PAIR)
@@ -525,8 +618,8 @@ export function compileBriefDeterministically(text: string): DesignBrief {
       })
     }
   } else if (lengthPhrase || heightPhrase) {
-    const length = lengthPhrase ? Number(lengthPhrase[1]) : Math.round(shape.width * factor)
-    const height = heightPhrase ? Number(heightPhrase[1]) : Math.round(shape.height * factor)
+    const length = lengthPhrase ? Number(lengthPhrase[1]) : Math.round(shape.width * shapeFactor)
+    const height = heightPhrase ? Number(heightPhrase[1]) : Math.round(shape.height * shapeFactor)
     const depth = Math.max(2, Math.round((length * shape.depth) / shape.width))
     envelopeStuds = [length, height, depth]
     evidence.envelopeStuds = [lengthPhrase?.[0], heightPhrase?.[0]].filter(Boolean).join(', ')
@@ -536,9 +629,9 @@ export function compileBriefDeterministically(text: string): DesignBrief {
     })
   } else if (scaleHits.length) {
     envelopeStuds = [
-      Math.max(2, Math.round(shape.width * factor)),
-      Math.max(2, Math.round(shape.height * factor)),
-      Math.max(2, Math.round(shape.depth * factor)),
+      Math.max(2, Math.round(shape.width * shapeFactor)),
+      Math.max(2, Math.round(shape.height * shapeFactor)),
+      Math.max(2, Math.round(shape.depth * shapeFactor)),
     ]
     evidence.envelopeStuds = `derived from “${(source.match(scaleHits[0].pattern) ?? [''])[0]}”`
   }
@@ -570,14 +663,31 @@ export function compileBriefDeterministically(text: string): DesignBrief {
 
   // -- functions -----------------------------------------------------------
   const functions: string[] = []
+  // One moving thing, one function. The specific rules and the catch-all can
+  // both match the same clause, and "doors open" and "doors opens" are not two
+  // requirements.
+  const describedSubjects = new Set<string>()
   for (const entry of FUNCTION_PATTERNS) {
     const match = source.match(entry.pattern)
     if (!match) continue
     const described = entry.describe(match).replace(/\s+/g, ' ').trim()
-    if (described && !functions.includes(described)) {
-      functions.push(described)
-      evidence[`function.${described}`] = match[0].trim()
-    }
+    if (!described) continue
+    const subject = described.split(/\s+/)[0]
+    if (functions.includes(described) || describedSubjects.has(subject)) continue
+    describedSubjects.add(subject)
+    functions.push(described)
+    evidence[`function.${described}`] = match[0].trim()
+  }
+
+  // Named features, after the motion patterns so "doors that open" is recorded
+  // as motion rather than as the bare noun.
+  for (const feature of FEATURE_WORDS) {
+    const pattern = new RegExp(`\\b${feature.replace(/ /g, '\\s+')}\\b`, 'i')
+    const match = source.match(pattern)
+    if (!match) continue
+    if (functions.some((existing) => existing.includes(feature))) continue
+    functions.push(feature)
+    evidence[`function.${feature}`] = match[0].trim()
   }
 
   // -- style ---------------------------------------------------------------

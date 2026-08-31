@@ -16,7 +16,15 @@ import {
   type BuildGraph,
 } from './graph'
 import { GenerationAbortedError, realizeGraph } from './realize'
-import { GenerationCancelled, runPipeline } from './phases'
+import {
+  DETAIL_SYSTEM,
+  GenerationCancelled,
+  MAX_DETAIL_FEATURES,
+  parseDetail,
+  runPipeline,
+  runPipelineSync,
+  stabilizeMassing,
+} from './phases'
 import { createGenerationProvider } from './provider'
 import { referencesFromEnvelope, compareMasks, frameForEnvelope, maskFromEnvelope, rasteriseSilhouette } from './silhouette'
 import { createTestModelProvider } from './testing'
@@ -526,5 +534,321 @@ describe('the browser client never holds a credential', () => {
       provider.complete({ system: 's', prompt: 'p', schema: {}, parse: (raw) => raw, signal: controller.signal }),
     ).rejects.toThrow()
     expect(fetchImpl).toHaveBeenCalledOnce()
+  })
+})
+
+describe('model massing is audited before it becomes geometry', () => {
+  it('compacts missing levels and keeps upper volumes on the deck below', () => {
+    const result = stabilizeMassing([
+      {
+        id: 'base',
+        role: 'base',
+        atStuds: [0, 0],
+        widthStuds: 10,
+        depthStuds: 8,
+        courses: 3,
+        level: 2,
+        fill: 'solid',
+      },
+      {
+        id: 'crown',
+        role: 'crown',
+        atStuds: [9, 7],
+        widthStuds: 6,
+        depthStuds: 5,
+        courses: 2,
+        level: 7,
+        fill: 'shell',
+      },
+    ])
+
+    expect(result.boxes).toEqual([
+      expect.objectContaining({ id: 'base', level: 0, atStuds: [0, 0] }),
+      expect.objectContaining({ id: 'crown', level: 1, atStuds: [7, 5], widthStuds: 3, depthStuds: 3 }),
+    ])
+    expect(result.repairedBoxes).toBe(2)
+    expect(result.droppedBoxes).toBe(0)
+    expect(result.notes.join(' ')).toMatch(/Massing audit repaired 2 stack issue/)
+  })
+
+  it('drops an upper volume when the preceding level cannot carry a 3 x 3 footprint', () => {
+    const result = stabilizeMassing([
+      {
+        id: 'pin',
+        role: 'base',
+        atStuds: [0, 0],
+        widthStuds: 2,
+        depthStuds: 2,
+        courses: 1,
+        level: 0,
+        fill: 'solid',
+      },
+      {
+        id: 'upper',
+        role: 'crown',
+        atStuds: [0, 0],
+        widthStuds: 4,
+        depthStuds: 4,
+        courses: 1,
+        level: 1,
+        fill: 'shell',
+      },
+    ])
+
+    expect(result.boxes.map((box) => box.id)).toEqual(['pin'])
+    expect(result.droppedBoxes).toBe(1)
+    expect(result.notes.join(' ')).toMatch(/no 3 x 3 supporting deck/)
+  })
+})
+
+describe('model-driven detail', () => {
+  const brief = compileBriefDeterministically('A three-storey workshop 20 x 16 studs, 18 studs tall')
+
+  const withDetail = (features: readonly Record<string, unknown>[]) => {
+    const delegate = createTestModelProvider()
+    return {
+      ...delegate,
+      async complete<T>(request: Parameters<typeof delegate.complete<T>>[0]) {
+        const properties = (request.schema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}
+        if (!('features' in properties)) return delegate.complete<T>(request)
+        return {
+          value: request.parse({ features }),
+          provenance: {
+            provider: 'grounding-double',
+            model: 'grounding-double/1',
+            promptHash: 'detail',
+            seed: 0,
+            createdAt: new Date(0).toISOString(),
+          },
+          usage: { inputTokens: 31, outputTokens: 17 },
+        }
+      },
+    }
+  }
+
+  it('waits for massing, skeleton and packing before asking for surface features', async () => {
+    const timeline: string[] = []
+    let detailPrompt = ''
+    const provider = createTestModelProvider({
+      onRequest: (request) => {
+        const properties = (request.schema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}
+        const kind = 'boxes' in properties ? 'massing' : 'features' in properties ? 'detail' : 'other'
+        timeline.push(`request:${kind}`)
+        if (kind === 'detail') detailPrompt = request.prompt
+      },
+    })
+
+    await runPipeline(brief, {
+      seed: 11,
+      base: base(),
+      provider,
+      onPhase: (event) => timeline.push(`phase:${event.phase}`),
+    })
+
+    expect(timeline).toEqual([
+      'request:massing',
+      'phase:massing',
+      'phase:skeleton',
+      'phase:packing',
+      'request:detail',
+      'phase:detail',
+    ])
+    expect(detailPrompt).toMatch(/volumes the kernel actually built/i)
+    expect(detailPrompt).toMatch(/Feature budget: at most \d+/)
+  })
+
+  it('spends no detail request when the kernel produced no buildable surface', async () => {
+    const requestKinds: string[] = []
+    const provider = createTestModelProvider({
+      onRequest: (request) => {
+        const properties = (request.schema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}
+        requestKinds.push('boxes' in properties ? 'massing' : 'features' in properties ? 'detail' : 'other')
+      },
+    })
+    const candidate = await runPipeline(brief, {
+      seed: 12,
+      base: base(),
+      provider,
+      constraints: { partBudget: 1 },
+    })
+
+    expect(requestKinds).toEqual(['massing'])
+    expect(candidate.inference.requests).toBe(1)
+    expect(candidate.notes.join(' ')).toMatch(/Detail model skipped because the structural phases produced no buildable surface/)
+  })
+
+  it('places what the model proposed, resolved from the placeable catalog', async () => {
+    const provider = createTestModelProvider({ detail: 'legal' })
+    const candidate = await runPipeline(brief, { seed: 11, base: base(), provider })
+
+    const details = candidate.graph.nodes.filter((node) => node.role === 'detail')
+    expect(details.length).toBeGreaterThan(0)
+    // The proposal's own query, not the hard-coded groove tile every subject
+    // used to get.
+    expect(details.map((node) => node.part?.query)).toEqual(expect.arrayContaining(['grille tile 1 x 2']))
+    expect(details.every((node) => node.part?.query !== 'tile 1 x 2 with groove')).toBe(true)
+    expect(candidate.notes.join(' ')).toMatch(/proposed by the model/)
+    expect(candidate.notes.join(' ')).not.toMatch(/detail:fallback/)
+    expect(candidate.inference.requests).toBe(2)
+    expect(candidate.inference.inputTokens).toBeGreaterThan(0)
+  })
+
+  it('falls back to the deterministic surface when the proposal is not usable', async () => {
+    const provider = createTestModelProvider({ detail: 'illegal' })
+    const candidate = await runPipeline(brief, { seed: 11, base: base(), provider })
+
+    expect(candidate.notes.join(' ')).toMatch(/detail:fallback/)
+    const details = candidate.graph.nodes.filter((node) => node.role === 'detail')
+    expect(details.length).toBeGreaterThan(0)
+    expect(details.every((node) => node.part?.query === 'tile 1 x 2 with groove')).toBe(true)
+    // A refused proposal costs greebles, never the candidate.
+    expect(candidate.metrics.partCount).toBeGreaterThan(40)
+    expect(candidate.metrics.collisionCount).toBe(0)
+  })
+
+  it('grounds each feature to both a built volume and a placeable identity', async () => {
+    const candidate = await runPipeline(brief, {
+      seed: 11,
+      base: base(),
+      provider: withDetail([
+        { id: 'good', role: 'base', query: 'grille tile 1 x 2', atXStuds: 1, atZStuds: 0, quarterTurns: 0 },
+        { id: 'bad-role', role: 'imaginary-turret', query: 'tile 1 x 2', atXStuds: 1, atZStuds: 0, quarterTurns: 0 },
+        { id: 'bad-part', role: 'base', query: 'zzzz_no_catalog_part_8472', atXStuds: 1, atZStuds: 0, quarterTurns: 0 },
+      ]),
+    })
+
+    const details = candidate.graph.nodes.filter((node) => node.role === 'detail')
+    expect(details.map((node) => node.part?.query)).toEqual(['grille tile 1 x 2'])
+    expect(details[0]?.part?.definitionId).toBeTruthy()
+    expect(candidate.notes.join(' ')).toMatch(/1 of 3 feature\(s\) proposed by the model/)
+    expect(candidate.notes.join(' ')).toMatch(/skipped 2 ungrounded/)
+  })
+
+  it('uses deterministic detail when a schema-valid proposal grounds nothing', async () => {
+    const candidate = await runPipeline(brief, {
+      seed: 11,
+      base: base(),
+      provider: withDetail([
+        { id: 'bad', role: 'imaginary-turret', query: 'zzzz_no_catalog_part_8472', atXStuds: 0, atZStuds: 0, quarterTurns: 0 },
+      ]),
+    })
+
+    expect(candidate.notes.join(' ')).toMatch(/detail:fallback — none of 1 model-proposed/)
+    const details = candidate.graph.nodes.filter((node) => node.role === 'detail')
+    expect(details.length).toBeGreaterThan(0)
+    expect(details.every((node) => node.part?.query === 'tile 1 x 2 with groove')).toBe(true)
+  })
+
+  it('records zero model usage for the deterministic path', () => {
+    expect(runPipelineSync(brief, { seed: 11, base: base() }).inference).toEqual({
+      requests: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    })
+  })
+
+  it('refuses a detail payload that names no part rather than inventing one', () => {
+    expect(() => parseDetail({ features: [{ id: 'a', role: 'base', atXStuds: 0, atZStuds: 0, quarterTurns: 0 }] }))
+      .toThrow(/has no "query"/)
+    expect(() => parseDetail({ features: [] })).toThrow(/missing or empty/)
+    expect(() =>
+      parseDetail({
+        features: Array.from({ length: MAX_DETAIL_FEATURES + 1 }, (_, index) => ({
+          id: `f${index}`,
+          role: 'base',
+          query: 'tile',
+          atXStuds: 0,
+          atZStuds: 0,
+          quarterTurns: 0,
+        })),
+      }),
+    ).toThrow(/at most 24/)
+  })
+
+  it('tells the model it may not name an identity or a coordinate', () => {
+    expect(DETAIL_SYSTEM).toMatch(/Never name a part number, a colour or a world coordinate/)
+    expect(DETAIL_SYSTEM).toMatch(/counted from its minimum corner/)
+  })
+})
+
+describe('the candidate pool', { timeout: 60_000 }, () => {
+  const small = compileBriefDeterministically('A shed 8 x 8 studs, 6 studs tall')
+
+  it('overlaps the model calls three at a time rather than one after another', async () => {
+    // Concurrency is only observable where the pipeline actually waits, which
+    // is the model call. The phases themselves are CPU-bound and synchronous,
+    // so a deterministic run has nothing to overlap and measuring there would
+    // assert something JavaScript cannot do.
+    let inFlight = 0
+    let peak = 0
+    const double = createTestModelProvider()
+    const slow = {
+      ...double,
+      async complete<T>(request: Parameters<typeof double.complete<T>>[0]) {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          return await double.complete<T>(request)
+        } finally {
+          inFlight -= 1
+        }
+      },
+    }
+
+    const seen = new Set<string>()
+    const run = await new GenerationEngine({ provider: slow }).generate(small, {
+      base: base(),
+      count: 6,
+      constraints: { partBudget: 120 },
+      onPhase: (event) => seen.add(event.candidateId),
+    })
+
+    expect(peak).toBeGreaterThan(1)
+    expect(peak).toBeLessThanOrEqual(3)
+
+    // Interleaved events are exactly why each one has to name its candidate.
+    const produced = new Set([...run.candidates, ...run.rejected.map((entry) => entry.candidate)].map((candidate) => candidate.id))
+    expect(seen).toEqual(produced)
+    expect(seen.size).toBeGreaterThan(1)
+    expect(run.inference.requests).toBeGreaterThan(0)
+  })
+
+  it('keeps successful candidates when one provider call fails', async () => {
+    const delegate = createTestModelProvider()
+    const unstable = {
+      ...delegate,
+      async complete<T>(request: Parameters<typeof delegate.complete<T>>[0]) {
+        const properties = (request.schema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}
+        if ('boxes' in properties && request.prompt.includes('Stacked slabs')) {
+          throw new Error('candidate-specific provider failure')
+        }
+        return delegate.complete<T>(request)
+      },
+    }
+
+    const run = await new GenerationEngine({ provider: unstable }).generate(small, {
+      base: base(),
+      count: 3,
+      constraints: { partBudget: 120 },
+    })
+
+    expect(run.failed).toEqual([
+      expect.objectContaining({
+        candidateIndex: 1,
+        strategy: 'stacked-slab',
+        reason: 'candidate-specific provider failure',
+      }),
+    ])
+    expect(run.candidates.length + run.rejected.length).toBe(2)
+    expect(run.notes.join(' ')).toMatch(/successful candidates remain reviewable/)
+  })
+
+  it('cancels every candidate in the pool, not just the one that noticed', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      new GenerationEngine().generate(small, { base: base(), count: 6, signal: controller.signal }),
+    ).rejects.toBeInstanceOf(GenerationCancelled)
   })
 })

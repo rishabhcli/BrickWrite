@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cadEngine } from '../cad/engine'
 import { IDENTITY_BASIS } from '../cad/math'
-import { createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import { createBlankDocument, createEmptyDocument, createShowcaseDocument } from '../cad/sample'
 import type { PartInstance } from '../cad/types'
 import { scriptedTransport, toolValue, type ScriptedLeg } from './__fixtures__/scriptedTransport'
 import { compileBrief } from './brief'
 import { AgentSession } from './session'
+import { replayBrick } from '../generation/__fixtures__/run'
+import { disposeGenerationHost, getGenerationSession } from '../generation/host'
 import type { AgentMode } from './modes'
 
 /**
@@ -677,5 +679,80 @@ describe('incomplete transport turns cannot commit a build', () => {
       expect(cadEngine.getSnapshot().document.revision).toBe(before.revision)
       expect(cadEngine.getSnapshot().document.name).toBe(before.name)
     } finally { session.dispose() }
+  })
+})
+
+describe('generate-first', () => {
+  beforeEach(() => {
+    cadEngine.replaceDocument(createBlankDocument('Generate first'))
+    cadEngine.setAutonomy('propose')
+    cadEngine.setSelection([])
+    getGenerationSession({ tickMs: 0, runner: replayBrick })
+  })
+
+  afterEach(() => {
+    disposeGenerationHost()
+    reset()
+  })
+
+  it('tells the model to generate, not to lay a first brick, when a design request opens an empty plate', async () => {
+    const { session, transport } = makeSession([{ text: ['Compiling that into a brief.'] }])
+    await session.send('Build a harbour control tower with a crane and a metro station')
+
+    // The kernel-authored NEXT line is what steers the turn. On an empty plate
+    // with a subject named, it must not point at a single brick.
+    const grounding = transport.requests[0].grounding
+    expect(grounding.partCount).toBe(0)
+    expect(grounding.nextTool).toBe('generation_compile')
+    expect(grounding.nextAction).toMatch(/Do not lay it brick by brick/)
+    expect(grounding.nextTool).not.toBe('preflight_placement')
+  })
+
+  it('still points a bare "give me a baseplate" at build_field', async () => {
+    const { session, transport } = makeSession([{ text: ['Laying a plate.'] }])
+    await session.send('Just a blank plate to start on')
+    expect(transport.requests[0].grounding.nextTool).toBe('capability_search')
+    expect(transport.requests[0].grounding.nextArgs).toEqual({ query: 'build_field' })
+  })
+
+  it('runs the whole pipeline and stages one wave when the model follows that instruction', async () => {
+    const { session, transport } = makeSession([
+      {
+        text: ['Compiling. '],
+        toolCalls: [{ name: 'generation_compile_local', input: { prompt: 'A harbour control tower 20 x 16 studs, 24 studs tall' } }],
+      },
+      { text: ['Running. '], toolCalls: [{ name: 'generation_run', input: { useModel: false } }] },
+      { text: ['Staging. '], toolCalls: [{ name: 'generation_preview', input: { candidateId: 'cand_brick' } }] },
+      { text: ['One candidate is staged for your review.'] },
+    ])
+
+    await session.send('Build a harbour control tower with a crane and a metro station')
+
+    const names = lastToolResults(transport).map((result) => result.name)
+    expect(names).toEqual(['generation_compile_local', 'generation_run', 'generation_preview'])
+    expect(names).not.toContain('preflight_placement')
+    const waves = session.getState().waves
+    expect(waves).toHaveLength(1)
+    expect(waves[0]).toMatchObject({ status: 'pending', capability: 'generate_from_brief' })
+    // Proposed, never committed: the plate is still empty until a human accepts.
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+  })
+
+  it('stops building on top of a candidate that is still under review', async () => {
+    const { session, transport } = makeSession([
+      { text: ['a'], toolCalls: [{ name: 'generation_compile_local', input: { prompt: 'A harbour control tower' } }] },
+      { text: ['b'], toolCalls: [{ name: 'generation_run', input: { useModel: false } }] },
+      { text: ['c'], toolCalls: [{ name: 'generation_preview', input: { candidateId: 'cand_brick' } }] },
+      { text: ['d'], toolCalls: [{ name: 'scene_overview', input: {} }] },
+      { text: ['Waiting on your review.'] },
+    ])
+
+    await session.send('Build a harbour control tower')
+
+    const overview = toolValue<{ nextTool: string; nextAction: string }>(
+      lastToolResults(transport).find((result) => result.name === 'scene_overview')!.content,
+    )
+    expect(overview.nextTool).toBe('generation_state')
+    expect(overview.nextAction).toMatch(/Do not place parts on top of a wave under review/)
   })
 })

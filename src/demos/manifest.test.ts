@@ -51,13 +51,40 @@ describe('the shipped demo manifest', () => {
   // thirty-part abstract shapes. They were removed: a showcase is judged by the
   // weakest thing in it, not by how many entries it has. What is asserted now is
   // that everything shipped is a real set, not that some count was reached.
+  //
+  // "Large-scale" is a build gate, not a badge. Programme still matters — every
+  // model must come apart and carry a real sequence — but nothing below four
+  // digits is allowed to dilute the front-door collection again.
   it('ships only demos substantial enough to stand as examples', () => {
     expect(DEMOS.length).toBeGreaterThanOrEqual(1)
     for (const demo of DEMOS) {
       const document = readJson<ModelDocument>(publicPath(demo.assets.document.url))
-      expect(Object.keys(document.parts).length).toBeGreaterThan(1000)
+      const partCount = Object.keys(document.parts).length
+      const assemblies = Object.values(document.subassemblies).filter((item) => item.partIds.length)
+
+      expect(partCount, `${demo.id} part count`).toBeGreaterThanOrEqual(1_000)
+      // It comes apart. A model that is one undifferentiated bag is a render,
+      // not a set somebody could build.
+      expect(assemblies.length, `${demo.id} separable assemblies`).toBeGreaterThan(2)
+      // It has a build order with real stages, not one step holding everything.
+      expect(document.steps.length, `${demo.id} build steps`).toBeGreaterThan(3)
       expect(demo.discipline.length).toBeGreaterThan(0)
     }
+  })
+
+  it('shows more than one discipline, so the collection is not one idea repeated', () => {
+    // The operator's complaint was never that the demos were small — the hero
+    // is 11,473 parts. It was that they were all the same *kind* of thing:
+    // modular architecture stacks with no mechanism in them.
+    const disciplines = new Set(DEMOS.map((demo) => demo.discipline))
+    expect(disciplines.size).toBeGreaterThan(1)
+  })
+
+  it('covers landmarks, buildings, large animals and playful creative work', () => {
+    const categories = new Set(DEMOS.map((demo) => demo.category))
+    expect(categories).toEqual(new Set(['landmarks', 'architecture', 'animals', 'creative', 'vehicles']))
+    expect(DEMOS.filter((demo) => demo.category === 'animals')).toHaveLength(2)
+    expect(DEMOS.some((demo) => /survey rover/i.test(demo.title))).toBe(false)
   })
 
   it('names exactly one hero demo, and it carries a brief', () => {
@@ -86,6 +113,55 @@ describe('the shipped demo manifest', () => {
       expect(demo.catalogVersion).toBe(catalog.version)
       expect(demo.provenance.catalogVersion).toBe(catalog.version)
     }
+  })
+
+  /**
+   * Every part the showcase stands on is still in the pack.
+   *
+   * The runtime pack is 900 of 22,941 modelled identities, selected by how often
+   * a part appears in official set inventories, with a hand-maintained
+   * `packExtra` list as the only override. That ranking has already failed once:
+   * recompiling against a refreshed LDraw library reshuffled it and the showcase
+   * rover's windscreen fell out of the pack, which was fixed by pinning that one
+   * part by hand.
+   *
+   * Nothing was watching. The version check above passes whether or not the pack
+   * still carries what the demos reference, because it compares a version string
+   * — and the demo builder, which *would* catch it, does not run in CI. So a
+   * reshuffle that dropped a structurally important part would ship as a
+   * showcase full of `GEOMETRY_UNAVAILABLE` holes and be discovered by a visitor.
+   *
+   * This is the watcher: it names the missing identity and how many placements
+   * depend on it, so the fix — pin it in `packExtra` and recompile — is obvious
+   * from the failure alone.
+   */
+  it('still carries every part the shipped demos are built from', () => {
+    const missing = new Map<string, { instances: number; demos: Set<string>; known: boolean }>()
+    for (const demo of DEMOS) {
+      const document = readJson<ModelDocument>(publicPath(demo.assets.document.url))
+      for (const part of Object.values(document.parts)) {
+        if (catalog.get(part.definitionId)) continue
+        const entry = missing.get(part.definitionId) ?? {
+          instances: 0,
+          demos: new Set<string>(),
+          // Distinguishes "dropped from the pack" from "not in the catalog at
+          // all": the first is a ranking accident and a one-line pin, the second
+          // means the document references something LDraw does not model.
+          known: Boolean(catalog.describe(part.definitionId)),
+        }
+        entry.instances += 1
+        entry.demos.add(demo.id)
+        missing.set(part.definitionId, entry)
+      }
+    }
+    const report = [...missing.entries()]
+      .sort((a, b) => b[1].instances - a[1].instances)
+      .map(
+        ([id, entry]) =>
+          `${id}: ${entry.instances} placement${entry.instances === 1 ? '' : 's'} in ${[...entry.demos].join(', ')}` +
+          ` — ${entry.known ? 'modelled by LDraw but not in this pack; pin it in packExtra' : 'not in the catalog at all'}`,
+      )
+    expect(report, `Parts the demos need are missing from the compiled pack:\n  ${report.join('\n  ')}`).toEqual([])
   })
 
   it('records the gates it applied', () => {

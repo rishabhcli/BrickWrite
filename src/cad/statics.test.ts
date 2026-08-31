@@ -4,23 +4,7 @@ import { catalog, STUD_LDU } from './catalog'
 import { CadEngine } from './engine'
 import { IDENTITY_BASIS, transformPoint } from './math'
 import { createBlankDocument } from './sample'
-import {
-  ABS_GRAMS_PER_LDU3,
-  analyseStatics,
-  centroidOf,
-  computeMass,
-  computeOverloads,
-  computeSupport,
-  convexHull,
-  distanceInsidePolygon,
-  horizontalDistance,
-  maxPairwiseDistance,
-  overhangPenaltyGrams,
-  hangingArmIssues,
-  MIN_RESISTING_ARM_LDU,
-  clutchCapacityWeight,
-  partMassGrams,
-} from './statics'
+import { ABS_GRAMS_PER_LDU3, MIN_RESISTING_ARM_LDU, analyseStatics, centroidOf, clutchCapacityWeight, computeMass, computeOverloads, computeSupport, convexHull, describeStudEquivalents, distanceInsidePolygon, hangingArmIssues, horizontalDistance, maxPairwiseDistance, overhangPenaltyGrams, partMassGrams } from './statics'
 import { findSnapCandidates } from './snapping'
 import type { CadOperation, ModelDocument, PartInstance } from './types'
 
@@ -131,6 +115,52 @@ describe('support polygon', () => {
 
   it('has nothing to say about an empty document', () => {
     expect(computeSupport(createBlankDocument('Empty'), computeMass(createBlankDocument('Empty')))).toBeNull()
+  })
+})
+
+describe('how a weighted connection count is reported', () => {
+  /**
+   * The report is the product's promise in one paragraph, so its numbers have to
+   * survive being read.
+   *
+   * `studs` is a stud-*equivalent* total, because families do not hold equally:
+   * a pin counts 1.4, a bar-and-clip 0.7. Three clips therefore total `0.7 * 3`,
+   * which in binary floating point is `2.0999999999999996` — and that value went
+   * straight into the sentence, next to a capacity of `209.99999999999997` g. A
+   * model-health report printing seventeen decimal places has undermined itself
+   * before it reaches the advice.
+   *
+   * The naming matters as much as the rounding: "2.1 studs" describes something
+   * that does not exist, because what the model has is three clips.
+   */
+  it('never prints a binary-floating-point tail', () => {
+    for (const [weight, count] of [[0.7, 3], [1.4, 3], [0.45, 7], [0.8, 3]] as const) {
+      let total = 0
+      for (let n = 0; n < count; n += 1) total += weight
+      // The raw sum is exactly the thing that must not reach a sentence.
+      const shown = describeStudEquivalents(total)
+      expect(String(total).length, `${count}x${weight} sums to ${total}`).toBeGreaterThan(5)
+      expect(shown).not.toMatch(/\d\.\d{3,}/)
+    }
+  })
+
+  it('calls a fractional total stud-equivalents, and a whole one studs', () => {
+    expect(describeStudEquivalents(2.0999999999999996)).toBe('2.1 stud-equivalents')
+    expect(describeStudEquivalents(1.4)).toBe('1.4 stud-equivalents')
+    // A plain stud attachment weighs 1 each, so the honest word is the ordinary
+    // one. Renaming every count would be its own inaccuracy.
+    expect(describeStudEquivalents(2)).toBe('2 studs')
+    expect(describeStudEquivalents(1)).toBe('1 stud')
+    expect(describeStudEquivalents(4.000000000001)).toBe('4 studs')
+  })
+
+  it('reports capacity in whole grams', () => {
+    // `capacityGrams` derives from a 100 g assumption, so sub-gram precision is
+    // noise that only ever surfaced as `209.99999999999997`.
+    const stack = doc(part('base', '3001', [0, 0, 0]), part('top', '3001', [0, -24, 0]))
+    for (const issue of analyseStatics(stack).overloaded) {
+      expect(issue.capacityGrams).toBe(Math.round(issue.capacityGrams))
+    }
   })
 })
 

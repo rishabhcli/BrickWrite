@@ -207,17 +207,58 @@ arguments with the same objects. There is no second declaration to drift.
 | `notes_read` | all | spatial builder notes |
 | `render_capture` | all | framing, bounds, coverage; pixels when a renderer or encoder is wired |
 | `validate_model` | all | collisions, connectivity, colour evidence, constraints |
+| `generation_compile` | all | a sentence → a `DesignBrief`, with the evidence for every field |
+| `generation_compile_local` | all | the same brief from rules in the browser, with no model call |
+| `generation_set` | all | prompt, candidate count, brief fields, conflict resolutions |
+| `generation_run` | all | runs the four-phase pipeline and scores the candidates |
+| `generation_state` | all | the shared generation session — the Generate panel's session, not a copy |
+| `generation_cancel` | all | stops an in-flight run |
+| `generation_preview` | propose, build | stages one generated candidate as a single reviewable wave |
 | `preflight_capability` | propose, build | plans one shared capability into a reviewable wave |
-| `preflight_placement` | propose, build | places one part **against an anchor and a face**; the connector solver computes the pose |
+| `preflight_placement` | propose, build | places **one** part against an anchor and a face; the connector solver computes the pose |
 | `repair_suggest` | all | measured overlap and a clearance, protected owners, weak attachments, stale waves |
 
 Inspect mode omits the preflight tools from the array entirely, so there is
-nothing to refuse. No mode contains a tool that writes.
+nothing to refuse. No mode contains a tool that writes — including generation,
+which has no apply tool in any mode.
 
 `preflight_placement` is why the model does not guess coordinates: it names a
 `definitionId`, an `anchorPartId` and an approach (`on-top`, `underneath`,
 `beside-x`, …), and `bestSnapTransform` solves the mating pose from the compiled
 connector frames.
+
+### Generate first
+
+The tool that places one brick used to be the most described thing on the
+surface, so a model asked to "build a harbour tower" placed one brick — and then
+another, against a budget of eight tool turns and sixteen calls each, which
+cannot reach a model of a few hundred parts. Three things changed:
+
+- **The kernel says so.** `nextAgentAction` classifies the builder's last
+  message with the brief compiler's own subject keywords. On an empty document
+  with a subject named, `nextTool` is `generation_compile`; with no subject —
+  "just a blank plate" — it is still `capability_search` for `build_field`.
+  While a generated candidate is staged, it is `generation_state`, because
+  building on top of a wave somebody is reviewing changes what they are
+  reviewing.
+- **The prompt says so.** `server/assistant/prompt.ts` opens the tool section
+  with the scale decision — generate, parametric capability, or single part —
+  and states plainly that a building, a vehicle, a mechanism or a set is never
+  laid brick by brick.
+- **The tool says so.** `preflight_placement`'s own description says it places
+  ONE part onto an existing anchor and names `generation_compile` and
+  `build_structure` as what to use instead.
+
+`src/agent/session.test.ts` and `src/generation/eval/archetype.test.ts` hold
+that behaviour: a scripted "Build a harbour control tower with a crane and a
+metro station" against an empty plate is grounded with
+`nextTool: generation_compile`, and the whole compile → run → preview path
+produces exactly one pending wave with the document still empty.
+
+The generation tools reach `src/generation/host.ts` through a dynamic
+`import()`, so a conversation that never generates does not load the pipeline.
+See `docs/integration/generation.md` for the session, the massing strategies and
+the continuation contract.
 
 ---
 

@@ -50,6 +50,13 @@ export function explainMatch(candidate: RankedCandidate, query: PartQuery, conte
     clauses.push(
       detail.lexical >= 0.6 ? `name and category match "${terms}"` : `partial name match on "${terms}"`,
     )
+    // Named right next to the word match it produced, because that is the
+    // clause it changes. A person who typed "roof" and got a sloped brick is
+    // owed the sentence "read \"roof\" as sloped"; without it the answer looks
+    // like the search engine ignored them.
+    for (const reading of query.readings.slice(0, 2)) {
+      clauses.push(`read "${reading.typed}" as ${reading.reads.slice(0, 2).join(' or ')}`)
+    }
   }
 
   if (detail.dimensional.score > 0) {

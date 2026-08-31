@@ -53,7 +53,16 @@ export interface PartIntent {
  * lay rectangles. A rotated region is not expressible and is not pretended to be.
  */
 export interface RegionIntent {
-  readonly shape: 'field' | 'wall' | 'enclosure'
+  /**
+   * Which parametric planner realises this volume.
+   *
+   * `field`, `wall` and `enclosure` are the bonded-brick primitives every
+   * building is made of. The rest are the assemblies a building is *not* made
+   * of — a flap that opens, an open lattice, a sideways-stud hull, a luffing
+   * boom, a clock face — and they exist because a freighter, a mast and a
+   * belfry are not three sizes of the same wall.
+   */
+  readonly shape: 'field' | 'wall' | 'enclosure' | 'hinged-flap' | 'lattice' | 'snot-hull' | 'crane' | 'clock-faces'
   readonly widthStuds: number
   /** Footprint depth. A wall's own run is `widthStuds`; this is ignored for one. */
   readonly depthStuds: number
@@ -74,6 +83,16 @@ export interface RegionIntent {
    * that is. `[-3, -2]` centres a 6 × 4 footprint on it.
    */
   readonly offsetStuds?: readonly [number, number]
+  /** Hinged flap: how far the flap reaches out from its hinge line, in studs. */
+  readonly reachStuds?: number
+  /** Lattice: bay spacing in studs. Width and depth minus one must be multiples of it. */
+  readonly bayStuds?: number
+  /** SNOT hull: sideways plate layers, not brick courses. */
+  readonly layers?: number
+  /** Crane: boom length in studs. */
+  readonly boomStuds?: number
+  /** Clock faces: nominal sweep diameter in studs. */
+  readonly diameterStuds?: number
 }
 
 export interface BuildNode {

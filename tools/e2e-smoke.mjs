@@ -118,6 +118,18 @@ async function sampleContrast(page, samples) {
  * hands focus back to the trigger, which is where a modal opened from in here
  * returns focus on close.
  */
+/**
+ * The toolbar's undo/redo, scoped so a document label cannot impersonate it.
+ *
+ * `getByRole('button', { name: 'Undo' })` matches accessible names by
+ * substring, and the history timeline renders a card per transaction — so once
+ * a transaction is itself named "Undo: Transform part", the bare locator
+ * resolves to two elements and Playwright refuses in strict mode. A
+ * transaction's label is *content*, and no locator should be capturable by
+ * content. Scoping to the toolbar group names which control is meant.
+ */
+const historyButton = (page, name) => page.locator('.history-tools').getByRole('button', { name })
+
 async function closeWorkspace(page) {
   const popover = page.getByRole('dialog', { name: 'Workspace actions' })
   if (!(await popover.count())) return
@@ -489,10 +501,18 @@ try {
   assert(initial.tools.includes('project_list'), 'project_list was not registered in Inspect')
   assert(initial.tools.includes('workspace_reveal'), 'workspace_reveal was not registered in Inspect')
   assert(initial.workspace.chrome?.docks?.right, 'workspace_get omitted dock chrome')
+  // Generate, Refine and Agent now start *open*: they are the first-run design
+  // workspace, and a panel whose header is the only thing above the fold is a
+  // panel nobody finds. They used to default closed, with opening one closing
+  // the others — that decision changed deliberately, so this asserts the
+  // current one rather than the shape of the old one.
   assert(
-    initial.workspace.chrome.sections['generation.panel'] === false,
-    'Generate should start collapsed in the quieter dock',
+    initial.workspace.chrome.sections['generation.panel'] === true,
+    'Generate should start open: it is the first-run design workspace',
   )
+  // `workspace_reveal` is still the agent's way in, and must be idempotent —
+  // revealing something already open is an `applied: true` no-op, not a toggle
+  // that closes it.
   const revealed = await revealChrome(page, 'generation')
   assert(revealed?.applied === true, `workspace_reveal did not open the Generate dock: ${JSON.stringify(revealed)}`)
   assert(
@@ -664,7 +684,7 @@ try {
   })
   assert(afterDrag.revision === beforeDrag.revision + 1, 'Dragging the gizmo did not commit exactly one transaction')
   assert(afterDrag.parts === beforePlaceParts, 'Dragging the gizmo changed the part count')
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await historyButton(page, 'Undo').click()
   await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterDrag.revision, {
     timeout: 10_000,
   })
@@ -701,12 +721,12 @@ try {
   const afterDrop = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
-    armed: Boolean(document.querySelector('.placement-hud')),
+    armed: Boolean(document.querySelector('.placement-bar')),
   }))
   assert(afterDrop.parts === beforeDrop.parts + 1, `A drag-and-drop added ${afterDrop.parts - beforeDrop.parts} parts, not one`)
   assert(afterDrop.revision === beforeDrop.revision + 1, 'A drag-and-drop did not commit as a single transaction')
   assert(!afterDrop.armed, 'The placement ghost was still armed after a drop; the next click would place a second part')
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await historyButton(page, 'Undo').click()
   await page.waitForFunction(
     (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
     beforeDrop.parts,
@@ -719,7 +739,7 @@ try {
     parts: Object.keys(window.brickwright.getDocument().parts).length,
   }))
   await page.locator('.part-card:not(.unplaceable) .part-card-main').first().click()
-  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  await page.locator('.placement-bar').waitFor({ timeout: 5_000 })
   await page.locator('canvas').click({ position: canvasCentre })
   await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforePlace.revision, {
     timeout: 10_000,
@@ -731,8 +751,8 @@ try {
   assert(afterPlace.parts === beforePlace.parts + 1, 'Clicking in the viewport did not place exactly one part')
   assert(afterPlace.revision === beforePlace.revision + 1, 'Viewport placement did not commit as a single transaction')
   await page.keyboard.press('Escape')
-  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.locator('.placement-bar').waitFor({ state: 'hidden' })
+  await historyButton(page, 'Undo').click()
   await page.waitForFunction(
     (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
     beforePlace.parts,
@@ -751,7 +771,7 @@ try {
   await page.mouse.up()
   await page.keyboard.up('Shift')
   assert(marqueeVisible === 1, 'Shift-dragging did not draw a selection rectangle')
-  const marqueeSelected = await page.locator('.viewport-title-block p').innerText()
+  const marqueeSelected = await page.locator('.viewport-title-block').innerText()
   assert(
     /\d+ parts selected/.test(marqueeSelected),
     `Box selection did not select a region, viewport reports "${marqueeSelected}"`,
@@ -778,10 +798,10 @@ try {
   const beforeFind = await modelState()
   await page.locator('[data-catalog-search]').press('ArrowDown')
   await page.locator('[data-catalog-search]').press('Enter')
-  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  await page.locator('.placement-bar').waitFor({ timeout: 5_000 })
   assert(
-    (await page.locator('.placement-hud strong').innerText()).trim().length > 0,
-    'Arming a part from the keyboard did not name it in the placement HUD',
+    (await page.locator('.placement-bar strong').innerText()).trim().length > 0,
+    'Arming a part from the keyboard did not name it in the placement bar',
   )
   await page.locator('canvas').click({ position: canvasCentre })
   await page.waitForFunction(
@@ -793,7 +813,7 @@ try {
   assert(afterFind.parts === beforeFind.parts + 1, 'Keyboard find-then-place did not add exactly one part')
   assert(afterFind.revision === beforeFind.revision + 1, 'Keyboard placement was not a single transaction')
   await page.keyboard.press('Escape')
-  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
+  await page.locator('.placement-bar').waitFor({ state: 'hidden' })
   await page.locator('[data-catalog-search]').fill('')
   const subjectId = await lastPartId()
   workflow.findAndPlace = { parts: afterFind.parts, placedId: subjectId }
@@ -803,11 +823,47 @@ try {
   await revealChrome(page, 'transform')
   const numericX = page.locator('.dock-right').getByLabel('X in LDraw units')
   await numericX.waitFor({ timeout: 5_000 })
+  // Rest it on the ground before sliding it sideways.
+  //
+  // This check is about the numeric field — an exact coordinate committed
+  // through the same bus and read back byte-for-byte — so the pose it asks for
+  // has to be one the kernel will accept. Where the part happened to land, three
+  // studs along X left it hanging in the air, and the kernel refused with
+  // "That pose would leave the part hovering with no clutch", which is correct
+  // and is not what this is testing. On the ground, X is free.
+  await page.getByRole('button', { name: 'Ground', exact: true }).click()
+  await page.waitForTimeout(300)
   const beforeNumeric = await modelState()
-  const numericTarget = await page.evaluate(
-    (id) => Math.round((window.brickwright.getDocument().parts[id].transform.position[0] + 60) / 20) * 20,
-    subjectId,
-  )
+  // A cell this document can legally hold, derived rather than guessed.
+  //
+  // The original `+60` was arbitrary and the kernel refused it — correctly, and
+  // for three different reasons in turn as the pose moved: hovering with no
+  // clutch, then interpenetrating another part, then breaking the hard 10 × 14
+  // stud envelope. None of those is what this checks, which is that the numeric
+  // field commits an exact coordinate and reads it back unchanged.
+  //
+  // So the target is computed from the document: step inward, one stud at a
+  // time, and take the first cell no other part occupies. Inward cannot grow
+  // the footprint, the ground supports it at any X, and an empty cell cannot
+  // collide — all three refusals are ruled out by construction instead of by
+  // hoping.
+  const numericTarget = await page.evaluate((id) => {
+    const model = window.brickwright.getDocument()
+    const others = Object.values(model.parts).filter((part) => part.id !== id)
+    const [x, y, z] = model.parts[id].transform.position
+    const centre = others.reduce((sum, part) => sum + part.transform.position[0], 0) / (others.length || 1)
+    const step = x > centre ? -20 : 20
+    const occupied = (candidate) =>
+      others.some((part) => {
+        const [ox, oy, oz] = part.transform.position
+        return Math.abs(ox - candidate) < 20 && Math.abs(oz - z) < 20 && Math.abs(oy - y) < 24
+      })
+    for (let n = 1; n <= 8; n += 1) {
+      const candidate = x + step * n
+      if (!occupied(candidate)) return candidate
+    }
+    throw new Error('No free cell along X for the numeric transform check')
+  }, subjectId)
   await numericX.fill(String(numericTarget))
   await numericX.press('Enter')
   await page.waitForFunction(
@@ -994,7 +1050,7 @@ try {
   const beforeArraySeat = await modelState()
   await page.locator('[data-catalog-search]').press('ArrowDown')
   await page.locator('[data-catalog-search]').press('Enter')
-  await page.locator('.placement-hud').waitFor({ timeout: 5_000 })
+  await page.locator('.placement-bar').waitFor({ timeout: 5_000 })
   await page.locator('canvas').click({
     position: {
       x: Math.max(canvasCentre.x - 300, 8),
@@ -1007,7 +1063,7 @@ try {
     { timeout: 10_000 },
   )
   await page.keyboard.press('Escape')
-  await page.locator('.placement-hud').waitFor({ state: 'hidden' })
+  await page.locator('.placement-bar').waitFor({ state: 'hidden' })
   await page.locator('[data-catalog-search]').fill('')
 
   const beforeArray = await modelState()
@@ -1077,7 +1133,7 @@ try {
   for (let step = 0; step < 14; step += 1) {
     if ((await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)) === beforeFind.parts)
       break
-    await page.getByRole('button', { name: 'Undo' }).click()
+    await historyButton(page, 'Undo').click()
     await page.waitForTimeout(120)
   }
   const afterUndoChain = await modelState()
@@ -1133,7 +1189,7 @@ try {
     })
     await page.waitForTimeout(220)
     const anchored = await page.evaluate(
-      () => (document.querySelector('.viewport-title-block p')?.textContent ?? 'No selection') !== 'No selection',
+      () => (document.querySelector('.viewport-title-block')?.textContent ?? 'No selection') !== 'No selection',
     )
     if (!anchored) continue
     for (let index = 0; index < addCandidates && !addOutcome?.ok; index += 1) {
@@ -1144,7 +1200,7 @@ try {
           if (window.brickwright.getDocument().revision > revision) return { ok: true }
           const toast = document.querySelector('.toast')?.textContent?.trim()
           return toast
-            ? { ok: false, toast, anchor: document.querySelector('.viewport-title-block p')?.textContent ?? null }
+            ? { ok: false, toast, anchor: document.querySelector('.viewport-title-block')?.textContent ?? null }
             : null
         }, beforeAdd.revision)
         if (!outcome) await page.waitForTimeout(200)
@@ -1171,7 +1227,7 @@ try {
     'Manual catalog placement did not use the shared command bus',
   )
 
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await historyButton(page, 'Undo').click()
   await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, afterAdd.revision, {
     timeout: 10_000,
   })
@@ -1623,7 +1679,7 @@ try {
 
   // Undo has to reverse a generated assembly as one move, like any other edit —
   // a building of three hundred parts is still one transaction.
-  for (let step = 0; step < 5; step += 1) await page.getByRole('button', { name: 'Undo' }).click()
+  for (let step = 0; step < 5; step += 1) await historyButton(page, 'Undo').click()
   await page.waitForFunction(
     (parts) => Object.keys(window.brickwright.getDocument().parts).length === parts,
     generated.before,
@@ -1874,7 +1930,10 @@ try {
   // assertion's target — proven reachable rather than assumed.
   await revealChrome(page, 'inspector')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
-  await page.locator('.validation-hero').waitFor({ timeout: 10_000 })
+  // `.validation-hero` renders nowhere — CSS only, at HEAD too. The VALIDATE tab
+  // draws `ModelHealthPanel`, whose root is `.model-health`, and which is
+  // labelled for assistive tech, so the role query is the durable one.
+  await page.getByRole('complementary', { name: 'Model health navigator' }).waitFor({ timeout: 10_000 })
   await shot('state-validate')
   await page.getByRole('button', { name: /OBJECT/ }).click()
 
