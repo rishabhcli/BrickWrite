@@ -82,7 +82,18 @@ const chatBody = {
   },
   messages: [{ role: 'user', text: 'Inspect' }],
 }
-const message = (text = '{"features":[]}') => ({
+/*
+ * The default payload has to satisfy detailSchema, not merely parse.
+ *
+ * `features` gained a `.min(1)` so the server validator stays in lockstep with
+ * `parseDetail`, which turns an empty answer into the existing corrective retry
+ * instead of a client-side failure after the request has already completed. An
+ * empty `features` array is therefore no longer a valid generation, and a
+ * fixture that sends one is testing a contract the product no longer has.
+ */
+const message = (
+  text = '{"features":[{"id":"f1","role":"window","query":"1x2 plate","atXStuds":0,"atZStuds":0,"quarterTurns":0}]}',
+) => ({
   content: [{ type: 'text', text }],
   stop_reason: 'end_turn',
   usage: { input_tokens: 2, output_tokens: 3 },
@@ -398,7 +409,9 @@ describe('browser transports through the real Node HTTP handler', () => {
     const onProgress = vi.fn()
     const provider = createGenerationProvider({ baseUrl: base, fetchImpl: fetch, onProgress })
     const result = await bounded(provider.complete({ ...generationBody, parse: (raw) => raw }))
-    expect(result.value).toEqual({ features: [] })
+    expect(result.value).toEqual({
+      features: [{ id: 'f1', role: 'window', query: '1x2 plate', atXStuds: 0, atZStuds: 0, quarterTurns: 0 }],
+    })
     expect(result.usage).toEqual({ inputTokens: 2, outputTokens: 3 })
     expect(onProgress).toHaveBeenCalledWith('calling model')
     expect(create).toHaveBeenCalledOnce()
