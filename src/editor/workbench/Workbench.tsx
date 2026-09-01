@@ -731,6 +731,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         }}
         data-preset={layout.preset ?? 'custom'}
       >
+        {/* The editor's outline began at h2, so assistive technology had no
+          * top-level heading for the route and no way to hear which document
+          * was open without reading the chrome. It is hidden because the
+          * document name is already on screen in the title bar. */}
+        <h1 className="visually-hidden">{workbench.state.document.name} — Brickwright editor</h1>
         <TopBar workbench={workbench} />
         <Toolbar workbench={workbench} shortcuts={shortcuts} onImport={workbench.importModel} timelineOpen={!layout.bottom.collapsed} onToggleTimeline={() => toggleDock('bottom')} />
 
