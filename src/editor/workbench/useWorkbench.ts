@@ -38,6 +38,7 @@ import {
   canonicalisePose,
   posesEqual,
   planGroundSelection,
+  resolvePivot,
   translatePose,
   connectorFrame,
   planRotateSelection,
@@ -170,6 +171,11 @@ export function useWorkbench() {
 
   const selectedPart = state.selection.length === 1 ? state.document.parts[state.selection[0]] : undefined
   const selectedDefinition = selectedPart ? catalog.get(selectedPart.definitionId) : undefined
+  const selectionPosition = useMemo<Vec3>(() => {
+    const parts = state.selection.map((id) => state.document.parts[id]).filter(Boolean)
+    if (!parts.length) return [0, 0, 0]
+    return parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
+  }, [state.document.parts, state.selection])
 
   // -- notices --------------------------------------------------------------
   const notify = useCallback((notice: WorkbenchNotice) => setToast(notice), [])
@@ -500,6 +506,30 @@ export function useWorkbench() {
     [commitTransforms, transformPrefs.frame, transformPrefs.locks],
   )
 
+  /** Commit a finished HUD coordinate as one kernel transaction. */
+  const positionSelection = useCallback(
+    (axis: 0 | 1 | 2, value: number) => {
+      if (!Number.isFinite(value)) return false
+      const snapshot = cadEngine.getSnapshot()
+      const parts = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
+      if (!parts.length) return false
+      const axisName = (['x', 'y', 'z'] as const)[axis]
+      if (transformPrefs.locks[axisName]) return false
+      const current = parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
+      const delta: [number, number, number] = [0, 0, 0]
+      delta[axis] = value - current[axis]
+      return commitTransforms(
+        `Position ${parts.length} part${parts.length === 1 ? '' : 's'}`,
+        parts.map((part) => ({
+          type: 'part.transform',
+          partId: part.id,
+          transform: translatePose(part.transform, delta, 'world'),
+        })),
+      )
+    },
+    [commitTransforms, transformPrefs.locks],
+  )
+
   // -- placement ------------------------------------------------------------
   /**
    * Builds the document record for a part at an already-resolved pose.
@@ -702,11 +732,14 @@ export function useWorkbench() {
 
   // Picking up, previewing and releasing all use the same placement request.
   // Drag-end may run before React consumes the drop, so keep that handoff alive.
-  const beginPartDrag = useCallback((record: Pick<CatalogSearchRecord, 'id' | 'name'>) => {
-    if (!armPart(record)) return false
-    partDrag.current = 'holding'
-    return true
-  }, [armPart])
+  const beginPartDrag = useCallback(
+    (record: Pick<CatalogSearchRecord, 'id' | 'name'>) => {
+      if (!armPart(record)) return false
+      partDrag.current = 'holding'
+      return true
+    },
+    [armPart],
+  )
 
   const endPartDrag = useCallback(() => {
     if (partDrag.current === 'holding') {
@@ -1170,6 +1203,7 @@ export function useWorkbench() {
     state,
     selectedPart,
     selectedDefinition,
+    selectionPosition,
     activeColor,
     setActiveColor,
     toolPicks,
@@ -1229,6 +1263,7 @@ export function useWorkbench() {
     runSharedMutation,
     commitTransforms,
     nudgeSelection,
+    positionSelection,
     handleSelect,
     handleSelectMany,
     handleTransform,
