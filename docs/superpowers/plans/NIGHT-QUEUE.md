@@ -1,9 +1,9 @@
 # Night queue — Opus, 2026-08-30 overnight
 
 Two sibling agents (GPT 5.6 Sol 1 and Sol 2) stopped before finishing. This is
-the durable work queue for picking their plans up and carrying on. The plan
-files' own checkboxes are the source of truth for what is done; this file is the
-order to do the rest in, and why.
+the durable work queue from that night. The product has moved on: ten megabuilds
+rather than six, the opening rover is gone, WebMCP inventories are 24 / 28 / 40.
+Keep the checkboxes as a record of that session; do not retarget them here.
 
 **Where things stand.** All three plans are at zero unchecked items. Nothing is
 committed — the tree is dirty by design. `npm run check` exits 0 (190 files,

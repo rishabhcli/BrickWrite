@@ -1,7 +1,7 @@
 # Brickwright implementation progress
 
-**Updated:** 2026-08-27 (productionization pass 14)
-**Current state:** browser CAD system on the real compiled catalog, with an exact-transform kernel, 6-DOF snapping, persistent connection edges, triangle-confirmed collision and self-contained build-guide output
+**Updated:** 2026-09-01 (docs brought in line with HEAD)
+**Current state:** browser CAD system on the real compiled catalog, with an exact-transform kernel, 6-DOF snapping, persistent connection edges, triangle-confirmed collision, megabuild publication, a grounded design partner, and self-contained build-guide output
 
 ## Phase status
 
@@ -11,24 +11,27 @@
 | A2 — Geometry compiler | **Working** | Full `.dat` dependency flattening with BFC `CERTIFY`/`CW`/`CCW`/`INVERTNEXT`, matrix-handedness winding, colour 16/24 inheritance, quad splitting, type-2 hard edges, 35° crease smoothing, SHA-256-named binary container, 0 unresolved references across 900 parts; runtime byte/hash/layout checks before decode | Texture/printed-part material slots; decimated LOD for very large panels |
 | B — CAD kernel | **Working** | Pure TS document in LDraw's native frame with **exact matrix bases**; orthonormal-and-clean basis enforced on ingest; schema-2 migration; **patch-based transactions** with forward/inverse mutations and structural sharing; monotonic revisions, stale-write rejection, protected regions, connector-derived stacking planes | Named checkpoints/branches, multi-document tabs, operation-level schema validation |
 | C — Renderer | **Working** | **Instanced batching** by part/colour with merged per-batch hard edges: 400 extra parts cost 14 extra draw calls, measured in the browser. Real compiled meshes, shared geometry per definition, per-slice materials for baked colours, transparent/metallic finishes from `LDConfig.ldr`, shadows, selection and ghost overlays outside the batches, camera views | GPU picking pass for very large models; section render mode; thumbnail cache for the palette |
-| D — Human editor | **Working** | **Click-to-place with a connector-solved ghost**, **a visible translate/rotate gizmo with live snapped preview**, **shift-drag box selection**, **tiered, ranked, paged search across all 81,774 catalogued identities**, select/subassembly-select/recolour/duplicate/delete/connect/lock, first-run orientation, per-mode diagnostic legends, human-accessible render diagnostics, working command shortcuts and a discoverable command map | Palette drag-and-drop positioning, array/mirror UI, formal accessibility audit |
+| D — Human editor | **Working** | **Click-to-place with a connector-solved ghost**, **a visible translate/rotate gizmo with live snapped preview**, **shift-drag box selection**, **palette drag-and-drop**, **Cards/List palette layouts**, **tiered, ranked, paged search across all 81,774 catalogued identities**, select/subassembly-select/recolour/duplicate/delete/connect/lock, first-run orientation, per-mode diagnostic legends, human-accessible render diagnostics, working command shortcuts and a discoverable command map. Empty viewport offers a starter brick and megabuild forks | Formal accessibility audit |
 | E — Connections | **Working** | **Full 6-DOF frame solver** (`Tm = Tt·Ft·C·Fm⁻¹`): studs-not-on-top, right-angle Technic and hinge halves solve through the same expression as stacking. Per-family joint freedoms with closed-form continuous parameters, axial flip where insertion is two-sided, orientation-independent target discovery, axis-alignment requirement for a mate, occupancy exclusion, multi-match scoring, Connect-tool pinning. Classification grounded in measured Shadow Library conventions. **Persistent `ConnectionEdge`** records carrying joint, revision and provenance | Articulated manipulation UI driving the joint graph; per-family regression fixtures across the whole library |
 | F — Collision | **Working** | Box broad phase → mated-connector clearance → **`three-mesh-bvh` triangle-pair confirmation**, with per-verdict certainty (`exact` / `clearance-subtracted` / `unknown`) surfaced in the UI. Eliminates the axis-aligned-box false positives that dominate rotated parts. Per-definition BVH cache | Penetration-depth discrimination inside the narrow phase; measured per-connector mating volumes replacing the family-level allowance; offline BVH serialization into the asset |
 | G — Structural graph | **Working** | Connection graph from coincident compatible connectors with axis alignment, memoized per revision and shared by solver/validation/viewport; persisted edges with joint types; **rigid-component collapse and articulated joint driving** for hinges, pins, axles, bars and ball joints; component count, loose groups, weak single-connector attachments | Cut-set analysis, load-path tracing |
-| H — Transactions | **Working** | Patch-based history: every transaction carries forward and inverse mutations plus the entity set it touched, so undo applies an inverse rather than restoring a document copy. **IndexedDB persistence** with periodic checkpoints, an append-only transaction log, replay on open, gap detection, legacy-`localStorage` migration, save-state reporting, project switching and safe forks | Named branches, project archives and a transaction compaction policy |
-| I — WebMCP | **Working** | Dynamic 12/17-tool inventories; **schema-driven contracts** where the advertised JSON Schema is derived from the same Zod declaration the gateway enforces; a versioned tool profile with a drift-detecting hash; a **centralized sanitized error envelope** that redacts credentials, signed URLs, data blobs and filesystem paths and never relays a stack trace; bounded batch sizes; compact reads; catalog coverage; preflight/apply; render capture; capability virtualization | Native ChatGPT desktop acceptance run; cancellation propagation into asset fetches and workers |
-| J — Agent UX | **Working** | Inspect/Propose/Build modes, visible ghosts, activity history, notes, locked cockpit, and **parametric assembly generators** that turn one instruction into a bonded storey with a measured report | Transaction-wave assembly animation, anchored 3D note authoring, autonomous hierarchical planning |
-| K — Output | **Working slice** | `.ldr` and `.mpd` export with `STEP` and one submodel per subassembly; import flattens nested submodels and reports unplaceable references; exact IDs/transforms; BOM CSV | BrickLink XML; step reassignment on import |
+| H — Transactions | **Working** | Patch-based history: every transaction carries forward and inverse mutations plus the entity set it touched, so undo applies an inverse rather than restoring a document copy. **IndexedDB persistence** with periodic checkpoints, an append-only transaction log, replay on open, gap detection, legacy-`localStorage` migration, save-state reporting, project switching, safe forks and **project archive export/import** | Named branches and a transaction compaction policy |
+| I — WebMCP | **Working** | Dynamic **24 / 28 / 40**-tool inventories (Inspect / Propose / Build) on `brickwright.tools/3`; **schema-driven contracts** where the advertised JSON Schema is derived from the same Zod declaration the gateway enforces; a versioned tool profile with a drift-detecting hash; a **centralized sanitized error envelope** that redacts credentials, signed URLs, data blobs and filesystem paths and never relays a stack trace; bounded batch sizes; compact reads; catalog coverage; preflight/apply; render capture; capability virtualization | Native ChatGPT desktop acceptance run; cancellation propagation into asset fetches and workers |
+| J — Agent UX | **Working** | Inspect/Propose/Build **Design partner** mounted in the editor, visible ghosts, activity history, notes, locked cockpit, **parametric assembly generators** and **mechanism planners** | Transaction-wave assembly animation, anchored 3D note authoring, autonomous hierarchical planning |
+| K — Output | **Working slice** | `.ldr` and `.mpd` export with `STEP` and one submodel per subassembly; import flattens nested submodels and reports unplaceable references; exact IDs/transforms; BOM CSV; **project archive** JSON | BrickLink XML; step reassignment on import |
 | L — Instructions | **Working slice** | **Build order derived from the connection graph**, independently verifiable reachability, step-aware timeline/playback, and a printable offline HTML booklet with fixed-camera assembly renders, highlighted new parts, BOM, warnings and provenance | Technique-aware grouping, hiding internals until they matter, automatic sub-model selection |
-| M — Polish | **Strong slice** | Deliberate industrial CAD UI, responsive desktop layout, catalog boot/failure screens, project/release surfaces, first-run guide, keyboard guide, blank-project and empty-viewport states, rename and new-project actions, dynamic document identity and deterministic browser acceptance including reload/restore and guide export | Formal accessibility audit, deployment/CDN |
+| M — Polish | **Strong slice** | Shared radii and type scale across routes, Liquid Glass chrome, catalog boot/failure screens, project/release surfaces, first-run guide, keyboard guide, empty-viewport starters, rename and new-project actions, dynamic document identity and deterministic browser acceptance including reload/restore and guide export. Production is `https://brickwrite.tech` | Formal accessibility audit |
 
 ## Verified now
 
-`npm run check` — **310 tests across 30 files**, strict TypeScript, production Vite build. The compiler is
+`npm run check` — **~2,900 vitest tests across 200+ files**, lint, Convex and Pages-function
+typecheck, production Vite build. The compiler is
 driven in-process against committed fixtures, so CI asserts its semantics — colour crosswalk,
 snap-grid expansion, measured bounds, hashed files, determinism — not just that it exits zero.
 
-`npm run test:e2e` — real Chromium/WebGL run asserting relationships rather than magic numbers:
+`npm run test:e2e` — real Chromium/WebGL run asserting relationships rather than magic numbers.
+The capture below is a measured smoke report; `showcase` is the unit-test rover fixture, not
+the live opening document. Catalog and index totals still match the committed 2026-07 pack.
 
 ```json
 {
@@ -79,10 +82,12 @@ bounding-box overlap between a rotated brick and its neighbour is cleared by tri
 confirmation; the shortcut dialog blocks model commands and restores focus; and the export's
 type-1 line count matches the document.
 
-The editor opens on an empty project. The 33-part rover this used to describe is now a
-unit-test fixture (`createShowcaseDocument`) rather than what anyone opens: **207 mated
-connectors, 0 collisions and 1 connected component**, still verified by a unit test so the
-invariant cannot regress, but no longer a copy handed to every new project.
+The editor opens on an empty project. The empty viewport offers **Start with a brick** and
+one-click forks of the first three published megabuilds. The 33-part rover this used to
+describe is a unit-test fixture (`createShowcaseDocument`): **207 mated connectors, 0
+collisions and 1 connected component**, still verified by a unit test so the invariant cannot
+regress, but no longer a copy handed to every new project. The smoke run builds its own
+subject instead of restoring that rover.
 
 ## Productionization pass 1
 
@@ -811,13 +816,15 @@ longer disappears when you edit.
   a very large model will degrade before rendering does. Box selection tests projected part
   centres, so a part whose centre is outside the rectangle is not selected even when most of
   it is inside.
-- **Hard edges still cost memory proportional to brick count.** Draw calls are flat, but the
-  merged per-batch buffers are not free; above 6,000 parts edges are dropped outright, and a
-  single batch past 600k edge vertices renders without them.
-- **Projects are local.** The switcher can start, fork, rename, open and delete projects, but
-  there is no export/import of a project *archive* — an `.ldr` or `.mpd` carries the model,
-  not the history, notes or constraints — so a work-in-progress does not move between
-  browsers intact.
+- **Hard edges are budgeted, not dropped wholesale.** Draw calls stay flat; above a few
+  thousand parts the renderer samples edges against a quality-dependent projected-size
+  budget rather than deleting every outline at a 6,000-part cliff. A single batch past
+  600k edge vertices can still render without them.
+- **Projects persist locally and can be archived.** The switcher can start, fork, rename,
+  open and delete projects. `session.exportArchive` / `importArchive` (Export Center)
+  carries the document, history, notes and constraints between browsers. An `.ldr` or
+  `.mpd` still carries only the model. Cloud sync is mounted when Convex is configured;
+  conflict recovery and invitations have backend contracts — see `docs/cloud-*.md`.
 - **Validation is only incremental in its collision phase.** Connectivity, components,
   bounds and constraints still run a full pass per read; they are cheap relative to
   collision, but they are not scoped.
@@ -834,10 +841,11 @@ longer disappears when you edit.
   attached, which is the property that makes a sequence usable at all. It does not group by
   technique, defer internals, or decide where a sub-model would help — the things that
   separate a workable sequence from a good instruction booklet.
-- **The generators cover rectilinear structure only.** Walls, enclosures, fields and stacks.
-  There is no roof pitch, no stair, no arch, no curve, and no generator that produces a
-  mechanism — a hinged door or a turntable still has to be placed and mated by hand, even
-  though the kernel articulates it once it exists.
+- **The generators cover rectilinear structure plus four mechanism planners.** Walls,
+  enclosures, fields and stacks, and `build_crane` / `build_lattice` / `build_snot_hull` /
+  `build_clock_faces` (see [CAD editing](docs/cad-editing.md) for what those do *not*
+  claim). There is still no roof pitch, stair, or arch planner, and a hinged door or
+  turntable that is not one of those four still has to be placed and mated by hand.
 - **A generated storey is generated, not designed.** It is correct — bonded, interlocked,
   collision-free and connected — which is the floor, not the ceiling. Colour banding, greebling,
   window frames and the technique choices that make a model look considered are still the
@@ -853,10 +861,10 @@ Continuing down the same critical path:
 1. **GPU picking pass**, so selection and box selection scale with the renderer rather than
    with the React event system, and a region test can use covered pixels rather than
    projected centres.
-2. **BrickLink XML and project archives**, so a verified design can move between browsers and
-   into a purchasing workflow without manual CSV conversion.
+2. **BrickLink XML**, so a verified design can move into a purchasing workflow without
+   manual CSV conversion. Project archives already carry history between browsers.
 3. **Joint-axis drag gizmo**, so articulation is direct manipulation rather than stepped
-   buttons — the free gizmo is now in place to build it on.
+   buttons — the free gizmo and joint dragging are in place to build it on.
 4. **Penetration depth in the narrow phase**, plus measured per-connector mating volumes to
    replace the family-level allowance.
 5. **The full library behind a lazy per-part fetch**, with BVH serialized into the asset so
@@ -864,12 +872,11 @@ Continuing down the same critical path:
    missing is geometry on demand for the ones outside the pack.
 6. **Follow a printed variant to its base design**, so searching a decorated part offers the
    modelled part it decorates instead of a dead end.
-7. **Generators for roofs, stairs, arches and framed openings**, and a mechanism generator
-   that emits a hinged door or a turntable already mated, so articulation is reachable from
-   the same one-instruction layer as structure.
-8. **Glass and door leaves seated into their frames**, and a mechanism generator that emits an
-   already-articulated hinged door, so "moving parts" is reachable from the same
-   one-instruction layer as structure.
+7. **Generators for roofs, stairs, arches and framed openings.** Mechanism planners for a
+   crane, lattice, SNOT hull and clock hands already exist; a hinged door or turntable that
+   is not one of those four still has to be placed by hand.
+8. **Glass and door leaves seated into their frames**, so "moving parts" on a shopfront is
+   reachable from the same one-instruction layer as structure.
 9. **Ambient occlusion in the viewport**, which is the largest remaining realism gap now that
    the environment and materials are right — crevices between bricks read too bright.
 10. **Native ChatGPT Site Tools acceptance run**, which needs an eligible ChatGPT desktop

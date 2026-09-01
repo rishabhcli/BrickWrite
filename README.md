@@ -183,6 +183,23 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Printable build guides** — one self-contained offline HTML artifact with a cover, BOM,
   fixed-camera step renders, visually highlighted new parts, build-order verification,
   warnings and dataset provenance. Its renderer is deterministic and testable without WebGL.
+- **Project archives** — export and import a project as JSON, carrying the document,
+  transaction history, notes and constraints, not only an `.ldr` snapshot. The Export
+  Center is the human path; `session.exportArchive` / `importArchive` is the kernel path.
+- **Curated megabuilds** — ten kernel-gated published sets (1,080–11,493 editable parts),
+  shown on `/` and `/explore`. **Edit this build** copies the snapshot into a new project
+  and opens `/editor?project=…`; the published bytes do not change. See
+  [landing and explore](docs/integration/landing.md).
+- **Design partner** — Inspect / Propose / Build in the editor's right dock. The model
+  reads and preflights; a person (or Build-mode session) commits through the same kernel
+  path as a click. See [agent workbench](docs/integration/agent-workbench.md).
+- **Generation and refinement** — a brief becomes a build graph the snap solver realises;
+  a region doctor proposes a cheaper, healthier replacement and reports the delta. Both
+  apply as ordinary transactions. See [generation](docs/integration/generation.md) and
+  [refinement](docs/integration/refinement.md).
+- **Mechanism planners** — `build_crane`, `build_lattice`, `build_snot_hull` and
+  `build_clock_faces` emit real compiled parts and joints, not placeholders. Scope and
+  honesty notes are in [CAD editing](docs/cad-editing.md).
 - **Instanced rendering** — parts sharing a definition and colour render as one
   `InstancedMesh`, with each batch's hard edges merged into a single buffer. Measured in the
   browser: 400 extra parts cost 14 extra draw calls, against 810 before merging.
@@ -290,8 +307,9 @@ operations, so the revision guard, protected regions, hard constraints and trian
 collision detection all still apply, a whole building previews as a ghost before it is
 accepted, and one `⌘Z` reverses it.
 
-The same generators are in the human Command Deck under **ASSEMBLE**, because parity between
-the two operators is an invariant of this project rather than a slogan.
+The same generators are in the human Command Deck under **ASSEMBLE**, and the mechanism
+planners sit under **MECHANISM**, because parity between the two operators is an invariant
+of this project rather than a slogan.
 
 ## Physics, and what it is honest about
 
@@ -300,7 +318,9 @@ holding it together. The compiler measures each part's **exact enclosed volume**
 compiled surface, so mass, centre of mass, the support polygon and the tipping margin are
 measurements rather than bounding-box guesses. The sample rover the unit tests build on
 reports **67.8 g, stable with 80 LDU of margin, on an 8 × 12 stud footprint**. It is a
-fixture, not what the editor opens with — a new project is empty.
+fixture, not what the editor opens with. A new project is empty; the empty
+viewport offers **Start with a brick** and one-click forks of curated megabuilds
+rather than a blank grid with nowhere to go.
 
 Two numbers are not measurements and say so in every report that uses them:
 
@@ -325,38 +345,54 @@ stops a generated facade reading as a wall with holes in it.
 
 ## Tool surface
 
-| Always readable | Propose mode | Build mode |
+Inventories are **24 / 28 / 40** tools (Inspect / Propose / Build) on profile
+`brickwright.tools/3`. Changing autonomy revokes the previous set through `AbortSignal`
+before the next one is registered.
+
+| Always readable (Inspect) | Propose mode adds | Build mode adds |
 | --- | --- | --- |
 | `workspace_get` | `build_preflight` | `build_apply` |
-| `catalog_search` | `proposal_create` | `builder_feedback_respond` |
-| `part_inspect` | `generation_preview` | `undo_edit` / `redo_edit` |
-| `scene_query` | `refinement_select` | `action_mutate` |
-| `render_capture` |  | `generation_apply` |
-| `validate_model` |  | `refinement_apply` |
-| `builder_feedback_get` |  | `project_open` / `project_create` / `project_fork` / `project_delete` |
-| `capabilities_search` / `capabilities_help` / `action_read` |  | `share_fork_to_project` |
+| `workspace_reveal` / `workspace_focus` | `proposal_create` | `builder_feedback_respond` |
+| `catalog_search` | `generation_preview` | `undo_edit` / `redo_edit` |
+| `part_inspect` | `refinement_select` | `action_mutate` |
+| `scene_query` |  | `generation_apply` |
+| `render_capture` |  | `refinement_apply` |
+| `validate_model` |  | `project_open` / `project_create` / `project_fork` / `project_delete` |
+| `builder_feedback_get` |  | `share_fork_to_project` |
+| `capabilities_search` / `capabilities_help` / `action_read` |  |  |
 | `part_intent_resolve` |  |  |
 | `project_list` |  |  |
-| `generation_compile` / `generation_compile_local` / `generation_set` / `generation_run` / `generation_state` / `generation_cancel` |  |  |
+| `generation_compile` / `generation_set` / `generation_run` / `generation_state` / `generation_cancel` |  |  |
 | `refinement_analyse` / `refinement_propose` / `refinement_state` / `refinement_cancel` |  |  |
 | `share_prepare` |  |  |
-| `workspace_reveal` |  |  |
 
-Behind `action_read` / `action_mutate`: the four parametric assembly generators above, LDraw
-and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror and note responses.
-Generation, refinement, IndexedDB projects and local share freeze/fork are dedicated tools,
-not `action_mutate` capabilities. Annotations are hints only — revision
+`generation_compile` takes `useModel` (default `true`). `useModel: false` is the
+in-browser rule compiler — the same decision used to be a second tool,
+`generation_compile_local`, which is gone.
+
+Behind `action_read` / `action_mutate`: the parametric assembly generators, the mechanism
+planners, LDraw and MPD export, BOM, catalog coverage, weak attachments, duplicate, mirror
+and note responses. Generation, refinement, IndexedDB projects and local share freeze/fork
+are dedicated tools, not `action_mutate` capabilities. Annotations are hints only — revision
 checks, protected-region enforcement, geometry availability, colour policy and collision
 rejection live in the CAD kernel.
 
 ## Verification
 
 ```bash
-npm run check            # 310 deterministic tests + strict TS + production build
+npm run check            # lint + ~2,900 vitest tests + Convex/functions typecheck + production build
 npx playwright install chromium
-npm run test:e2e         # real WebGL: catalog, meshes, WebMCP, persistence and delivery output
-npm run verify:all       # both gates above
+npm run test:e2e         # smoke: catalog, meshes, WebMCP, persistence and delivery output
+npm run test:e2e:all     # every suite under tools/e2e/ plus smoke, one shared server
+npm run verify:all       # check + demos:check + the full browser matrix
 ```
+
+`npm run check` is the unit-and-build gate CI always blocks on. `verify:all` is the
+workstation gate: it also rebuilds the published demos byte-identically and runs every
+browser suite. Hosted CI splits those suites — `landing`, `production` and `share` block
+deploy; `e2e-smoke` and `renderer` run on GPU-less runners as signal only. `cad-editing`
+runs in `test:e2e:all` and is not on the hosted matrix. Details in
+[docs/deployment.md](docs/deployment.md).
 
 The browser run asserts relationships rather than magic numbers: that the placeable set is a
 strict subset of the catalog, that compiled `.bwmesh` assets actually reach the GPU, that
@@ -385,10 +421,14 @@ shift-drag selects a region, that the build sequence is still on screen after an
 that the first-run guide appears once and not again. It also opens the delivery center, verifies a hierarchical MPD, generates the real
 printable guide and asserts that its step images are embedded rather than remotely fetched.
 
-Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); how the three
-deployed services fit together — and the two configuration mistakes that fail silently — is in
-[docs/deployment.md](docs/deployment.md); remaining production work is in
-[PROGRESS.md](PROGRESS.md).
+Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); everyday
+editing shortcuts in [docs/cad-editing.md](docs/cad-editing.md); how the three deployed
+services fit together — and the two configuration mistakes that fail silently — in
+[docs/deployment.md](docs/deployment.md); workstream contracts in
+[docs/integration/](docs/integration/README.md); remaining production work in
+[PROGRESS.md](PROGRESS.md). The August 2026 audit at
+[docs/improvements/](docs/improvements/README.md) and the specs under
+[docs/specs/](docs/specs/README.md) are dated snapshots, not a description of HEAD.
 
 ## Licence
 

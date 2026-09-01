@@ -4,9 +4,10 @@ Owns `src/features/landing/**`, `src/features/explore/**`, `src/demos/**`,
 `public/demos/**`, `tools/build-demos.mjs` and `tools/e2e/landing.mjs`.
 
 Two public surfaces and the data behind them: a landing page that demonstrates
-the product with real documents, an explorer that takes one apart, and six
-curated builds that were authored against the real catalog and put through the
-kernel's own gates before they were allowed to ship.
+the product with real documents, an explorer that takes one apart, and **ten**
+curated megabuilds that were authored against the real catalog and put through
+the kernel's own gates before they were allowed to ship. Every published set has
+at least 1,000 editable parts.
 
 ---
 
@@ -22,7 +23,7 @@ registerRoute('explore', () => import('./features/explore/ExplorePage'))
 
 Both modules default-export their component, so no adapter is needed. The
 declared boot stages in `src/platform/routes.ts` (`landing: 'none'`,
-`explore: 'catalog'`) are correct and neither surface needs more than `none` —
+`explore: 'none'`) are correct and neither surface needs more than `none` —
 the explorer draws from published preview geometry, not from the catalog.
 
 Alternatives, for a host that builds its registry elsewhere:
@@ -41,7 +42,7 @@ importing `src/features/landing` is always safe.
 ### Navigation
 
 Both surfaces address each other by **path**, and keep their own state in the
-query string: `/explore?demo=heron-sculpture&step=4`. The shell's router matches
+query string: `/explore?demo=blue-whale-monument&step=4`. The shell's router matches
 `/explore`; the surface reads the rest. Cross-surface links are real document
 navigations unless the shell claims them:
 
@@ -141,24 +142,32 @@ projection maths: `cameraBasis`, `fitScene`, `project`, `visibleFaces`,
 
 ## 3. The demos
 
-Six builds, one per discipline, authored programmatically in
-`tools/build-demos.mjs` against catalog `2026-07` and the real assembly
-planners:
+Ten megabuilds, authored programmatically in `tools/build-demos.mjs` against
+catalog `2026-07` and the real assembly and mechanism planners. Counts are from
+`public/demos/manifest.json` (the kernel's own validation of the committed
+documents). The six toy sets this table used to list are gone.
+
+The landing hero is forced to **Blue Whale Monument**; the manifest marks
+**Illinois Main Quad campus** `hero: true` for collection metadata.
 
 | Demo | Discipline | Parts | Mates | Steps | Mass | Tipping margin |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Courtyard terrace | Architecture | 142 | 1016 | 13 | 374 g | 139.9 LDU |
-| Ridgeline hauler | Vehicle | 33 | 136 | 7 | 45 g | 40.0 LDU |
-| Heron | Creature | 32 | 108 | 7 | 39 g | 73.5 LDU |
-| Shutter bay | Mechanism | 56 | 270 | 9 | 91 g | 78.5 LDU |
-| Draughting desk | Furniture | 36 | 188 | 7 | 82 g | 40.0 LDU |
-| SNOT kiosk | Advanced technique | 32 | 258 | 5 | 75 g | 59.0 LDU |
+| Blue Whale Monument | Large animal sculpture | 6,534 | 8,296 | 69 | 3.22 kg | 293 LDU |
+| Sunline Suspension Bridge | Landmark infrastructure | 4,295 | 9,170 | 46 | 2.56 kg | 340 LDU |
+| Copper Canyon Mammoth | Large animal sculpture | 4,458 | 5,924 | 48 | 2.20 kg | 314 LDU |
+| Colossal Duck Float | Playful public art | 4,975 | 6,397 | 55 | 2.45 kg | 334 LDU |
+| Iron Lattice Lookout | Landmark ironwork | 1,118 | 6,588 | 19 | 1.88 kg | 320 LDU |
+| Harbour Control Tower | Play set | 1,080 | 10,991 | 19 | 3.28 kg | 352 LDU |
+| Saucer Freighter | Vehicle and mechanism | 2,268 | 9,123 | 42 | 2.16 kg | 319 LDU |
+| Harbour Street | Modular architecture | 3,061 | 10,882 | 45 | 3.63 kg | 276 LDU |
+| Meridian Tower | Modular architecture | 4,767 | 28,196 | 68 | 9.82 kg | 300 LDU |
+| Illinois Main Quad campus | Campus architecture | 11,493 | 26,496 | 185 | 7.90 kg | 784 LDU |
 
-The terrace, the shutter bay, the desk and the kiosk are laid by
-`planEnclosure`, `planWall`, `planBrickField` and `planHingedFlap`; the hauler
-and the heron are hand-placed against the compiled connectors; the kiosk's
-facade tiles are posed by `bestSnapTransform`, the same 6-DOF solver a drag in
-the editor runs through.
+Structure is laid by `planEnclosure`, `planWall`, `planBrickField` and the
+mechanism planners (`build_crane`, `build_lattice`, `build_snot_hull`,
+`build_clock_faces`) where the brief asks for them; voxel sculptures are
+column-placed against the compiled connectors. Every mate still goes through
+`bestSnapTransform`, the same 6-DOF solver a drag in the editor runs through.
 
 ### The gates
 
@@ -166,16 +175,17 @@ A demo that fails any of these is **not written to the manifest**. The build
 exits non-zero and the committed assets keep their previous contents.
 
 1. every part is in the catalog, is its canonical id, and has compiled geometry;
-2. triangle-confirmed collision, run twice, with **no** `unknown` verdicts;
-3. exactly one connected component over the derived connection graph;
-4. a derived build order that re-verifies against its own guarantee, covering
+2. **at least 1,000 editable parts** (the collection floor that retired the toy demos);
+3. triangle-confirmed collision, run twice, with **no** `unknown` verdicts;
+4. exactly one connected component over the derived connection graph;
+5. a derived build order that re-verifies against its own guarantee, covering
    every part, with no unsupported island;
-5. measured statics: full mass coverage, centre of mass inside the support
+6. measured statics: full mass coverage, centre of mass inside the support
    polygon, no group over its clutch capacity, and every part reached by the
    load path from the ground — except where the demo declares a
-   `tensionAllowance` and says why (the shutter's hinge, the kiosk's SNOT
-   facade);
-6. a **measurably worse** first candidate, so the refinement the landing page
+   `tensionAllowance` and says why (hangers, glazing seated in frames, lattice
+   decks that rest on columns);
+7. a **measurably worse** first candidate, so the refinement the landing page
    shows is a real comparison and not a story.
 
 `src/demos/manifest.test.ts` re-derives the connection graph, the build order
@@ -187,7 +197,7 @@ properties, plus every asset's byte length and SHA-256 against the manifest.
 ```bash
 node tools/build-demos.mjs            # authors, gates, renders, writes
 node tools/build-demos.mjs --check    # rebuilds into a temp tree and diffs
-node tools/build-demos.mjs --only=heron-sculpture   # one demo, no manifest write
+node tools/build-demos.mjs --only=blue-whale-monument   # one demo, no manifest write
 ```
 
 Output:
@@ -217,10 +227,23 @@ sees byte-for-byte the same kernel the browser does.
 The explorer and the landing hero draw **each part's measured LDraw envelope at
 its exact document transform**, in its real LDraw colour, with its real stud
 positions — not its compiled mesh. That is deliberate: neither route may
-download the catalog or the Three.js renderer, and 140 correctly-occluded boxes
-read as the model far better than a spinner. Both surfaces label it *envelope
+download the catalog or the Three.js renderer, and thousands of correctly-occluded
+boxes still read as the model far better than a spinner. Both surfaces label it *envelope
 view* and point at the editor for the compiled geometry. The thumbnails and
 social cards *are* real renders, rasterized offline from the compiled triangles.
+
+Landing calls to action (live copy in `LandingPage.tsx`):
+
+| CTA | Target |
+| --- | --- |
+| Explore the megabuilds | `/explore` |
+| Start from scratch | `/editor?doc=blank` |
+| Open this build | `/explore?demo=<spotlight>` |
+| Open the editor | `/editor` (restores the newest local project, or a blank) |
+| Describe another idea | `/editor?doc=blank&intent=describe` — blank project, Generate panel revealed |
+
+`?intent=describe` is read by the workbench. The editor's empty viewport then
+offers a starter brick and the first three megabuilds as one-click forks.
 
 The hero replays one real piece of work in four stages — brief, candidate,
 refinement, validated — from two published documents (`rough.json` and
@@ -233,13 +256,14 @@ tab, so the story does not depend on an animation running.
 ## 5. Measured results
 
 Command: `node tools/e2e/landing.mjs` (also run by `tools/e2e/run-all.mjs`,
-which supplies `BRICKWRIGHT_E2E_URL`).
+which supplies `BRICKWRIGHT_E2E_URL`). Hosted CI runs this suite on the
+blocking `acceptance` matrix.
 
 ### Boot budget, on the integrated shell
 
-Loading `/` from the application served by `run-all.mjs`, **63 requests, zero
-forbidden**: no `catalog/`, no `.bwmesh`, no `src/App.tsx`, no `src/editor/**`,
-no `src/webmcp/**`, no `src/cad/{catalog,catalog-loader,engine,session,
+Loading `/` from the application served by `run-all.mjs` must contain **zero
+forbidden** requests: no `catalog/`, no `.bwmesh`, no `src/App.tsx`, no
+`src/editor/**`, no `src/webmcp/**`, no `src/cad/{catalog,catalog-loader,engine,session,
 collision,snapping,mesh}.ts`, no Three.js.
 
 `src/features/landing/imports.test.ts` asserts the same property against the
@@ -248,46 +272,19 @@ that will fail the moment somebody adds the import.
 
 ### Delivery
 
-Measured against a **production build of the landing and explore surfaces as
-their own entry** (`src/features/landing/standalone.tsx`), served statically
-with SPA fallback, at 4× CPU throttling and Fast 3G (1.6 Mbit/s down, 150 ms
-RTT):
+The gate that actually catches a regression is **bytes**, not LCP.
+`tools/e2e/landing.mjs` currently holds:
 
-| Metric | Measured | Budget |
-| --- | ---: | ---: |
-| LCP | **2288 ms** | 2500 ms |
-| CLS | **0.0027** | 0.1 |
-| Requests | 16 | — |
+| Gate | Budget |
+| --- | ---: |
+| Render-critical path (document + stylesheet + entry script) | **450 KiB** |
+| Gzip of assets referenced from shipped `dist/index.html` head | **220 KiB** (Hexclave must not be among them) |
+| LCP | **3,000 ms** ceiling (host-sensitive; median of three calibrated samples) |
+| CLS | **0.1** |
 
-The 16 requests, in order:
-
-```
-200  document      /
-200  stylesheet    /assets/standalone-*.css
-200  script        /assets/standalone-*.js
-200  image         /demos/courtyard-terrace/thumb.png
-200  image         /demos/ridgeline-hauler/thumb.png
-200  image         /demos/heron-sculpture/thumb.png
-200  image         /demos/shutter-bay/thumb.png
-200  font          /assets/chakra-petch-latin-600-normal-*.woff2
-200  fetch         /demos/courtyard-terrace/rough-preview.json
-200  font          /assets/chakra-petch-latin-500-normal-*.woff2
-200  fetch         /demos/courtyard-terrace/preview.json
-200  font          /assets/manrope-latin-wght-normal-*.woff2
-200  image         /demos/draughting-desk/thumb.png
-200  image         /demos/snot-kiosk/thumb.png
-200  script        /assets/projection-*.js
-200  script        /assets/EnvelopeView-*.js
-```
-
-No compiled catalog, no `.bwmesh`, no thumbnails from `assets/thumb/`. Every
-JavaScript file in that log is read back off disk and searched for fingerprints
-of Three.js (`WebGLRenderer`), the catalog loader (`CatalogUnavailableError`),
-the kernel (`STALE_DOCUMENT`) and the WebMCP adapter — chunk *names* are a
-bundler detail, so the check reads the bytes.
-
-The last two scripts are the envelope renderer, fetched **after** the hero
-stage scrolls into view, which is why they are behind the fonts and the images.
+CPU throttle is **calibrated, not a hard-coded 4×** — see `docs/deployment.md`.
+A request log that still names `courtyard-terrace` or `heron-sculpture` is from
+the retired six-demo era; the live collection is the ten megabuilds above.
 
 **Why its own entry.** `src/main.tsx` mounts these inside the platform shell,
 whose entry statically imports the Hexclave account SDK — around twenty chunks
@@ -297,81 +294,19 @@ measured on the integrated shell; the LCP and CLS are measured on the page
 itself. `standalone.tsx` is also a standing proof that neither surface depends
 on the shell.
 
-**One thing this could not prove.** A production build of the *whole*
-application currently throws `TypeError: k is not a function` from
-`assets/hexclave-*.js` before React mounts, so nothing renders. It reproduces
-with `npx vite build && npx vite preview` and is unrelated to these surfaces —
-the development server is fine and every behavioural check above passes against
-it — but it means an integrated production LCP could not be taken. That belongs
-to the account layer (workstream 7) or to the manual chunk groups in
-`vite.config.ts`.
-
-### Layout shift, and what fixed it
-
-The first measurement was **CLS 0.354**, from a single shift when the web fonts
-swapped in. Chakra Petch sets text about 22% wider than the condensed system
-face it fell back to, and Manrope 3.1% wider than a generic sans, so every
-headline and paragraph re-wrapped and the whole document moved.
-`src/features/landing/surface.css` now declares two metric-matched fallback
-faces (`size-adjust`, `ascent-override`, `descent-override`) built from fonts
-the browser already has, and the hero headline wraps at 19ch rather than 15ch so
-a re-wrap moves one line rather than three. Measured again: **0.0027**.
-
-### Responsive
-
-Captures at 1440×900, 834×1112 and 390×844 for both surfaces, integrated and
-unshelled, plus the reduced-motion landing and the production build, in
-`artifacts/landing/`:
-
-```
-landing-desktop.png   landing-tablet.png   landing-mobile.png
-explore-desktop.png   explore-tablet.png   explore-mobile.png
-landing-{desktop,tablet,mobile}-standalone.png
-explore-{desktop,tablet,mobile}-standalone.png
-landing-reduced-motion.png   landing-production.png   report.json
-```
-
-Overflow is measured per element rather than from `document.scrollWidth`, which
-these surfaces would always pass: they set `overflow-x: clip`, so an element
-wider than its container is hidden rather than scrollable and the document-level
-number stays at zero while content sits off the right edge. Result: **0 px past
-the container at every viewport, on both surfaces**, integrated and unshelled.
-
-**One thing the integrated capture shows that is not ours.** At 390×844 the
-shell's frame lays out at **594 px** — `.pf-topbar` in `src/platform/platform.css`
-does not fit a phone, and the grid track it sizes carries the whole page with it.
-The acceptance run records that as a note against `src/platform` rather than
-failing this suite, and takes the unshelled captures so the surfaces' own
-layout can still be seen and asserted. Unshelled, both fit 390 px exactly.
-
-### Accessibility
-
-Asserted in the acceptance run: exactly one `h1`, exactly one banner and one
-main landmark (both from `AppFrame` — the surfaces deliberately emit neither),
-every section labelled, every image described, the model canvas `aria-hidden`
-inside a labelled `role="img"` wrapper with arrow-key orbit, 60 tab stops with
-no focus trap, and the demo cards reachable by keyboard. The build sequence is
-also published as a visually-hidden ordered list, so the model is not
-canvas-only. Unit tests cover heading order and the absence of duplicate
-landmarks.
-
-Reduced motion is a complete alternative, not a disabled one: reveals start
-shown, the hero does not auto-advance, and its four stages remain selectable as
-tabs. The refinement sweep renders at a fixed mid-point, so both the candidate
-outlines and the resolved geometry are visible at once. Exercised in
-`landing.test.tsx` and again in the acceptance run under
-`reducedMotion: 'reduce'`.
-
 ### Behaviour
 
-All ten behavioural checks pass against the shared server: deep links
-(`?demo=&step=`), demo switching, browser back and forward, step scrubbing into
-the URL, the anonymous fork (a real IndexedDB project with all 142 parts and its
-own id), **canonical-demo immutability** (the served snapshot's SHA-256 is
-unchanged after a fork and matches the manifest), the editor handoff (the editor
-boots its kernel and reports 142 parts), and the authenticated-fork adapter path
-(the adapter receives the demo id, the catalog version and the snapshot digest
-as provenance, and its project id is what the handoff link points at).
+The acceptance run still checks deep links (`?demo=&step=`), demo switching,
+browser back and forward, step scrubbing into the URL, the anonymous fork (a
+real IndexedDB project whose part count matches the published snapshot),
+**canonical-demo immutability** (the served snapshot's SHA-256 is unchanged
+after a fork and matches the manifest), the editor handoff (`/editor?project=`
+opens that copy), and the authenticated-fork adapter path (the adapter receives
+the demo id, the catalog version and the snapshot digest as provenance).
+
+Reduced motion is a complete alternative, not a disabled one. Font metric
+overrides on the landing stylesheet exist so a webfont swap does not shove the
+headline; the CLS budget is 0.1.
 
 ---
 
@@ -383,6 +318,8 @@ as provenance, and its project id is what the handoff link points at).
   read out of it. No model ran; nothing here calls a provider.
 - Mass runs 8–15% heavy and clutch capacity is an assumption at 100 gf/stud.
   Both are stated in the explorer, in the words the statics report uses.
-- Two of the terrace's part/colour pairings have no observed official-set
-  appearance. They are reported as *colours without set evidence*, which is what
-  the kernel calls them; they are legal to build and export.
+- Some part/colour pairings have no observed official-set appearance. They are
+  reported as *colours without set evidence*, which is what the kernel calls
+  them; they are legal to build and export.
+- The landing hero is the whale even though the manifest's `hero` flag is on
+  the campus set. That is a product choice, not a compiler bug.

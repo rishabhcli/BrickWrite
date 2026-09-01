@@ -23,7 +23,7 @@ workstream owns**. The shell publishes named slots; you register into them.
 | `panel-left` | left dock, as a stacked collapsible section | full-width panel content |
 | `panel-right` | right dock, as a stacked collapsible section | full-width panel content |
 | `inspector` | inside the inspector Object tab, below the built-in sections | `<section className="property-section">` |
-| `status` | bottom status bar, right of the built-in readouts | one short inline readout |
+| `status` | **Unmounted.** `StatusBar.tsx` still renders a bottom strip and this slot is what it would host (cloud sync readout, layout preset). Nothing in `Workbench.tsx` mounts it. Registering here currently draws nowhere. Layout presets auto-pick from window width. | one short inline readout |
 | `modal` | full-screen dialog; only the modal opened via `api.openModal(id)` renders | own backdrop + `role="dialog"` |
 | `overlay` | absolutely positioned over the viewport | positioned element |
 
@@ -156,10 +156,10 @@ and something was added around it.
 | `CadViewport` with document, selection, proposals, tool, grid, camera, render mode, placement | `ViewportStage.tsx` — props unchanged, renderer untouched |
 | Corner ticks, assembly breadcrumb, title block, revision | `ViewportStage.tsx` |
 | Metrics: parts / connections / collisions | `ViewportStage.tsx` |
-| Live-kernel status strip with the next-click hint | `ViewportStage.tsx` **and extended** into the new status bar |
+| Live-kernel status strip with the next-click hint | `ViewportStage.tsx`. The status-bar extension of this strip is **not mounted**. |
 | Diagnostic legend per render mode, with the colour key and "back to beauty" | `ViewportStage.tsx` (`RENDER_MODE_COPY` verbatim) |
 | Placement HUD with part name, R to turn, Esc to cancel | `ViewportStage.tsx` |
-| Empty-build state with "Pick a starter brick" | `states.tsx` `EmptyBuildState`, rendered by `ViewportStage` |
+| Empty-build state with "Start with a brick" and megabuild forks | `states.tsx` `EmptyBuildState`, rendered by `ViewportStage` |
 | Agent-workflow suggestion button (ghost reinforcement proposal) | `ViewportStage.tsx` `.agent-suggest` |
 | Build-playback overlay with step index and stop | `ViewportStage.tsx` |
 | Proposal overlay with accept / reject | `ViewportStage.tsx` |
@@ -387,7 +387,8 @@ Silently preferring one would make the other look broken.
   never allowed below 420 × 280; `clampLayout` reduces both docks
   proportionally, then collapses the right dock, rather than overflowing.
 - **Presets**: Laptop (1280-class), Desktop (1600-class), Ultrawide (2560+).
-  Chosen in the status bar; the first run picks one from the window width.
+  The first run picks one from the window width. They were chosen from the
+  status bar when that strip was mounted; it is not mounted today.
 - **Progressive disclosure**: every dock section is independently collapsible and
   its open state is persisted.
 - `help.reset-workspace` in the command palette restores every default. The
@@ -402,8 +403,8 @@ Beyond parity:
 2. **Dockable resizable layout** with persistence and three presets.
 3. **Palette**: drag-and-drop placement, favourites, recents, named custom
    palettes, pinned colour favourites, facets for category / footprint /
-   connector family / colour availability, card / compact / list views,
-   keyboard-first search, windowed paging over the whole catalogue.
+   connector family / colour availability, **card and list** views (compact was
+   removed), keyboard-first search, windowed paging over the whole catalogue.
 4. **Transform panel**: world / local / connector reference frames, per-axis
    locks, numeric entry, pivot selection, translate and rotate steppers, align,
    distribute, mirror, array, clone, paint, eyedropper, and a ranked list of
@@ -416,8 +417,10 @@ Beyond parity:
 7. **Connect** as an explicit two-stage interaction: pick the moving part, pick
    the target, review the ranked mates, commit — with cancel and backtrack at
    every stage, and connector pinning on both sides.
-8. **Status bar** that always states the mode, the scope, what the next click
-   does, and how to cancel.
+8. **Status bar (unmounted).** `StatusBar.tsx` still states the mode, the scope,
+   what the next click does, and how to cancel — but `Workbench` does not
+   render it. Isolate / hide / ghost currently have no chrome readout of their
+   own. Do not document the strip as live until it is mounted again.
 9. **Designed states** for empty, loading, invalid selection, unavailable part,
    offline, proposal review and first run.
 
@@ -436,7 +439,7 @@ Command output is in the workstream report; this is where each gate is proved.
 | recolour | palette colour + Paint | `72 → 15` |
 | clone | Clone action | +1 part, +1 revision |
 | array | parameterised: 3 copies, Y axis, own size | +3 parts, +1 revision |
-| isolate | Isolate + status readout | `Isolated 3 of 40 parts`, revision unchanged |
+| isolate | Isolate | `Isolated 3 of 40 parts` was a status-bar readout; that strip is unmounted. Isolation still applies; there is currently no chrome sentence for it |
 | numeric transform | typed X, read back, basis checked | field matches document, orthonormality error `0` |
 | undo | unwinds the whole workflow | back to the pre-workflow part count, revision monotonic |
 | Responsive | 1280×800, 1440×900, 1600×1000, 2560×1080 | no horizontal scroll, no region overflowing the shell, no control under 16 px, viewport ≥ 420×280 at every width |

@@ -1,6 +1,9 @@
 # Integration map
 
-Ten workstreams are built in parallel. This file is the contract between them.
+Ten workstreams landed in parallel; this file is still the ownership contract
+between them. Surfaces are mounted: `src/App.tsx` lists agent, generate, refine
+and cloud contributions; `src/main.tsx` registers every route in
+`PLATFORM_ROUTES`.
 
 ## Ownership
 

@@ -1,8 +1,9 @@
 # Overhaul — the remaining improvements
 
 Operator asked for all of them, after the night's audit closed 41 findings. This
-is the working plan and its order. Same standing rules: never commit, never push;
-`npm run check` and all six browser suites stay green between items.
+is the working plan and its order as of 2026-08-31. Insertability warnings and
+the per-user spend budget have shipped; the other boxes are still the intended
+order. Never treat this file as a description of HEAD — see `CHANGELOG.md`.
 
 **Sequencing principle.** Capability first, soundness second, formatting last.
 The formatting pass rewrites ~10,000 lines across 435 files and would bury every

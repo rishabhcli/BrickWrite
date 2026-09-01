@@ -1,7 +1,12 @@
 # 100 improvements
 
-Ten domains, ten findings each, produced by ten parallel read-only research
-passes over the repository at commit `2fe8bbc`.
+**Snapshot.** Ten domains, ten findings each, produced by ten parallel read-only
+research passes over the repository at commit `2fe8bbc` (2026-08-28). This is
+the audit as it stood then, not a description of HEAD. Several of the "do first"
+items have since shipped — blank-start, cloud contributions in `src/App.tsx`,
+megabuild landing, conflict-recovery backend, invitation lifecycle. Read
+[PROGRESS.md](../../PROGRESS.md) and [CHANGELOG.md](../../CHANGELOG.md) for
+what is true now; leave these files as dated evidence.
 
 Every finding carries file:line evidence, the consequence, a specific change, an
 effort estimate and what could break. Nothing here is a style opinion.

@@ -73,11 +73,13 @@ lists the contribution component in the `CONTRIBUTIONS` array in `src/App.tsx`.
 the contract is readable without opening the composition root:
 
 ```tsx
-// src/App.tsx
-import { Workbench } from './editor/workbench'
-import { AgentWorkbenchContribution } from './agent'
-
-const CONTRIBUTIONS = [AgentWorkbenchContribution]
+// src/App.tsx — live composition root
+const CONTRIBUTIONS = [
+  AgentWorkbenchContribution,
+  GeneratePanelContribution,
+  RefinePanelContribution,
+  CloudProjectsContribution,
+]
 
 export default function App() {
   return <Workbench contributions={CONTRIBUTIONS} />
@@ -354,8 +356,9 @@ same `WaveLedger.apply`.
 - **`server/assistant/**` is not in any `tsconfig` include list.** It is
   type-checked with an explicit invocation (§10); the integrator may want to add
   it to `tsconfig.node.json`.
-- **The panel is not wired into `src/App.tsx` by this workstream.** §3 is the
-  snippet; the integrator lists the contribution.
+- **The panel is wired into `src/App.tsx`.** §3 is the live composition root;
+  this workstream still must not edit files it does not own, but the integrator
+  has listed the contribution.
 - **Not proven here:** behaviour under a real network partition mid-stream
   (simulated only, by aborting the fake), and multi-user concurrency — the
   document is single-writer within a browser session, and cloud collaboration

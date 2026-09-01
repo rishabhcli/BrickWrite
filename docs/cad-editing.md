@@ -2,7 +2,8 @@
 
 ## Everyday workflow
 
-- Pick a part from the library to place repeatedly; **R** turns the preview and **Escape** cancels it. The card’s **+** adds immediately. Changing colour updates the armed preview.
+- Pick a part from the library to place repeatedly; **R** turns the preview and **Escape** cancels it. The card’s **+** adds immediately. Drag a card into the viewport to place. Changing colour updates the armed preview.
+- An empty document shows **Start with a brick** plus one-click forks of the first three published megabuilds. **New** in the project menu still creates a blank project.
 - **M** picks up the selected brick for click-to-reseat. Its original pose is only ghosted, not deleted: a legal click creates one move transaction; **Escape** puts it back without an edit. Use the gizmo for multi-part moves.
 - **B** builds another of the selected brick with the same colour and full orientation. **Keep building** chooses continuous or single placement; the rotation buttons and **Shift+R** turn the held brick backwards. **Done** leaves placement mode.
 - Right-click a part, open **Selection actions**, or press **Shift+F10** in the canvas for a keyboard-navigable menu of part operations. Right-drag still pans.
@@ -11,6 +12,7 @@
 - Use the viewport’s quick controls for six camera directions, parallel projection, framing, grid increments and connector snapping. Front/back/side are true elevation views, not elevated perspectives.
 - **Ctrl/Cmd+C**, **X**, **V** copy, cut and paste parts. This is an **editor-local clipboard**, not the operating system’s text clipboard. It lasts while the editor remains mounted. Copies preserve relative poses and colours. Repeated paste finds a clear lane beside the model; the first paste after a cut restores the original location when possible. Kernel constraints still apply.
 - **Ctrl/Cmd+Z** undoes; **Ctrl/Cmd+Shift+Z** redoes. Restored parts are selected for further editing. Native text editing retains its own copy/paste, undo and select-all.
+- The Export Center can write a **project archive** (JSON with history, notes and constraints) as well as LDR, MPD, BOM and the printable guide. Importing an archive restores that project rather than flattening it to parts.
 
 ## Precise transforms
 

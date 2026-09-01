@@ -1,5 +1,11 @@
 # Implementation specs
 
+**Snapshot.** Written 2026-08-28 against the tree at that date. Spec 02 step 1
+(`CloudProjectsContribution` in `src/App.tsx`) has shipped; conflict recovery,
+batched sync and invitation delivery have backend contracts documented in
+`docs/cloud-*.md`. These five files remain the original how-to-build notes.
+They are not a checklist of what is still missing.
+
 Where [`docs/improvements/`](../improvements/README.md) says *what* is wrong across
 100 findings, these say *how* to fix one thing, in enough detail to build from:
 exact current-state code, the design, API and schema deltas with real signatures,

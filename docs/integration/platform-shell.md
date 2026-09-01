@@ -94,7 +94,7 @@ dynamic `import()`. A static import would defeat the point.
 | id | path | `boot` | `requiresAuth` | frame | Owner |
 | --- | --- | --- | --- | --- | --- |
 | `landing` | `/` | `none` | — | yes | 10 |
-| `explore` | `/explore` | `catalog` | — | yes | 10 |
+| `explore` | `/explore` | `none` | — | yes | 10 |
 | `editor` | `/editor` | `editor` | — | **no** | integrator (`src/App.tsx`) |
 | `projects` | `/projects` | `catalog` | yes | yes | 8 |
 | `account` | `/account` | `none` | yes | yes | 7 (already registered) |
@@ -200,13 +200,18 @@ createRoot(document.getElementById('root')!).render(
 
 Other workstreams add one `registerRoute` line each, next to the editor's.
 
-### Nothing else changes
+### `src/App.tsx` is the contribution root
 
-`src/App.tsx` is unmodified: the shell awaits `loadCompiledCatalog()`,
-`session.start()` and `preloadDocumentGeometry()` before mounting it, exactly as
-the old `main.tsx` did. `src/styles.css` is unmodified; the platform's CSS lives
-in `src/platform/platform.css` and every class is `pf-` prefixed so it cannot
-collide with the editor cockpit's `.app-shell` / `.topbar`.
+The shell still awaits `loadCompiledCatalog()`, `session.start()` and
+`preloadDocumentGeometry()` before mounting the editor. `src/App.tsx` itself is
+no longer an unmodified leftover: it is the list of workbench contributions
+(`AgentWorkbenchContribution`, `GeneratePanelContribution`,
+`RefinePanelContribution`, `CloudProjectsContribution`). Adding a panel is one
+lazy import and one array entry; the boot contract does not change.
+
+`src/styles.css` is unmodified as far as the platform is concerned; the
+platform's CSS lives in `src/platform/platform.css` and every class is `pf-`
+prefixed so it cannot collide with the editor cockpit's `.app-shell` / `.topbar`.
 
 `vite.config.ts` needs no change. The existing `rendering`, `react`, `hexclave`,
 `contracts` and `ui` chunk groups are still correct.
@@ -291,7 +296,7 @@ pattern, and that the selectors actually match the DOM they claim to.
 
 ## 7. Verified SDK limitation — read before adding a clickable project name
 
-Verified against `@hexclave/react@1.0.106` by reading the shipped source:
+Verified against `@hexclave/react@1.0.108` by reading the shipped source:
 
 * `blockClass`, `blockSelector` and `maskAllInputs` are consumed **only** by the
   session-replay recorder

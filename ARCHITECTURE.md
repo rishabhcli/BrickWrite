@@ -89,13 +89,24 @@ the windscreen land on the planes a physical build would use.
 | `src/cad/validation.ts` | Connection graph, mating-aware collision, components, colour evidence, constraints |
 | `src/cad/ldraw.ts` | `.ldr` / `.mpd` serialization and import with an explicit coverage report |
 | `src/cad/bom.ts` | Exact part/colour aggregation and CSV export |
+| `src/cad/archive.ts` | Project archive pack/unpack: document, history, notes, constraints |
+| `src/cad/capabilities.ts` | Shared human/agent mutation vocabulary, including mechanism planners |
 | `src/webmcp/adapter.ts` | Dynamic native WebMCP registration and browser development bridge |
+| `src/agent` | Design partner: Inspect / Propose / Build, reviewable waves |
+| `src/generation` | Brief → build graph → kernel-realised candidate |
+| `src/refinement` | Region doctor: propose a healthier replacement and prove the delta |
+| `src/cloud` | Outbox sync, Convex client, conflict recovery, invitations, presence |
+| `src/platform` | Route table, boot stages, Hexclave account, analytics masking |
+| `src/features/landing` | Public front door; envelope hero, no catalog download |
+| `src/features/explore` | Megabuild explorer and one-click project fork |
+| `src/features/share` | Immutable published releases |
 | `src/editor/CadViewport.tsx` | Derived Three.js scene, transform controls, grid, ghosts, camera capture |
 | `src/editor/PartVisual.tsx` | Real compiled geometry, per-slice materials, LDraw hard edges |
 | `tools/ldraw-mesh.mjs` | Offline LDraw geometry compiler (BFC, colour inheritance, packing) |
 | `tools/catalog-compiler.mjs` | Offline LDraw/LDCad/Rebrickable canonical catalog compilation |
+| `tools/build-demos.mjs` | Authors, gates and rasters the published megabuild collection |
 
-## Catalog: two tiers, explicit provenance
+## Catalog: three tiers, explicit provenance
 
 ```text
 LDraw complete library ─┐
@@ -286,12 +297,12 @@ is enforced in the kernel.
 ## WebMCP lifecycle
 
 Read tools remain registered for the page lifetime. A mode-specific `AbortController` owns
-proposal/write registrations:
+proposal/write registrations. Inventories at `brickwright.tools/3`:
 
 ```text
-Inspect  = read tools
-Propose  = read + preflight/proposal tools
-Build    = read + preflight/proposal + mutation/history tools
+Inspect  = 24 read tools
+Propose  = 28 (read + preflight/proposal)
+Build    = 40 (read + preflight/proposal + mutation/history/project)
 ```
 
 Changing autonomy aborts the old registrations before installing the new inventory. The

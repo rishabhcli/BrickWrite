@@ -45,9 +45,12 @@ client completion rules, limits, and local verification coverage.
 
 ## What CI does, and what it deliberately does not
 
-`verify` runs on every push and pull request: catalog integrity, the unit suite,
-strict TypeScript for all three programs and the production build. The browser
-suites under `tools/e2e/` then run one runner per suite, split across two jobs
+The `verify` job on every push and pull request runs catalog integrity, `npm run check`
+(lint, the unit suite, strict TypeScript for all three programs, the production build)
+and `npm run demos:check`. That is not a single `verify:all` invocation: `verify:all` is
+the workstation command that also runs every browser suite.
+
+The browser suites under `tools/e2e/` then run one runner per suite, split across two jobs
 by a single question — **does this suite need a GPU?**
 
 `acceptance` holds `landing`, `production` and `share`. Nothing they assert
@@ -63,6 +66,9 @@ fork blew a 90-second budget that is already ten times what a laptop needs.
 Every hosted run failed for that reason and no other. Raising individual
 timeouts does not fix it — `tools/e2e-smoke.mjs` has roughly a hundred
 assertions and any of them is the next to time out.
+
+`cad-editing` is discovered by `test:e2e:all` and is **not** on either hosted
+matrix. Run it locally when changing viewport, gizmos, placement or persistence.
 
 **So CI promises less than it looks like it does, on purpose.** The real
 enforcement for those two suites is `npm run verify:all` on a machine with a
@@ -90,9 +96,11 @@ it honestly) and therefore fails silently rather than loudly. If production ever
 shows "no Hexclave project configured", check those two values before anything
 else.
 
-Repository secrets required: `CLOUDFLARE_API_TOKEN` (scoped to *Cloudflare
-Pages: Edit*), `CLOUDFLARE_ACCOUNT_ID`, `HEXCLAVE_PROJECT_ID`,
-`HEXCLAVE_SECRET_SERVER_KEY`.
+Repository secrets required for the Pages deploy job: `CLOUDFLARE_API_TOKEN` (scoped to
+*Cloudflare Pages: Edit*), `CLOUDFLARE_ACCOUNT_ID`, `HEXCLAVE_PROJECT_ID`.
+`HEXCLAVE_SECRET_SERVER_KEY` is a Convex / Hexclave-sync secret, not an Actions input
+to `deploy`. The Pages proxy's `BRICKWRIGHT_PROXY_SECRET` and `BRICKWRIGHT_API_ORIGIN`
+live on the Cloudflare project, not in GitHub.
 
 ## Hexclave: trusted domains are environment config, not branch config
 
@@ -183,8 +191,9 @@ npx convex deploy -y
 
 ## Verifying a release
 
-`npm run verify:all` is what CI runs. Two of its suites exist specifically for
-this deployment shape:
+`npm run verify:all` is the full local gate (`check` + `demos:check` + every browser
+suite). Hosted CI runs `check` and `demos:check` in `verify`, then the split acceptance
+matrix. Two of the suites exist specifically for this deployment shape:
 
 - `tools/e2e/production.mjs` serves the built `dist/` — not Vite's development
   graph — and executes both the landing page and the CAD editor. It exists
