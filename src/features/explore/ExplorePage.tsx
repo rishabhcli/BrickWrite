@@ -120,6 +120,11 @@ function DemoExplorer({ route }: { route: ReturnType<typeof useLandingRoute> }) 
         destination: outcome.destination,
         elapsedMs: Date.now() - forkStarted.current,
       })
+      // Straight into the editor. The copy is the point of the click, and
+      // stopping to render a second button that only says "now open it" made
+      // editing a demo a four-click errand from the landing page.
+      trackLanding({ name: 'editor.opened', from: 'explore', withProject: true })
+      navigate({ kind: 'editor-project', projectId: outcome.projectId })
     } else {
       trackLanding({ name: 'demo.fork_failed', demoId: demo.id, destination: outcome.destination })
     }
@@ -372,13 +377,13 @@ function DemoExplorer({ route }: { route: ReturnType<typeof useLandingRoute> }) 
           <div className="bw-inspector-section bw-fork">
             <span className="bw-eyebrow">Fork it</span>
             <button type="button" className="bw-button primary bw-magnet" onClick={startFork} disabled={fork.pending}>
-              {fork.pending ? 'Copying…' : 'Edit this build'}{' '}
+              {fork.pending ? 'Opening…' : 'Edit this build'}{' '}
               <span className="bw-key" aria-hidden="true">
                 →
               </span>
             </button>
-            <p className="bw-note">Copies the snapshot into a project of your own. The demo is never modified.</p>
-            {fork.outcome ? <ForkResult demo={demo} outcome={fork.outcome} /> : null}
+            <p className="bw-note">Copies the snapshot into a project of your own and opens it. The demo is never modified.</p>
+            {fork.outcome && !fork.outcome.ok ? <ForkResult demo={demo} outcome={fork.outcome} /> : null}
           </div>
 
           <details className="bw-explore-report">

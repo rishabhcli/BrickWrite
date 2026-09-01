@@ -200,18 +200,24 @@ describe('forking a demo', () => {
     }
   })
 
-  it('drives the fork from the explorer and offers the editor handoff', async () => {
+  it('forks and opens the editor from one click', async () => {
+    // The copy was always the point of the press. It used to stop and render a
+    // second button whose only job was to say "now open it", which made editing
+    // a demo a four-click errand from the landing page.
     window.history.replaceState(null, '', '/explore?demo=meridian-tower')
     render(<ExplorePage />)
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Edit this build/ }))
     })
-    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Copied to a local project/))
-    const handoff = screen.getByRole('link', { name: /Open it in the editor/ })
-    expect(handoff.getAttribute('href')).toMatch(/^\/editor\?project=/)
+    // jsdom does not perform `location.assign`, so the navigation itself is not
+    // observable here; what is, is that the second step no longer exists and
+    // that opening the editor was recorded as part of this one press.
+    await waitFor(() => expect(events.map((entry) => entry.event.name)).toContain('demo.fork_completed'))
+    expect(screen.queryByRole('link', { name: /Open it in the editor/ })).toBeNull()
     const names = events.map((entry) => entry.event.name)
     expect(names).toContain('demo.fork_started')
     expect(names).toContain('demo.fork_completed')
+    expect(names).toContain('editor.opened')
   })
 })
 
