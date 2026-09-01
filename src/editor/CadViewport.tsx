@@ -1092,7 +1092,12 @@ function CadViewportScene({
   return (
     <>
       <Canvas
-        shadows="soft"
+        /* "soft" asks for PCFSoftShadowMap, which three 0.185 has deprecated
+         * and silently swaps for PCFShadowMap — so the scene has been drawing
+         * percentage-closer shadows all along while announcing the downgrade
+         * once per shadow-casting light, every load. Naming what actually
+         * renders changes no pixels and takes 35 warnings off the console. */
+        shadows="percentage"
         dpr={[1, tier.maxDpr]}
         gl={{
           antialias: tier.antialias,
