@@ -27,7 +27,7 @@
   padding: 11px var(--bw-gutter);
   border-bottom: var(--bw-rule);
   background: rgba(9, 13, 14, 0.9);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--glass-blur-control));
 }
 .bw-explore-bar .spacer {
   flex: 1;
@@ -704,7 +704,7 @@
   font: 600 9px/1 var(--bw-display);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--glass-blur-control));
 }
 
 .bw-catalog-index {

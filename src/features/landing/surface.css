@@ -103,7 +103,7 @@ body:has(.bw-surface),
 .bw-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(72px);
+  filter: blur(var(--glass-blur-nav));
   opacity: 0.9;
 }
 .bw-orb-a {
@@ -289,7 +289,7 @@ body:has(.bw-surface),
 .bw-panel {
   background: linear-gradient(145deg, rgba(22, 31, 35, 0.7), rgba(12, 17, 19, 0.85));
   border: 1px solid var(--bw-line);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   position: relative;
   border-radius: 4px;
   box-shadow:
@@ -350,7 +350,7 @@ body:has(.bw-surface),
   padding: 14px 24px;
   border: 1px solid var(--bw-line-hi);
   background: rgba(18, 26, 29, 0.85);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--glass-blur-control));
   color: var(--bw-ink);
   font: inherit;
   font-family: var(--bw-display);
@@ -714,7 +714,7 @@ body:has(.bw-surface),
 }
 .bw-orb {
   opacity: 0.5;
-  filter: blur(96px);
+  filter: blur(var(--glass-blur-nav));
 }
 .bw-button {
   border-radius: 1px;

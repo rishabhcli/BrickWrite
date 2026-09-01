@@ -209,7 +209,7 @@
   overflow-y: auto;
   background: rgba(13, 19, 21, 0.96);
   border: 1px solid var(--line-hi);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.75),
@@ -596,7 +596,7 @@
   place-items: center;
   padding: 20px;
   background: rgba(3, 7, 8, 0.78);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--glass-blur-control));
 }
 .autonomy-confirm {
   width: min(460px, calc(100vw - 40px));
@@ -644,7 +644,7 @@
   align-items: stretch;
   padding: 0 12px;
   background: rgba(10, 15, 17, 0.94);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   border-bottom: 1px solid var(--line);
   position: relative;
   z-index: 19;
@@ -1193,7 +1193,7 @@
   padding: 9px 10px 9px 14px;
   border: 1px solid rgba(119, 239, 223, 0.5);
   background: rgba(8, 24, 24, 0.92);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   box-shadow:
     0 16px 44px rgba(0, 0, 0, 0.55),
     0 0 28px rgba(79, 225, 206, 0.12);
@@ -1267,7 +1267,7 @@
   padding: 6px 8px 6px 12px;
   border: 1px solid rgba(245, 163, 63, 0.45);
   background: rgba(24, 18, 11, 0.92);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
   border-radius: 4px;
 }
@@ -1685,7 +1685,7 @@
   grid-template-columns: 214px minmax(0, 1fr) 230px;
   border-top: 1px solid var(--line);
   background: rgba(10, 15, 17, 0.94);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   position: relative;
   z-index: 18;
   min-height: 0;
@@ -2148,7 +2148,7 @@
   gap: 9px;
   padding: 12px;
   background: rgba(14, 22, 24, 0.96);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   border: 1px solid var(--line-hi);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.6);
   border-radius: 6px;
@@ -2253,7 +2253,7 @@
   box-shadow:
     0 26px 74px rgba(0, 0, 0, 0.8),
     0 0 20px rgba(245, 163, 63, 0.08);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   user-select: none;
 }
@@ -2438,7 +2438,7 @@
   display: grid;
   place-items: center;
   background: rgba(3, 7, 8, 0.78);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--glass-blur-control));
   animation: shortcut-in 0.18s ease both;
 }
 @keyframes shortcut-in {
@@ -2450,7 +2450,7 @@
   width: min(740px, calc(100vw - 72px));
   border: 1px solid var(--line-hi);
   background: rgba(13, 19, 21, 0.98);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   box-shadow: 0 32px 100px rgba(0, 0, 0, 0.85);
   overflow: hidden;
@@ -2577,7 +2577,7 @@
   place-items: center;
   padding: 20px;
   background: rgba(2, 6, 7, 0.85);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   animation: command-backdrop-in 0.18s ease both;
 }
 @keyframes command-backdrop-in {
@@ -3775,7 +3775,7 @@
   place-items: center;
   padding: 24px;
   background: rgba(3, 7, 8, 0.82);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--glass-blur-control));
   animation: shortcut-in 0.18s ease both;
 }
 .welcome-guide {
@@ -3784,7 +3784,7 @@
   overflow-y: auto;
   border: 1px solid var(--line-hi);
   background: rgba(13, 19, 21, 0.98);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   box-shadow: 0 34px 110px rgba(0, 0, 0, 0.85);
 }
@@ -4048,7 +4048,7 @@
   width: 276px;
   padding: 14px 15px 12px;
   background: rgba(12, 18, 20, 0.95);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   border: 1px solid var(--line-hi);
   border-left: 3px solid var(--cyan);
   border-radius: 4px;
@@ -5623,7 +5623,7 @@
   place-items: start center;
   padding: 84px 18px 18px;
   background: rgba(2, 6, 7, 0.78);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--glass-blur-control));
   animation: shortcut-in 0.16s ease both;
 }
 .command-palette {
@@ -5633,7 +5633,7 @@
   grid-template-rows: 58px auto minmax(0, 1fr) auto;
   border: 1px solid var(--line-hi);
   background: rgba(13, 19, 21, 0.98);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   box-shadow: 0 34px 100px rgba(0, 0, 0, 0.85);
   animation: command-deck-in 0.18s var(--spring) both;
@@ -5924,7 +5924,7 @@
   padding: 14px 16px;
   border: 1px solid var(--line-hi);
   background: rgba(14, 21, 24, 0.98);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur-control));
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.6);
   border-radius: 6px;
 }
@@ -5986,7 +5986,7 @@
   gap: 10px;
   text-align: center;
   background: rgba(8, 12, 14, 0.78);
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(var(--glass-blur-chip));
 }
 .viewport-state strong {
   font-family: var(--display);
@@ -6060,14 +6060,14 @@
   display: grid;
   place-items: center;
   background: rgba(3, 7, 8, 0.76);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--glass-blur-control));
 }
 .workbench-prompt {
   width: min(440px, calc(100vw - 40px));
   padding: 20px;
   border: 1px solid var(--line-hi);
   background: rgba(13, 19, 21, 0.98);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur-nav));
   border-radius: 6px;
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.75);
 }
@@ -7360,7 +7360,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
   background: rgba(10, 15, 17, 0.96);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--glass-blur-control));
 }
 .health-filters button {
   min-width: 0;
@@ -8047,7 +8047,7 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .placement-coordinates { display: block; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--faint); font: 9px var(--display); }
 .selection-actions-trigger { display: flex; align-items: center; gap: 5px; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 0; background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; pointer-events: auto; }
 .selection-actions-trigger:hover { color: var(--cyan); }
-.part-context-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; width: 230px; max-height: calc(100vh - 16px); overflow: auto; padding: 6px; background: #111b1ff7; border: 1px solid #4b5c60; border-radius: 5px; box-shadow: 0 14px 44px #0009; backdrop-filter: blur(16px); }
+.part-context-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; width: 230px; max-height: calc(100vh - 16px); overflow: auto; padding: 6px; background: #111b1ff7; border: 1px solid #4b5c60; border-radius: 5px; box-shadow: 0 14px 44px #0009; backdrop-filter: blur(var(--glass-blur-control)); }
 .part-context-heading { color: var(--faint); font: 700 9px var(--display); padding: 8px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .part-context-menu button { padding: 7px 9px; min-height: 29px; text-align: left; background: none; border: 0; border-radius: 2px; color: var(--ink); font-size: 11px; cursor: pointer; }
 .part-context-menu button:focus-visible, .part-context-menu button:hover:not(:disabled) { outline: none; background: #2c4549; color: #cefcf4; }
