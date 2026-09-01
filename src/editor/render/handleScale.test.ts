@@ -35,7 +35,7 @@ describe('joint handle scaling', () => {
   })
 
   it('still clamps a degenerate camera', () => {
-    expect(handleScale(0)).toBe(0.05)
+    expect(handleScale(0)).toBe(0.01)
     expect(handleScale(1e9)).toBe(60)
   })
 })

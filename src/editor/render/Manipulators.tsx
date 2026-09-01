@@ -188,7 +188,7 @@ function WinchCable({ joint, tint }: { joint: ArticulatedJoint; tint: string }) 
 }
 
 /** Angular size of a handle: the fraction of eye distance it spans. */
-const HANDLE_ANGULAR_SIZE = 0.045
+const HANDLE_ANGULAR_SIZE = 0.016
 
 /**
  * Handle scale for a given eye distance, so a handle keeps one apparent size
@@ -203,7 +203,7 @@ const HANDLE_ANGULAR_SIZE = 0.045
  * distance, and the old clamps cancelled it at both ends of a normal session.
  */
 export function handleScale(eyeDistance: number): number {
-  return Math.max(0.05, Math.min(60, eyeDistance * HANDLE_ANGULAR_SIZE))
+  return Math.max(0.01, Math.min(60, eyeDistance * HANDLE_ANGULAR_SIZE))
 }
 
 export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: JointManipulatorProps) {
