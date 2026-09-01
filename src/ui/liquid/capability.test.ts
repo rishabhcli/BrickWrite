@@ -50,37 +50,36 @@ describe('capability', () => {
 })
 
 describe('role', () => {
-  const lensed: MaterialRole[] = ['bar', 'dock', 'sheet', 'island']
-  const flat: MaterialRole[] = ['panel', 'control']
+  const every: MaterialRole[] = ['bar', 'dock', 'sheet', 'island', 'panel', 'control']
 
-  it.each(lensed)('lenses the %s role', (role) => {
-    expect(selectTier(inputs({ role }))).toBe('lensed')
+  it.each(every)('leaves the %s role on blur, refraction being off', (role) => {
+    // `bar`, `dock`, `sheet` and `island` used to lens. Refraction is off now:
+    // it warped the model behind the chrome, which is the thing the operator
+    // is looking at. The blur material keeps tint, rim and specular.
+    expect(selectTier(inputs({ role, qualityTierIndex: 0 }))).toBe('blur')
   })
 
-  it.each(flat)('leaves the %s role on blur however capable the machine is', (role) => {
-    // Refraction on a 34px control is invisible and still costs a compositor
-    // layer, and a lensed panel inside a lensed dock refracts an already
-    // refracted backdrop, which reads as smeared rather than deep.
-    expect(selectTier(inputs({ role, qualityTierIndex: 0 }))).toBe('blur')
+  it('does not lens even on the most capable machine and the quietest scene', () => {
+    expect(selectTier(inputs({ role: 'island', qualityTierIndex: undefined, interacting: false }))).toBe('blur')
   })
 })
 
 describe('pressure', () => {
-  it('drops to blur while a gesture is in flight', () => {
+  it('is blur while a gesture is in flight', () => {
     expect(selectTier(inputs({ interacting: true }))).toBe('blur')
   })
 
-  it('drops to blur once the renderer has dropped below balanced', () => {
+  it('is blur once the renderer has dropped below balanced', () => {
     expect(selectTier(inputs({ qualityTierIndex: MAX_LENSED_QUALITY_INDEX + 1 }))).toBe('blur')
   })
 
-  it('still lenses at the balanced tier itself', () => {
-    expect(selectTier(inputs({ qualityTierIndex: MAX_LENSED_QUALITY_INDEX }))).toBe('lensed')
+  it('is blur at the balanced tier itself', () => {
+    expect(selectTier(inputs({ qualityTierIndex: MAX_LENSED_QUALITY_INDEX }))).toBe('blur')
   })
 
-  it('lenses on a surface with no renderer at all', () => {
+  it('is blur on a surface with no renderer at all', () => {
     // The marketing surfaces report no quality index because they are not
-    // competing with a renderer for frame time.
-    expect(selectTier(inputs({ qualityTierIndex: undefined }))).toBe('lensed')
+    // competing with a renderer for frame time. They still do not refract.
+    expect(selectTier(inputs({ qualityTierIndex: undefined }))).toBe('blur')
   })
 })

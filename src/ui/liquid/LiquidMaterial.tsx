@@ -19,10 +19,10 @@ export type LiquidBlur = 'nav' | 'control' | 'chip'
  */
 export const RADIUS_PX: Record<LiquidRadius, number> = {
   control: 14,
-  section: 18,
-  panel: 22,
-  island: 28,
-  sheet: 26,
+  section: 20,
+  panel: 20,
+  island: 20,
+  sheet: 20,
 }
 
 export const BLUR_PX: Record<LiquidBlur, number> = {

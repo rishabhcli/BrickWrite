@@ -100,12 +100,29 @@ export interface TierInputs {
  */
 export const MAX_LENSED_QUALITY_INDEX = 2
 
+/**
+ * Refraction is off.
+ *
+ * The bend was chosen to make glass read as glass rather than as a translucent
+ * rectangle, and on a static mock it does. In use it is movement: every surface
+ * behind a bar or a dock is warped along its rim, and in an editor the thing
+ * behind the chrome is the model somebody is trying to look at. Asked for
+ * quieter chrome, this is the first thing to go — the blur tier keeps the
+ * material, the tint, the rim and the specular, and stops bending the work.
+ *
+ * The machinery is untouched behind this switch: `lens.tsx`, `displacement.ts`
+ * and the `lensed` branch of `material.css` still work, and flipping this back
+ * to `true` restores them. Nothing else reads it.
+ */
+const REFRACTION_ENABLED = false
+
 export function selectTier(inputs: TierInputs): MaterialTier {
   const { role, capabilities, preferences, qualityTierIndex, interacting } = inputs
 
   if (preferences.reducedTransparency || preferences.increasedContrast) return 'opaque'
   if (!capabilities.backdropBlur) return 'opaque'
 
+  if (!REFRACTION_ENABLED) return 'blur'
   if (!capabilities.backdropUrlFilter) return 'blur'
   if (!LENSED_ROLES.has(role)) return 'blur'
   if (interacting) return 'blur'

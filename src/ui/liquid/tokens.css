@@ -35,11 +35,16 @@
   --glass-blur-control: 10px;
   --glass-blur-chip: 6px;
 
+  /* Two radii, not five. 14, 18, 22, 26 and 28 were close enough that no two
+   * surfaces looked deliberately different and far enough apart that a dock
+   * beside a sheet beside an island never lined up. Controls keep their own,
+   * smaller corner because they are small; every surface a control sits on
+   * shares one. */
   --r-control: 14px;
-  --r-section: 18px;
-  --r-panel: 22px;
-  --r-island: 28px;
-  --r-sheet: 26px;
+  --r-section: 20px;
+  --r-panel: 20px;
+  --r-island: 20px;
+  --r-sheet: 20px;
 
   /* #77898e has 5.13:1 contrast on #0d1315 and 5.47:1 on #06090a. */
   --faint: #77898e;
