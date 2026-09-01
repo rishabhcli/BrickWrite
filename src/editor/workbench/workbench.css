@@ -6341,11 +6341,6 @@
   font-family: var(--display);
   font-size: 10px;
 }
-.workspace-action-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-}
 .workspace-list {
   display: grid;
   gap: 5px;
@@ -6364,12 +6359,6 @@
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
-}
-.workspace-action-grid .workspace-action {
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  padding: 8px 3px;
 }
 .workspace-action:hover,
 .workspace-action.active {
@@ -7686,12 +7675,21 @@
   width: max-content;
   max-width: 100%;
   padding: 3px;
-  /* Material, radius and edge come from the liquid primitive: these two rows
-     float directly over the rendered model, which makes them the surfaces in
-     this editor where refraction is actually visible. */
+  /* Material, radius and edge come from the liquid primitive: this row floats
+     directly over the rendered model, which makes it one of the few surfaces
+     in this editor where refraction is actually visible. */
   color: var(--muted);
 }
 .viewport-control-row > svg { margin-left: 6px; }
+/* Camera on one side, grid on the other. Without it the merged row reads as
+   six unrelated buttons; with it, as two answers to two questions. */
+.viewport-control-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  border: 0;
+  background: var(--line-hi);
+}
 .viewport-control-row button, .viewport-control-row select {
   height: 27px;
   display: inline-flex;

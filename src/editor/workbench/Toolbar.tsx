@@ -1,5 +1,4 @@
 import {
-  BringToFront,
   ListOrdered,
   CircleHelp,
   Command,
@@ -7,13 +6,9 @@ import {
   CopyPlus,
   ClipboardPaste,
   Scissors,
-  Eye,
-  Focus,
-  Grid3X3,
   Layers3,
   Link2,
   Lock,
-  Maximize2,
   MousePointer2,
   Hand,
   Move3d,
@@ -38,8 +33,9 @@ import type { Workbench } from './useWorkbench'
  * The previous version placed every possible action in one permanent row. That
  * made first use feel like learning a cockpit and left most controls disabled.
  * The rail now shows the four modelling modes, selection actions only when a
- * selection exists, and the three universal history/search controls. Camera,
- * snap, render, delivery and help live together behind Workspace.
+ * selection exists, and the three universal history/search controls. Render
+ * mode, delivery and help live together behind Workspace; camera and snap sit
+ * on the row over the model, which is the only place they are stated.
  */
 export function Toolbar({
   workbench,
@@ -240,49 +236,16 @@ export function Toolbar({
                 <kbd>{chord('project.command-palette')}</kbd>
               </header>
 
-              <section>
-                <span className="workspace-label">Snap</span>
-                <label className="workspace-select">
-                  <Grid3X3 size={14} />
-                  <select
-                    value={workbench.gridLdu}
-                    onChange={(event) => workbench.setGridLdu(Number(event.target.value))}
-                    aria-label="Grid snap increment"
-                  >
-                    <option value={20}>Stud grid</option>
-                    <option value={10}>Half-stud</option>
-                    <option value={8}>One plate</option>
-                    <option value={4}>4 LDU</option>
-                    <option value={1}>Fine LDU</option>
-                  </select>
-                </label>
-              </section>
-
-              <section>
-                <span className="workspace-label">Camera</span>
-                <div className="workspace-action-grid">
-                  <MenuButton
-                    icon={<Eye />}
-                    label="Isometric"
-                    active={workbench.cameraView === 'isometric'}
-                    onClick={() => workbench.setCameraView('isometric')}
-                  />
-                  <MenuButton
-                    icon={<BringToFront />}
-                    label="Front"
-                    active={workbench.cameraView === 'front'}
-                    onClick={() => workbench.setCameraView('front')}
-                  />
-                  <MenuButton
-                    icon={<Maximize2 />}
-                    label="Top"
-                    active={workbench.cameraView === 'top'}
-                    onClick={() => workbench.setCameraView('top')}
-                  />
-                  <MenuButton icon={<Focus />} label="Fit" onClick={workbench.fitView} />
-                </div>
-              </section>
-
+              {/* Snap and Camera used to sit here too.
+                *
+                * Both are already on the row floating over the model, which is
+                * visible without opening anything and offers more: six camera
+                * views against this menu's three-and-Fit. Worse, the two copies
+                * had never agreed on what to call the values — this menu said
+                * "Stud grid" and "Fine LDU" where the viewport row said "1
+                * stud" and "1 LDU" — so the same two settings appeared under
+                * four names. Render stays: five of its six modes exist nowhere
+                * else. */}
               <section>
                 <span className="workspace-label">Render</span>
                 <label className="workspace-select">
