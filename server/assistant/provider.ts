@@ -1,9 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { ModelProviderUnavailableError, hash32, stableStringify, awaitWithAbort } from '../../src/platform/contracts.ts'
-import { boundedTimeout } from '../http/lifecycle.ts'
-import type { ModelProvider, ModelRequest, ModelResult } from '../../src/platform/contracts.ts'
-import { DEFAULT_MODEL, DEFAULT_TIMEOUT_MS } from './protocol.ts'
-import { redactSecret, sanitizeMessage } from './sanitize.ts'
+import { ModelProviderUnavailableError, hash32, stableStringify, awaitWithAbort } from '../../src/platform/contracts.js'
+import { boundedTimeout } from '../http/lifecycle.js'
+import type { ModelProvider, ModelRequest, ModelResult } from '../../src/platform/contracts.js'
+import { DEFAULT_MODEL, DEFAULT_TIMEOUT_MS } from './protocol.js'
+import { redactSecret, sanitizeMessage } from './sanitize.js'
 
 /**
  * The one place in the repository that holds the model API key.

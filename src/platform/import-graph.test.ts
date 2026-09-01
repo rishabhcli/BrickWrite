@@ -3,14 +3,17 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Two structural guarantees, checked by walking the module graph rather than by
- * reading it.
+ * Structural guarantees about what reaches the browser, what stays out of the
+ * shell chunk, and what the API function can still resolve once Vercel has
+ * transpiled it — all checked by walking the module graph rather than reading
+ * it.
  *
- * A full `vite build` would prove both more directly, but a build takes tens of
- * seconds and is only run in CI; these assertions have to fail in the same
- * second a bad import is written, which means they have to be a unit test. The
- * build-time evidence is recorded separately in
- * `docs/integration/platform-shell.md`.
+ * A full `vite build` would prove the first two more directly, but a build
+ * takes tens of seconds and is only run in CI; these assertions have to fail in
+ * the same second a bad import is written, which means they have to be a unit
+ * test. The build-time evidence is recorded separately in
+ * `docs/integration/platform-shell.md`. The third has no build-time equivalent
+ * at all: a `vite build` never sees the API function.
  */
 
 const ROOT = resolve(__dirname, '../..')
@@ -68,7 +71,13 @@ function specifiersOf(source: string): Specifier[] {
 
 function resolveRelative(fromFile: string, request: string): string | null {
   const base = resolve(dirname(fromFile), request)
-  for (const candidate of [base, ...EXTENSIONS.map((ext) => base + ext)]) {
+  const candidates = [base, ...EXTENSIONS.map((ext) => base + ext)]
+  // A relative import may name the extension the *emitted* file will carry, so
+  // `./x.js` is the ordinary way to reach `./x.ts`. Tried last: a real `.js`
+  // sitting next to a `.ts` of the same name still wins.
+  const stem = base.replace(/\.(js|jsx|mjs)$/, '')
+  if (stem !== base) candidates.push(`${stem}.ts`, `${stem}.tsx`)
+  for (const candidate of candidates) {
     if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
   }
   for (const ext of EXTENSIONS) {
@@ -225,5 +234,34 @@ describe('route-level code splitting', () => {
     const routes = readFileSync(resolve(ROOT, 'src/platform/routes.ts'), 'utf8')
     expect(routes).not.toMatch(/^import .* from '\.\.\/(cad|editor|features)\//m)
     expect(routes).toMatch(/await import\('\.\/not-installed'\)/)
+  })
+})
+
+describe('the API function survives being transpiled file by file', () => {
+  // `@vercel/node` emits one `.js` per source file and copies every specifier
+  // through untouched — it does not bundle, and it does not read
+  // `tsconfig.node.json`, so `allowImportingTsExtensions` never reaches it. A
+  // relative import written as `./x.ts` therefore resolves here, under Vite and
+  // under vitest, and then throws ERR_MODULE_NOT_FOUND in production, where the
+  // only file on disk is `x.js`. One such import takes the entire function down
+  // with a 500 — `/api/health` included — and no build step reports it.
+  const graph = walk(['api/[...route].ts'], { followDynamic: true })
+
+  it('resolves the function entry graph it is asserting over', () => {
+    expect(graph.files).toContain('api/[...route].ts')
+    expect(graph.files).toContain('server/assistant/handler.ts')
+    expect(graph.files).toContain('server/generation/index.ts')
+    expect(graph.unresolved, `unresolved imports: ${graph.unresolved.join(', ')}`).toEqual([])
+  })
+
+  it('names every relative import by the extension it will have once emitted', () => {
+    const offenders: string[] = []
+    for (const file of graph.files) {
+      for (const spec of specifiersOf(readFileSync(resolve(ROOT, file), 'utf8'))) {
+        if (!spec.request.startsWith('.')) continue
+        if (/\.tsx?$/.test(spec.request)) offenders.push(`${file} → ${spec.request}`)
+      }
+    }
+    expect(offenders, `these resolve only before transpilation:\n${offenders.join('\n')}`).toEqual([])
   })
 })

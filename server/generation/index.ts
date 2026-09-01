@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ModelProviderUnavailableError, awaitWithAbort, type DesignBrief } from '../../src/platform/contracts.ts'
-import { boundedTimeout, ndjsonWriter, readRequestText, RequestBodyError, requestLifetime } from '../http/lifecycle.ts'
+import { ModelProviderUnavailableError, awaitWithAbort, type DesignBrief } from '../../src/platform/contracts.js'
+import { boundedTimeout, ndjsonWriter, readRequestText, RequestBodyError, requestLifetime } from '../http/lifecycle.js'
 import {
   AnthropicGenerationProvider,
   SchemaViolationError,
@@ -10,8 +10,8 @@ import {
   redact,
   type CompletionResult,
   type ProviderConfig,
-} from './anthropic.ts'
-import { designBriefSchema } from './schema.ts'
+} from './anthropic.js'
+import { designBriefSchema } from './schema.js'
 
 /**
  * `POST /api/generate` and `POST /api/brief`.

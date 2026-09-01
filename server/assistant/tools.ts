@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { ASSISTANT_TOOLS, toolJsonSchema, toolsForMode } from '../../src/agent/toolschemas.ts'
+import { ASSISTANT_TOOLS, toolJsonSchema, toolsForMode } from '../../src/agent/toolschemas.js'
 
 /**
  * The tool surface advertised to the model.

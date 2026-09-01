@@ -1,5 +1,5 @@
-import type { RouteModule } from '../index.ts'
-import { createAssistantRoute } from './handler.ts'
+import type { RouteModule } from '../index.js'
+import { createAssistantRoute } from './handler.js'
 
 /**
  * Published entry point for the assistant API.
@@ -11,11 +11,11 @@ import { createAssistantRoute } from './handler.ts'
  */
 export const route: RouteModule = createAssistantRoute()
 
-export { createAssistantRoute, toApiMessages, toolTurnsUsed, structuralCheck } from './handler.ts'
-export { AnthropicModelProvider, ProviderRequestError, classifyUpstream } from './provider.ts'
-export { SYSTEM_PROMPT, groundingBlock } from './prompt.ts'
-export { anthropicTools, ADVERTISED_TOOL_NAMES } from './tools.ts'
-export { sanitizeMessage, redactSecret } from './sanitize.ts'
-export * from './protocol.ts'
+export { createAssistantRoute, toApiMessages, toolTurnsUsed, structuralCheck } from './handler.js'
+export { AnthropicModelProvider, ProviderRequestError, classifyUpstream } from './provider.js'
+export { SYSTEM_PROMPT, groundingBlock } from './prompt.js'
+export { anthropicTools, ADVERTISED_TOOL_NAMES } from './tools.js'
+export { sanitizeMessage, redactSecret } from './sanitize.js'
+export * from './protocol.js'
 
 export default route

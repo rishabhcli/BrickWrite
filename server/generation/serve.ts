@@ -1,8 +1,8 @@
 import { createServer, type Server } from 'node:http'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { createGenerationRoute, type RouteModule } from './index.ts'
-import type { ProviderConfig } from './anthropic.ts'
+import { createGenerationRoute, type RouteModule } from './index.js'
+import type { ProviderConfig } from './anthropic.js'
 
 /**
  * The generation routes on their own server.

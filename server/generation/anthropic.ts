@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { boundedTimeout } from '../http/lifecycle.ts'
-import { ModelProviderUnavailableError, hash32, awaitWithAbort, type Provenance } from '../../src/platform/contracts.ts'
-import { kindForSchema, validatePayload, type PayloadKind } from './schema.ts'
+import { boundedTimeout } from '../http/lifecycle.js'
+import { ModelProviderUnavailableError, hash32, awaitWithAbort, type Provenance } from '../../src/platform/contracts.js'
+import { kindForSchema, validatePayload, type PayloadKind } from './schema.js'
 
 /**
  * The only place in the repository that reads the model credential.

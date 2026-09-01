@@ -1,4 +1,4 @@
-import type { Grounding } from './protocol.ts'
+import type { Grounding } from './protocol.js'
 
 /**
  * The standing instructions.

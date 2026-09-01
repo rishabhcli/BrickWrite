@@ -5,7 +5,7 @@
  * port or discovering route modules from disk.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { logProcessEvent } from './log.ts'
+import { logProcessEvent } from './log.js'
 
 export interface RouteModule {
   readonly prefix: string

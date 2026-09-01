@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import type Anthropic from '@anthropic-ai/sdk'
-import { ModelProviderUnavailableError, awaitWithAbort } from '../../src/platform/contracts.ts'
+import { ModelProviderUnavailableError, awaitWithAbort } from '../../src/platform/contracts.js'
 import {
   boundedTimeout,
   ndjsonWriter,
@@ -9,7 +9,7 @@ import {
   RequestBodyError,
   requestLifetime,
   type RequestLifetime,
-} from '../http/lifecycle.ts'
+} from '../http/lifecycle.js'
 import {
   ASSISTANT_PROTOCOL,
   AssistantRequestSchema,
@@ -23,11 +23,11 @@ import {
   type ChatRequest,
   type StructuredRequest,
   type WireMessage,
-} from './protocol.ts'
-import { AnthropicModelProvider, ProviderRequestError, classifyUpstream } from './provider.ts'
-import { SYSTEM_PROMPT, groundingBlock } from './prompt.ts'
-import { anthropicTools } from './tools.ts'
-import { sanitizeMessage } from './sanitize.ts'
+} from './protocol.js'
+import { AnthropicModelProvider, ProviderRequestError, classifyUpstream } from './provider.js'
+import { SYSTEM_PROMPT, groundingBlock } from './prompt.js'
+import { anthropicTools } from './tools.js'
+import { sanitizeMessage } from './sanitize.js'
 
 /**
  * The `/api/assistant` route.

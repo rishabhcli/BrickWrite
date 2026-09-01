@@ -15,11 +15,11 @@
  */
 import { createServer } from 'node:http'
 import { stat } from 'node:fs/promises'
-import { createRequestListener, type RouteModule } from './dispatch.ts'
-import { logProcessEvent } from './log.ts'
+import { createRequestListener, type RouteModule } from './dispatch.js'
+import { logProcessEvent } from './log.js'
 
-export type { RouteModule } from './dispatch.ts'
-export { createRequestListener } from './dispatch.ts'
+export type { RouteModule } from './dispatch.js'
+export { createRequestListener } from './dispatch.js'
 
 const CANDIDATES = ['./assistant/index.ts', './generation/index.ts'] as const
 
