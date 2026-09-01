@@ -25,7 +25,7 @@
  */
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -56,6 +56,30 @@ const OUT_SRC = CHECK_MODE ? path.join(CHECK_ROOT, 'src') : path.join(ROOT, 'src
  * authored against rather than by when the script happened to run.
  */
 const AUTHORED_AT = '2026-07-01T00:00:00.000Z'
+
+/**
+ * The build is only reproducible on the pinned Node.
+ *
+ * `encodePng` compresses through `node:zlib`, and zlib's output for the same
+ * pixels is not stable across Node majors — 24 ships zlib-ng 1.3.2, 26 ships
+ * 1.2.12, and the two disagree by tens of bytes per image. Every manifest then
+ * records the SHA-256 of those bytes, so a render on the wrong runtime rewrites
+ * the whole collection with visually identical assets that CI, which builds on
+ * `.nvmrc`, will reject as non-deterministic.
+ *
+ * Refusing here costs a second. Finding out costs a red `verify` job ten
+ * minutes into a run that would otherwise have deployed.
+ */
+const PINNED_NODE = Number(readFileSync(path.join(ROOT, '.nvmrc'), 'utf8').trim())
+const RUNNING_NODE = Number(process.versions.node.split('.')[0])
+if (RUNNING_NODE !== PINNED_NODE) {
+  console.error(
+    `This build must run on Node ${PINNED_NODE} (.nvmrc); this is Node ${RUNNING_NODE}.\n` +
+      "Its PNG bytes come from that version's zlib, so another major silently\n" +
+      'regenerates every asset and fails the determinism gate in CI.',
+  )
+  process.exit(1)
+}
 
 // ---------------------------------------------------------------------------
 // Kernel access
