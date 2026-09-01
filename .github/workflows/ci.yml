@@ -7,6 +7,21 @@ on:
 permissions:
   contents: read
 
+# Only the newest commit on a ref is worth verifying. A run takes about twenty
+# minutes and the deploy is its last job, so a handful of pushes in quick
+# succession queues up hours of work whose only useful output is the deploy at
+# the very end — and every one of those deploys but the last is immediately
+# superseded. Cancelling the older run gets the newest commit to the domain in
+# one run's time instead of the whole queue's.
+#
+# Cancelling a run that has reached `deploy` costs nothing: a Cloudflare Pages
+# deployment is created and then promoted, so an interrupted upload simply
+# never becomes a deployment, and the run that replaced it publishes the newer
+# build anyway.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
