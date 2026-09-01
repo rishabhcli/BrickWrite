@@ -703,7 +703,14 @@
   background: linear-gradient(180deg, rgba(245, 163, 63, 0.12), transparent);
   border-color: rgba(245, 163, 63, 0.2);
 }
-.tool-button.active::after {
+/* The active-tool underline, drawn for every tool and shown for one.
+ *
+ * It used to be declared inside the `.active` rule, so the element did not
+ * exist until the tool was already active and there was nothing to transition
+ * from: switching tools popped the bar out at full width in the new place.
+ * Declaring it always, collapsed, lets it grow — and scaleX is composite work,
+ * so the four tool buttons cost nothing to animate. */
+.tool-button::after {
   content: '';
   position: absolute;
   bottom: -1px;
@@ -712,6 +719,15 @@
   height: 2px;
   background: var(--orange);
   box-shadow: 0 -2px 10px rgba(245, 163, 63, 0.5);
+  transform: scaleX(0);
+  opacity: 0;
+  transition:
+    transform var(--motion-base) var(--spring),
+    opacity var(--motion-fast) var(--ease);
+}
+.tool-button.active::after {
+  transform: scaleX(1);
+  opacity: 1;
 }
 
 .rail-divider {
@@ -1334,7 +1350,8 @@
   color: var(--ink);
   background: #131c1e;
 }
-.inspector-tabs button.active::after {
+/* Same underline, same reason, as .tool-button::after above. */
+.inspector-tabs button::after {
   content: '';
   position: absolute;
   bottom: -1px;
@@ -1343,6 +1360,15 @@
   right: 20px;
   background: var(--orange);
   box-shadow: 0 -2px 8px rgba(245, 163, 63, 0.5);
+  transform: scaleX(0);
+  opacity: 0;
+  transition:
+    transform var(--motion-base) var(--spring),
+    opacity var(--motion-fast) var(--ease);
+}
+.inspector-tabs button.active::after {
+  transform: scaleX(1);
+  opacity: 1;
 }
 .healthy-dot,
 .warning-dot {
@@ -4382,6 +4408,27 @@
 }
 .dock-section-body {
   min-height: 0;
+}
+/* A section arriving.
+ *
+ * Opening one swapped its content in with no motion at all, and in a dock
+ * holding seven collapsible sections that makes it genuinely hard to see which
+ * one just answered — the chevron turns, and everything below it jumps.
+ *
+ * Transform and opacity only. A true accordion animates height, which is
+ * layout, and the tallest section here holds sixty part cards; paying a
+ * relayout per frame to reveal them is the trade this file has just spent 42
+ * rules getting out of. No fill mode either, so the transform is gone once the
+ * animation ends rather than leaving every dock section a containing block for
+ * anything positioned inside it. */
+.dock-section.open > .dock-section-body {
+  animation: dock-section-in var(--motion-base) var(--ease);
+}
+@keyframes dock-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .dock-left .dock-section.grow > .dock-section-body,
 .dock-right .dock-section.grow > .dock-section-body {
