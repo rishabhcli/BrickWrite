@@ -101,7 +101,7 @@ button {
 }
 /* The focus ring takes the shape of whatever it is ringing.
  *
- * This used to force `border-radius: 2px`, which drew a hard square ring around
+ * This used to force `border-radius: 4px`, which drew a hard square ring around
  * every focused control in the app — including the rounded ones — so a 14px
  * capsule got a 2px box around it. Browsers have followed the element's own
  * border-radius when drawing an outline for years, so the fix is to stop

@@ -53,7 +53,7 @@
   width: 100%;
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--bw-ink);
   padding: 8px 10px;
   font: inherit;
@@ -82,7 +82,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 5px 10px;
   font: inherit;
   font-size: 11px;
@@ -240,7 +240,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 9px 18px;
   font: inherit;
   font-size: 11px;
@@ -281,7 +281,7 @@
   border: 1px solid rgba(245, 163, 63, 0.5);
   background: rgba(245, 163, 63, 0.1);
   color: var(--bw-orange);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 8px 15px;
   font-family: var(--bw-display);
   font-size: 11px;
@@ -302,7 +302,7 @@
   width: min(440px, 100%);
   border: 1px solid var(--bw-line-hi);
   background: var(--bw-panel);
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 18px 20px;
   display: grid;
   gap: 11px;
@@ -325,7 +325,7 @@
 .bw-gallery-dialog-panel textarea {
   background: var(--bw-void);
   border: 1px solid var(--bw-line-hi);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--bw-ink);
   padding: 7px 9px;
   font: inherit;
@@ -343,7 +343,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 7px 13px;
   font: inherit;
   font-size: 11px;

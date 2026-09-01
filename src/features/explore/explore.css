@@ -272,7 +272,7 @@
 .bw-swatch {
   width: 13px;
   height: 13px;
-  border-radius: 2px;
+  border-radius: 4px;
   flex: none;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
@@ -680,6 +680,11 @@
   overflow: hidden;
   aspect-ratio: 16 / 10;
   background: #111817;
+  /* These wrap an image and set no colour, so they were the one place in the
+   * app still painting a link the browser's own dark-mode periwinkle. Nothing
+   * shows it today because there is no text inside; the first caption added
+   * here would. */
+  color: inherit;
 }
 
 .bw-catalog-image img {

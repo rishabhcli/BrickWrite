@@ -39,7 +39,7 @@ body:has(.bw-studio) #pf-main {
 .bw-studio .bw-button {
   min-height: 52px;
   padding: 15px 23px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: 'Manrope Variable', sans-serif;
   font-size: 13px;
   font-weight: 700;
@@ -283,7 +283,7 @@ body:has(.bw-studio) #pf-main {
   color: #ede9df;
   background: #202920;
   border: 1px solid #ffffff21;
-  border-radius: 3px;
+  border-radius: 4px;
   font:
     600 11px/1.5 'Manrope Variable',
     sans-serif;
@@ -477,7 +477,7 @@ body:has(.bw-studio) #pf-main {
   height: clamp(300px, 34vw, 490px);
   background: #1d2623;
   border: 1px solid #35423c;
-  border-radius: 3px;
+  border-radius: 4px;
   box-shadow: none;
 }
 .bw-campus-layout .bw-stage-caption {
@@ -499,7 +499,7 @@ body:has(.bw-studio) #pf-main {
   background: #e0ddd2;
   color: #585f52;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 12px 10px;
   min-height: 68px;
 }
@@ -628,7 +628,7 @@ body:has(.bw-studio) #pf-main {
   background: #192219;
   border-color: #8c9a7440;
   box-shadow: none;
-  border-radius: 3px 3px 0 0;
+  border-radius: 4px 4px 0 0;
 }
 .bw-studio .bw-assembly-window::before {
   opacity: 0.4;
@@ -712,7 +712,7 @@ body:has(.bw-studio) #pf-main {
 .bw-studio .bw-demo-card figure {
   background: #d0d6c3;
   border: 1px solid #c3cbb8;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 .bw-studio .bw-demo-card img {
   mix-blend-mode: multiply;

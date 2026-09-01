@@ -48,7 +48,7 @@
   padding: 8px 9px;
   border: 1px solid var(--bw-cloud-line);
   border-left-width: 2px;
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--bw-cloud-panel-2);
 }
 
@@ -92,7 +92,7 @@
 
 .bw-cloud-project {
   border: 1px solid var(--bw-cloud-line);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--bw-cloud-panel-2);
   padding: 7px 8px;
   display: flex;
@@ -112,7 +112,7 @@
   letter-spacing: .12em;
   text-transform: uppercase;
   padding: 1px 5px;
-  border-radius: 2px;
+  border-radius: 4px;
   border: 1px solid var(--bw-cloud-line-hi);
   color: var(--bw-cloud-faint);
   white-space: nowrap;
@@ -128,7 +128,7 @@
   border: 1px solid var(--bw-cloud-line-hi);
   background: var(--bw-cloud-panel);
   color: var(--bw-cloud-ink);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 3px 7px;
   font-size: 10px;
   cursor: pointer;
@@ -148,7 +148,7 @@
   width: 100%;
   background: var(--bw-cloud-panel);
   border: 1px solid var(--bw-cloud-line-hi);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--bw-cloud-ink);
   padding: 4px 6px;
   font-size: 11px;
@@ -158,7 +158,7 @@
 
 .bw-cloud-confirm {
   border: 1px solid color-mix(in srgb, var(--bw-cloud-red) 55%, var(--bw-cloud-line));
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 7px 8px;
   background: color-mix(in srgb, var(--bw-cloud-red) 8%, var(--bw-cloud-panel));
   display: flex;
@@ -220,7 +220,7 @@
 
 .bw-cloud-branch {
   border: 1px solid var(--line, #253034);
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 9px 10px;
   display: flex;
   flex-direction: column;
@@ -234,7 +234,7 @@
 
 .bw-cloud-version {
   border: 1px solid var(--line, #253034);
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
@@ -276,7 +276,7 @@
   max-width: 100%;
   background: var(--bw-cloud-panel);
   border: 1px solid var(--bw-cloud-line-hi);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--bw-cloud-ink);
   padding: 3px 22px 3px 6px;
   font-size: 10px;
@@ -287,7 +287,7 @@
 .bw-cloud-inline-form--wrap .bw-cloud-field { min-width: 150px; flex: 1 1 150px; }
 .bw-cloud-member {
   border: 1px solid var(--bw-cloud-line);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--bw-cloud-panel-2);
   padding: 7px 8px;
   display: flex;
@@ -307,7 +307,7 @@
   gap: 6px;
   padding: 5px 6px;
   border: 1px solid var(--bw-cloud-line);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--bw-cloud-panel-2);
 }
 .bw-cloud-peer[data-following='true'] { border-color: var(--bw-cloud-cyan); }

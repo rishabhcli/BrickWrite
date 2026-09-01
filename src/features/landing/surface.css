@@ -188,7 +188,7 @@ body:has(.bw-surface),
 .bw-surface :focus-visible {
   outline: 2px solid var(--bw-orange);
   outline-offset: 3px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 /* Typography --------------------------------------------------------------- */
@@ -444,7 +444,7 @@ body:has(.bw-surface),
   text-transform: uppercase;
   text-decoration: none;
   padding: 6px 11px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   transition:
     color 0.18s ease,
@@ -717,7 +717,7 @@ body:has(.bw-surface),
   filter: blur(var(--glass-blur-nav));
 }
 .bw-button {
-  border-radius: 1px;
+  border-radius: 4px;
   box-shadow: none;
 }
 .bw-button.primary {
@@ -726,7 +726,7 @@ body:has(.bw-surface),
     0 12px 28px rgba(0, 0, 0, 0.24);
 }
 .bw-chip {
-  border-radius: 1px;
+  border-radius: 4px;
 }
 .bw-demo-card,
 .bw-column {
