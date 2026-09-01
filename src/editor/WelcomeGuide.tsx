@@ -19,15 +19,6 @@ import { useFocusTrap } from '../platform/a11y'
 
 export const WELCOME_SEEN_KEY = 'brickwright.welcome.v1'
 
-/** Whether the guide should open unprompted. Storage failures show it, not hide it. */
-export function welcomeUnseen(): boolean {
-  try {
-    return window.localStorage.getItem(WELCOME_SEEN_KEY) !== 'seen'
-  } catch {
-    return true
-  }
-}
-
 export function markWelcomeSeen(): void {
   try {
     window.localStorage.setItem(WELCOME_SEEN_KEY, 'seen')

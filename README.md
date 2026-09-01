@@ -298,8 +298,9 @@ the two operators is an invariant of this project rather than a slogan.
 `src/cad/statics.ts` answers what collision cannot: does the model stand up, and what is
 holding it together. The compiler measures each part's **exact enclosed volume** from its
 compiled surface, so mass, centre of mass, the support polygon and the tipping margin are
-measurements rather than bounding-box guesses. The showcase rover reports **67.8 g, stable
-with 80 LDU of margin, on an 8 × 12 stud footprint**.
+measurements rather than bounding-box guesses. The sample rover the unit tests build on
+reports **67.8 g, stable with 80 LDU of margin, on an 8 × 12 stud footprint**. It is a
+fixture, not what the editor opens with — a new project is empty.
 
 Two numbers are not measurements and say so in every report that uses them:
 

@@ -9,7 +9,14 @@
  * self-contained printable build guide.
  *
  * Assertions are relational rather than hardcoded counts, so the run stays
- * meaningful when the showcase model or catalog revision changes.
+ * meaningful as the catalog revision changes.
+ *
+ * The run also builds its own subject. It used to open on a sample rover and
+ * assert against that model's parts — its hinge, its part count, its declared
+ * envelope — which meant deleting the rover silently invalidated a dozen
+ * assertions spread across the file, and left the suite asserting the shape of
+ * an application that no longer existed. A new project is empty now, so
+ * anything this run needs to measure, it constructs first.
  */
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -232,18 +239,26 @@ try {
     'The Refine contribution is not mounted in the editor',
   )
 
-  // -- first run explains itself, once ---------------------------------------
-  // A dense CAD console that opens with no orientation is a usability defect,
-  // and one that reopens every session is a different one. Both are asserted.
+  // -- first run does not nag, and orientation stays reachable ---------------
+  // This used to assert that the guide opened itself. It no longer does, on
+  // purpose: a modal over an empty viewport is the first thing an operator has
+  // to dismiss before they can see the tool at all, and it says less than the
+  // grid behind it does. So the pair that replaced that behaviour is what is
+  // asserted here — nothing blocks the first frame, and the orientation is one
+  // control away rather than deleted, which is the part that would otherwise
+  // rot silently once nothing opens it automatically.
   const welcome = page.getByRole('dialog', { name: 'Before the first brick' })
+  assert((await welcome.count()) === 0, 'The first-run guide opened itself over the viewport')
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  const welcomeKeys = page.getByRole('dialog', { name: 'Keyboard' })
+  await welcomeKeys.waitFor({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Show the welcome guide' }).click()
   await welcome.waitFor({ timeout: 10_000 })
   await page.getByRole('button', { name: 'Start building' }).click()
   await welcome.waitFor({ state: 'hidden' })
-  await page.reload({ waitUntil: 'networkidle' })
-  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
-  assert((await welcome.count()) === 0, 'The first-run guide reappeared after being dismissed')
-  const welcomeReplayable = await page.evaluate(() => Boolean(window.localStorage.getItem('brickwright.welcome.v1')))
-  assert(welcomeReplayable, 'Dismissing the first-run guide was not remembered')
+  const welcomeRemembered = await page.evaluate(() => Boolean(window.localStorage.getItem('brickwright.welcome.v1')))
+  assert(welcomeRemembered, 'Dismissing the guide was not remembered')
 
   const initial = await page.evaluate(async () => ({
     document: window.brickwright.getDocument(),
@@ -282,24 +297,66 @@ try {
     'Geometry compiler left unresolved LDraw references',
   )
 
-  // -- the opening document is a valid, connected, real-part assembly --------
-  assert(startParts > 20, `Expected a substantial showcase, saw ${startParts} parts`)
-  assert(initial.validation.collisions.length === 0, `Showcase has ${initial.validation.collisions.length} collisions`)
-  assert(initial.validation.componentCount === 1, `Showcase is in ${initial.validation.componentCount} pieces`)
+  // -- a new session opens a blank project -----------------------------------
+  // This asserted a twenty-part showcase, because the editor opened on a copy
+  // of a sample rover. It no longer does, deliberately: opening somebody
+  // else's model is not a starting point, and its subassembly names and steps
+  // described a build the operator never asked for. The empty state offers
+  // starters for one click instead.
+  //
+  // The property is inverted rather than dropped, because "a new project is
+  // empty" is exactly what regressed last time — every new project used to
+  // begin as a copy of the rover. Empty in the buildable sense: one unlocked
+  // assembly and one step, which is what a placed part lands in.
+  //
+  // The kernel's ability to validate a real connected assembly is still
+  // covered, further down, against the buildings this suite generates and the
+  // blocks it stamps — models the app actually produces.
+  assert(startParts === 0, `A new session opened with ${startParts} parts already in the document`)
+  const openingAssemblies = Object.values(initial.document.subassemblies)
   assert(
-    initial.validation.connectionCount > 50,
-    `Expected many mated connectors, saw ${initial.validation.connectionCount}`,
+    openingAssemblies.length === 1 && openingAssemblies[0].locked === false,
+    `A new project should open with one unlocked assembly, saw ${JSON.stringify(openingAssemblies.map((entry) => [entry.name, entry.locked]))}`,
+  )
+  assert(initial.document.steps.length === 1, `A new project should open with one step, saw ${initial.document.steps.length}`)
+  assert(
+    initial.validation.collisions.length === 0 && initial.validation.connectionCount === 0,
+    `An empty document reported ${initial.validation.collisions.length} collisions and ${initial.validation.connectionCount} connections`,
   )
   assert(
     initial.validation.unverifiedCollisions === 0,
-    `Showcase has ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
+    `An empty document reported ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
   )
 
-  // -- real geometry actually reached the GPU --------------------------------
-  const geometry = await page.evaluate(() => ({
-    meshes: performance.getEntriesByType('resource').filter((entry) => entry.name.includes('.bwmesh')).length,
-  }))
-  assert(geometry.meshes > 5, `Expected compiled .bwmesh assets to be fetched, saw ${geometry.meshes}`)
+  // -- compiled geometry is really published ---------------------------------
+  // This counted `.bwmesh` fetches at startup and wanted more than five, which
+  // only ever worked because the editor opened on a showcase whose parts
+  // needed that many. A new document is empty and fetches close to none, and
+  // how many assets a boot happens to warm is a timing detail rather than a
+  // property, so the claim is made directly instead: take the asset a
+  // certified identity points at, fetch it, and check it arrives at the length
+  // the catalog declares. The provider verifies length and SHA-256 before it
+  // will decode anything, so a mesh that fails this is a part that cannot be
+  // drawn at all — there is no procedural fallback anywhere in that module.
+  const geometry = await page.evaluate(async () => {
+    const definition = (await window.brickwright.invoke('part_inspect', { id: '3001' }))?.structuredContent?.definition
+    const asset = definition?.geometryAsset
+    if (!asset) return { status: definition?.geometryStatus ?? 'missing', ok: false }
+    const response = await fetch(`/${asset.file}`)
+    return {
+      status: definition.geometryStatus,
+      ok: response.ok,
+      file: asset.file,
+      declared: asset.bytes,
+      served: response.ok ? (await response.arrayBuffer()).byteLength : 0,
+    }
+  })
+  assert(geometry.status === 'certified', `Brick 3001 reports geometry status "${geometry.status}"`)
+  assert(geometry.ok, `The compiled mesh for brick 3001 is not served at /${geometry.file}`)
+  assert(
+    geometry.served === geometry.declared,
+    `The mesh for brick 3001 arrived at ${geometry.served} bytes against a declared ${geometry.declared}`,
+  )
 
   // -- the palette shows rendered previews, not decorative glyphs ------------
   const palette = await page.evaluate(async () => {
@@ -350,7 +407,10 @@ try {
     const pagedAgain = await call({ text: 'plate', tier: 'all', limit: 5, offset: 5 })
     const exact = await call({ text: '3001', tier: 'all', limit: 3 })
     const missing = await call({ text: 'zzzz-not-a-real-part', tier: 'all', limit: 3 })
-    return { build, wide, paged, pagedAgain, exact, missing }
+    // No text, every tier: the size of the searchable index, which is what the
+    // palette's badge reports when its own query is empty.
+    const whole = await call({ tier: 'all', limit: 1 })
+    return { build, wide, paged, pagedAgain, exact, missing, whole }
   })
   assert(
     catalogue.build.index.totalIdentities > catalogue.build.index.modelledIdentities,
@@ -404,17 +464,33 @@ try {
   )
 
   // The human sees the same index behind the same facets.
-  await page.locator('[data-catalog-search]').fill('minifig head')
+  //
+  // Asserted as an equality against the number the agent just reported rather
+  // than against a literal, because a literal goes stale silently: the count
+  // this once hard-coded ("8X,XXX") stopped being reachable when the index
+  // settled at 79,033, and the suite would have kept asserting a figure no
+  // build produces. Comparing the two surfaces to each other states the
+  // property that actually matters — one index, two front doors — and stays
+  // true across catalogue rebuilds.
+  //
+  // The badge counts what the current facets match, so the whole-index claim
+  // is made with the query cleared and the comparison is against the agent's
+  // own untexted search.
+  await page.locator('[data-catalog-search]').fill('')
   await page.locator('.category-row .facet-toggle').click()
   await page.locator('.tier-row button', { hasText: 'EVERYTHING' }).click()
   await page.waitForFunction(() => !document.querySelector('.catalog-loading'), null, { timeout: 60_000 })
   const humanFacets = await page.locator('.tier-row button').allInnerTexts()
-  const humanTotal = await page.locator('.catalog-meta span').first().innerText()
+  // The badge abbreviates ("79k"); its title carries the figure in full.
+  const humanBadge = await page.locator('.count-badge').getAttribute('title')
+  const humanTotal = Number(String(humanBadge).replace(/[^\d]/g, ''))
   assert(
-    /of 8[0-9],\d{3} identities/.test(humanTotal),
-    `The catalog panel does not report the whole index, it says "${humanTotal}"`,
+    humanTotal === catalogue.whole.matched.total,
+    `The palette reports ${humanTotal} identities where the agent's index search reports ${catalogue.whole.matched.total} — the two surfaces are not reading the same index`,
   )
   assert(humanFacets.length === 4, `Expected four knowledge tiers in the panel, saw ${humanFacets.length}`)
+  await page.locator('[data-catalog-search]').fill('minifig head')
+  await page.waitForFunction(() => document.querySelectorAll('.part-card').length > 0, null, { timeout: 30_000 })
   const humanRows = await page.locator('.part-card').count()
   assert(humanRows > 0, 'The panel found nothing for a query the agent matched thousands of times')
   await page.locator('.tier-row button', { hasText: 'BUILDABLE' }).click()
@@ -423,14 +499,14 @@ try {
 
   // -- keyboard command map is a real modal, not decorative chrome ----------
   const workspaceTrigger = page.getByRole('button', { name: 'Workspace' })
-  const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()
+  const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')
   await openWorkspace(page)
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
   const shortcutDialog = page.getByRole('dialog', { name: 'Keyboard' })
   await shortcutDialog.waitFor()
   await page.keyboard.press('g')
   assert(
-    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()) === activeToolBeforeModal,
+    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')) === activeToolBeforeModal,
     'A keyboard shortcut mutated the CAD tool while the command map was modal',
   )
   await page.keyboard.press('Escape')
@@ -445,7 +521,7 @@ try {
   await shortcutDialog.waitFor({ state: 'hidden' })
 
   // -- the Command Deck is the human face of the WebMCP capability registry -
-  const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()
+  const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')
   await openWorkspace(page)
   await page.getByRole('button', { name: 'Command deck' }).click()
   const commandDialog = page.getByRole('dialog', { name: 'Command Deck' })
@@ -476,7 +552,7 @@ try {
   )
   await page.keyboard.press('g')
   assert(
-    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').textContent()) === toolBeforeCommand,
+    (await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')) === toolBeforeCommand,
     'A viewport shortcut leaked through the modal Command Deck',
   )
   await commandDialog.getByPlaceholder('Find a command…').fill('project')
@@ -551,7 +627,27 @@ try {
   )
 
   // -- preflight is non-mutating; acceptance is atomic ----------------------
-  await page.getByRole('button', { name: /ghost proposal|cargo rack/i }).click()
+  // The proposal used to be raised by a demo button that added a cargo rack to
+  // the opening rover; the rover went and the button went with it. The batch
+  // is submitted through the tool an agent would actually call instead, which
+  // is the better subject anyway — the property under test belongs to the
+  // gateway and the kernel, not to a button that happened to call them.
+  //
+  // Two bricks, the second stacked exactly one brick height above the first,
+  // so the pair mates instead of colliding and acceptance has something real
+  // to commit.
+  await page.evaluate(
+    (expectedRevision) =>
+      window.brickwright.invoke('build_preflight', {
+        expectedRevision,
+        label: 'Two stacked bricks',
+        operations: [
+          { op: 'add', definitionId: '3001', color: 4, position: [0, 0, 0] },
+          { op: 'add', definitionId: '3001', color: 1, position: [0, -24, 0] },
+        ],
+      }),
+    startRevision,
+  )
   await page.locator('.proposal-overlay').waitFor()
   assert(
     (await page.evaluate(() => window.brickwright.getDocument().revision)) === startRevision,
@@ -670,7 +766,14 @@ try {
   // Grabbing the gizmo must actually move the part, through the same command
   // bus as everything else: one transaction, one revision.
   const beforeDrag = await page.evaluate(() => ({ revision: window.brickwright.getDocument().revision }))
-  const handle = { x: canvasBox.x + gizmoSize.centre[0], y: canvasBox.y + gizmoSize.centre[1] }
+  // Measured again rather than reusing `canvasBox`: the gizmo reports its
+  // centre in canvas coordinates, and `revealChrome` above expands the
+  // inspector, which lifts the viewport 27px. Resolving against the older box
+  // put every synthetic pointer event 27px below the handle, where there is
+  // nothing to grab — so the press cleared the selection, the gizmo detached,
+  // and the "drag" committed nothing while looking like a drag that failed.
+  const gizmoCanvas = await page.locator('canvas').boundingBox()
+  const handle = { x: gizmoCanvas.x + gizmoSize.centre[0], y: gizmoCanvas.y + gizmoSize.centre[1] }
   await page.mouse.move(handle.x, handle.y)
   await page.mouse.down()
   await page.mouse.move(handle.x + 70, handle.y - 40, { steps: 12 })
@@ -701,20 +804,27 @@ try {
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
   }))
-  await page.evaluate(() => {
-    const card = document.querySelector('.part-card:not(.unplaceable)')
-    const canvas = document.querySelector('canvas')
-    const shell = document.querySelector('.viewport-shell')
-    const rect = canvas.getBoundingClientRect()
-    const clientX = Math.round(rect.left + rect.width / 2)
-    const clientY = Math.round(rect.top + rect.height / 2)
-    const dataTransfer = new DataTransfer()
-    const fire = (target, type) =>
-      target.dispatchEvent(new DragEvent(type, { dataTransfer, bubbles: true, cancelable: true, clientX, clientY }))
-    fire(card, 'dragstart')
-    fire(shell, 'dragover')
-    fire(shell, 'drop')
+  // A real pointer drag rather than synthetic `DragEvent`s. The catalogue's
+  // drag is pointer-driven: the card records a press, a move past five pixels
+  // arms the ghost, and the release commits it where it landed. Only the
+  // find-parts panel uses HTML5 drag-and-drop, so dispatching `dragstart` at a
+  // palette card set no `application/x-brickwright-part` payload, and the
+  // viewport's `dragover` listener — which returns immediately unless
+  // `dataTransfer.types` carries exactly that — declined every event. The drop
+  // then had nothing to land, which is indistinguishable from a broken drop.
+  const dragCard = page.locator('.part-card:not(.unplaceable)').first()
+  const dragCardBox = await dragCard.boundingBox()
+  const dropCanvasBox = await page.locator('canvas').boundingBox()
+  await page.mouse.move(dragCardBox.x + dragCardBox.width / 2, dragCardBox.y + dragCardBox.height / 2)
+  await page.mouse.down()
+  // Clear the five-pixel threshold first, so the drag arms before it travels.
+  await page.mouse.move(dragCardBox.x + dragCardBox.width / 2 + 20, dragCardBox.y + dragCardBox.height / 2 + 10, {
+    steps: 4,
   })
+  await page.mouse.move(dropCanvasBox.x + dropCanvasBox.width / 2, dropCanvasBox.y + dropCanvasBox.height / 2, {
+    steps: 16,
+  })
+  await page.mouse.up()
   await page.waitForFunction((revision) => window.brickwright.getDocument().revision > revision, beforeDrop.revision, {
     timeout: 10_000,
   })
@@ -737,6 +847,7 @@ try {
   const beforePlace = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
+    triangles: window.__brickwrightRenderer.stats().triangles,
   }))
   await page.locator('.part-card:not(.unplaceable) .part-card-main').first().click()
   await page.locator('.placement-bar').waitFor({ timeout: 5_000 })
@@ -747,9 +858,17 @@ try {
   const afterPlace = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     parts: Object.keys(window.brickwright.getDocument().parts).length,
+    triangles: window.__brickwrightRenderer.stats().triangles,
   }))
   assert(afterPlace.parts === beforePlace.parts + 1, 'Clicking in the viewport did not place exactly one part')
   assert(afterPlace.revision === beforePlace.revision + 1, 'Viewport placement did not commit as a single transaction')
+  // The other half of "real geometry reached the GPU", asserted where a part
+  // exists to draw: the renderer's own triangle counter has to move. A part
+  // whose mesh never arrived draws nothing rather than a stand-in box.
+  assert(
+    afterPlace.triangles > beforePlace.triangles,
+    `The placed part drew no geometry: ${beforePlace.triangles} triangles before, ${afterPlace.triangles} after`,
+  )
   await page.keyboard.press('Escape')
   await page.locator('.placement-bar').waitFor({ state: 'hidden' })
   await historyButton(page, 'Undo').click()
@@ -799,9 +918,14 @@ try {
   await page.locator('[data-catalog-search]').press('ArrowDown')
   await page.locator('[data-catalog-search]').press('Enter')
   await page.locator('.placement-bar').waitFor({ timeout: 5_000 })
+  // The bar is icon-only now, so the armed part is named in the status
+  // element's accessible text rather than in a visible label. It still has to
+  // be named somewhere: arming from the keyboard and being told only
+  // "Choose a spot" leaves the subject of the placement unstated.
+  const armedAnnouncement = await page.locator('.placement-bar .placement-feedback').getAttribute('aria-label')
   assert(
-    (await page.locator('.placement-bar strong').innerText()).trim().length > 0,
-    'Arming a part from the keyboard did not name it in the placement bar',
+    /\w/.test(armedAnnouncement?.split(':')[0] ?? ''),
+    `Arming a part from the keyboard did not name it in the placement bar, which announced "${armedAnnouncement}"`,
   )
   await page.locator('canvas').click({ position: canvasCentre })
   await page.waitForFunction(
@@ -906,7 +1030,7 @@ try {
   // what the commit below asserts against the kernel's own connection graph.
 
   // mate via Connect: an explicit two-stage interaction with a reviewed preview.
-  await page.locator('.primary-tools .tool-button', { hasText: 'Connect' }).click()
+  await page.locator('.primary-tools').getByRole('radio', { name: 'Connect' }).click()
   const connectPanel = page.locator('.connect-panel')
   await connectPanel.waitFor({ timeout: 5_000 })
   assert(
@@ -996,7 +1120,7 @@ try {
   )
   assert(matedEdges > 0, 'Connect moved the part but the kernel recorded no connection')
   workflow.connect = { moving: movingName, previewRows, matedEdges, committed: true }
-  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
+  await page.locator('.primary-tools').getByRole('radio', { name: 'Select' }).click()
 
   // recolour: choose an active colour in the palette, then paint the selection.
   await revealChrome(page, 'transform')
@@ -1425,14 +1549,37 @@ try {
     sequence.totalParts === sequence.documentParts,
     `Sequence covers ${sequence.totalParts} of ${sequence.documentParts} parts`,
   )
-  assert(!sequence.warnings.includes('UNCONNECTED_PART'), 'The showcase should have no unconnected parts')
+  assert(
+    !sequence.warnings.includes('UNCONNECTED_PART'),
+    'Every part this run placed should be seated on something, but the derived order reports one floating free',
+  )
 
   // -- the model contains a real mechanism, and it can be driven ------------
-  // The showcase carries a hinged rear hatch, so articulation is exercised on a
-  // real assembly rather than a synthetic fixture.
+  // This used to read the hinged rear hatch off the opening showcase. With no
+  // showcase to read, the run builds a mechanism instead: `build_crane` is a
+  // shared capability that plans a four-course mast on a real 3937/3938
+  // luffing joint, so articulation is still exercised against a genuine
+  // assembly rather than a synthetic fixture — and the generator that produces
+  // it comes under test at the same time.
+  //
+  // Build mode is entered here rather than after the probe, because raising
+  // the crane is itself a mutation.
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  const crane = await page.evaluate(() =>
+    window.brickwright.invoke('action_mutate', {
+      action: 'build_crane',
+      expectedRevision: window.brickwright.getDocument().revision,
+      args: { boomStuds: 6 },
+    }),
+  )
+  assert(
+    !crane?.structuredContent?.error,
+    `Building the crane failed: ${JSON.stringify(crane?.structuredContent?.error)}`,
+  )
+
   const articulation = await page.evaluate(async () => {
     const hatch = Object.values(window.brickwright.getDocument().parts).find((part) => part.definitionId === '3938')
-    if (!hatch) return { error: 'showcase has no hinge top plate' }
+    if (!hatch) return { error: 'the crane produced no hinge top plate' }
     const joints = (
       await window.brickwright.invoke('action_read', { action: 'list_joints', args: { partIds: [hatch.id] } })
     )?.structuredContent
@@ -1444,8 +1591,6 @@ try {
     `Expected one drivable joint, saw ${JSON.stringify(articulation.joints?.joints)}`,
   )
   assert(articulation.joints.joints[0].family === 'hinge', 'Expected the drivable joint to be the hinge')
-
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
 
   const driven = await page.evaluate(async (hatchId) => {
     const model = window.brickwright.getDocument()
@@ -1471,23 +1616,37 @@ try {
   }, articulation.hatchId)
   assert(driven.committed, `Driving the hinge failed: ${JSON.stringify(driven.error)}`)
   assert(driven.changed, 'Driving the hinge did not rotate the hatch')
-  await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
+  // Two undos: the articulation, then the crane that carried it. The sections
+  // below measure render cost and constraint enforcement against the document
+  // this run has been building, and a nineteen-part mast left standing in it
+  // would quietly move every one of those numbers.
+  await page.evaluate(async () => {
+    await window.brickwright.invoke('undo_edit', {})
+    await window.brickwright.invoke('undo_edit', {})
+  })
 
   // -- hard constraints are kernel-enforced, and liftable -------------------
-  // The showcase declares a 320-part budget and a 10 x 14 stud envelope, which
-  // is exactly what the 400-part render probe below breaks. That makes this the
-  // honest place to prove both halves of the gate in a real browser: the kernel
-  // refuses the commit, and the escape hatch the refusal message points at
-  // actually releases it.
+  // The showcase declared a 320-part budget and a 10 x 14 stud envelope, and
+  // this leaned on both. A new project declares nothing, so the constraint is
+  // set here first — which puts the operation that declares it under test too,
+  // rather than only the enforcement path.
+  //
+  // The subject is a piece budget rather than the old dimension envelope. The
+  // envelope was broken by adding a plate 400 LDU out, and that no longer
+  // isolates what it claims to: the kernel refuses any part left hovering, so
+  // a plate that far from anything comes back DISCONNECTED whether a
+  // constraint exists or not — the "released" retry fails for the same reason,
+  // and the test would pass or fail for nothing to do with constraints. A
+  // budget pinned to the current part count is violated by one more brick
+  // stacked squarely on an existing one, which is legal in every other
+  // respect, so the refusal can only be the constraint.
   const constraintGate = await page.evaluate(async () => {
-    // 400 LDU is 20 studs out, so it breaks the envelope while staying close
-    // enough that the camera refit does not disturb the render sampling below.
-    const commitOutsideEnvelope = async () => {
+    const commit = async (label, operations) => {
       const model = window.brickwright.getDocument()
       const preflight = await window.brickwright.invoke('build_preflight', {
         expectedRevision: model.revision,
-        label: 'Outside the envelope',
-        operations: [{ op: 'add', definitionId: '3024', color: 15, position: [400, 0, 0] }],
+        label,
+        operations,
       })
       const proposalId = preflight?.structuredContent?.id
       if (!proposalId) return { code: preflight?.structuredContent?.error?.code ?? 'NO_PROPOSAL' }
@@ -1495,7 +1654,25 @@ try {
       return { code: applied?.structuredContent?.error?.code, revision: applied?.structuredContent?.resultRevision }
     }
 
-    const refused = await commitOutsideEnvelope()
+    const seat = Object.values(window.brickwright.getDocument().parts).at(-1)
+    const oneMore = [
+      {
+        op: 'add',
+        definitionId: '3001',
+        color: 1,
+        // One brick height above the last part placed, so it seats on it.
+        position: [seat.transform.position[0], seat.transform.position[1] - 24, seat.transform.position[2]],
+      },
+    ]
+    const declared = await commit('Cap the piece budget', [
+      {
+        op: 'set-piece-budget',
+        label: 'Budget',
+        maxParts: Object.keys(window.brickwright.getDocument().parts).length,
+        hard: true,
+      },
+    ])
+    const refused = await commit('One over budget', oneMore)
     const lifted = []
     for (const constraint of window.brickwright.getDocument().constraints) {
       const result = await window.brickwright.invoke('action_mutate', {
@@ -1505,15 +1682,19 @@ try {
       })
       lifted.push(result?.structuredContent?.error?.code ?? 'ok')
     }
-    const released = await commitOutsideEnvelope()
+    const released = await commit('One over budget, unconstrained', oneMore)
     // Put the document back, so the render probe measures the same model the
     // rest of the run has been describing.
     if (released.revision) await window.brickwright.invoke('undo_edit', {})
-    return { refused, lifted, released, remaining: window.brickwright.getDocument().constraints.length }
+    return { declared, refused, lifted, released, remaining: window.brickwright.getDocument().constraints.length }
   })
   assert(
+    Number.isInteger(constraintGate.declared.revision),
+    `Declaring the piece budget failed: ${JSON.stringify(constraintGate.declared)}`,
+  )
+  assert(
     constraintGate.refused.code === 'CONSTRAINT_VIOLATION',
-    `A commit outside the hard envelope was not refused: ${JSON.stringify(constraintGate.refused)}`,
+    `A commit over the hard piece budget was not refused: ${JSON.stringify(constraintGate.refused)}`,
   )
   assert(
     constraintGate.lifted.every((entry) => entry === 'ok') && constraintGate.remaining === 0,
@@ -1892,7 +2073,7 @@ try {
     quality.screenshots.push(name)
   }
 
-  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).click()
+  await page.locator('.primary-tools').getByRole('radio', { name: 'Select' }).click()
   await page.locator('canvas').click({ position: canvasCentre })
   await shot('state-default')
 
@@ -1945,7 +2126,7 @@ try {
   await page.locator('.dock-left').waitFor()
 
   // -- command palette: keyboard-only, trapped, and restoring focus ---------
-  await page.locator('.primary-tools .tool-button', { hasText: 'Select' }).focus()
+  await page.locator('.primary-tools').getByRole('radio', { name: 'Select' }).focus()
   await page.keyboard.press('ControlOrMeta+p')
   const commandPalette = page.getByRole('dialog', { name: 'Command palette' })
   await commandPalette.waitFor({ timeout: 10_000 })
@@ -1999,7 +2180,8 @@ try {
   await commandPalette.waitFor({ state: 'hidden' })
   assert(
     await page
-      .locator('.primary-tools .tool-button', { hasText: 'Select' })
+      .locator('.primary-tools')
+      .getByRole('radio', { name: 'Select' })
       .evaluate((node) => document.activeElement === node),
     'Closing the command palette did not restore focus to whatever opened it',
   )
@@ -2146,7 +2328,9 @@ try {
 
   // -- contrast -------------------------------------------------------------
   // Sampled on the text that carries meaning rather than blanket-scanned: the
-  // status bar, the dock headers, the tool labels and the palette copy.
+  // status bar, the dock headers and the palette copy. The tool rail is not
+  // sampled: its buttons render an icon and name themselves through
+  // `aria-label`, so there is no text on them to measure.
   // Exclusive dock sheets unmount their bodies, so Transform and Selection
   // are sampled after revealing each surface on its own.
   // The right dock stays shut until something asks for it, and its section
@@ -2157,7 +2341,6 @@ try {
     ['.statusbar .status-scope', 4.5],
     ['.statusbar .status-hint', 4.5],
     ['.dock-section-toggle h3', 4.5],
-    ['.tool-button.active span', 4.5],
     ['.part-copy strong', 4.5],
     ['.dock-head .eyebrow', 3],
     ['.part-copy span', 3],

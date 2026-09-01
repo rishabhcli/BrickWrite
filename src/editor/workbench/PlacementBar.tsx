@@ -17,6 +17,12 @@ export const placementMessage = (preview: ResolvedPlacement | null) => {
 export function PlacementBar({ workbench: w, preview }: { workbench: Workbench; preview: ResolvedPlacement | null }) {
   if (!w.placement || !w.placementDefinition) return null
   const message = placementMessage(preview)
+  // The bar is icon-only on purpose, and the ghost under the cursor shows the
+  // shape — but "what am I about to place" was reaching nobody who cannot see
+  // it. Arming from the keyboard announced a placement state with no subject
+  // at all. The name goes into the status element's accessible text and its
+  // tooltip, where it costs no visible chrome.
+  const announced = `${w.placementDefinition.name}: ${message}`
   return (
     <GlassIsland
       className="placement-bar"
@@ -24,9 +30,9 @@ export function PlacementBar({ workbench: w, preview }: { workbench: Workbench; 
       role="toolbar"
       aria-label="Placement controls"
     >
-      <span className="placement-feedback" role="status" aria-label={message} title={message}>
+      <span className="placement-feedback" role="status" aria-label={announced} title={announced}>
         {preview && !preview.legal ? <CircleAlert size={16} /> : <Check size={16} />}
-        <span className="visually-hidden">{message}</span>
+        <span className="visually-hidden">{announced}</span>
       </span>
       <button aria-label="Rotate placement counterclockwise" title="Rotate left (Shift+R)" onClick={() => w.rotatePlacement(-1)}>
         <RotateCcw size={16} />

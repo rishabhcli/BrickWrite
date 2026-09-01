@@ -221,7 +221,7 @@ Moved to `workbench/TimelinePanel.tsx`, unchanged, now in a collapsible bottom d
 |---|---|
 | `CommandDeck` — all 26 shared mutation capabilities, search, scope, per-capability controls, disabled reasons, proof strip, agent-equivalent line | unchanged file, opened from the toolbar, `⌘/`, or the command palette |
 | `ShortcutGuide` (`?`) with replay-welcome | unchanged file |
-| `WelcomeGuide` first-run, `markWelcomeSeen` / `welcomeUnseen` | unchanged file, opened by `Workbench`'s boot effect |
+| `WelcomeGuide`, `markWelcomeSeen` | unchanged file; never opens itself, reached from `ShortcutGuide`'s "Show the welcome guide" |
 | Toast: success / error / info, 3.6 s auto-dismiss, manual dismiss | `useWorkbench` + `Workbench.tsx` |
 
 ### 2.8 Actions and the command bus
