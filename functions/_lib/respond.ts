@@ -116,3 +116,76 @@ export function presentedToken(url: URL): string | null {
   const value = url.searchParams.get('t')
   return value && value.length <= 256 ? value : null
 }
+
+/**
+ * The cookie an unlisted link is exchanged for.
+ *
+ * `?t=` is a fine way to *deliver* a secret and a bad way to keep presenting
+ * one: a query string is written into Cloudflare's access log, the visitor's
+ * browser history and session restore, and every proxy in between.
+ * `redactShareUrl` covers the strings this application echoes and can reach
+ * none of those. So the parameter is a bootstrap — presented once, exchanged,
+ * and redirected away.
+ *
+ * One cookie per publication, scoped by `Path`, so a link to one unlisted model
+ * is never sent to another. `__Host-` is deliberately not used: that prefix
+ * requires `Path=/`, which is the opposite of the scoping wanted here.
+ */
+const SHARE_COOKIE = 'bw_share_link'
+
+/** The share path a cookie for `slug` is scoped to. */
+const sharePath = (slug: string) => `/share/${encodeURIComponent(slug)}`
+
+export function cookieToken(request: Request, slug: string): string | null {
+  const header = request.headers.get('cookie')
+  if (!header) return null
+  const name = `${SHARE_COOKIE}_${cookieSuffix(slug)}`
+  for (const entry of header.split(';')) {
+    const separator = entry.indexOf('=')
+    if (separator < 0) continue
+    if (entry.slice(0, separator).trim() !== name) continue
+    const value = decodeURIComponent(entry.slice(separator + 1).trim())
+    return value.length > 0 && value.length <= 256 ? value : null
+  }
+  return null
+}
+
+/**
+ * A cookie name derived from the slug.
+ *
+ * Slugs are already `[a-z0-9-]`, but a cookie name may not contain `-`-adjacent
+ * surprises from a future slug format, and it must stay short. Non-word
+ * characters are folded rather than escaped: a collision between two slugs
+ * costs nothing, because `Path` is what actually scopes the cookie.
+ */
+const cookieSuffix = (slug: string) => slug.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64)
+
+/**
+ * Trades a working token for a cookie and sends the visitor to the clean URL.
+ *
+ * 303 rather than 302: the visitor is being sent to a different resource
+ * representation, and 303 is unambiguously a GET. `Cache-Control: no-store`
+ * because the response carries a credential in a header.
+ */
+export function exchangeTokenForCookie(slug: string, token: string): Response {
+  const path = sharePath(slug)
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: path,
+      'Set-Cookie': [
+        `${SHARE_COOKIE}_${cookieSuffix(slug)}=${encodeURIComponent(token)}`,
+        `Path=${path}`,
+        'HttpOnly',
+        'Secure',
+        // `Lax`, not `None`: this cookie is for someone following a link, and a
+        // third-party frame is what `/embed/:slug` is for. Widening it to
+        // `None` would make every embed on any site a carrier for the secret.
+        'SameSite=Lax',
+        'Max-Age=2592000',
+      ].join('; '),
+      'Cache-Control': 'private, no-store',
+      ...baseSecurityHeaders(),
+    },
+  })
+}

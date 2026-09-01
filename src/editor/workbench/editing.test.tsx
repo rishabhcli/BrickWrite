@@ -133,6 +133,23 @@ describe('numeric drafts', () => {
 })
 
 describe('editor transactions', () => {
+  it('positions a selection from its measured centre as one undoable edit', () => {
+    const { result } = renderHook(useWorkbench)
+    act(() => cadEngine.setSelection(['a', 'b']))
+    expect(result.current.selectionPosition[0]).toBeCloseTo(60)
+
+    act(() => {
+      expect(result.current.positionSelection(0, 200)).toBe(true)
+    })
+
+    expect(cadEngine.getDocument().parts.a.transform.position[0]).toBeCloseTo(140)
+    expect(cadEngine.getDocument().parts.b.transform.position[0]).toBeCloseTo(260)
+    expect(cadEngine.getDocument().revision).toBe(1)
+    act(() => cadEngine.undo('human'))
+    expect(cadEngine.getDocument().parts.a.transform.position[0]).toBe(0)
+    expect(cadEngine.getDocument().parts.b.transform.position[0]).toBe(120)
+  })
+
   it('duplicates an elevated brick onto the ground in a clear lane', () => {
     const document = fixture()
     document.parts.b.transform = { position: [0, -48, 0], basis: IDENTITY_BASIS }

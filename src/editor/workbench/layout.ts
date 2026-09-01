@@ -59,7 +59,7 @@ export const LAYOUT_PRESETS: Record<
     hint: '13–14 inch. Narrow docks, short timeline, viewport first.',
     layout: {
       left: { size: 224, collapsed: false },
-      right: { size: 260, collapsed: true },
+      right: { size: 276, collapsed: false },
       bottom: { size: 124, collapsed: true },
       preset: 'laptop',
       rightTab: 'design',
@@ -70,7 +70,7 @@ export const LAYOUT_PRESETS: Record<
     hint: '1600–1920 wide. The default balance.',
     layout: {
       left: { size: 268, collapsed: false },
-      right: { size: 300, collapsed: true },
+      right: { size: 316, collapsed: false },
       bottom: { size: 152, collapsed: true },
       preset: 'desktop',
       rightTab: 'design',
@@ -81,7 +81,7 @@ export const LAYOUT_PRESETS: Record<
     hint: '2560 and wider. Both docks open at full width.',
     layout: {
       left: { size: 340, collapsed: false },
-      right: { size: 392, collapsed: true },
+      right: { size: 392, collapsed: false },
       bottom: { size: 168, collapsed: true },
       preset: 'ultrawide',
       rightTab: 'design',
@@ -185,16 +185,17 @@ export const COLLAPSED_RAIL = 34
 /** Height of a collapsed bottom dock. */
 export const COLLAPSED_BAR = 0
 /** Must match `.app-shell` in `workbench.css` and the Workbench inline grid. */
-export const TOPBAR_HEIGHT = 44
+export const TOPBAR_HEIGHT = 52
 /** The tools float inside the viewport now; no permanent grid strip is reserved. */
 export const TOOLRAIL_HEIGHT = 0
 export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
-// v3 starts with a truly build-first workspace: both the timeline and the verbose inspector are closed. Earlier keys are deliberately
-// not migrated so the simplification is visible to existing operators.
-const STORAGE_KEY = 'layout.v3'
+// v4 puts the creative surface back on screen and promotes the core tools out
+// of the old Workspace menu. Earlier geometry stays isolated so every operator
+// receives the discoverable layout rather than a persisted collapsed rail.
+const STORAGE_KEY = 'layout.v4'
 
 export function loadLayout(viewportWidth: number): WorkbenchLayout {
   const stored = readPreference<WorkbenchLayout | null>(STORAGE_KEY, null)

@@ -121,6 +121,40 @@
 .bw-gen textarea::placeholder { color: var(--bw-g-faint); }
 
 .bw-gen__hint { color: var(--bw-g-faint); font-size: 10px; margin: 0; }
+.bw-gen__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bw-gen__starters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.bw-gen__starters button {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border: 1px solid var(--bw-g-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bw-g-panel-2) 92%, transparent);
+  color: var(--bw-g-muted);
+  font: 700 9px var(--bw-g-display);
+  cursor: pointer;
+}
+.bw-gen__starters button:hover {
+  border-color: color-mix(in srgb, var(--bw-g-cyan) 45%, transparent);
+  background: color-mix(in srgb, var(--bw-g-cyan) 8%, var(--bw-g-panel-2));
+  color: var(--bw-g-cyan);
+}
+.bw-gen__starters button span { line-height: 1; }
 
 /* -- brief ---------------------------------------------------------------- */
 
@@ -546,4 +580,3 @@
 .bw-gen-dialog__table td[data-tone='good'] { color: var(--bw-g-green); }
 .bw-gen-dialog__table td[data-tone='bad'] { color: var(--bw-g-red); }
 .bw-gen-dialog__table td[data-selected='true'] { background: color-mix(in srgb, var(--bw-g-cyan) 8%, transparent); }
-

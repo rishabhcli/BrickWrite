@@ -100,7 +100,7 @@ describe('the shipped demo manifest', () => {
 
     expect(hero.id).toBe('illinois-main-quad')
     expect(hero.validation.partCount).toBeGreaterThanOrEqual(10_000)
-    expect(showcase).toEqual({ landmarkCount: 7, characterCount: 21, siteFinishParts: 9_600 })
+    expect(showcase).toEqual({ landmarkCount: 9, characterCount: 21, siteFinishParts: 11_264 })
     expect(Object.values(document.parts).filter((part) => part.definitionId === '90398')).toHaveLength(
       showcase!.characterCount,
     )

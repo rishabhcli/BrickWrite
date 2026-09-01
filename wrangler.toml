@@ -11,6 +11,22 @@ SHARE_ORIGIN = "https://brickwrite.tech"
 binding = "SHARE_KV"
 id = "5bcfe6a058614b66beae3449cb211b2b"
 
+# The counter that is actually in force. `functions/api/[[route]].ts` consults
+# it whenever API_RATE_LIMITER is absent, which on Pages is always — see below.
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
 id = "57b3c96243a842dc8e3cb2254915fa60"
+
+# No [[ratelimits]] binding here, though the code prefers one.
+#
+# Wrangler refuses the whole deploy with "Configuration file for Pages projects
+# does not support ratelimits" — the binding is a Workers feature, and this
+# project is Pages. It was added here unvalidated, and because the run that
+# introduced it never reached the deploy job, the first deployment to actually
+# read this file was the one it broke.
+#
+# So the ceiling in production is the RATE_LIMIT_KV counter above, which
+# `functions/api/[[route]].ts` already implements as a supported mode: read,
+# modify, write, failing closed. It holds on average rather than exactly, and
+# the overshoot is bounded by concurrency. Restoring the atomic counter means
+# moving the API proxy to a Worker, not editing this file.

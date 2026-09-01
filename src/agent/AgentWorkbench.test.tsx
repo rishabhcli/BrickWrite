@@ -49,6 +49,13 @@ describe('AgentWorkbench', () => {
     expect(screen.getByRole('log', { name: 'Conversation' })).toBeInTheDocument()
   })
 
+  it('puts a starter into the composer without sending it prematurely', () => {
+    mount([])
+    fireEvent.click(screen.getByRole('button', { name: 'Improve' }))
+    expect(composer()).toHaveValue('Improve @selection while preserving its silhouette and palette.')
+    expect(screen.queryByText('You')).not.toBeInTheDocument()
+  })
+
   it('shows the document revision it is grounded on', () => {
     mount([])
     expect(screen.getByLabelText('Document revision 1')).toHaveTextContent('r1')
@@ -77,7 +84,9 @@ describe('AgentWorkbench', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     })
     await waitFor(() => expect(session.getState().status).toBe('streaming'))
-    expect(screen.getAllByRole('status').some((node) => /Replying|Waiting for the model/.test(node.textContent ?? ''))).toBe(true)
+    expect(
+      screen.getAllByRole('status').some((node) => /Replying|Waiting for the model/.test(node.textContent ?? '')),
+    ).toBe(true)
 
     release()
     await pending
@@ -126,7 +135,11 @@ describe('AgentWorkbench', () => {
 
   it('reviews a proposed wave, and accepting it moves the document', async () => {
     const { session } = mount([
-      { toolCalls: [{ name: 'preflight_capability', input: { capability: 'rename_document', args: { name: 'Rover Mk II' } } }] },
+      {
+        toolCalls: [
+          { name: 'preflight_capability', input: { capability: 'rename_document', args: { name: 'Rover Mk II' } } },
+        ],
+      },
       { text: ['One wave ready for review.'] },
     ])
     await send('Rename the project')
@@ -146,7 +159,9 @@ describe('AgentWorkbench', () => {
 
   it('rejects a wave without touching the document', async () => {
     mount([
-      { toolCalls: [{ name: 'preflight_capability', input: { capability: 'rename_document', args: { name: 'Nope' } } }] },
+      {
+        toolCalls: [{ name: 'preflight_capability', input: { capability: 'rename_document', args: { name: 'Nope' } } }],
+      },
       { text: ['Ready.'] },
     ])
     await send('Rename the project')
@@ -184,7 +199,10 @@ describe('AgentWorkbench', () => {
       {
         toolCalls: [
           { name: 'scene_overview', input: {} },
-          { name: 'preflight_capability', input: { capability: 'create_subassembly', args: { name: 'Ghost', partIds: ['part_nope'] } } },
+          {
+            name: 'preflight_capability',
+            input: { capability: 'create_subassembly', args: { name: 'Ghost', partIds: ['part_nope'] } },
+          },
         ],
       },
       { text: ['One of those failed.'] },

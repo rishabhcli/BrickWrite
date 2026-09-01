@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { GlassPanel } from '../ui/liquid'
-import { Ban, Check, CircleAlert, Columns3, Eye, Play, Wand2, X } from 'lucide-react'
+import { Ban, Bird, Building2, CarFront, Check, CircleAlert, Columns3, Eye, Play, Wand2, X } from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
 import { maskedContentProps } from '../platform/analytics'
 import { BriefEditor } from './BriefEditor'
@@ -53,8 +53,9 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
   return (
     <GlassPanel as="section" className="bw-gen" aria-label="Generate">
       <label className="bw-gen__field">
-        <span>What should be built</span>
+        <span>Describe the build</span>
         <textarea
+          aria-label="What should be built"
           data-generation-prompt=""
           rows={3}
           value={state.prompt}
@@ -64,19 +65,58 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
           {...maskedContentProps('design-prompt')}
         />
       </label>
+      {!state.brief && state.briefPhase === 'idle' && (
+        <div className="bw-gen__starters" aria-label="Build starters">
+          <button
+            type="button"
+            title="Start with an architectural build"
+            onClick={() =>
+              session.setPrompt(
+                'A landmark tower with a strong silhouette, accessible interior, and fewer than 500 parts.',
+              )
+            }
+          >
+            <Building2 size={15} aria-hidden="true" /> <span>Place</span>
+          </button>
+          <button
+            type="button"
+            title="Start with a vehicle"
+            onClick={() =>
+              session.setPrompt('A rugged exploration vehicle with working steering, storage, and a removable roof.')
+            }
+          >
+            <CarFront size={15} aria-hidden="true" /> <span>Vehicle</span>
+          </button>
+          <button
+            type="button"
+            title="Start with a creature"
+            onClick={() =>
+              session.setPrompt('A large expressive animal sculpture with a stable pose and articulated head.')
+            }
+          >
+            <Bird size={15} aria-hidden="true" /> <span>Creature</span>
+          </button>
+        </div>
+      )}
       <div className="bw-gen__actions">
         <button
           className="bw-gen__btn bw-gen__btn--primary"
+          aria-label={state.brief ? 'Recompile brief' : 'Compile brief'}
           onClick={() => void session.compile()}
           disabled={!state.prompt.trim() || state.briefPhase === 'compiling' || state.runPhase === 'running'}
         >
           <Wand2 size={11} aria-hidden="true" />
-          {state.brief ? 'Recompile brief' : 'Compile brief'}
+          {state.brief ? 'Update plan' : 'Plan build'}
         </button>
       </div>
 
       {state.briefPhase === 'idle' && !state.brief && (
-        <p className="bw-gen__hint">Describe it, then check the brief. Nothing is written until you accept a ghost.</p>
+        <>
+          <p className="bw-gen__hint">Preview first. Add it when it feels right.</p>
+          <p className="bw-gen__sr-only">
+            Describe it, then check the brief. Nothing is written until you accept a ghost.
+          </p>
+        </>
       )}
 
       {state.briefPhase === 'compiling' && (
@@ -224,8 +264,8 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
         <>
           <div className="bw-gen__actions">
             <h3 style={{ flex: 1 }}>
-              {candidates.length} candidate{candidates.length === 1 ? '' : 's'} ·{' '}
-              {state.run?.distinctHashes ?? 0} distinct structure{state.run?.distinctHashes === 1 ? '' : 's'}
+              {candidates.length} candidate{candidates.length === 1 ? '' : 's'} · {state.run?.distinctHashes ?? 0}{' '}
+              distinct structure{state.run?.distinctHashes === 1 ? '' : 's'}
             </h3>
             <button className="bw-gen__btn" onClick={() => api.openModal(COMPARE_MODAL_ID)}>
               <Columns3 size={11} aria-hidden="true" /> Compare
@@ -331,7 +371,8 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
           <span>
             Tokens{' '}
             <b className="bw-gen__num">
-              {state.run.inference.inputTokens.toLocaleString()} in · {state.run.inference.outputTokens.toLocaleString()} out
+              {state.run.inference.inputTokens.toLocaleString()} in ·{' '}
+              {state.run.inference.outputTokens.toLocaleString()} out
             </b>
           </span>
           {state.run.notes.map((note) => (

@@ -1,7 +1,14 @@
 import { Box, Focus, Grid3X3, Magnet, Scan } from 'lucide-react'
-import type { CameraView } from '../CadViewport'
 import { GlassIsland } from '../../ui/liquid'
 import type { Workbench } from './useWorkbench'
+
+const GRID_PRESETS = [
+  { value: 20, short: '1S', label: '1 stud' },
+  { value: 10, short: '½S', label: 'half stud' },
+  { value: 8, short: '1P', label: '1 plate' },
+  { value: 4, short: '4', label: '4 LDU' },
+  { value: 1, short: '1', label: '1 LDU' },
+] as const
 
 /**
  * Frequently changed modelling controls, in one row over the model.
@@ -18,18 +25,6 @@ export function ViewportQuickControls({ workbench: w }: { workbench: Workbench }
   return (
     <div className="viewport-quick-controls" role="toolbar" aria-label="Viewport quick controls">
       <GlassIsland className="viewport-control-row" radius="section" blur="control">
-        <select
-          aria-label="Camera view"
-          value={w.cameraView}
-          onChange={(event) => w.setCameraView(event.target.value as CameraView)}
-        >
-          <option value="isometric">Isometric</option>
-          <option value="front">Front</option>
-          <option value="rear">Back</option>
-          <option value="left">Left</option>
-          <option value="right">Right</option>
-          <option value="top">Top</option>
-        </select>
         {/* `Box` rather than `Scan`: the projection toggle and Focus selection
             two buttons along were drawn with the same glyph at two sizes, so
             the toolbar showed one icon meaning two unrelated things. */}
@@ -57,18 +52,21 @@ export function ViewportQuickControls({ workbench: w }: { workbench: Workbench }
 
         <hr className="viewport-control-divider" />
 
-        <Grid3X3 size={13} />
-        <select
-          aria-label="Quick grid snap"
-          value={w.gridLdu}
-          onChange={(event) => w.setGridLdu(Number(event.target.value))}
-        >
-          <option value={20}>1 stud</option>
-          <option value={10}>½ stud</option>
-          <option value={8}>1 plate</option>
-          <option value={4}>4 LDU</option>
-          <option value={1}>1 LDU</option>
-        </select>
+        <Grid3X3 size={13} aria-hidden="true" />
+        <div className="grid-preset-group" role="group" aria-label="Grid snap increment">
+          {GRID_PRESETS.map((preset) => (
+            <button
+              type="button"
+              key={preset.value}
+              aria-label={`Snap ${preset.label}`}
+              aria-pressed={w.gridLdu === preset.value}
+              title={`Snap to ${preset.label}`}
+              onClick={() => w.setGridLdu(preset.value)}
+            >
+              {preset.short}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           aria-label="Connector snapping"

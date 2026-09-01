@@ -1,41 +1,32 @@
 import {
-  ListOrdered,
-  CircleHelp,
-  Command,
   Copy,
   CopyPlus,
   ClipboardPaste,
   Scissors,
-  Layers3,
-  Link2,
   Lock,
-  MousePointer2,
   Hand,
-  Move3d,
   Redo2,
   Rotate3d,
   Search,
-  Settings2,
   Trash2,
   Undo2,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { GlassIsland } from '../../ui/liquid'
 import type { RenderMode } from '../CadViewport'
 import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
+import { WorkbenchIcon } from './WorkbenchIcons'
 import type { Workbench } from './useWorkbench'
 
 /**
- * The deliberately small tool rail.
+ * The always-reachable tool shelf.
  *
- * The previous version placed every possible action in one permanent row. That
- * made first use feel like learning a cockpit and left most controls disabled.
- * The rail now shows the four modelling modes, selection actions only when a
- * selection exists, and the three universal history/search controls. Render
- * mode, delivery and help live together behind Workspace; camera and snap sit
- * on the row over the model, which is the only place they are stated.
+ * Modelling modes stay at the left, contextual actions appear only when they can
+ * do something, and the durable tools stay at the right. Nothing essential is
+ * hidden under a generic gear: render, build order, command tools, help and
+ * delivery each have a first-class control with an honest accessible name.
  */
 export function Toolbar({
   workbench,
@@ -53,34 +44,6 @@ export function Toolbar({
   const { state, tool, setTool } = workbench
   const selected = state.selection.length
   const chord = (id: string) => formatChord(shortcuts[id])
-  const [workspaceOpen, setWorkspaceOpen] = useState(false)
-  const menuRoot = useRef<HTMLDivElement>(null)
-  const workspaceTrigger = useRef<HTMLButtonElement>(null)
-
-  // Closing the popover destroys whichever item was activated, so the caret has
-  // to be handed back to the trigger first. A modal opened from in here reads
-  // `document.activeElement` when it mounts to know where to return focus on
-  // close; without this it would capture `<body>` and strand a keyboard user.
-  const closeWorkspace = useCallback(() => {
-    workspaceTrigger.current?.focus()
-    setWorkspaceOpen(false)
-  }, [])
-
-  useEffect(() => {
-    if (!workspaceOpen) return
-    const dismiss = (event: PointerEvent) => {
-      if (!menuRoot.current?.contains(event.target as Node)) setWorkspaceOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeWorkspace()
-    }
-    window.addEventListener('pointerdown', dismiss)
-    window.addEventListener('keydown', escape)
-    return () => {
-      window.removeEventListener('pointerdown', dismiss)
-      window.removeEventListener('keydown', escape)
-    }
-  }, [workspaceOpen, closeWorkspace])
 
   return (
     <GlassIsland className="toolbar-island">
@@ -88,28 +51,28 @@ export function Toolbar({
         <div className="toolgroup primary-tools" role="radiogroup" aria-label="Active tool">
           <ToolButton
             active={tool === 'select'}
-            icon={<MousePointer2 />}
+            icon={<WorkbenchIcon name="select" />}
             label="Select"
             shortcut={chord('tool.select')}
             onClick={() => setTool('select')}
           />
           <ToolButton
             active={tool === 'move'}
-            icon={<Move3d />}
+            icon={<WorkbenchIcon name="move" />}
             label="Move"
             shortcut={chord('tool.move')}
             onClick={() => setTool('move')}
           />
           <ToolButton
             active={tool === 'rotate'}
-            icon={<Rotate3d />}
+            icon={<WorkbenchIcon name="rotate" />}
             label="Rotate"
             shortcut={chord('tool.rotate')}
             onClick={() => setTool('rotate')}
           />
           <ToolButton
             active={tool === 'connect'}
-            icon={<Link2 />}
+            icon={<WorkbenchIcon name="connect" />}
             label="Connect"
             shortcut={chord('tool.connect')}
             onClick={() => setTool('connect')}
@@ -122,11 +85,11 @@ export function Toolbar({
             <div className="toolgroup compact-tools selection-tools" aria-label={`${selected} selected`}>
               <span className="selection-tool-count">{selected}</span>
               {/* First, because moving the thing you just selected is the most
-                * common next action — and until now the only always-visible
-                * control named after it was the Move *tool*, which arms a
-                * translate gizmo rather than picking the part up. Someone
-                * hunting for how to move a brick found that button, dragged,
-                * got nothing, and concluded the editor could not do it. */}
+               * common next action — and until now the only always-visible
+               * control named after it was the Move *tool*, which arms a
+               * translate gizmo rather than picking the part up. Someone
+               * hunting for how to move a brick found that button, dragged,
+               * got nothing, and concluded the editor could not do it. */}
               <IconButton
                 icon={<Hand />}
                 label="Reposition"
@@ -210,91 +173,47 @@ export function Toolbar({
           />
         </div>
 
-        {onToggleTimeline && <IconButton icon={<ListOrdered />} label="Build timeline" active={timelineOpen} onClick={onToggleTimeline} />}
+        <div className="rail-divider" />
 
-        <div className="workspace-menu" ref={menuRoot}>
-          <button
-            type="button"
-            ref={workspaceTrigger}
-            className={`workspace-trigger ${workspaceOpen ? 'active' : ''}`}
-            aria-expanded={workspaceOpen}
-            aria-haspopup="dialog"
-            aria-label="Workspace"
-            title="Workspace"
-            onClick={() => setWorkspaceOpen((open) => !open)}
-          >
-            <Settings2 size={15} />
-          </button>
-
-          {workspaceOpen && (
-            <GlassIsland className="workspace-popover" role="dialog" aria-label="Workspace actions">
-              <header>
-                <div>
-                  <span className="eyebrow">WORKSPACE</span>
-                  <strong>View and delivery</strong>
-                </div>
-                <kbd>{chord('project.command-palette')}</kbd>
-              </header>
-
-              {/* Snap and Camera used to sit here too.
-                *
-                * Both are already on the row floating over the model, which is
-                * visible without opening anything and offers more: six camera
-                * views against this menu's three-and-Fit. Worse, the two copies
-                * had never agreed on what to call the values — this menu said
-                * "Stud grid" and "Fine LDU" where the viewport row said "1
-                * stud" and "1 LDU" — so the same two settings appeared under
-                * four names. Render stays: five of its six modes exist nowhere
-                * else. */}
-              <section>
-                <span className="workspace-label">Render</span>
-                <label className="workspace-select">
-                  <Layers3 size={14} />
-                  <select
-                    value={workbench.renderMode}
-                    onChange={(event) => workbench.setRenderMode(event.target.value as RenderMode)}
-                    aria-label="Viewport render mode"
-                  >
-                    <option value="beauty">Beauty</option>
-                    <option value="orthographic">Orthographic</option>
-                    <option value="connections">Connections</option>
-                    <option value="violations">Violations</option>
-                    <option value="silhouette">Silhouette</option>
-                    <option value="exploded">Exploded</option>
-                  </select>
-                </label>
-              </section>
-
-              <section>
-                <span className="workspace-label">More</span>
-                <div className="workspace-list">
-                  <MenuButton
-                    icon={<Command />}
-                    label="Command deck"
-                    detail={chord('project.command-deck')}
-                    onClick={() => {
-                      closeWorkspace()
-                      workbench.setModal('core:command-deck')
-                    }}
-                  />
-                  <MenuButton
-                    icon={<CircleHelp />}
-                    label="Keyboard shortcuts"
-                    detail={chord('help.shortcuts')}
-                    onClick={() => {
-                      closeWorkspace()
-                      workbench.setModal('core:shortcuts')
-                    }}
-                  />
-                </div>
-                <Slot id="toolbar" />
-              </section>
-
-              <footer>
-                <ExportCenter state={state} onImport={onImport} onNotice={workbench.notify} />
-              </footer>
-            </GlassIsland>
+        <div className="toolgroup compact-tools direct-tools" aria-label="Workspace tools">
+          <label className="render-direct" title={`Render mode: ${workbench.renderMode}`}>
+            <WorkbenchIcon name="render" size={16} />
+            <span className="visually-hidden">Viewport render mode</span>
+            <select
+              value={workbench.renderMode}
+              onChange={(event) => workbench.setRenderMode(event.target.value as RenderMode)}
+              aria-label="Viewport render mode"
+            >
+              <option value="beauty">Beauty</option>
+              <option value="orthographic">Orthographic</option>
+              <option value="connections">Connections</option>
+              <option value="violations">Violations</option>
+              <option value="silhouette">Silhouette</option>
+              <option value="exploded">Exploded</option>
+            </select>
+          </label>
+          {onToggleTimeline && (
+            <IconButton
+              icon={<WorkbenchIcon name="timeline" />}
+              label="Build timeline"
+              active={timelineOpen}
+              onClick={onToggleTimeline}
+            />
           )}
+          <IconButton
+            icon={<WorkbenchIcon name="commands" />}
+            label="Command deck"
+            shortcut={chord('project.command-deck')}
+            onClick={() => workbench.setModal('core:command-deck')}
+          />
+          <IconButton
+            icon={<WorkbenchIcon name="help" />}
+            label="Keyboard shortcuts"
+            shortcut={chord('help.shortcuts')}
+            onClick={() => workbench.setModal('core:shortcuts')}
+          />
+          <Slot id="toolbar" />
+          <ExportCenter state={state} onImport={onImport} onNotice={workbench.notify} />
         </div>
       </nav>
     </GlassIsland>
@@ -360,28 +279,6 @@ function IconButton({
       title={title}
     >
       {icon}
-    </button>
-  )
-}
-
-function MenuButton({
-  icon,
-  label,
-  detail,
-  active,
-  onClick,
-}: {
-  icon: ReactElement
-  label: string
-  detail?: string
-  active?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button type="button" className={`workspace-action ${active ? 'active' : ''}`} onClick={onClick}>
-      {icon}
-      <span>{label}</span>
-      {detail ? <kbd>{detail}</kbd> : null}
     </button>
   )
 }

@@ -132,6 +132,25 @@ function pass(message) {
   process.stdout.write(`  ok    ${message}\n`)
 }
 
+/**
+ * A screenshot taken to look at later, not to assert on.
+ *
+ * `Page.captureScreenshot` can come back "Unable to capture screenshot" when
+ * the runner's compositor is under pressure — it did on 89d035a, after every
+ * behavioural assertion in this suite had already passed, and took the deploy
+ * with it. A picture nobody measures must not be able to do that, so the miss
+ * is reported as a note and the run carries on.
+ */
+async function diagnosticShot(page, options) {
+  try {
+    await page.screenshot(options)
+  } catch (cause) {
+    const file = path.basename(options.path)
+    notes.push(`${file} was not captured: ${cause.message.split('\n')[0]}`)
+    process.stdout.write(`  note  ${file} was not captured (diagnostic only)\n`)
+  }
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -757,7 +776,7 @@ try {
     }
     await page.waitForTimeout(4000)
     const measured = await page.evaluate(() => window.__vitals)
-    await page.screenshot({ path: path.join(ARTIFACTS, 'landing-production.png'), fullPage: true })
+    await diagnosticShot(page, { path: path.join(ARTIFACTS, 'landing-production.png'), fullPage: true })
     await context.close()
     return {
       vitals: measured,

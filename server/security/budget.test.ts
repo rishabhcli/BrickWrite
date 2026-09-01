@@ -137,3 +137,75 @@ describe('a per-user spend ceiling', () => {
     expect(DEFAULT_DAILY_TOKEN_CEILING).toBeGreaterThanOrEqual(1_000_000)
   })
 })
+
+describe('atomic metering', () => {
+  /** A store whose increment is a single indivisible operation. */
+  const atomic = (): BudgetStore & { readonly rows: Map<string, number>; reads: number } => {
+    const rows = new Map<string, number>()
+    return {
+      rows,
+      reads: 0,
+      async read(key) {
+        this.reads += 1
+        const value = rows.get(key)
+        return value === undefined ? null : String(value)
+      },
+      async write(key, value) {
+        rows.set(key, Number.parseInt(value, 10))
+      },
+      async increment(key, by) {
+        const next = (rows.get(key) ?? 0) + by
+        rows.set(key, next)
+        return next
+      },
+    }
+  }
+
+  it('uses the atomic increment when the store offers one', async () => {
+    const store = atomic()
+    configureBudget(store, 1000)
+    await recordUsage('user_atomic', { inputTokens: 100, outputTokens: 0 })
+    expect([...store.rows.values()]).toEqual([100])
+    // The read-modify-write path must not run: its read is what makes two
+    // concurrent writers lose an increment.
+    expect(store.reads).toBe(0)
+  })
+
+  it('does not lose an increment when writers overlap', async () => {
+    const store = atomic()
+    configureBudget(store, 100_000)
+    await Promise.all(
+      Array.from({ length: 25 }, () => recordUsage('user_race', { inputTokens: 40, outputTokens: 0 })),
+    )
+    expect([...store.rows.values()]).toEqual([25 * 40])
+  })
+
+  it('still meters through read-modify-write when the store has no increment', async () => {
+    const store = memory()
+    configureBudget(store, 1000)
+    await recordUsage('user_legacy', { inputTokens: 100, outputTokens: 0 })
+    expect([...store.rows.values()]).toEqual(['100'])
+  })
+
+  it('reports the ceiling as exhausted once the atomic counter passes it', async () => {
+    const store = atomic()
+    configureBudget(store, 500)
+    await recordUsage('user_over', { inputTokens: 600, outputTokens: 0 })
+    const verdict = await checkBudget('user_over')
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.code).toBe('budget_exhausted')
+  })
+
+  it('never throws when the atomic increment fails', async () => {
+    configureBudget({
+      async read() {
+        return null
+      },
+      async write() {},
+      async increment() {
+        throw new Error('counter unreachable')
+      },
+    })
+    await expect(recordUsage('user_h', { inputTokens: 10, outputTokens: 10 })).resolves.toBeUndefined()
+  })
+})

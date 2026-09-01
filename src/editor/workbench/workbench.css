@@ -7685,7 +7685,7 @@
 /* Modelling controls stay within reach, without covering the building surface. */
 .viewport-quick-controls {
   position: absolute;
-  top: 40px;
+  top: 70px;
   left: 14px;
   z-index: 5;
   display: grid;
@@ -7705,6 +7705,28 @@
   color: var(--muted);
 }
 .viewport-control-row > svg { margin-left: 6px; }
+.grid-preset-group {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid #ffffff0b;
+  border-radius: 8px;
+  background: #02070842;
+}
+.viewport-control-row .grid-preset-group button {
+  min-width: 26px;
+  height: 23px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: #71868a;
+  font: 700 8px var(--display);
+}
+.viewport-control-row .grid-preset-group button[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--cyan) 30%, transparent);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  color: var(--cyan);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--cyan) 52%, transparent);
+}
 /* Camera on one side, grid on the other. Without it the merged row reads as
    six unrelated buttons; with it, as two answers to two questions. */
 .viewport-control-divider {
@@ -8081,6 +8103,200 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .placement-coordinates { display: block; margin-top: 10px; padding-top: 9px; border-top: 9px solid var(--line); color: var(--faint); font: 10px var(--display); }
 .selection-actions-trigger { display: flex; align-items: center; gap: 9px; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 9px 0; background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; pointer-events: auto; }
 .selection-actions-trigger:hover { color: var(--cyan); }
+
+/* CAD heads-up layer ------------------------------------------------------
+ * These controls live over the model because their subject is the model. They
+ * are compact, bounded islands: no canvas frosting and no detached inspector
+ * trip for the six actions used during almost every edit. */
+.selection-hud {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  max-width: min(680px, calc(100% - 260px));
+  padding: 4px;
+  transform: translateX(-50%);
+  color: var(--ink);
+}
+.selection-hud-identity {
+  min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.selection-hud-identity:hover { background: #ffffff0c; }
+.selection-hud-count {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--cyan) 38%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+  color: var(--cyan);
+  font: 700 10px var(--display);
+}
+.selection-hud-name {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dbe9e8;
+  font-size: 11px;
+  font-weight: 650;
+}
+.selection-hud-position { display: flex; align-items: center; gap: 3px; }
+.selection-hud-position .number-field { width: 52px; }
+.selection-hud-position .number-field > span {
+  position: absolute;
+  width: 14px;
+  margin: 10px 0 0 6px;
+  color: #71888c;
+  pointer-events: none;
+}
+.selection-hud-position .number-field:nth-child(1) > span { color: #ff806f; }
+.selection-hud-position .number-field:nth-child(2) > span { color: #a2d975; }
+.selection-hud-position .number-field:nth-child(3) > span { color: #7ac9e6; }
+.selection-hud-position .number-field > div {
+  height: 30px;
+  border-color: #ffffff0a;
+  border-radius: 8px;
+  background: #02070838;
+}
+.selection-hud-position .number-field > div:focus-within {
+  border-color: color-mix(in srgb, var(--cyan) 48%, transparent);
+  background: #081315;
+}
+.selection-hud-position .number-field input {
+  height: 100%;
+  padding: 0 4px 0 19px;
+  color: #b7c8ca;
+  font-size: 9px;
+  text-align: right;
+}
+.selection-hud-position .number-field em { display: none; }
+.selection-hud-position .number-field.disabled { opacity: .42; }
+.selection-hud-divider {
+  width: 1px;
+  height: 22px;
+  flex: 0 0 auto;
+  margin: 0 3px;
+  background: var(--line-hi);
+}
+.selection-hud-tools { display: flex; align-items: center; gap: 2px; }
+.selection-hud-action {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #819599;
+  cursor: pointer;
+}
+.selection-hud-action:hover { border-color: #ffffff12; background: #ffffff0d; color: #d9efec; }
+.selection-hud-action[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--cyan) 32%, transparent);
+  background: color-mix(in srgb, var(--cyan) 15%, transparent);
+  color: var(--cyan);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--cyan) 58%, transparent);
+}
+
+/* Three clickable faces, three opposite/home controls. Unlike the retired
+ * select, the available camera directions stay visible and take one click. */
+.viewport-navigator {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 14px;
+  width: 78px;
+  padding: 7px 6px 5px;
+  color: #a7b9bb;
+}
+.view-cube {
+  position: relative;
+  width: 58px;
+  height: 47px;
+  margin: 0 auto 4px;
+}
+.view-cube-face {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: #71878b;
+  cursor: pointer;
+  transition: filter 120ms ease, color 120ms ease;
+}
+.view-cube-face span { font: 800 8px var(--display); }
+.view-cube-top {
+  inset: 0 6px auto;
+  height: 22px;
+  clip-path: polygon(50% 0, 100% 55%, 50% 100%, 0 55%);
+  background: #34474b;
+}
+.view-cube-front {
+  left: 6px;
+  top: 13px;
+  width: 23px;
+  height: 31px;
+  clip-path: polygon(0 0, 100% 29%, 100% 100%, 0 70%);
+  background: #26383c;
+}
+.view-cube-right {
+  right: 6px;
+  top: 13px;
+  width: 23px;
+  height: 31px;
+  clip-path: polygon(0 29%, 100% 0, 100% 70%, 0 100%);
+  background: #1d3035;
+}
+.view-cube-face:hover { z-index: 2; color: #e4fffb; filter: brightness(1.45); }
+.view-cube-face[aria-pressed='true'] { color: #08201e; background: var(--cyan); }
+.view-cube-opposites { display: grid; grid-template-columns: 1fr 27px 1fr; align-items: center; gap: 2px; }
+.view-axis, .view-home {
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #74898d;
+  cursor: pointer;
+}
+.view-axis span { font: 700 8px var(--display); }
+.view-axis:hover, .view-home:hover { background: #ffffff0d; color: #d9efec; }
+.view-axis[aria-pressed='true'], .view-home[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--cyan) 28%, transparent);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+  color: var(--cyan);
+}
+
+@media (max-width: 1160px) {
+  .selection-hud { max-width: calc(100% - 130px); }
+  .selection-hud-name, .selection-hud-divider { display: none; }
+  .selection-hud-position { display: none; }
+  .selection-hud-identity { padding-right: 4px; }
+  .selection-hud-action { width: 31px; }
+}
+@media (max-width: 760px) {
+  .selection-hud { top: 10px; max-width: calc(100% - 112px); }
+  .viewport-navigator { top: 8px; right: 8px; transform: scale(.88); transform-origin: top right; }
+}
 .part-context-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; width: 230px; max-height: calc(100dvh - 16px); overflow: auto; padding: 6px; background: #111b1ff7; border: 1px solid #4b5c60; border-radius: var(--r-panel); box-shadow: 0 14px 44px #0009; backdrop-filter: blur(var(--glass-blur-control)); }
 .part-context-heading { color: var(--faint); font: 700 10px var(--display); padding: 9px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .part-context-menu button { padding: 9px 10px; min-height: 29px; text-align: left; background: none; border: 0; border-radius: 9px; color: var(--ink); font-size: 12px; cursor: pointer; }
@@ -8137,4 +8353,413 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .viewport-empty-starter small {
   color: var(--faint);
   font: 500 10px var(--display);
+}
+/* -------------------------------------------------------------------------
+ * Reachable work surface
+ *
+ * The old shell was visually quiet because navigation, delivery, render modes,
+ * help and all three creative tools were placed behind two generic menu
+ * buttons and a collapsed rail. Quiet is useful; invisible capability is not.
+ * This layer keeps the same bounded liquid material while making the software's
+ * actual powers part of its silhouette.
+ * ------------------------------------------------------------------------- */
+.app-shell {
+  grid-template-rows: 52px 0 minmax(0, 1fr) 0 !important;
+}
+
+.topbar.glass-bar {
+  min-height: 52px;
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+}
+.topbar {
+  grid-template-columns: 198px auto minmax(210px, 1fr) auto;
+  gap: 0;
+  padding-right: 7px;
+}
+.brand-lockup {
+  padding-inline: 14px;
+}
+.topbar-nav {
+  height: 100%;
+  gap: 3px;
+  padding-inline: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.055);
+}
+.topbar-nav-link {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px !important;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+  letter-spacing: 0.035em !important;
+  text-transform: none !important;
+}
+.topbar-nav-link svg {
+  flex: none;
+  color: #8ca0a5;
+  transition:
+    color var(--motion-fast) var(--ease),
+    transform var(--motion-base) var(--spring);
+}
+.topbar-nav-link:hover {
+  border-color: rgba(131, 231, 238, 0.2);
+  background: rgba(131, 231, 238, 0.075) !important;
+}
+.topbar-nav-link:hover svg {
+  color: var(--cyan);
+  transform: translateY(-1px);
+}
+.project-menu > .project-identity {
+  padding-inline: 12px;
+}
+
+/* Four direct choices are faster to understand than Design/Object followed by
+   three more disclosure rows. The selected tool reads like a raised key. */
+.right-tool-head {
+  min-height: 54px !important;
+  height: 54px !important;
+  gap: 7px;
+  padding: 6px 7px !important;
+}
+.right-tool-switcher {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-island);
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+.right-tool-switcher button {
+  min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: #71858a;
+  font: 700 10px var(--font-chrome);
+  cursor: pointer;
+  transition: var(--t-control);
+}
+.right-tool-switcher button:hover {
+  color: #d7e3e5;
+  background: rgba(255, 255, 255, 0.055);
+}
+.right-tool-switcher button.active {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055));
+  color: #f2f7f8;
+  box-shadow:
+    0 5px 16px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.13);
+}
+.right-tool-switcher button.active svg {
+  color: var(--cyan);
+  filter: drop-shadow(0 0 7px rgba(131, 231, 238, 0.32));
+}
+.right-tool-switcher button:first-child.active svg {
+  color: #f6b55f;
+  filter: drop-shadow(0 0 7px rgba(245, 163, 63, 0.32));
+}
+
+.left-tool-head {
+  min-height: 54px !important;
+  height: 54px !important;
+  gap: 7px;
+  padding: 6px 7px !important;
+}
+.left-tool-switcher {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-island);
+  background: rgba(0, 0, 0, 0.24);
+}
+.left-tool-switcher button {
+  min-width: 0;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: #71858a;
+  font: 700 9px var(--font-chrome);
+  cursor: pointer;
+}
+.left-tool-switcher button span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 8px;
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+.left-tool-switcher button:hover,
+.left-tool-switcher button.active {
+  border-color: rgba(131, 231, 238, 0.2);
+  background: rgba(131, 231, 238, 0.08);
+  color: var(--cyan);
+}
+.left-tool-switcher button.active {
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 5px 14px rgba(0, 0, 0, 0.22);
+}
+.dock-left .dock-section.closed {
+  display: none;
+}
+.dock-left .dock-section.open {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.dock-left .dock-section.open > header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.right-dock-design .bw-agent__header {
+  display: none;
+}
+
+.right-dock-design .dock-section {
+  display: none;
+  border-bottom: 0;
+}
+.right-dock-design .dock-section.open {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.right-dock-design .dock-section > header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.right-dock-design .dock-section-body {
+  min-height: 0;
+  height: 100%;
+}
+
+.object-tool-switcher {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  padding: 7px;
+  border-bottom: 1px solid var(--dock-line);
+  background: rgba(4, 8, 10, 0.56);
+}
+.object-tool-switcher button {
+  min-width: 0;
+  height: 38px;
+  padding: 0 2px;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: transparent;
+  color: #687b80;
+  font: 700 8px var(--font-chrome);
+  cursor: pointer;
+}
+.object-tool-switcher button:hover,
+.object-tool-switcher button.active {
+  border-color: rgba(131, 231, 238, 0.18);
+  background: rgba(131, 231, 238, 0.07);
+  color: var(--cyan);
+}
+.object-tool-switcher button span {
+  line-height: 1;
+}
+.right-dock-object .dock-section.closed {
+  display: none;
+}
+.right-dock-object .dock-section.open {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* A shelf, not a mystery gear. The custom mode marks stay large enough to scan
+   while all secondary tools keep compact icon-only footprints. */
+.toolbar-island {
+  margin-bottom: 15px;
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 18px 55px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.025) inset;
+}
+.toolbar-island .toolrail {
+  min-height: 54px;
+  gap: 3px;
+  padding: 6px 7px;
+}
+.toolbar-island .tool-button {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 15px;
+}
+.toolbar-island .tool-button svg {
+  width: 19px;
+  height: 19px;
+}
+.toolbar-island .tool-button.active {
+  border-color: rgba(245, 163, 63, 0.3);
+  background: linear-gradient(180deg, rgba(245, 163, 63, 0.19), rgba(245, 163, 63, 0.055));
+  box-shadow:
+    0 7px 20px rgba(0, 0, 0, 0.32),
+    inset 0 1px rgba(255, 255, 255, 0.08);
+}
+.toolbar-island .tool-button::after {
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  border-radius: 2px;
+}
+.toolbar-island .icon-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 13px;
+}
+.toolbar-island .icon-button.active {
+  border-color: rgba(131, 231, 238, 0.25);
+  background: rgba(131, 231, 238, 0.1);
+  color: var(--cyan);
+}
+.toolbar-island .rail-divider {
+  height: 24px;
+  margin-inline: 4px;
+}
+.direct-tools {
+  gap: 2px;
+}
+.render-direct {
+  position: relative;
+  width: 38px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.render-direct:hover {
+  border-color: var(--line-hi);
+  background: rgba(131, 231, 238, 0.08);
+  color: var(--cyan);
+}
+.render-direct select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.toolbar-island .export-center {
+  margin-left: 2px;
+}
+.toolbar-island .export-split {
+  height: 36px;
+}
+.toolbar-island .export-primary {
+  width: 38px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 13px 0 0 13px;
+  font-size: 0;
+}
+.toolbar-island .export-primary svg {
+  width: 15px;
+  height: 15px;
+}
+.toolbar-island .export-toggle {
+  width: 23px;
+  border-radius: 0 13px 13px 0;
+}
+.toolbar-island .export-panel {
+  top: auto;
+  bottom: calc(100% + 10px);
+  max-height: calc(100dvh - 112px);
+  overflow-y: auto;
+  border-radius: var(--r-panel);
+}
+.toolbar-island .export-panel::before {
+  top: auto;
+  bottom: -5px;
+  transform: rotate(225deg);
+}
+
+@media (max-width: 1380px) {
+  .topbar {
+    grid-template-columns: 176px auto minmax(180px, 1fr) auto;
+  }
+  .topbar-nav-link span {
+    display: none;
+  }
+  .topbar-nav-link {
+    width: 34px;
+    justify-content: center;
+    padding: 0 !important;
+  }
+  .save-state span {
+    display: none;
+  }
+  .toolbar-island .history-tools .icon-button:first-child {
+    display: none;
+  }
+  .toolbar-island .primary-tools + .rail-divider {
+    display: none;
+  }
+  .toolbar-island .selection-tools {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 9px);
+    z-index: 3;
+    height: 44px;
+    padding: 4px 6px;
+    border-color: rgba(131, 231, 238, 0.22);
+    border-radius: var(--r-island);
+    background: rgba(10, 16, 18, 0.96);
+    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.07);
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 1080px) {
+  .brand-lockup strong {
+    font-size: 13px;
+  }
+  .topbar {
+    grid-template-columns: 164px auto minmax(130px, 1fr) auto;
+  }
+  .toolbar-island .rail-divider {
+    margin-inline: 1px;
+  }
+  .toolbar-island .icon-button,
+  .render-direct {
+    width: 33px;
+    min-width: 33px;
+  }
 }

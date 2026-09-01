@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { IncomingMessage, ServerResponse } from 'node:http'
 import { ModelProviderUnavailableError, awaitWithAbort, type DesignBrief } from '../../src/platform/contracts.js'
 import { boundedTimeout, ndjsonWriter, readRequestText, RequestBodyError, requestLifetime } from '../http/lifecycle.js'
 import {
@@ -12,6 +11,8 @@ import {
   type ProviderConfig,
 } from './anthropic.js'
 import { designBriefSchema } from './schema.js'
+import { logProcessEvent } from '../log.js'
+import type { RouteContext, RouteModule } from '../dispatch.js'
 
 /**
  * `POST /api/generate` and `POST /api/brief`.
@@ -27,10 +28,9 @@ import { designBriefSchema } from './schema.js'
  * a stack never leaves the process.
  */
 
-export interface RouteModule {
-  readonly prefix: string
-  handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean>
-}
+// Re-exported rather than restated. Two copies of a route contract drift, and
+// the copy that drifts is the one the entry point does not import.
+export type { RouteContext, RouteModule }
 
 /** Ceiling on a request body. A design brief is prose, not an upload. */
 const MAX_BODY_BYTES = 256 * 1024
@@ -247,7 +247,17 @@ async function colourTable(): Promise<Array<{ code: number; key: string }> | nul
       .filter((colour) => colour.code !== 16 && colour.code !== 24)
       .map((colour) => ({ code: colour.code, key: normalise(colour.name) }))
       .sort((a, b) => b.key.length - a.key.length || a.code - b.code)
-  } catch {
+  } catch (cause) {
+    // Cached as null so this is attempted once, not per request — but said out
+    // loud, because a missing colour table silently degrades every generation
+    // that follows and looks like the model got worse rather than like a
+    // deployment that shipped without its catalogue.
+    logProcessEvent({
+      level: 'error',
+      service: 'generation',
+      message: 'The catalogue colour table could not be read; palette names will not resolve.',
+      cause,
+    })
     colourCache = null
   }
   return colourCache
@@ -350,7 +360,7 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
   )
   return {
     prefix: '/api/',
-    async handle(request, response, url) {
+    async handle(request, response, url, context) {
       const isGenerate = url.pathname === '/api/generate'
       const isBrief = url.pathname === '/api/brief'
       if (!isGenerate && !isBrief) return false
@@ -439,6 +449,9 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
           span.signal.throwIfAborted()
           if (isBrief) {
             const result = await awaitWithAbort(handleBrief(body, emit, span.signal, options), span.signal)
+            // Metered after the call, on what it actually cost. A reservation
+            // taken beforehand would have to guess a generation's size.
+            context?.reportUsage?.(result.usage)
             writer.write({
               type: 'result',
               requestId,
@@ -450,6 +463,7 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
             })
           } else {
             const result = await awaitWithAbort(handleGenerate(body, emit, span.signal, options), span.signal)
+            context?.reportUsage?.(result.usage)
             writer.write({
               type: 'result',
               requestId,

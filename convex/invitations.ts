@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 import { listOverflow } from './model/discovery'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
-import { internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server'
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
 import { authoriseProject, readIdentity, UNAUTHENTICATED } from './model/auth'
 import { cloudFailure, type CloudInvitationRecord, type CloudResult } from './model/protocol'
@@ -28,9 +28,23 @@ import { invitationRetryAt } from './model/invitationLifecycle'
  * address by the server. Keying acceptance on an email claim instead would put
  * an email in the authorisation path, and every other decision in this
  * deployment is made on the Hexclave user id.
+ *
+ * That reasoning governs what *authorises* an acceptance. It does not extend to
+ * ignoring a contradiction: if the presented token carries a **verified**
+ * address and it is not the one invited, the two facts disagree, and a
+ * forwarded invite is the ordinary explanation. `accept` refuses that case and
+ * only that case — an absent or unverified claim accepts exactly as before, so
+ * the guard can never lock out a provider that does not assert addresses.
  */
 
-const INVITATION_TTL_MS = 14 * 24 * 60 * 60 * 1000
+/**
+ * How long an invitation link stays live.
+ *
+ * Three days rather than fourteen. This is a bearer credential that sits in an
+ * inbox, a shared mailbox or a mail archive for its whole lifetime, and the
+ * window in which a leaked one is useful is exactly this number.
+ */
+const INVITATION_TTL_MS = 72 * 60 * 60 * 1000
 
 /** Two UUIDs: guessing one is not a realistic attack on an invite link. */
 const mintToken = () => `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '')
@@ -152,6 +166,21 @@ export const revoke = mutation({
 })
 
 /**
+ * The address on the caller's token, if it carries one it has verified.
+ *
+ * Read here and nowhere else. `readIdentity` deliberately does not load `email`
+ * — a value that is never loaded cannot be leaked by a later careless spread —
+ * and that stays true: this reads the claim inside one comparison and never
+ * returns, stores or logs it.
+ */
+async function verifiedEmail(ctx: MutationCtx): Promise<string | null> {
+  const identity = await ctx.auth.getUserIdentity()
+  if (!identity || identity.emailVerified !== true) return null
+  const email = typeof identity.email === 'string' ? identity.email.trim().toLowerCase() : ''
+  return email || null
+}
+
+/**
  * Redeems an invitation token.
  *
  * Authorised by possession of the token plus a signed-in identity — the caller
@@ -199,6 +228,18 @@ export const accept = mutation({
         'Ask the project owner to send a fresh invitation.',
       )
     }
+    const claimed = await verifiedEmail(ctx)
+    if (claimed && claimed !== invitation.email) {
+      // Neither address appears in the message. The person holding a forwarded
+      // link is not entitled to learn who it was addressed to, and the owner's
+      // audit trail is not the place to publish the accepter's address either.
+      return cloudFailure(
+        'FORBIDDEN',
+        'This invitation was sent to a different address than the one on this account.',
+        'Sign in with the invited address, or ask the project owner to invite this one.',
+      )
+    }
+
     const project = await ctx.db.get(invitation.projectId)
     if (!project || project.deletedAt !== undefined) {
       return cloudFailure(
