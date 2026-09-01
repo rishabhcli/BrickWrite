@@ -99,14 +99,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/blue-whale-monument/thumb.png",
-          "bytes": 33253,
-          "sha256": "eac193c65c01ae75d678789a1d8b01b69b3248fec6927837ab4bbf3735a963d8",
+          "bytes": 33247,
+          "sha256": "5bc84260544ae5c09dd1a190c6181b0a96e5ebab5df7e5dbcbbd685868f2298a",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/blue-whale-monument/social.png",
-          "bytes": 64270,
-          "sha256": "b22ce01f9d7c5693f7daf8fcc218014155c1642935a96f9719af41c5bff047ee",
+          "bytes": 64265,
+          "sha256": "d26bbe28746ab49dafef805125e1e7d0b9173cb1fe79906563c75bf5b636fd2e",
           "contentType": "image/png"
         }
       },
@@ -372,14 +372,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/sunline-suspension-bridge/thumb.png",
-          "bytes": 38370,
-          "sha256": "12d7f529d1abcf5818d81d135991faf7402b7920614e0492f03138ccef4e4a22",
+          "bytes": 38376,
+          "sha256": "c6db1d1bdaa5bda0443dd6652404d6c1e70798c6647051736b009fbe4c2ad87e",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/sunline-suspension-bridge/social.png",
-          "bytes": 65840,
-          "sha256": "ca67bc700e0d806c0e5141d1470ec8e9af8a144e76cb742c2c8121b9274058f6",
+          "bytes": 65837,
+          "sha256": "b4845e63cfe25fe3c177022d87061c9ac149c25dfba3176c14f81288c39803c1",
           "contentType": "image/png"
         }
       },
@@ -655,14 +655,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/copper-mammoth/thumb.png",
-          "bytes": 32444,
-          "sha256": "da5cb894cb6bceab6a709b2cd2afa075e50baae25c939e5b0e3cb1da67311442",
+          "bytes": 32437,
+          "sha256": "f0c0622c6a90a19b9e4943c853e90ba8b56f266785f2d12d8e9fc6c2203dcc94",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/copper-mammoth/social.png",
-          "bytes": 66007,
-          "sha256": "83f74903bddc2cae23ea02c17caac290d7d578b5850537b2ab23026a3896ba05",
+          "bytes": 65998,
+          "sha256": "1501b49b619e4a2001017cc831fb21e98a62eb0b0a2d9cb44b64fe6db9db36d2",
           "contentType": "image/png"
         }
       },
@@ -918,14 +918,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/colossal-duck/thumb.png",
-          "bytes": 35216,
-          "sha256": "c62074bf7dd26fad2fa43f906f5aaf4f2343f45a308b0e3163a3b17f49a08c29",
+          "bytes": 35219,
+          "sha256": "ec87a76b5b69067762413bebd153f8c8c2fdf663704afa75c142e1426d7c015d",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/colossal-duck/social.png",
-          "bytes": 61304,
-          "sha256": "95204a811d4837184e0ab0991489a770a24fc2ffbf447629def6a7797c709343",
+          "bytes": 61291,
+          "sha256": "ca1cf6b0bbe444e2741a18635b32ac9bd03bad35e513f9722f325ca6186cd967",
           "contentType": "image/png"
         }
       },
@@ -1196,14 +1196,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/iron-lattice-lookout/thumb.png",
-          "bytes": 15349,
-          "sha256": "44769fffa1739d3c00d4bdcd61a7ad11258cddeaf5f3a348f222d1332b767d30",
+          "bytes": 15346,
+          "sha256": "ad4ca5a4c7a8dd9f75b80138cfcab316a854b6769482ffdcd888e9a13f7b184e",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/iron-lattice-lookout/social.png",
-          "bytes": 27306,
-          "sha256": "513564b503ac7de68b5f6a5a4fa630cee5c1a61994fe7afcb1e79d29e79aaa76",
+          "bytes": 27303,
+          "sha256": "045de0bacd410d254407ec36c2f65b1b7cf0124d6a64cee3d2118efe57395d45",
           "contentType": "image/png"
         }
       },
@@ -1487,14 +1487,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/harbour-control-tower/thumb.png",
-          "bytes": 22142,
-          "sha256": "3944719ecd9ceaa85fb6861309d73e12230a337840a9f734c301886b2f7418dc",
+          "bytes": 22138,
+          "sha256": "c35c013b88b18db4f412e6a064b815e3985eee2a6217364539d3f9a65b3d71e1",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/harbour-control-tower/social.png",
-          "bytes": 38893,
-          "sha256": "400287a2d765c051bf9c067abd5742c3fe171455fd977f22005dea084cef21d8",
+          "bytes": 38864,
+          "sha256": "42c0cabbd431d3e897b35beac8fa97d4d877923ce540f2667ee58ba2c025dff2",
           "contentType": "image/png"
         }
       },
@@ -1773,14 +1773,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/saucer-freighter/thumb.png",
-          "bytes": 27706,
-          "sha256": "cdcda62bc699027765c96d010b9d7ea263e564483a8d6bb760a9d3f7ad4685e4",
+          "bytes": 27700,
+          "sha256": "207d703c1300eb999967205623f2f637270b9d9610c4f107826f30793a264644",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/saucer-freighter/social.png",
           "bytes": 48139,
-          "sha256": "947ab877c2fc4764b51f3abf07685b0ebf4a6852ce64f99ae4f4e7f9ff6399a6",
+          "sha256": "7100e48c04e9d371db40c332ac89fef294b14fe3e5607e292d192ff82459eafd",
           "contentType": "image/png"
         }
       },
@@ -2077,14 +2077,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/harbour-street/thumb.png",
-          "bytes": 28361,
-          "sha256": "d78466dd46add871ce6c5422c924f374d6318918e8e7bffbbae4d7fabab99bcd",
+          "bytes": 28387,
+          "sha256": "61062bdf71eb2c6ded4423cc41d674ebc7020f612200d92100553494f867044b",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/harbour-street/social.png",
-          "bytes": 46240,
-          "sha256": "23da340b390aa021e9f8aa3223aeb036f909c1f1bc36fac1abbd79acec500fdb",
+          "bytes": 46286,
+          "sha256": "e982509e6281b152fbf82fc8d28f61c6a57fa22e72256d4bf61648ade205dd54",
           "contentType": "image/png"
         }
       },
@@ -2387,14 +2387,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/meridian-tower/thumb.png",
-          "bytes": 14395,
-          "sha256": "5e8162cae7aca32d344ebc1cb92b260717af46868c44e4ae99a7720a4a39a9bb",
+          "bytes": 14401,
+          "sha256": "fc0f2441df1deefab53d25e68c6e0c856f2ecdb951459679a4347b5295d55b3c",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/meridian-tower/social.png",
-          "bytes": 22861,
-          "sha256": "1acd984b053a0e92e27e9e1cc43880d432006551ddfbc43abfd5da64e94d3a9e",
+          "bytes": 22865,
+          "sha256": "ff599ab07dc4b7c6c75b80e2756553392080aaae72c244643c9009acc664a91f",
           "contentType": "image/png"
         }
       },
@@ -2679,14 +2679,14 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/illinois-main-quad/thumb.png",
-          "bytes": 48216,
-          "sha256": "96b537f5dcf7610455afa6b875138a2ba8a0d9664680543b55fd585dbc1540ff",
+          "bytes": 48249,
+          "sha256": "ee59a426fc9933316938884a2baa35e2e8785e78bd5dcdccdc220f25f699ff47",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/illinois-main-quad/social.png",
-          "bytes": 91391,
-          "sha256": "6f39ad1f6b6d47cd1963bf621304d84ccb218738aec2d0a5c751cdaf3faf842a",
+          "bytes": 91291,
+          "sha256": "d919e3ed540cf897d390a1e5e98c7e28827a0d04c4b4b89f59c256fc073a0fe7",
           "contentType": "image/png"
         }
       },
