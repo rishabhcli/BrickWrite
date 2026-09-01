@@ -631,6 +631,20 @@
     display: none;
   }
 
+  /* "Local only" and two buttons shared one row with the wordmark, which put
+   * Create account past the right edge of a 390px screen — and `.pf-frame`
+   * clips its overflow, so the primary call to action was not cramped, it was
+   * unreachable: a visitor on a phone could sign in and could not sign up.
+   * The dot beside it already carries the same state, so the words are what
+   * gives way. */
+  .pf-account__lines {
+    display: none;
+  }
+
+  .pf-account .pf-button {
+    padding-inline: 10px;
+  }
+
   .pf-account__name {
     max-width: 92px;
   }
@@ -720,4 +734,25 @@
 .pf-account-page__header h1 {
   font-size: clamp(32px, 5vw, 52px);
   letter-spacing: -0.04em;
+}
+
+/* Under about 480px the wordmark and the account controls cannot share a row:
+ * "Create account" ends up past the right edge, and `.pf-frame` clips its
+ * overflow, so the primary call to action becomes unreachable rather than
+ * merely tight. Giving the account block a row of its own is the only
+ * arrangement that keeps both a sign-in and a sign-up route on a phone. */
+@media (max-width: 480px) {
+  .pf-topbar {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'brand'
+      'account'
+      'nav';
+  }
+
+  .pf-account {
+    justify-content: flex-end;
+    min-height: 44px;
+    padding: 0 14px 6px;
+  }
 }
