@@ -726,6 +726,18 @@ export function useWorkbench() {
     [armPart],
   )
 
+  /**
+   * Land a part that was dragged off its seat.
+   *
+   * The pick-up already armed a placement carrying `movingPartId`, so this is
+   * the palette's own drop path: the release point resolves to a snapped,
+   * legality-checked pose and the commit reseats the original part instead of
+   * adding a copy.
+   */
+  const dropReposition = useCallback((clientX: number, clientY: number) => {
+    setDropPoint({ clientX, clientY })
+  }, [])
+
   /** A release ends the gesture, including refused landings. No surprise second placement. */
   const finishDrop = useCallback(() => {
     partDrag.current = 'idle'
@@ -1183,6 +1195,7 @@ export function useWorkbench() {
     repeatPlacement,
     setRepeatPlacement,
     pickUpSelection,
+    dropReposition,
     cancelPlacement,
     dropPoint,
     finishDrop,

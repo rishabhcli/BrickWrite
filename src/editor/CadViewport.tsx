@@ -497,6 +497,9 @@ interface CadViewportProps {
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onSelectMany?: (partIds: string[], additive: boolean) => void
   onClearSelection: () => void
+  /** Drag a part that is already selected onto a new seat. */
+  onBeginPartDrag?: (partId: string) => boolean
+  onEndPartDrag?: (clientX: number, clientY: number) => void
   onTransform: (partId: string, transform: Transform) => void
   /** Multi-part gizmo commit — one rigid transaction. */
   onCommitTransforms?: (operations: CadOperation[]) => void
@@ -529,7 +532,7 @@ interface CadViewportProps {
 
 type ViewportEventKey = Extract<keyof CadViewportProps, `on${string}`>
 const VIEWPORT_EVENTS: readonly ViewportEventKey[] = ['onPlacementPreview', 'onDropHandled', 'onSelect', 'onSelectMany',
-  'onClearSelection', 'onTransform', 'onCommitTransforms', 'onNudgeSelection', 'onPlace', 'onJointNudge', 'onCanvasReady',
+  'onClearSelection', 'onBeginPartDrag', 'onEndPartDrag', 'onTransform', 'onCommitTransforms', 'onNudgeSelection', 'onPlace', 'onJointNudge', 'onCanvasReady',
   'onVisibilityChange', 'onSectionPlanesChange', 'onRendererReady', 'onSweep', 'onJoints']
 
 /** Parent chrome may recreate closures; keep their implementations fresh without
@@ -573,6 +576,8 @@ function CadViewportScene({
   onSelect,
   onSelectMany,
   onClearSelection,
+  onBeginPartDrag,
+  onEndPartDrag,
   onTransform,
   onCommitTransforms,
   onNudgeSelection,
@@ -1285,6 +1290,8 @@ function CadViewportScene({
           onSelect={onSelect}
           onSelectMany={selectMany}
           onClearSelection={onClearSelection}
+          onBeginPartDrag={onBeginPartDrag}
+          onEndPartDrag={onEndPartDrag}
           extent={Math.max(12, shadowExtent * 1.6)}
           enabled={!placing}
           handleRef={controlsHandle}

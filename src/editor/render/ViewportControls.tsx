@@ -106,6 +106,19 @@ export interface ViewportControlsProps {
   onSelect: (partId: string, additive: boolean, subassembly: boolean) => void
   onSelectMany: (partIds: string[], additive: boolean) => void
   onClearSelection: () => void
+  /**
+   * Dragging a part that is *already selected* reseats it.
+   *
+   * Scoped to the current selection on purpose: a bare left-drag orbits the
+   * camera, including when it starts over the model, and making any drag move
+   * whatever it landed on would cost the ability to orbit from anywhere. Click
+   * the part first, then drag it.
+   *
+   * `onBeginPartDrag` returns false when the pick-up is refused, in which case
+   * the gesture stays an orbit.
+   */
+  onBeginPartDrag?: (partId: string) => boolean
+  onEndPartDrag?: (clientX: number, clientY: number) => void
   /** Extent of the drawn model in scene units, for sizing section handles. */
   extent: number
   /** Suppressed while a placement ghost owns the pointer. */
@@ -145,6 +158,8 @@ export function ViewportControls(props: ViewportControlsProps) {
     onSelect,
     onSelectMany,
     onClearSelection,
+    onBeginPartDrag,
+    onEndPartDrag,
     extent,
     enabled,
     handleRef,
@@ -640,6 +655,8 @@ export function ViewportControls(props: ViewportControlsProps) {
     onSelectMany,
     onClearSelection,
     onOverlay,
+    onBeginPartDrag,
+    onEndPartDrag,
   })
   handlers.current = {
     pick,
@@ -652,6 +669,8 @@ export function ViewportControls(props: ViewportControlsProps) {
     onSelectMany,
     onClearSelection,
     onOverlay,
+    onBeginPartDrag,
+    onEndPartDrag,
   }
 
   const pendingJointPoint = useRef<{x: number; y: number} | null>(null)
@@ -665,6 +684,9 @@ export function ViewportControls(props: ViewportControlsProps) {
     const element = gl.domElement
     let pressed: { x: number; y: number; button: number; shift: boolean; alt: boolean } | null = null
     let lasso: Array<readonly [number, number]> | null = null
+    /** Set on press when the pointer landed on a part that is already selected. */
+    let grabbed: { partId: string; x: number; y: number } | null = null
+    let reseating = false
 
     const local = (event: PointerEvent) => {
       const bounds = element.getBoundingClientRect()
@@ -676,6 +698,16 @@ export function ViewportControls(props: ViewportControlsProps) {
       const point = local(event)
       pressed = { x: point.x, y: point.y, button: event.button, shift: event.shiftKey, alt: event.altKey }
       if (event.button !== 0) return
+      // Only worth an identity read when something is selected to grab, so an
+      // ordinary orbit press does not pay for a pick it will not use.
+      grabbed = null
+      reseating = false
+      if (!event.shiftKey && !event.altKey && latest.current.selection.length > 0 && handlers.current.onBeginPartDrag) {
+        const hit = handlers.current.pick(point.x, point.y, { cycle: false })
+        if (hit.partId && latest.current.selection.includes(hit.partId)) {
+          grabbed = { partId: hit.partId, x: point.x, y: point.y }
+        }
+      }
       if (event.altKey) {
         lasso = [[point.x, point.y]]
         router.claim('marquee')
@@ -702,6 +734,15 @@ export function ViewportControls(props: ViewportControlsProps) {
         return
       }
       if (!pressed) return
+      if (grabbed && !reseating && Math.hypot(point.x - grabbed.x, point.y - grabbed.y) > CLICK_SLOP_PX) {
+        // Take the pointer away from the camera before the orbit accumulates,
+        // then hand the part to the same placement pipeline a palette drop
+        // uses. A refusal leaves the gesture as an orbit.
+        reseating = handlers.current.onBeginPartDrag?.(grabbed.partId) ?? false
+        if (reseating) router.claim('gizmo')
+        else grabbed = null
+      }
+      if (reseating) return
       if (lasso) {
         const last = lasso[lasso.length - 1]
         // Points closer than two pixels add cost to the point-in-polygon test
@@ -744,6 +785,16 @@ export function ViewportControls(props: ViewportControlsProps) {
         pressed = null
         return
       }
+      if (reseating) {
+        const held = grabbed
+        grabbed = null
+        reseating = false
+        pressed = null
+        router.release('gizmo')
+        if (held) handlers.current.onEndPartDrag?.(event.clientX, event.clientY)
+        return
+      }
+      grabbed = null
       const start = pressed
       pressed = null
       if (!start || !latest.current.enabled) {
@@ -802,6 +853,9 @@ export function ViewportControls(props: ViewportControlsProps) {
     const onCancel = (event?: Event) => {
       if (event && 'pointerId' in event && !router.accepts(event as PointerEvent)) return
       pendingJointPoint.current = null
+      if (reseating) router.release('gizmo')
+      grabbed = null
+      reseating = false
       if (jointDrag.current) handlers.current.endJoint(false)
       if (sectionDrag.current) {
         const start = sectionDrag.current.start

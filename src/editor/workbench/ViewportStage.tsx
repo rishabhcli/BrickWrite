@@ -152,6 +152,8 @@ export function ViewportStage({
         onPlacementPreview={setPreview}
         dropAt={workbench.dropPoint}
         onDropHandled={workbench.finishDrop}
+        onBeginPartDrag={() => workbench.pickUpSelection()}
+        onEndPartDrag={(clientX, clientY) => workbench.dropReposition(clientX, clientY)}
         onSelect={workbench.handleSelect}
         onSelectMany={workbench.handleSelectMany}
         onClearSelection={() => cadEngine.setSelection([])}
