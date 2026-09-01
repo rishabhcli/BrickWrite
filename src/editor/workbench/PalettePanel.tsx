@@ -9,7 +9,6 @@ import {
   List,
   LoaderCircle,
   Plus,
-  Rows3,
   Search,
   SearchX,
   SlidersHorizontal,
@@ -37,7 +36,17 @@ import { usePersistentState } from './persistence'
 /** Cards materialised at once. Everything past this is reached by paging. */
 const PAGE_SIZE = 60
 
-export type PaletteView = 'card' | 'compact' | 'list'
+/**
+ * Two, not three.
+ *
+ * There used to be a `compact` between these, presented in a radiogroup as if
+ * the three were a density ladder. They were not: cards lay out in two columns,
+ * compact in *three* and list in one, so the middle rung of the ladder was the
+ * widest of the three. Compact was also the only one that hid the part id —
+ * the option you could not give a reason for choosing, doing the one thing none
+ * of the others did. Grid for browsing, list for scanning; the key is bumped to
+ * v2 so anyone holding the third lands back on the default. */
+export type PaletteView = 'card' | 'list'
 
 const TIERS: Array<{ id: CatalogTier | 'all'; label: string; hint: string }> = [
   { id: 'placeable', label: 'BUILDABLE', hint: 'Compiled geometry and connectors — these can be placed.' },
@@ -178,7 +187,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
   const [connectorFacet, setConnectorFacet] = useState<ConnectionFamily | 'any'>('any')
   const [sizeFacet, setSizeFacet] = useState('any')
   const [colourFacet, setColourFacet] = useState(false)
-  const [view, setView] = usePersistentState<PaletteView>('palette.view.v1', 'card')
+  const [view, setView] = usePersistentState<PaletteView>('palette.view.v2', 'card')
   const [favourites, setFavourites] = usePersistentState<string[]>('palette.favourites.v1', [])
   const [recents, setRecents] = usePersistentState<string[]>('palette.recents.v1', [])
   const [colourFavourites, setColourFavourites] = usePersistentState<number[]>('palette.colours.v1', [])
@@ -438,7 +447,6 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           {(
             [
               ['card', LayoutGrid, 'Cards'],
-              ['compact', Rows3, 'Compact'],
               ['list', List, 'List'],
             ] as const
           ).map(([id, Icon, label]) => (

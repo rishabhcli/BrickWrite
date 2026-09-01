@@ -4882,23 +4882,6 @@
   box-shadow: inset 0 0 0 1px rgba(131, 231, 238, 0.4);
 }
 
-.parts-grid.view-compact {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.parts-grid.view-compact .part-card {
-  height: 78px;
-}
-.parts-grid.view-compact .part-copy {
-  right: 6px;
-}
-.parts-grid.view-compact .part-copy span {
-  display: none;
-}
-.parts-grid.view-compact .part-thumb .thumb-tint,
-.parts-grid.view-compact .part-thumb .thumb-shade {
-  width: 54px;
-  height: 54px;
-}
 .parts-grid.view-list {
   grid-template-columns: minmax(0, 1fr);
   gap: 3px;
