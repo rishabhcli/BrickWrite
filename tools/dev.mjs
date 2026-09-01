@@ -12,7 +12,7 @@ import process from 'node:process'
  */
 
 const commands = [
-  { name: 'api', args: ['server/index.ts'] },
+  { name: 'api', args: ['--import', './tools/ts-resolve.mjs', 'server/index.ts'] },
   { name: 'vite', args: ['node_modules/vite/bin/vite.js', '--host', '0.0.0.0'] },
 ]
 
