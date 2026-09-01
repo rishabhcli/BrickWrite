@@ -93,7 +93,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   .bw-film-stage {
     position: sticky;
     top: 18px;
-    height: calc(100vh - 92px);
+    height: calc(100svh - 92px);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1239,7 +1239,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   }
   .bw-assembly-visual {
     top: 18px;
-    height: calc(100vh - 98px);
+    height: calc(100svh - 98px);
   }
   .bw-assembly-window {
     flex: 1;

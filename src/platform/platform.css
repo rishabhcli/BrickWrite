@@ -10,7 +10,9 @@
 .pf-frame {
   display: grid;
   grid-template-rows: 56px auto minmax(0, 1fr);
-  height: 100vh;
+  /* Matches `.app-shell`: `vh` is the chrome-hidden height, so on a phone this
+     frame is taller than the window and its last row falls off the bottom. */
+  height: 100dvh;
   background: var(--void, #06090a);
   isolation: isolate;
 }
