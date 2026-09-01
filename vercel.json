@@ -76,7 +76,7 @@
         },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.hexclave.com https://*.hexclave.com; img-src 'self' data: blob:; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+          "value": "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.hexclave.com https://*.hexclave.com https://api.stripe.com https://m.stripe.com; img-src 'self' data: blob: https://*.stripe.com; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob: https://js.stripe.com https://*.js.stripe.com https://m.stripe.network https://static.cloudflareinsights.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
         }
       ]
     }
