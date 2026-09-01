@@ -168,13 +168,18 @@ describe('the landing page', () => {
     expect(within(constellation).getByText('Colossal Duck Float')).toBeInTheDocument()
   })
 
-  it('offers a page-wide motion pause without hiding any content', () => {
+  it('opens still, and offers motion without hiding any content either way', () => {
     const { container } = render(<LandingPage />)
+    // The page now arrives paused rather than animating at a visitor.
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
+    expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume animations' }))
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'running')
+
     fireEvent.click(screen.getByRole('button', { name: 'Pause animations' }))
     expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
     expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Resume animations' }))
-    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'running')
   })
 
   it('lets a visitor scrub the assembly reel without scrolling', () => {

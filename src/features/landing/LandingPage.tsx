@@ -41,7 +41,17 @@ export function LandingPage() {
   const spotlight = getDemo(spotlightId) ?? hero
   const collectionParts = DEMOS.reduce((sum, demo) => sum + demo.validation.partCount, 0)
   const reduced = useReducedMotion()
-  const [paused, setPaused] = useState(false)
+  /**
+   * The page opens still.
+   *
+   * Six things loop for ever on this surface — a scroll cue, a float, two
+   * background drifts, a sheen and a 2.3s scan — and none of them carries
+   * information. The control and the animations are unchanged and one click
+   * starts them; what changed is which state a visitor is dropped into.
+   * `data-motion='paused'` reveals content rather than hiding it, so nothing
+   * is gated behind pressing play.
+   */
+  const [paused, setPaused] = useState(true)
   const motionPaused = reduced || paused
   const pointer = usePointerField<HTMLDivElement>(motionPaused)
 
@@ -206,11 +216,10 @@ function diverseSpotlights(): DemoSummary[] {
   return preferred.length ? preferred : [...DEMOS].slice(0, 4)
 }
 
-/** Four real generated assets in one editorial stack—not a mascot pretending to be the product. */
+/** Four real generated assets, laid out plainly—not a mascot pretending to be the product. */
 function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
   return (
     <div className="bw-build-constellation" aria-label="A sample of editable large-scale builds">
-      <div className="bw-constellation-orbit" aria-hidden="true" />
       {demos.map((demo, index) => {
         const target = { kind: 'explore' as const, demoId: demo.id }
         return (
@@ -236,12 +245,6 @@ function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
           </LandingLink>
         )
       })}
-      <p>
-        <span aria-hidden="true">↗</span>
-        Four directions.
-        <br />
-        No tiny builds.
-      </p>
     </div>
   )
 }
