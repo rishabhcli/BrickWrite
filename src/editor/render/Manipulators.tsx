@@ -187,13 +187,32 @@ function WinchCable({ joint, tint }: { joint: ArticulatedJoint; tint: string }) 
   )
 }
 
+/** Angular size of a handle: the fraction of eye distance it spans. */
+const HANDLE_ANGULAR_SIZE = 0.045
+
+/**
+ * Handle scale for a given eye distance, so a handle keeps one apparent size
+ * however far away the operator is standing.
+ *
+ * The bounds only catch degenerate cameras. They used to be 0.45 and 4, which
+ * are both inside the range people actually work in: below about 10 units the
+ * floor stopped the handle shrinking, so leaning into a hinge grew a ring that
+ * swallowed the part it belonged to, and past about 89 the ceiling stopped it
+ * growing, so the handles on a large model shrank away exactly when they were
+ * hardest to hit. Constant apparent size is the whole point of scaling by
+ * distance, and the old clamps cancelled it at both ends of a normal session.
+ */
+export function handleScale(eyeDistance: number): number {
+  return Math.max(0.05, Math.min(60, eyeDistance * HANDLE_ANGULAR_SIZE))
+}
+
 export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: JointManipulatorProps) {
   const { camera } = useThree()
   // Handles are sized against camera distance so they stay usable whether the
   // operator is inspecting one hinge or looking at the whole model.
   const scaleFor = useMemo(() => {
     const eye = camera.position.clone()
-    return (position: THREE.Vector3) => Math.max(0.45, Math.min(4, eye.distanceTo(position) * 0.045))
+    return (position: THREE.Vector3) => handleScale(eye.distanceTo(position))
   }, [camera.position.x, camera.position.y, camera.position.z])  
 
   return (
@@ -221,7 +240,17 @@ export function JointManipulators({ joints, activeEdgeId, blocked, onGrab }: Joi
                   }}
                 >
                   <torusGeometry args={[RING_RADIUS, RING_TUBE, 8, 40]} />
-                  <meshBasicMaterial color={tint} depthTest={false} transparent opacity={active ? 1 : 0.8} />
+                  <meshBasicMaterial color={tint} transparent opacity={active ? 1 : 0.8} />
+                </mesh>
+                {/* The ring used to be drawn with depth testing off, which put
+                  * it in front of the whole build — a hinge buried in the model
+                  * painted a bright ellipse across everything in front of it.
+                  * Solid where it genuinely is in front, and a faint pass for
+                  * the part that is behind geometry, so a buried pivot is still
+                  * findable without the handle dominating the scene. */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={6} raycast={() => null}>
+                  <torusGeometry args={[RING_RADIUS, RING_TUBE, 8, 40]} />
+                  <meshBasicMaterial color={tint} depthTest={false} transparent opacity={active ? 0.3 : 0.16} />
                 </mesh>
                 <mesh
                   rotation={[-Math.PI / 2, 0, 0]}
