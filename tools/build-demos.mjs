@@ -194,6 +194,8 @@ const C = {
   tan: 19,
   transLightBlue: 43,
   transClear: 47,
+  transYellow: 46,
+  transNeonOrange: 38,
   darkGrey: 72,
   lightBluishGrey: 71,
   orange: 25,
@@ -988,6 +990,55 @@ const HUMAN = 'human'
 /** Shared spec fields every parametric plan needs. */
 const spec = (fields) => ({ actor: HUMAN, subassemblyId: fields.sub, stepId: 'step_1', ...fields })
 
+const studCentre = (stud) => (stud + 0.5) * STUD_LDU
+
+/**
+ * Small scene elements shared by the showcase builds.
+ *
+ * These are deliberately ordinary, connected catalogue parts rather than
+ * decoration drawn by the preview renderer. A tree or light can therefore be
+ * selected, moved, exploded and rebuilt like everything around it.
+ */
+function addTree(build, { x, z, surfaceY, sub, height = 3, variant = 0 }) {
+  let surface = surfaceY
+  for (let course = 0; course < height; course += 1) {
+    surface = build.place('3062b', C.reddishBrown, studCentre(x), studCentre(z), surface, {
+      sub,
+      label: `tree trunk ${x},${z},${course}`,
+    })
+  }
+  surface = build.place('4727', variant % 2 === 0 ? C.darkGreen : C.green, studCentre(x), studCentre(z), surface, {
+    sub,
+    rotY: (variant % 4) * 90,
+  })
+  build.place('4728', variant % 3 === 0 ? C.green : C.darkGreen, studCentre(x), studCentre(z), surface, {
+    sub,
+    rotY: ((variant + 1) % 4) * 90,
+  })
+}
+
+function addLamp(build, { x, z, surfaceY, sub, height = 4, color = C.darkBluishGrey }) {
+  let surface = surfaceY
+  for (let course = 0; course < height; course += 1) {
+    surface = build.place('3062b', color, studCentre(x), studCentre(z), surface, {
+      sub,
+      label: `lamp post ${x},${z},${course}`,
+    })
+  }
+  build.place('6141', C.transYellow, studCentre(x), studCentre(z), surface, {
+    sub,
+    label: `lamp glow ${x},${z}`,
+  })
+}
+
+function addPlanter(build, { x, z, surfaceY, sub, color = C.green, flower = C.orange, variant = 0 }) {
+  const surface = build.place('3062b', color, studCentre(x), studCentre(z), surfaceY, { sub })
+  build.place('32607', flower, studCentre(x), studCentre(z), surface, {
+    sub,
+    rotY: (variant % 4) * 90,
+  })
+}
+
 /**
  * A display-scale interpretation of the University of Illinois Main Quad.
  *
@@ -1024,8 +1075,8 @@ function illinoisMainQuad(rough) {
     return plan
   }
 
-  const width = 120
-  const depth = 80
+  const width = rough ? 120 : 128
+  const depth = rough ? 80 : 88
   const baseLayers = rough ? 1 : 2
   absorb(
     planBrickField(
@@ -1087,6 +1138,8 @@ function illinoisMainQuad(rough) {
     { x0: 5, x1: 27, z0: 45, z1: 63 },
     { x0: 93, x1: 115, z0: 18, z1: 35 },
     { x0: 93, x1: 115, z0: 45, z1: 63 },
+    { x0: 117, x1: 127, z0: 18, z1: 36 },
+    { x0: 46, x1: 74, z0: 80, z1: 87 },
   ]
   const TREE_SITES = [
     [29, 20],
@@ -1105,6 +1158,44 @@ function illinoisMainQuad(rough) {
     [86, 22],
     [33, 57],
     [86, 57],
+    [119, 8],
+    [123, 14],
+    [120, 42],
+    [124, 52],
+    [119, 68],
+    [123, 78],
+    [8, 83],
+    [22, 82],
+    [35, 84],
+    [85, 84],
+    [101, 82],
+    [116, 84],
+  ]
+  const LAMP_SITES = [
+    [38, 18],
+    [46, 18],
+    [74, 18],
+    [82, 18],
+    [38, 62],
+    [46, 62],
+    [74, 62],
+    [82, 62],
+    [59, 18],
+    [61, 18],
+    [59, 62],
+    [61, 62],
+    [118, 40],
+    [118, 58],
+    [40, 83],
+    [80, 83],
+  ]
+  const PLANTER_SITES = [
+    [41, 16],
+    [78, 16],
+    [41, 64],
+    [78, 64],
+    [91, 67],
+    [115, 67],
   ]
   // x and z are the stud cells carrying the campus figures.
   const FIGURE_SITES = [
@@ -1129,6 +1220,8 @@ function illinoisMainQuad(rough) {
   ]
   const forcedStuds = new Set([
     ...TREE_SITES.map(([x, z]) => `${x}:${z}`),
+    ...LAMP_SITES.map(([x, z]) => `${x}:${z}`),
+    ...PLANTER_SITES.map(([x, z]) => `${x}:${z}`),
     ...FIGURE_SITES.map(([x, z]) => `${x}:${z}`),
     ...[49, 53, 57, 62, 66, 70].flatMap((x) => [`${x}:14`, `${x}:65`]),
   ])
@@ -1247,7 +1340,7 @@ function illinoisMainQuad(rough) {
     z: 2,
     w: 32,
     d: 12,
-    courses: 6,
+    courses: 8,
     color: C.reddishBrown,
     roofColor: C.darkBluishGrey,
     openings: windows(32, 14),
@@ -1259,7 +1352,7 @@ function illinoisMainQuad(rough) {
     z: 66,
     w: 32,
     d: 12,
-    courses: 7,
+    courses: 9,
     color: C.reddishBrown,
     roofColor: C.darkBluishGrey,
     openings: windows(32, 14),
@@ -1271,7 +1364,7 @@ function illinoisMainQuad(rough) {
     z: 2,
     w: 24,
     d: 13,
-    courses: 6,
+    courses: 8,
     color: C.darkRed,
     roofColor: C.darkBluishGrey,
     openings: windows(24, 10),
@@ -1283,7 +1376,7 @@ function illinoisMainQuad(rough) {
     z: 18,
     w: 22,
     d: 17,
-    courses: 6,
+    courses: 8,
     color: C.darkTan,
     roofColor: C.darkBluishGrey,
     openings: windows(22, 9),
@@ -1294,7 +1387,7 @@ function illinoisMainQuad(rough) {
     z: 45,
     w: 22,
     d: 18,
-    courses: 6,
+    courses: 8,
     color: C.reddishBrown,
     roofColor: C.darkBluishGrey,
     openings: windows(22, 9),
@@ -1305,7 +1398,7 @@ function illinoisMainQuad(rough) {
     z: 18,
     w: 22,
     d: 17,
-    courses: 6,
+    courses: 8,
     color: C.reddishBrown,
     roofColor: C.darkBluishGrey,
     openings: windows(22, 9),
@@ -1316,10 +1409,33 @@ function illinoisMainQuad(rough) {
     z: 45,
     w: 22,
     d: 18,
-    courses: 6,
+    courses: 8,
     color: C.darkTan,
     roofColor: C.darkBluishGrey,
     openings: windows(22, 9),
+  })
+  addBuilding({
+    sub: 'east_halls',
+    x: 117,
+    z: 18,
+    w: 10,
+    d: 18,
+    courses: 7,
+    color: C.darkRed,
+    roofColor: C.darkBluishGrey,
+    openings: windows(10, 3),
+  })
+  addBuilding({
+    sub: 'foellinger',
+    x: 46,
+    z: 80,
+    w: 28,
+    d: 7,
+    courses: 3,
+    color: C.sand,
+    roofColor: C.darkGreen,
+    openings: windows(28, -1),
+    parapet: false,
   })
 
   const stackColumn = (sub, xStud, zStud, courses, color = C.white) => {
@@ -1330,8 +1446,8 @@ function illinoisMainQuad(rough) {
     return surface
   }
   // Colonnades face the Quad: south on the Union, north on Foellinger.
-  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('union', x, 14.5, 4)
-  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('foellinger', x, 65.5, 5)
+  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('union', x, 14.5, 6)
+  for (const x of [49.5, 53.5, 57.5, 62.5, 66.5, 70.5]) stackColumn('foellinger', x, 65.5, 7)
 
   // Foellinger's copper dome: six bonded plate lifts narrow into two real
   // compiled cone elements, so the south-end silhouette remains unmistakable.
@@ -1461,29 +1577,15 @@ function illinoisMainQuad(rough) {
     }
   }
 
-  for (const [index, [x, z]] of TREE_SITES.entries()) {
-    let surface = build.place('3062b', C.reddishBrown, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, campusSurface, {
-      sub: 'landscape',
-    })
-    surface = build.place('3062b', C.reddishBrown, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, {
-      sub: 'landscape',
-    })
-    surface = build.place(
-      '4727',
-      index % 3 === 0 ? C.darkGreen : C.green,
-      (x + 0.5) * STUD_LDU,
-      (z + 0.5) * STUD_LDU,
-      surface,
-      {
-        sub: 'landscape',
-        rotY: (index % 4) * 90,
-      },
-    )
-    build.place('4728', index % 4 === 0 ? C.green : C.darkGreen, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, {
-      sub: 'landscape',
-      rotY: ((index + 1) % 4) * 90,
-    })
-  }
+  TREE_SITES.forEach(([x, z], index) =>
+    addTree(build, { x, z, surfaceY: campusSurface, sub: 'landscape', height: 3 + (index % 2), variant: index }),
+  )
+  LAMP_SITES.forEach(([x, z], index) =>
+    addLamp(build, { x, z, surfaceY: campusSurface, sub: 'landscape', height: 4 + (index % 2) }),
+  )
+  PLANTER_SITES.forEach(([x, z], index) =>
+    addPlanter(build, { x, z, surfaceY: campusSurface, sub: 'landscape', variant: index }),
+  )
 
   const figureColors = [C.orange, C.blue, C.white, C.mediumBlue, C.green, C.darkBluishGrey]
   for (const [index, [x, z]] of FIGURE_SITES.entries()) {
@@ -1495,6 +1597,7 @@ function illinoisMainQuad(rough) {
   notes.push(
     'The site follows the Main Quad axis: Illini Union at the north, Foellinger Auditorium at the south, academic halls on both flanks, Altgeld and Alma Mater at the northwest, and Morrow Plots at the southeast.',
     'Eighteen campus figures and the three-figure Alma Mater group are ordinary selectable parts in the same document as the architecture.',
+    'The expanded east and south precincts add a visitor hall, garden pavilion, twelve additional mature trees, sixteen illuminated path posts and planted gateways.',
   )
   return { build, notes, warnings }
 }
@@ -1511,17 +1614,17 @@ function illinoisMainQuad(rough) {
  * generated elevation reading as a box with a texture on it.
  */
 function meridianTower(rough) {
-  const FLOORS = rough ? 4 : 22
-  const WIDTH = 40
+  const FLOORS = rough ? 4 : 28
+  const WIDTH = rough ? 40 : 48
   // A slab tower. The deck between storeys is carried only by the walls at its
   // perimeter, so the depth is held to the span the collection already proves
   // safe: go wider and the middle of every floor is unreachable from the ground,
   // which is exactly what the statics gate refuses.
-  const DEPTH = 12
-  const PLAZA_W = 58
-  const PLAZA_D = 30
-  const OX = 9
-  const OZ = 9
+  const DEPTH = rough ? 12 : 18
+  const PLAZA_W = rough ? 58 : 84
+  const PLAZA_D = rough ? 30 : 52
+  const OX = rough ? 9 : 18
+  const OZ = rough ? 9 : 17
   const COURSES = 5
 
   const storeys = Array.from({ length: FLOORS }, (_, index) => ({
@@ -1586,15 +1689,57 @@ function meridianTower(rough) {
   // on a smooth tile has nothing to clutch, and one dropped on top of a laid
   // tile is simply inside it. Both are things the kernel refuses, correctly.
   const plazaSurface = surface
+  const annex = rough ? null : { x: 4, z: 19, width: 10, depth: 14 }
   const outsideTower = (x, z) => !(x >= OX - 1 && x < OX + WIDTH + 1 && z >= OZ - 1 && z < OZ + DEPTH + 1)
+  const outsideAnnex = (x, z) =>
+    !annex || !(x >= annex.x && x < annex.x + annex.width && z >= annex.z && z < annex.z + annex.depth)
+  const treeSites = rough
+    ? []
+    : [
+        [5, 7],
+        [17, 7],
+        [31, 7],
+        [47, 7],
+        [63, 7],
+        [78, 7],
+        [5, 44],
+        [17, 44],
+        [31, 44],
+        [47, 44],
+        [63, 44],
+        [78, 44],
+      ]
+  const lampSites = rough
+    ? []
+    : [
+        [11, 11],
+        [25, 11],
+        [39, 11],
+        [53, 11],
+        [67, 11],
+        [11, 40],
+        [25, 40],
+        [39, 40],
+        [53, 40],
+        [67, 40],
+      ]
+  const planterSites = rough
+    ? []
+    : [
+        [15, 22],
+        [15, 28],
+        [67, 22],
+        [67, 28],
+      ]
   const figures = []
   for (let index = 0; index < (rough ? 2 : 14); index += 1) {
     const x = 2 + ((index * 7) % (PLAZA_W - 4))
     const z = index % 2 === 0 ? 5 : PLAZA_D - 6
-    if (!outsideTower(x, z)) continue
+    if (!outsideTower(x, z) || !outsideAnnex(x, z)) continue
     figures.push({ x, z, color: index % 3 === 0 ? C.red : index % 3 === 1 ? C.blue : C.yellow })
   }
   const takenByFigure = new Set(figures.map((figure) => `${figure.x}:${figure.z}`))
+  const reserved = new Set([...treeSites, ...lampSites, ...planterSites].map(([x, z]) => `${x}:${z}`))
 
   // Paving, laid one tile at a time. The plaza is editable at the same grain as
   // the tower rather than being a single painted slab, and the kerb line falls
@@ -1602,12 +1747,19 @@ function meridianTower(rough) {
   for (let x = 0; x < PLAZA_W; x += 1) {
     for (let z = 0; z < PLAZA_D; z += 1) {
       if (x >= OX && x < OX + WIDTH && z >= OZ && z < OZ + DEPTH) continue
+      if (!outsideAnnex(x, z)) continue
       if (takenByFigure.has(`${x}:${z}`)) continue
       const carriageway = z < 3 || z >= PLAZA_D - 3
       const kerb = z === 3 || z === PLAZA_D - 4
       build.place(
-        '3070b',
-        carriageway ? C.darkBluishGrey : kerb ? C.white : C.lightBluishGrey,
+        reserved.has(`${x}:${z}`) ? '3024' : '3070b',
+        carriageway
+          ? C.darkBluishGrey
+          : kerb
+            ? C.white
+            : x > 67 && z > 16 && z < 36
+              ? C.transLightBlue
+              : C.lightBluishGrey,
         (x + 0.5) * STUD_LDU,
         (z + 0.5) * STUD_LDU,
         plazaSurface,
@@ -1622,20 +1774,72 @@ function meridianTower(rough) {
     })
   }
 
+  if (!rough) {
+    const finishTop = plazaSurface - PLATE_LDU
+    treeSites.forEach(([x, z], index) =>
+      addTree(build, { x, z, surfaceY: finishTop, sub: 'plaza', height: 3 + (index % 2), variant: index }),
+    )
+    lampSites.forEach(([x, z], index) =>
+      addLamp(build, { x, z, surfaceY: finishTop, sub: 'plaza', height: 4 + (index % 2) }),
+    )
+    planterSites.forEach(([x, z], index) =>
+      addPlanter(build, { x, z, surfaceY: finishTop, sub: 'plaza', variant: index }),
+    )
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'plaza',
+          origin: [annex.x * STUD_LDU, plazaSurface, annex.z * STUD_LDU],
+          color: C.darkTan,
+          trimColor: C.white,
+          glassColor: C.transLightBlue,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: annex.width,
+          footprintDepthStuds: annex.depth,
+          courses: 3,
+          floor: true,
+          floorLayers: 2,
+          openings: [{ atStud: 4, widthStuds: 2, fromCourse: 1, toCourse: 2, element: 'window' }],
+        }),
+      ),
+      'plaza',
+    )
+    const annexTop = plazaSurface - (2 * PLATE_LDU + 3 * BRICK_LDU)
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'plaza',
+          origin: [annex.x * STUD_LDU, annexTop, annex.z * STUD_LDU],
+          color: C.darkGreen,
+          family: 'plate',
+          widthStuds: annex.width,
+          footprintDepthStuds: annex.depth,
+          layers: 2,
+        }),
+      ),
+      'plaza',
+    )
+  }
+
   const storeyPalette = [C.sand, C.tan, C.white, C.lightBluishGrey]
+  let towerX = OX
+  let towerZ = OZ
+  let towerWidth = WIDTH
+  let towerDepth = DEPTH
   const raise = (sub, color, courses, openings) => {
     absorb(
       planEnclosure(
         spec({
           sub,
-          origin: [OX * STUD_LDU, surface, OZ * STUD_LDU],
+          origin: [towerX * STUD_LDU, surface, towerZ * STUD_LDU],
           color,
           trimColor: C.white,
           glassColor: C.transLightBlue,
           family: 'brick',
           depthStuds: 1,
-          widthStuds: WIDTH,
-          footprintDepthStuds: DEPTH,
+          widthStuds: towerWidth,
+          footprintDepthStuds: towerDepth,
           courses,
           floor: false,
           openings,
@@ -1650,11 +1854,11 @@ function meridianTower(rough) {
       planBrickField(
         spec({
           sub,
-          origin: [OX * STUD_LDU, surface, OZ * STUD_LDU],
+          origin: [towerX * STUD_LDU, surface, towerZ * STUD_LDU],
           color: C.lightBluishGrey,
           family: 'plate',
-          widthStuds: WIDTH,
-          footprintDepthStuds: DEPTH,
+          widthStuds: towerWidth,
+          footprintDepthStuds: towerDepth,
           layers: 2,
         }),
       ),
@@ -1664,10 +1868,16 @@ function meridianTower(rough) {
   }
 
   // A double-height lobby, glazed the whole way round.
-  raise('lobby', C.darkBluishGrey, COURSES + 2, band(WIDTH, 11))
+  raise('lobby', C.darkBluishGrey, COURSES + 2, band(towerWidth, Math.floor(towerWidth / 2) - 2))
 
-  for (const storey of storeys) {
-    raise(storey.id, storeyPalette[storeys.indexOf(storey) % storeyPalette.length], COURSES, band(WIDTH))
+  for (const [index, storey] of storeys.entries()) {
+    if (!rough && (index === 10 || index === 20)) {
+      towerX += 2
+      towerZ += 2
+      towerWidth -= 4
+      towerDepth -= 4
+    }
+    raise(storey.id, storeyPalette[index % storeyPalette.length], COURSES, band(towerWidth))
   }
 
   // Crown: a stepped setback and a mast, so the silhouette resolves instead of
@@ -1676,14 +1886,14 @@ function meridianTower(rough) {
     planEnclosure(
       spec({
         sub: 'crown',
-        origin: [(OX + 3) * STUD_LDU, surface, (OZ + 3) * STUD_LDU],
+        origin: [(towerX + 2) * STUD_LDU, surface, (towerZ + 2) * STUD_LDU],
         color: C.darkBluishGrey,
         trimColor: C.white,
         glassColor: C.transLightBlue,
         family: 'brick',
         depthStuds: 1,
-        widthStuds: WIDTH - 6,
-        footprintDepthStuds: DEPTH - 6,
+        widthStuds: towerWidth - 4,
+        footprintDepthStuds: towerDepth - 4,
         courses: 3,
         floor: false,
         openings: [],
@@ -1696,11 +1906,11 @@ function meridianTower(rough) {
     planBrickField(
       spec({
         sub: 'crown',
-        origin: [(OX + 3) * STUD_LDU, surface, (OZ + 3) * STUD_LDU],
+        origin: [(towerX + 2) * STUD_LDU, surface, (towerZ + 2) * STUD_LDU],
         color: C.lightBluishGrey,
         family: 'plate',
-        widthStuds: WIDTH - 6,
-        footprintDepthStuds: DEPTH - 6,
+        widthStuds: towerWidth - 4,
+        footprintDepthStuds: towerDepth - 4,
         layers: 2,
       }),
     ),
@@ -1710,12 +1920,17 @@ function meridianTower(rough) {
 
   // A 1 x 1 spans one stud on both axes, so it centres on an odd multiple of
   // 10 LDU — half a stud off the even grid the walls are laid on.
-  const mastX = (OX + WIDTH / 2) * STUD_LDU + STUD_LDU / 2
-  const mastZ = (OZ + DEPTH / 2) * STUD_LDU + STUD_LDU / 2
+  const mastX = studCentre(towerX + Math.floor(towerWidth / 2))
+  const mastZ = studCentre(towerZ + Math.floor(towerDepth / 2))
   let mastSurface = surface
   for (let level = 0; level < 6; level += 1) {
     mastSurface = build.place('3062b', level % 2 === 0 ? C.white : C.red, mastX, mastZ, mastSurface, { sub: 'crown' })
   }
+
+  if (!rough)
+    notes.push(
+      'Two upper setbacks separate the tower into base, middle and crown volumes; the expanded plaza adds a pavilion, reflecting pool, twelve trees and ten illuminated posts.',
+    )
 
   return { build, notes, warnings }
 }
@@ -1731,14 +1946,16 @@ function meridianTower(rough) {
  * same grain as the buildings standing on it.
  */
 function harbourStreet(rough) {
-  const UNITS = rough ? 2 : 5
-  const UNIT_W = 14
-  const DEPTH = 12
+  const UNITS = rough ? 2 : 7
+  const UNIT_W = rough ? 14 : 16
+  const UNIT_GAP = rough ? 0 : 2
+  const DEPTH = rough ? 12 : 16
   const COURSES = 5
-  const STOREYS = rough ? 2 : 3
-  const SITE_W = UNITS * UNIT_W + 6
-  const SITE_D = 34
-  const ROW_Z = 16
+  const STOREYS = rough ? 2 : 4
+  const SITE_W = UNITS * UNIT_W + (UNITS - 1) * UNIT_GAP + (rough ? 6 : 10)
+  const SITE_D = rough ? 34 : 50
+  const ROW_Z = rough ? 16 : 26
+  const unitX = (index) => (rough ? 3 : 5) + index * (UNIT_W + UNIT_GAP)
 
   const units = Array.from({ length: UNITS }, (_, index) => ({
     id: `unit_${index + 1}`,
@@ -1747,7 +1964,11 @@ function harbourStreet(rough) {
   }))
 
   const build = new Build({
-    subassemblies: [{ id: 'street', name: 'Street, kerb and pavement', accent: '#7f8c9b' }, ...units],
+    subassemblies: [
+      { id: 'street', name: 'Street, kerb and pavement', accent: '#7f8c9b' },
+      { id: 'landscape', name: 'Street trees, lamps and planted thresholds', accent: '#77b96a' },
+      ...units,
+    ],
   })
 
   const notes = []
@@ -1792,7 +2013,20 @@ function harbourStreet(rough) {
   )
   const groundSurface = -groundLayers * PLATE_LDU
 
-  const onTerrace = (x, z) => x >= 3 && x < 3 + UNITS * UNIT_W && z >= ROW_Z && z < ROW_Z + DEPTH
+  const onTerrace = (x, z) =>
+    units.some((_unit, index) => x >= unitX(index) && x < unitX(index) + UNIT_W && z >= ROW_Z && z < ROW_Z + DEPTH)
+  const treeSites = rough
+    ? []
+    : Array.from({ length: UNITS + 1 }, (_, index) => [4 + index * 18, 20]).filter(([x]) => x < SITE_W - 2)
+  const lampSites = rough
+    ? []
+    : Array.from({ length: UNITS }, (_, index) => [13 + index * 18, 17]).filter(([x]) => x < SITE_W - 2)
+  const planterSites = rough
+    ? []
+    : units.flatMap((_unit, index) => [
+        [unitX(index) + 2, ROW_Z - 2],
+        [unitX(index) + UNIT_W - 3, ROW_Z - 2],
+      ])
   const figures = []
   for (let index = 0; index < (rough ? 2 : 18); index += 1) {
     const x = 1 + ((index * 5) % (SITE_W - 2))
@@ -1800,18 +2034,23 @@ function harbourStreet(rough) {
     if (onTerrace(x, z) || z >= SITE_D - 1) continue
     figures.push({ x, z, color: [C.red, C.blue, C.yellow, C.green, C.white][index % 5] })
   }
-  const taken = new Set(figures.map((figure) => `${figure.x}:${figure.z}`))
+  const figureTaken = new Set(figures.map((figure) => `${figure.x}:${figure.z}`))
+  const taken = new Set(
+    [...figures.map((figure) => [figure.x, figure.z]), ...treeSites, ...lampSites, ...planterSites].map(
+      ([x, z]) => `${x}:${z}`,
+    ),
+  )
 
   // Inset by a stud: the base field fills its outer corners with round plates
   // whose studs a flat tile cannot sit down onto, and the exposed border reads
   // as the edge of the plate anyway.
   for (let x = 1; x < SITE_W - 1; x += 1) {
     for (let z = 1; z < SITE_D - 1; z += 1) {
-      if (onTerrace(x, z) || taken.has(`${x}:${z}`)) continue
-      const carriageway = z < 9
-      const kerb = z === 9
+      if (onTerrace(x, z) || figureTaken.has(`${x}:${z}`)) continue
+      const carriageway = z < (rough ? 9 : 12)
+      const kerb = z === (rough ? 9 : 12)
       build.place(
-        '3070b',
+        taken.has(`${x}:${z}`) ? '3024' : '3070b',
         carriageway ? C.black : kerb ? C.white : C.lightBluishGrey,
         (x + 0.5) * STUD_LDU,
         (z + 0.5) * STUD_LDU,
@@ -1827,9 +2066,29 @@ function harbourStreet(rough) {
     })
   }
 
+  if (!rough) {
+    const finishTop = groundSurface - PLATE_LDU
+    treeSites.forEach(([x, z], index) =>
+      addTree(build, { x, z, surfaceY: finishTop, sub: 'landscape', height: 3 + (index % 2), variant: index }),
+    )
+    lampSites.forEach(([x, z], index) =>
+      addLamp(build, { x, z, surfaceY: finishTop, sub: 'landscape', height: 4 + (index % 2) }),
+    )
+    planterSites.forEach(([x, z], index) =>
+      addPlanter(build, {
+        x,
+        z,
+        surfaceY: finishTop,
+        sub: 'landscape',
+        variant: index,
+        flower: index % 3 ? C.orange : C.yellow,
+      }),
+    )
+  }
+
   const facades = [C.reddishBrown, C.sand, C.darkTan, C.white, C.tan]
   units.forEach((unit, index) => {
-    const x = 3 + index * UNIT_W
+    const x = unitX(index)
     let surface = groundSurface
     for (let storey = 0; storey < STOREYS; storey += 1) {
       absorb(
@@ -1886,7 +2145,52 @@ function harbourStreet(rough) {
       ),
       unit.id,
     )
+    if (!rough) {
+      const roofRoomW = 6
+      const roofRoomD = 6
+      const roofRoomX = x + (index % 2 === 0 ? 2 : UNIT_W - roofRoomW - 2)
+      const roofRoomZ = ROW_Z + Math.floor((DEPTH - roofRoomD) / 2)
+      absorb(
+        planEnclosure(
+          spec({
+            sub: unit.id,
+            origin: [roofRoomX * STUD_LDU, surface, roofRoomZ * STUD_LDU],
+            color: index % 2 === 0 ? C.darkTan : C.lightBluishGrey,
+            trimColor: C.white,
+            glassColor: C.transLightBlue,
+            family: 'brick',
+            depthStuds: 1,
+            widthStuds: roofRoomW,
+            footprintDepthStuds: roofRoomD,
+            courses: 2,
+            floor: false,
+            openings: [{ atStud: 2, widthStuds: 2, fromCourse: 0, toCourse: 1, element: 'window' }],
+          }),
+        ),
+        unit.id,
+      )
+      const roofRoomTop = surface - 2 * BRICK_LDU
+      absorb(
+        planBrickField(
+          spec({
+            sub: unit.id,
+            origin: [roofRoomX * STUD_LDU, roofRoomTop, roofRoomZ * STUD_LDU],
+            color: index % 3 === 0 ? C.darkGreen : C.darkBluishGrey,
+            family: 'plate',
+            widthStuds: roofRoomW,
+            footprintDepthStuds: roofRoomD,
+            layers: 2,
+          }),
+        ),
+        unit.id,
+      )
+    }
   })
+
+  if (!rough)
+    notes.push(
+      'Seven separated addresses now sit between real two-stud alleys, with eight street trees, seven illuminated posts, fourteen planted thresholds and individually detailed roof rooms.',
+    )
 
   return { build, notes, warnings }
 }
@@ -1916,13 +2220,17 @@ function saucerFreighter(rough) {
   // The bow/stern apron. It has to clear the hull skins, which hang outward
   // from the rim brackets by a little over a stud — an apron only as deep as
   // the inset would put the ramp's hinge line straight through them.
-  const STEP = rough ? 3 : 8
-  const HULL_W = rough ? 18 : 44
-  const HULL_D = rough ? 14 : 32
+  const STEP = rough ? 3 : 14
+  const HULL_W = rough ? 18 : 60
+  const HULL_D = rough ? 14 : 46
+  const DOCK_W = rough ? HULL_W : 70
+  const DOCK_D = rough ? HULL_D : 56
+  const HULL_X = rough ? 0 : 5
+  const HULL_Z = rough ? 0 : 5
   // The deck is inset on all four edges, not just fore and aft: that is what
   // makes the planform a lozenge rather than a slab with two chamfers, and it
   // leaves an apron the hull sides and the ramp can stand on.
-  const STEP_Z = rough ? 1 : 2
+  const STEP_Z = rough ? 1 : 7
   const DECK_W = HULL_W - STEP * 2
   const DECK_D = HULL_D - STEP_Z * 2
 
@@ -1961,8 +2269,8 @@ function saucerFreighter(rough) {
         origin: [0, 0, 0],
         color: C.darkTan,
         family: 'plate',
-        widthStuds: HULL_W,
-        footprintDepthStuds: HULL_D,
+        widthStuds: DOCK_W,
+        footprintDepthStuds: DOCK_D,
         layers: dockLayers,
       }),
     ),
@@ -1970,11 +2278,13 @@ function saucerFreighter(rough) {
   )
   const dockFoundationTop = -dockLayers * PLATE_LDU
   if (!rough) {
-    for (let z = 0; z < HULL_D; z += 1) {
-      for (let x = 0; x < HULL_W; x += 1) {
+    for (let z = 0; z < DOCK_D; z += 1) {
+      for (let x = 0; x < DOCK_W; x += 1) {
         build.place(
           '3024',
-          x === Math.floor(HULL_W / 2) || z === Math.floor(HULL_D / 2) ? C.orange : C.darkTan,
+          x === Math.floor(DOCK_W / 2) || z === Math.floor(DOCK_D / 2) || ((x === 2 || x === DOCK_W - 3) && z % 4 < 2)
+            ? C.orange
+            : C.darkTan,
           (x + 0.5) * STUD_LDU,
           (z + 0.5) * STUD_LDU,
           dockFoundationTop,
@@ -1986,43 +2296,78 @@ function saucerFreighter(rough) {
   const dockTop = dockFoundationTop - (rough ? 0 : PLATE_LDU)
 
   // -- keel ----------------------------------------------------------------
-  // A cross-bonded slab the whole ship stands on. Two layers, because one is
-  // held only where something is built on top of it.
-  absorb(
-    planBrickField(
-      spec({
-        sub: 'keel',
-        origin: [0, dockTop, 0],
-        color: C.darkBluishGrey,
-        family: 'plate',
-        widthStuds: HULL_W,
-        footprintDepthStuds: HULL_D,
-        layers: 2,
-      }),
-    ),
-    'keel',
-  )
-  const keelTop = dockTop - 2 * PLATE_LDU
+  // Three overlapping *profiles*, joined by raised cross-bonded bands, form a
+  // stepped lozenge. The previous full-width rectangle made the freighter read
+  // as a storage tray no matter how much mechanism detail sat on top of it.
+  const keelSections = rough
+    ? [{ x: HULL_X, z: HULL_Z, width: HULL_W, depth: HULL_D }]
+    : [
+        { x: HULL_X, z: HULL_Z + 9, width: STEP, depth: HULL_D - 18 },
+        { x: HULL_X + STEP, z: HULL_Z, width: DECK_W, depth: HULL_D },
+        { x: HULL_X + STEP + DECK_W, z: HULL_Z + 6, width: STEP, depth: HULL_D - 12 },
+      ]
+  for (const section of keelSections) {
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'keel',
+          origin: [section.x * STUD_LDU, dockTop, section.z * STUD_LDU],
+          color: C.darkBluishGrey,
+          family: 'plate',
+          widthStuds: section.width,
+          footprintDepthStuds: section.depth,
+          layers: 2,
+        }),
+      ),
+      'keel',
+    )
+  }
+  const keelBaseTop = dockTop - 2 * PLATE_LDU
+  if (!rough) {
+    for (const seamX of [HULL_X + STEP - 2, HULL_X + STEP + DECK_W - 2]) {
+      for (const z of [HULL_Z + 11, HULL_Z + 28]) {
+        absorb(
+          planBrickField(
+            spec({
+              sub: 'keel',
+              origin: [seamX * STUD_LDU, keelBaseTop, z * STUD_LDU],
+              color: C.lightBluishGrey,
+              family: 'plate',
+              widthStuds: 4,
+              footprintDepthStuds: 6,
+              layers: 2,
+            }),
+          ),
+          'keel',
+        )
+      }
+    }
+  }
+  const keelTop = keelBaseTop - (rough ? 0 : 2 * PLATE_LDU)
 
-  // -- hull sides ----------------------------------------------------------
-  // A one-stud perimeter around the keel apron. A ship has sides; without them
-  // the keel reads as a raft with things standing on it.
-  absorb(
-    planEnclosure(
-      spec({
-        sub: 'keel',
-        origin: [0, keelTop, 0],
-        color: C.darkBluishGrey,
-        family: 'brick',
-        depthStuds: 1,
-        widthStuds: HULL_W,
-        footprintDepthStuds: HULL_D,
-        courses: 3,
-        floor: false,
-      }),
-    ),
-    'keel',
-  )
+  // Stud-connected perimeter ribs trace the faceted edge without filling its
+  // negative space back in. Their changing rhythm also keeps the hull side
+  // readable when the SNOT skin is viewed nearly edge-on.
+  if (!rough) {
+    const ribs = []
+    for (let z = HULL_Z + 10; z < HULL_Z + HULL_D - 9; z += 4) ribs.push([HULL_X, z], [HULL_X + HULL_W - 1, z])
+    for (let x = HULL_X + STEP; x < HULL_X + STEP + DECK_W; x += 4) ribs.push([x, HULL_Z], [x, HULL_Z + HULL_D - 1])
+    ribs.forEach(([x, z], index) => {
+      let surface = keelBaseTop
+      for (let course = 0; course < 2 + (index % 2); course += 1)
+        surface = build.place('3005', C.lightBluishGrey, studCentre(x), studCentre(z), surface, { sub: 'keel' })
+      build.place(
+        '6141',
+        index % 3 === 0 ? C.transNeonOrange : C.darkBluishGrey,
+        studCentre(x),
+        studCentre(z),
+        surface,
+        {
+          sub: 'keel',
+        },
+      )
+    })
+  }
 
   // -- sideways hull skin --------------------------------------------------
   // `planSnotHull` is the kernel's own side-stud rim: a bonded deck, a
@@ -2035,7 +2380,7 @@ function saucerFreighter(rough) {
   const deckTop = keelTop - 2 * PLATE_LDU
   absorb(
     planSnotHull({
-      originLdu: [STEP * STUD_LDU, keelTop, STEP_Z * STUD_LDU],
+      originLdu: [(HULL_X + STEP) * STUD_LDU, keelTop, (HULL_Z + STEP_Z) * STUD_LDU],
       color: C.lightBluishGrey,
       subassemblyId: 'skin',
       stepId: 'step_1',
@@ -2053,16 +2398,16 @@ function saucerFreighter(rough) {
   // The deck interior, one stud inside the rim on every edge. Everything built
   // on top of the hull is placed inside this rectangle so nothing lands on the
   // rim brackets or overhangs the skin.
-  const ix0 = STEP + 1
-  const ix1 = STEP + DECK_W - 2
-  const iz0 = STEP_Z + 1
-  const iz1 = STEP_Z + DECK_D - 2
+  const ix0 = HULL_X + STEP + 1
+  const ix1 = HULL_X + STEP + DECK_W - 2
+  const iz0 = HULL_Z + STEP_Z + 1
+  const iz1 = HULL_Z + STEP_Z + DECK_D - 2
 
   // -- twin booms ----------------------------------------------------------
   // Two longitudinal bays with the cockpit centred between them. A single
   // offset tube would be somebody else's ship; this planform is its own.
-  const boomLen = Math.min(rough ? 6 : 16, ix1 - ix0)
-  const boomDepth = 4
+  const boomLen = Math.min(rough ? 6 : 18, ix1 - ix0)
+  const boomDepth = rough ? 4 : 5
   const boomX = ix1 - boomLen
   for (const [index, z] of [iz0, iz1 - boomDepth].entries()) {
     absorb(
@@ -2087,9 +2432,9 @@ function saucerFreighter(rough) {
 
   // -- cockpit -------------------------------------------------------------
   // Centred in the beam, between the booms, at the forward end of the deck.
-  const cockpitSize = rough ? 4 : 8
+  const cockpitSize = rough ? 4 : 10
   const cockpitX = ix1 - cockpitSize
-  const cockpitZ = Math.round((HULL_D - cockpitSize) / 2)
+  const cockpitZ = HULL_Z + Math.round((HULL_D - cockpitSize) / 2)
   absorb(
     planEnclosure(
       spec({
@@ -2116,7 +2461,11 @@ function saucerFreighter(rough) {
       spec({
         sub: 'ramp',
         // Inboard of the hull side ring, which occupies the outer stud.
-        origin: [2 * STUD_LDU, keelTop, Math.round(HULL_D / 2 - 2) * STUD_LDU],
+        origin: [
+          (HULL_X + 2) * STUD_LDU,
+          rough ? keelTop : keelBaseTop,
+          (HULL_Z + Math.round(HULL_D / 2 - 2)) * STUD_LDU,
+        ],
         color: C.darkTan,
         widthStuds: rough ? 2 : 4,
         reachStuds: rough ? 1 : 2,
@@ -2129,7 +2478,7 @@ function saucerFreighter(rough) {
   // -- engine block --------------------------------------------------------
   // Aft, between the booms' line and the stern rim, so the mass sits behind the
   // cockpit where a freighter's would.
-  const engineW = rough ? 4 : 8
+  const engineW = rough ? 4 : 10
   absorb(
     planEnclosure(
       spec({
@@ -2158,9 +2507,9 @@ function saucerFreighter(rough) {
   // Even footprints only: an odd run leaves the enclosure planner a single
   // leftover stud, and the 1 x 1 it picks for that corner lands with nothing
   // under it.
-  const podSize = rough ? 4 : 6
-  const podX = ix0 + engineW + 2
-  for (const [index, z] of [iz0 + 6, iz0 + 14].entries()) {
+  const podSize = rough ? 4 : 8
+  const podX = ix0 + engineW + 1
+  for (const [index, z] of [iz0 + 6, iz0 + 15].entries()) {
     if (z + podSize > iz1 - 4) break
     if (podX + podSize > ix1) break
     absorb(
@@ -2204,6 +2553,43 @@ function saucerFreighter(rough) {
   )
   const spineTop = engineTop - 2 * PLATE_LDU
 
+  if (!rough) {
+    for (let z = spineZ + 1; z < spineZ + cockpitSize - 1; z += 2) {
+      build.place('6141', C.transNeonOrange, studCentre(ix0 + 1), studCentre(z), spineTop, { sub: 'engine' })
+    }
+    const dockLightSites = [
+      [3, 3],
+      [14, 3],
+      [28, 3],
+      [41, 3],
+      [55, 3],
+      [66, 3],
+      [3, 52],
+      [14, 52],
+      [28, 52],
+      [41, 52],
+      [55, 52],
+      [66, 52],
+      [3, 18],
+      [3, 37],
+      [66, 18],
+      [66, 37],
+    ]
+    dockLightSites.forEach(([x, z], index) =>
+      addLamp(build, {
+        x,
+        z,
+        surfaceY: dockTop,
+        sub: 'dock',
+        height: 3 + (index % 2),
+        color: index % 3 === 0 ? C.white : C.darkBluishGrey,
+      }),
+    )
+    notes.push(
+      'Sixteen illuminated launch markers, hazard striping and a pulsing engine-light bank separate the ship from its service apron.',
+    )
+  }
+
   // -- dorsal turret -------------------------------------------------------
   // On the spine, above the engine, which is where a dorsal turret goes and
   // also the only place on this hull with clear air above it. A hinged flap is
@@ -2241,17 +2627,18 @@ function saucerFreighter(rough) {
  * kernel's own `planCrane` — a real luffing hinge, not a moulded jib.
  */
 function harbourControlTower(rough) {
-  const SITE_W = rough ? 28 : 60
-  const SITE_D = rough ? 20 : 40
-  const PODIUM_W = rough ? 16 : 40
-  const PODIUM_D = rough ? 12 : 26
-  const PODIUM_COURSES = rough ? 3 : 6
-  const SHAFT = rough ? 8 : 14
-  const SHAFT_COURSES = rough ? 6 : 20
+  const SITE_W = rough ? 28 : 84
+  const SITE_D = rough ? 20 : 56
+  const PODIUM_W = rough ? 16 : 52
+  const PODIUM_D = rough ? 12 : 34
+  const PODIUM_COURSES = rough ? 3 : 8
+  const SHAFT = rough ? 8 : 18
+  const SHAFT_COURSES = rough ? 6 : 30
 
   const build = new Build({
     subassemblies: [
       { id: 'site', name: 'Quayside and platform', accent: '#7f8c9b' },
+      { id: 'landscape', name: 'Promenade, lights and cargo court', accent: '#77b96a' },
       { id: 'podium', name: 'Podium and vehicle bays', accent: '#d6a85d' },
       { id: 'shaft', name: 'Control shaft', accent: '#83e7ee' },
       { id: 'crane', name: 'Quay crane', accent: '#f7b04a' },
@@ -2291,7 +2678,7 @@ function harbourControlTower(rough) {
 
   // The metro platform: a raised strip along the seaward edge, which is where
   // the programme starts. Two layers so it is rigid, not a painted stripe.
-  const platformDepth = rough ? 4 : 6
+  const platformDepth = rough ? 4 : 8
   absorb(
     planBrickField(
       spec({
@@ -2311,7 +2698,7 @@ function harbourControlTower(rough) {
   // -- podium with vehicle bays -------------------------------------------
   // Two openings cut to the full height of the podium wall: this is where a
   // vehicle drives in, so the opening has to be a door, not a window.
-  const bayWidth = 4
+  const bayWidth = rough ? 4 : 6
   const openings = [
     { atStud: 3, widthStuds: bayWidth, fromCourse: 0, toCourse: PODIUM_COURSES - 1, element: 'door' },
     {
@@ -2369,8 +2756,8 @@ function harbourControlTower(rough) {
   // inner faces of the walls, and touching a wall is not clutching it. Built as
   // separate enclosures, each storey's floor lands on the walls below and the
   // tower comes apart floor by floor.
-  const shaftX = 4
-  const shaftZ = 4
+  const shaftX = rough ? 4 : 6
+  const shaftZ = rough ? 4 : 6
   const storeyCourses = rough ? 3 : 5
   const storeys = Math.max(1, Math.round(SHAFT_COURSES / storeyCourses))
   let shaftTop = roofTop
@@ -2433,6 +2820,32 @@ function harbourControlTower(rough) {
     ),
     'crown',
   )
+  const controlRoomTop = crownTop - 2 * BRICK_LDU
+  absorb(
+    planBrickField(
+      spec({
+        sub: 'crown',
+        origin: [(shaftX + 1) * STUD_LDU, controlRoomTop, (shaftZ + 1) * STUD_LDU],
+        color: C.darkBluishGrey,
+        family: 'plate',
+        widthStuds: SHAFT - 2,
+        footprintDepthStuds: SHAFT - 2,
+        layers: 2,
+      }),
+    ),
+    'crown',
+  )
+  let beaconSurface = controlRoomTop - 2 * PLATE_LDU
+  const beaconX = studCentre(shaftX + Math.floor(SHAFT / 2))
+  const beaconZ = studCentre(shaftZ + Math.floor(SHAFT / 2))
+  for (let course = 0; course < (rough ? 2 : 4); course += 1) {
+    beaconSurface = build.place('3062b', course % 2 ? C.white : C.red, beaconX, beaconZ, beaconSurface, {
+      sub: 'crown',
+    })
+  }
+  build.place('6141', C.transNeonOrange, beaconX, beaconZ, beaconSurface, {
+    sub: 'crown',
+  })
 
   // -- quay crane ----------------------------------------------------------
   // `planCrane` is the kernel's own: a bonded mast and a boom on a real 3937 /
@@ -2457,9 +2870,9 @@ function harbourControlTower(rough) {
   // The second building is what turns a tower into a site: somewhere for the
   // crane to move cargo to.
   // Clear of the podium, which occupies x 2 .. 2 + PODIUM_W.
-  const shedX = PODIUM_W + 4
+  const shedX = PODIUM_W + (rough ? 4 : 6)
   const shedW = Math.max(6, SITE_W - shedX - 2)
-  const shedD = rough ? 8 : 12
+  const shedD = rough ? 8 : 18
   const shedZ = 2
   absorb(
     planEnclosure(
@@ -2479,6 +2892,7 @@ function harbourControlTower(rough) {
     ),
     'shed',
   )
+
   const shedTop = groundTop - (2 * PLATE_LDU + 4 * BRICK_LDU)
   absorb(
     planBrickField(
@@ -2494,6 +2908,15 @@ function harbourControlTower(rough) {
     ),
     'shed',
   )
+  if (!rough) {
+    const shedRoof = shedTop - 2 * PLATE_LDU
+    for (const x of [shedX + 4, shedX + 10, shedX + 16]) {
+      const vent = build.place('3062b', C.lightBluishGrey, studCentre(x), studCentre(shedZ + 5), shedRoof, {
+        sub: 'shed',
+      })
+      build.place('6141', C.darkBluishGrey, studCentre(x), studCentre(shedZ + 5), vent, { sub: 'shed' })
+    }
+  }
 
   // -- platform canopy -----------------------------------------------------
   // Two low walls carrying a roof over the metro platform, so the platform is
@@ -2533,6 +2956,75 @@ function harbourControlTower(rough) {
   )
   notes.push('Metro platform is covered: two bonded walls carrying a plate canopy.')
 
+  if (!rough) {
+    const landscapeSurface = groundTop
+    const treeSites = [
+      [3, 41],
+      [12, 41],
+      [24, 41],
+      [38, 41],
+      [52, 41],
+      [67, 37],
+      [78, 37],
+    ]
+    const lampSites = [
+      [5, 45],
+      [17, 45],
+      [29, 45],
+      [41, 45],
+      [53, 45],
+      [65, 45],
+      [77, 45],
+      [5, 39],
+      [29, 39],
+      [53, 39],
+      [77, 39],
+    ]
+    const planterSites = [
+      [58, 23],
+      [63, 23],
+      [68, 23],
+      [73, 23],
+    ]
+    const reserved = new Set([...treeSites, ...lampSites, ...planterSites].map(([x, z]) => `${x}:${z}`))
+    const onPodium = (x, z) => x >= 2 && x < 2 + PODIUM_W && z >= 2 && z < 2 + PODIUM_D
+    const onShed = (x, z) => x >= shedX && x < shedX + shedW && z >= shedZ && z < shedZ + shedD
+    const onPlatform = (_x, z) => z >= SITE_D - platformDepth
+    for (let z = 1; z < SITE_D - 1; z += 1) {
+      for (let x = 1; x < SITE_W - 1; x += 1) {
+        if (onPodium(x, z) || onShed(x, z) || onPlatform(x, z)) continue
+        const accessLane = z < 7 || (x > 54 && z > 20 && z < 28)
+        build.place(
+          reserved.has(`${x}:${z}`) ? '3024' : '3070b',
+          accessLane ? C.darkBluishGrey : (x + z) % 7 === 0 ? C.darkTan : C.lightBluishGrey,
+          studCentre(x),
+          studCentre(z),
+          landscapeSurface,
+          { sub: 'landscape' },
+        )
+      }
+    }
+    treeSites.forEach(([x, z], index) =>
+      addTree(build, {
+        x,
+        z,
+        surfaceY: landscapeSurface - PLATE_LDU,
+        sub: 'landscape',
+        height: 3 + (index % 2),
+        variant: index,
+      }),
+    )
+    lampSites.forEach(([x, z], index) =>
+      addLamp(build, { x, z, surfaceY: landscapeSurface - PLATE_LDU, sub: 'landscape', height: 4 + (index % 2) }),
+    )
+    planterSites.forEach(([x, z], index) =>
+      addPlanter(build, { x, z, surfaceY: landscapeSurface - PLATE_LDU, sub: 'landscape', variant: index }),
+    )
+    notes.push(
+      'A separated cargo court, seven mature trees, eleven illuminated posts and planted warehouse frontage complete the harbour district.',
+    )
+  }
+
   return { build, notes, warnings }
 }
 
@@ -2557,16 +3049,19 @@ function ironLatticeLookout(rough) {
   // leftover column of an odd footprint with 1 x 1 specials that land on
   // nothing. An odd bay gives an even deck the field planner tiles cleanly.
   const BAY = 3
-  const TIER_A = rough ? 10 : 16
-  const TIER_B = rough ? 7 : 10
-  const PLINTH = rough ? 16 : 32
-  const PLINTH_COURSES = rough ? 3 : 5
-  const TIER_A_COURSES = rough ? 5 : 12
-  const TIER_B_COURSES = rough ? 4 : 10
+  const TIER_A = rough ? 10 : 28
+  const TIER_B = rough ? 7 : 16
+  const PLINTH = rough ? 16 : 36
+  const SITE = rough ? PLINTH : 56
+  const PLINTH_X = Math.floor((SITE - PLINTH) / 2)
+  const PLINTH_COURSES = rough ? 3 : 7
+  const TIER_A_COURSES = rough ? 5 : 16
+  const TIER_B_COURSES = rough ? 4 : 14
 
   const build = new Build({
     subassemblies: [
       { id: 'plinth', name: 'Masonry plinth', accent: '#d6a85d' },
+      { id: 'landscape', name: 'Lookout gardens and lighting', accent: '#77b96a' },
       { id: 'lower', name: 'Lower ironwork tier', accent: '#7f8c9b' },
       { id: 'upper', name: 'Upper ironwork tier', accent: '#83e7ee' },
       { id: 'clock', name: 'Clock stage', accent: '#f7b04a' },
@@ -2591,14 +3086,66 @@ function ironLatticeLookout(rough) {
         origin: [0, 0, 0],
         color: C.lightBluishGrey,
         family: 'plate',
-        widthStuds: PLINTH,
-        footprintDepthStuds: PLINTH,
+        widthStuds: SITE,
+        footprintDepthStuds: SITE,
         layers: 2,
       }),
     ),
     'plinth',
   )
   const groundTop = -2 * PLATE_LDU
+
+  if (!rough) {
+    const treeSites = [
+      [4, 4],
+      [18, 5],
+      [37, 5],
+      [51, 4],
+      [4, 51],
+      [18, 50],
+      [37, 50],
+      [51, 51],
+    ]
+    const lampSites = [
+      [3, 27],
+      [7, 27],
+      [48, 27],
+      [52, 27],
+      [27, 3],
+      [27, 7],
+      [27, 48],
+      [27, 52],
+    ]
+    const reserved = new Set([...treeSites, ...lampSites].map(([x, z]) => `${x}:${z}`))
+    for (let z = 1; z < SITE - 1; z += 1) {
+      for (let x = 1; x < SITE - 1; x += 1) {
+        const onPlinth = x >= PLINTH_X && x < PLINTH_X + PLINTH && z >= PLINTH_X && z < PLINTH_X + PLINTH
+        if (onPlinth) continue
+        const avenue = Math.abs(x - SITE / 2) <= 1 || Math.abs(z - SITE / 2) <= 1
+        build.place(
+          reserved.has(`${x}:${z}`) ? '3024' : '3070b',
+          avenue ? C.lightBluishGrey : (x + z) % 5 === 0 ? C.darkGreen : C.green,
+          studCentre(x),
+          studCentre(z),
+          groundTop,
+          { sub: 'landscape' },
+        )
+      }
+    }
+    treeSites.forEach(([x, z], index) =>
+      addTree(build, {
+        x,
+        z,
+        surfaceY: groundTop - PLATE_LDU,
+        sub: 'landscape',
+        height: 3 + (index % 2),
+        variant: index,
+      }),
+    )
+    lampSites.forEach(([x, z], index) =>
+      addLamp(build, { x, z, surfaceY: groundTop - PLATE_LDU, sub: 'landscape', height: 4 + (index % 2) }),
+    )
+  }
 
   const arches = []
   for (let at = 3; at + 4 < PLINTH; at += 8) {
@@ -2611,7 +3158,7 @@ function ironLatticeLookout(rough) {
     planEnclosure(
       spec({
         sub: 'plinth',
-        origin: [0, groundTop, 0],
+        origin: [PLINTH_X * STUD_LDU, groundTop, PLINTH_X * STUD_LDU],
         color: C.sand,
         family: 'brick',
         depthStuds: 1,
@@ -2640,7 +3187,7 @@ function ironLatticeLookout(rough) {
       planBrickField(
         spec({
           sub: 'plinth',
-          origin: [0, cursor, 0],
+          origin: [PLINTH_X * STUD_LDU, cursor, PLINTH_X * STUD_LDU],
           color: C.lightBluishGrey,
           family: 'plate',
           widthStuds: PLINTH,
@@ -2655,7 +3202,7 @@ function ironLatticeLookout(rough) {
   notes.push(`Plinth carries ${arches.length} open arches at ground level.`)
 
   // -- lower ironwork tier -------------------------------------------------
-  const lowerX = Math.floor((PLINTH - TIER_A) / 2)
+  const lowerX = PLINTH_X + Math.floor((PLINTH - TIER_A) / 2)
   absorb(
     planLattice({
       originLdu: [lowerX * STUD_LDU, cursor, lowerX * STUD_LDU],
@@ -2695,7 +3242,7 @@ function ironLatticeLookout(rough) {
   // -- clock stage ---------------------------------------------------------
   // `planClockFaces` lays its own deck and four corner pedestals, each with a
   // hand on a real hinge. Its footprint is the nominal sweep plus four studs.
-  const clockDiameter = rough ? 4 : 4
+  const clockDiameter = rough ? 4 : 8
   const clockSize = clockDiameter + 4
   const clockX = upperX + Math.floor((TIER_B - clockSize) / 2)
   absorb(
@@ -2709,7 +3256,61 @@ function ironLatticeLookout(rough) {
     }),
     'clock',
   )
-  notes.push('Clock stage carries four independently hinged hands, each driven by the joint solver.')
+  if (!rough) {
+    const pavilionSize = 4
+    const pavilionX = clockX + Math.floor((clockSize - pavilionSize) / 2)
+    const clockDeckTop = cursor - 2 * PLATE_LDU
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'lookout',
+          origin: [pavilionX * STUD_LDU, clockDeckTop, pavilionX * STUD_LDU],
+          color: C.white,
+          trimColor: C.darkBluishGrey,
+          glassColor: C.transLightBlue,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: pavilionSize,
+          footprintDepthStuds: pavilionSize,
+          courses: 5,
+          floor: false,
+          openings: [{ atStud: 1, widthStuds: 2, fromCourse: 1, toCourse: 2, element: 'window' }],
+        }),
+      ),
+      'lookout',
+    )
+    const pavilionTop = clockDeckTop - 5 * BRICK_LDU
+    absorb(
+      planBrickField(
+        spec({
+          sub: 'lookout',
+          origin: [pavilionX * STUD_LDU, pavilionTop, pavilionX * STUD_LDU],
+          color: C.darkBluishGrey,
+          family: 'plate',
+          widthStuds: pavilionSize,
+          footprintDepthStuds: pavilionSize,
+          layers: 2,
+        }),
+      ),
+      'lookout',
+    )
+    build.place(
+      '3943b',
+      C.darkGreen,
+      (pavilionX + pavilionSize / 2) * STUD_LDU,
+      (pavilionX + pavilionSize / 2) * STUD_LDU,
+      pavilionTop - 2 * PLATE_LDU,
+      {
+        sub: 'lookout',
+      },
+    )
+  }
+  notes.push(
+    'Clock stage carries four independently hinged hands, each driven by the joint solver.',
+    rough
+      ? 'The first ironwork study omits the civic garden and observation pavilion.'
+      : 'A cross-axial garden, eight trees, eight illuminated posts and a glazed observation pavilion give the lookout a complete civic setting.',
+  )
 
   return { build, notes, warnings }
 }
@@ -2733,6 +3334,7 @@ function largeSculpture(rough, design) {
     subassemblies: [
       { id: 'foundation', name: 'Cross-bonded display plinth', accent: '#7f8c9b' },
       { id: 'field', name: design.fieldName, accent: design.fieldAccent },
+      { id: 'scene', name: design.sceneName ?? 'Landscape, lighting and visitor details', accent: '#f7b04a' },
       { id: 'body', name: design.bodyName, accent: design.bodyAccent },
       { id: 'accent', name: design.accentName, accent: design.accentColor },
     ],
@@ -2763,6 +3365,7 @@ function largeSculpture(rough, design) {
   const foundationTop = -layers * PLATE_LDU
   let occupied = 0
   let sculptureParts = 0
+  const occupiedCells = new Set()
 
   // A one-piece-per-stud finish is deliberate. It is the large build's editable
   // scene rather than a painted rectangle, and it gives every sculpted column a
@@ -2777,6 +3380,7 @@ function largeSculpture(rough, design) {
       const column = design.column(x, z, width, depth, rough)
       if (!column || column.height < 1) continue
       occupied += 1
+      occupiedCells.add(`${x}:${z}`)
       for (let level = 0; level < column.height; level += 1) {
         const accent = column.accentFrom !== undefined && level >= column.accentFrom
         surface = build.place(
@@ -2793,6 +3397,32 @@ function largeSculpture(rough, design) {
         sculptureParts += 1
       }
     }
+  }
+
+  if (!rough) {
+    const fieldTop = foundationTop - PLATE_LDU
+    for (const [index, [x, z, height]] of (design.trees ?? []).entries()) {
+      if (!occupiedCells.has(`${x}:${z}`))
+        addTree(build, { x, z, surfaceY: fieldTop, sub: 'scene', height, variant: index })
+    }
+    for (const [x, z, height] of design.lights ?? []) {
+      if (!occupiedCells.has(`${x}:${z}`)) addLamp(build, { x, z, surfaceY: fieldTop, sub: 'scene', height })
+    }
+    for (const [index, [x, z]] of (design.planters ?? []).entries()) {
+      if (!occupiedCells.has(`${x}:${z}`))
+        addPlanter(build, {
+          x,
+          z,
+          surfaceY: fieldTop,
+          sub: 'scene',
+          variant: index,
+          flower: index % 2 ? C.yellow : C.orange,
+        })
+    }
+    notes.push(
+      `${(design.trees ?? []).length} trees, ${(design.lights ?? []).length} illuminated posts and ` +
+        `${(design.planters ?? []).length} planted edge details turn the plinth into a complete public setting.`,
+    )
   }
 
   notes.push(
@@ -2812,8 +3442,8 @@ function blueWhaleMonument(rough) {
   return largeSculpture(rough, {
     id: 'blue-whale-monument',
     title: 'Blue Whale Monument',
-    width: 64,
-    depth: 30,
+    width: 84,
+    depth: 42,
     roughWidth: 42,
     roughDepth: 22,
     plinthColor: C.darkBluishGrey,
@@ -2824,20 +3454,43 @@ function blueWhaleMonument(rough) {
     bodyAccent: '#497c9a',
     accentName: 'Belly, eye and foam details',
     accentColor: '#f7f3e8',
+    sceneName: 'Illuminated aquarium promenade',
+    lights: [
+      [4, 4, 5],
+      [16, 4, 4],
+      [28, 4, 5],
+      [40, 4, 4],
+      [52, 4, 5],
+      [64, 4, 4],
+      [76, 4, 5],
+      [4, 37, 4],
+      [16, 37, 5],
+      [28, 37, 4],
+      [40, 37, 5],
+      [52, 37, 4],
+      [64, 37, 5],
+      [76, 37, 4],
+    ],
+    planters: [
+      [8, 8],
+      [22, 34],
+      [60, 8],
+      [78, 31],
+    ],
     column: (x, z, width, depth, isRough) => {
-      const cx = width * 0.53
+      const cx = width * 0.48
       const cz = depth * 0.5
-      const body = ellipse(x, z, cx, cz, width * 0.34, depth * 0.25)
-      const head = ellipse(x, z, width * 0.77, cz, width * 0.15, depth * 0.29)
-      const tailStem = x > width * 0.1 && x < width * 0.24 && Math.abs(z - cz) < depth * 0.1
-      const upperFluke = ellipse(x, z, width * 0.1, cz - depth * 0.2, width * 0.11, depth * 0.13) < 1
-      const lowerFluke = ellipse(x, z, width * 0.1, cz + depth * 0.2, width * 0.11, depth * 0.13) < 1
+      const body = ellipse(x, z, cx, cz, width * 0.3, depth * 0.23)
+      const head = ellipse(x, z, width * 0.72, cz, width * 0.13, depth * 0.27)
+      const tailStem = x > width * 0.1 && x < width * 0.23 && Math.abs(z - cz) < depth * 0.085
+      const upperFluke = ellipse(x, z, width * 0.1, cz - depth * 0.17, width * 0.1, depth * 0.11) < 1
+      const lowerFluke = ellipse(x, z, width * 0.1, cz + depth * 0.17, width * 0.1, depth * 0.11) < 1
       const fin =
-        x > width * 0.48 && x < width * 0.66 && Math.abs(z - cz) > depth * 0.23 && Math.abs(z - cz) < depth * 0.4
+        x > width * 0.42 && x < width * 0.62 && Math.abs(z - cz) > depth * 0.2 && Math.abs(z - cz) < depth * 0.34
       if (body >= 1 && head >= 1 && !tailStem && !upperFluke && !lowerFluke && !fin) return null
       const fullness = Math.max(0, 1 - Math.min(body, head))
-      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 5)))
-      const eye = x > width * 0.78 && x < width * 0.83 && z < cz && Math.abs(z - cz) > depth * 0.16
+      const height = Math.max(1, Math.round((isRough ? 2 : 4) + fullness * (isRough ? 2 : 7)))
+      const eye = x > width * 0.72 && x < width * 0.77 && z < cz && Math.abs(z - cz) > depth * 0.15
       const foam = (upperFluke || lowerFluke) && (x + z) % 3 === 0
       return {
         height: fin || upperFluke || lowerFluke ? Math.min(height, isRough ? 2 : 3) : height,
@@ -2853,8 +3506,8 @@ function copperMammoth(rough) {
   return largeSculpture(rough, {
     id: 'copper-mammoth',
     title: 'Copper Canyon Mammoth',
-    width: 50,
-    depth: 32,
+    width: 68,
+    depth: 44,
     roughWidth: 34,
     roughDepth: 22,
     plinthColor: C.darkTan,
@@ -2865,20 +3518,45 @@ function copperMammoth(rough) {
     bodyAccent: '#8a5a3b',
     accentName: 'Ivory tusks and amber ears',
     accentColor: '#f2ddab',
+    sceneName: 'Canyon pines, trail lights and scrub',
+    trees: [
+      [5, 5, 4],
+      [16, 6, 3],
+      [31, 5, 4],
+      [48, 6, 3],
+      [62, 5, 4],
+      [5, 38, 3],
+      [18, 37, 4],
+      [34, 39, 3],
+      [51, 37, 4],
+      [62, 38, 3],
+    ],
+    lights: [
+      [9, 3, 4],
+      [25, 3, 4],
+      [42, 3, 4],
+      [58, 3, 4],
+    ],
+    planters: [
+      [11, 10],
+      [57, 12],
+      [10, 32],
+      [58, 33],
+    ],
     column: (x, z, width, depth, isRough) => {
       const cz = depth * 0.5
-      const body = ellipse(x, z, width * 0.47, cz, width * 0.25, depth * 0.27)
-      const head = ellipse(x, z, width * 0.72, cz, width * 0.13, depth * 0.22)
-      const trunk = x > width * 0.77 && x < width * 0.89 && Math.abs(z - cz) < depth * 0.09
+      const body = ellipse(x, z, width * 0.44, cz, width * 0.23, depth * 0.25)
+      const head = ellipse(x, z, width * 0.69, cz, width * 0.12, depth * 0.2)
+      const trunk = x > width * 0.74 && x < width * 0.84 && Math.abs(z - cz) < depth * 0.08
       const legs =
-        x > width * 0.3 && x < width * 0.64 && Math.abs(z - cz) > depth * 0.15 && Math.abs(z - cz) < depth * 0.31
+        x > width * 0.28 && x < width * 0.61 && Math.abs(z - cz) > depth * 0.14 && Math.abs(z - cz) < depth * 0.28
       const ear =
-        x > width * 0.61 && x < width * 0.74 && Math.abs(z - cz) > depth * 0.16 && Math.abs(z - cz) < depth * 0.31
+        x > width * 0.58 && x < width * 0.71 && Math.abs(z - cz) > depth * 0.15 && Math.abs(z - cz) < depth * 0.28
       const tusk =
-        x > width * 0.79 && x < width * 0.94 && Math.abs(z - cz) > depth * 0.1 && Math.abs(z - cz) < depth * 0.19
+        x > width * 0.75 && x < width * 0.88 && Math.abs(z - cz) > depth * 0.09 && Math.abs(z - cz) < depth * 0.17
       if (body >= 1 && head >= 1 && !trunk && !legs && !ear && !tusk) return null
       const fullness = Math.max(0, 1 - Math.min(body, head))
-      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 5)))
+      const height = Math.max(1, Math.round((isRough ? 2 : 4) + fullness * (isRough ? 2 : 7)))
       return {
         height: tusk ? Math.min(height, 2) : trunk ? Math.min(height, isRough ? 2 : 4) : height,
         color: ear ? C.orange : C.reddishBrown,
@@ -2893,8 +3571,8 @@ function colossalDuck(rough) {
   return largeSculpture(rough, {
     id: 'colossal-duck',
     title: 'Colossal Duck Float',
-    width: 46,
-    depth: 34,
+    width: 64,
+    depth: 46,
     roughWidth: 32,
     roughDepth: 24,
     plinthColor: C.mediumBlue,
@@ -2905,15 +3583,37 @@ function colossalDuck(rough) {
     bodyAccent: '#f4c542',
     accentName: 'Orange bill and black eyes',
     accentColor: '#f47b52',
+    sceneName: 'Festival promenade and basin lighting',
+    trees: [
+      [5, 6, 3],
+      [17, 5, 4],
+      [46, 5, 4],
+      [58, 6, 3],
+    ],
+    lights: [
+      [4, 40, 4],
+      [13, 40, 5],
+      [22, 40, 4],
+      [31, 40, 5],
+      [40, 40, 4],
+      [49, 40, 5],
+      [58, 40, 4],
+    ],
+    planters: [
+      [8, 36],
+      [26, 38],
+      [44, 37],
+      [56, 35],
+    ],
     column: (x, z, width, depth, isRough) => {
       const cz = depth * 0.53
-      const body = ellipse(x, z, width * 0.43, cz, width * 0.3, depth * 0.3)
-      const head = ellipse(x, z, width * 0.69, depth * 0.39, width * 0.15, depth * 0.18)
-      const bill = x > width * 0.79 && x < width * 0.96 && z > depth * 0.31 && z < depth * 0.48
+      const body = ellipse(x, z, width * 0.4, cz, width * 0.27, depth * 0.27)
+      const head = ellipse(x, z, width * 0.66, depth * 0.39, width * 0.14, depth * 0.17)
+      const bill = x > width * 0.76 && x < width * 0.9 && z > depth * 0.31 && z < depth * 0.47
       if (body >= 1 && head >= 1 && !bill) return null
       const fullness = Math.max(0, 1 - Math.min(body, head))
-      const height = Math.max(1, Math.round((isRough ? 2 : 3) + fullness * (isRough ? 2 : 6)))
-      const eye = x > width * 0.71 && x < width * 0.76 && z > depth * 0.27 && z < depth * 0.32
+      const height = Math.max(1, Math.round((isRough ? 2 : 4) + fullness * (isRough ? 2 : 9)))
+      const eye = x > width * 0.67 && x < width * 0.72 && z > depth * 0.26 && z < depth * 0.31
       return {
         height: bill ? Math.min(height, isRough ? 2 : 3) : height,
         color: bill ? C.orange : C.yellow,
@@ -2926,8 +3626,8 @@ function colossalDuck(rough) {
 
 /** A display-scale original suspension bridge over a fully editable river. */
 function sunlineSuspensionBridge(rough) {
-  const width = rough ? 56 : 92
-  const depth = rough ? 22 : 34
+  const width = rough ? 56 : 120
+  const depth = rough ? 22 : 50
   const layers = rough ? 1 : 2
   const build = new Build({
     subassemblies: [
@@ -2962,11 +3662,22 @@ function sunlineSuspensionBridge(rough) {
     'river',
   )
   const riverTop = -layers * PLATE_LDU
+  const deckX = rough ? 6 : 8
+  const deckDepth = rough ? 8 : 10
+  const deckZ = Math.floor(depth / 2) - Math.floor(deckDepth / 2)
+  const deckWidth = width - deckX * 2
+  const towerWidth = rough ? 6 : 8
+  const towerXs = rough ? [16, width - 22] : [28, width - 36]
+  const pierXs = rough ? [] : [deckX + 6, 28, 48, 68, 88, deckX + deckWidth - 10]
+  const inPier = (x, z) =>
+    pierXs.some((pierX) => x >= pierX && x < pierX + 4 && z >= deckZ + 1 && z < deckZ + deckDepth - 1)
   for (let z = 0; z < depth; z += 1)
     for (let x = 0; x < width; x += 1) {
+      if (inPier(x, z)) continue
+      const bank = z < 6 || z >= depth - 6
       build.place(
         '3024',
-        (x + z) % 5 === 0 ? C.transLightBlue : C.mediumBlue,
+        bank ? ((x + z) % 4 === 0 ? C.darkTan : C.green) : (x + z) % 5 === 0 ? C.transLightBlue : C.mediumBlue,
         (x + 0.5) * STUD_LDU,
         (z + 0.5) * STUD_LDU,
         riverTop,
@@ -2981,36 +3692,57 @@ function sunlineSuspensionBridge(rough) {
     return { build, notes, warnings }
   }
 
-  const deckX = 6
-  const deckZ = Math.floor(depth / 2) - 4
-  const deckWidth = width - 12
+  // Six masonry piers lift the entire crossing clear of the water. The old
+  // version laid its road directly onto the river mosaic, which was physically
+  // connected but visually read as a painted stripe instead of a bridge.
+  const pierCourses = 4
+  for (const pierX of pierXs) {
+    absorb(
+      planEnclosure(
+        spec({
+          sub: 'towers',
+          origin: [pierX * STUD_LDU, riverTop, (deckZ + 1) * STUD_LDU],
+          color: C.lightBluishGrey,
+          family: 'brick',
+          depthStuds: 1,
+          widthStuds: 4,
+          footprintDepthStuds: deckDepth - 2,
+          courses: pierCourses,
+          floor: false,
+        }),
+      ),
+      'towers',
+    )
+  }
+  const elevatedDeckSurface = riverTop - pierCourses * BRICK_LDU
   absorb(
     planBrickField(
       spec({
         sub: 'deck',
-        origin: [deckX * STUD_LDU, waterTop, deckZ * STUD_LDU],
+        origin: [deckX * STUD_LDU, elevatedDeckSurface, deckZ * STUD_LDU],
         color: C.darkBluishGrey,
         family: 'plate',
         widthStuds: deckWidth,
-        footprintDepthStuds: 8,
+        footprintDepthStuds: deckDepth,
         layers: 2,
       }),
     ),
     'deck',
   )
-  const deckTop = waterTop - 2 * PLATE_LDU
+  const deckTop = elevatedDeckSurface - 2 * PLATE_LDU
 
   // The road surface remains editable one stud at a time. Studded edge lanes
   // are left for the hanger columns; the centre becomes a smooth orange stripe.
-  const towerXs = [22, width - 28]
   for (let x = deckX; x < deckX + deckWidth; x += 1)
-    for (let z = deckZ + 1; z < deckZ + 7; z += 1) {
+    for (let z = deckZ + 1; z < deckZ + deckDepth - 1; z += 1) {
       // Towers land directly on the bonded deck. Leaving road tiles underneath
       // would put a wall and a tile in the same vertical slice.
-      if (towerXs.some((towerX) => x >= towerX && x < towerX + 6)) continue
+      if (towerXs.some((towerX) => x >= towerX && x < towerX + towerWidth)) continue
       build.place(
         '3070b',
-        z === deckZ + 3 || z === deckZ + 4 ? C.orange : C.lightBluishGrey,
+        z === deckZ + Math.floor(deckDepth / 2) || z === deckZ + Math.floor(deckDepth / 2) - 1
+          ? C.orange
+          : C.lightBluishGrey,
         (x + 0.5) * STUD_LDU,
         (z + 0.5) * STUD_LDU,
         deckTop,
@@ -3018,20 +3750,28 @@ function sunlineSuspensionBridge(rough) {
       )
     }
 
-  const towerCourses = 12
+  const towerCourses = 18
   for (const x of towerXs) {
     absorb(
       planEnclosure(
         spec({
           sub: 'towers',
-          origin: [x * STUD_LDU, deckTop, (deckZ - 2) * STUD_LDU],
+          origin: [x * STUD_LDU, deckTop, (deckZ - 3) * STUD_LDU],
           color: C.darkRed,
           family: 'brick',
           depthStuds: 1,
-          widthStuds: 6,
-          footprintDepthStuds: 12,
+          widthStuds: towerWidth,
+          footprintDepthStuds: deckDepth + 6,
           courses: towerCourses,
           floor: false,
+          openings: [
+            {
+              atStud: Math.floor((towerWidth - 4) / 2),
+              widthStuds: 4,
+              fromCourse: 0,
+              toCourse: towerCourses - 6,
+            },
+          ],
         }),
       ),
       'towers',
@@ -3041,11 +3781,11 @@ function sunlineSuspensionBridge(rough) {
       planBrickField(
         spec({
           sub: 'towers',
-          origin: [x * STUD_LDU, towerTop, (deckZ - 2) * STUD_LDU],
+          origin: [x * STUD_LDU, towerTop, (deckZ - 3) * STUD_LDU],
           color: C.darkTan,
           family: 'plate',
-          widthStuds: 6,
-          footprintDepthStuds: 12,
+          widthStuds: towerWidth,
+          footprintDepthStuds: deckDepth + 6,
           layers: 2,
         }),
       ),
@@ -3056,17 +3796,44 @@ function sunlineSuspensionBridge(rough) {
   // Vertical stacks trace a stepped catenary on both sides. They are honest
   // stud-connected columns, not diagonal bars floated between coordinates.
   for (let x = deckX + 2; x < deckX + deckWidth - 2; x += 3) {
-    const distance = Math.min(...towerXs.map((towerX) => Math.abs(x - (towerX + 3))))
-    const courses = Math.max(1, 7 - Math.min(6, Math.floor(distance / 5)))
-    for (const z of [deckZ, deckZ + 7]) {
+    if (towerXs.some((towerX) => x >= towerX && x < towerX + towerWidth)) continue
+    const distance = Math.min(...towerXs.map((towerX) => Math.abs(x - (towerX + towerWidth / 2))))
+    const courses = Math.max(2, 12 - Math.min(10, Math.floor(distance / 4)))
+    for (const z of [deckZ, deckZ + deckDepth - 1]) {
       let surface = deckTop
       for (let course = 0; course < courses; course += 1) {
         surface = build.place('3005', C.yellow, (x + 0.5) * STUD_LDU, (z + 0.5) * STUD_LDU, surface, { sub: 'hangers' })
       }
     }
   }
+
+  const bankSurface = waterTop
+  const landscapeXs = [6, 18, 42, 60, 78, 102, 114]
+  landscapeXs.forEach((x, index) => {
+    addTree(build, {
+      x,
+      z: index % 2 ? 3 : 4,
+      surfaceY: bankSurface,
+      sub: 'water',
+      height: 3 + (index % 2),
+      variant: index,
+    })
+    addTree(build, {
+      x: width - 1 - x,
+      z: depth - (index % 2 ? 4 : 5),
+      surfaceY: bankSurface,
+      sub: 'water',
+      height: 3 + ((index + 1) % 2),
+      variant: index + 1,
+    })
+  })
+  for (const x of [11, 35, 59, 83, 107]) {
+    addLamp(build, { x, z: 1, surfaceY: bankSurface, sub: 'water', height: 4 })
+    addLamp(build, { x, z: depth - 2, surfaceY: bankSurface, sub: 'water', height: 4 })
+  }
   notes.push(
-    `A ${deckWidth}-stud road crosses a ${width} x ${depth}-stud editable river between two twelve-course gateway towers.`,
+    `A raised ${deckWidth}-stud road crosses a ${width} x ${depth}-stud river on six masonry piers between two eighteen-course gateway towers.`,
+    'Landscaped banks and ten illuminated approach posts separate the civic setting from the suspended span.',
   )
   return { build, notes, warnings }
 }
@@ -3077,27 +3844,28 @@ const DEMOS = [
     title: 'Blue Whale Monument',
     discipline: 'Large animal sculpture',
     category: 'animals',
-    tagline: 'A sixty-four-stud blue whale with fins, flukes and foam rising from an editable ocean mosaic.',
+    tagline: 'An eighty-four-stud blue whale with fins, flukes and foam rising from an illuminated ocean promenade.',
     summary:
       'A display-scale whale built as hundreds of individually editable stud columns over a fully tiled ocean scene. ' +
-      'The body swells in measured brick courses, the flukes spread across the water, and a white eye-and-foam pass keeps the silhouette readable from every orbit.',
+      'The body swells in measured brick courses, the flukes spread across the water, and a white eye-and-foam pass keeps the silhouette readable from every orbit. Fourteen lit promenade posts and planted reef markers frame the monument without crowding it.',
     techniques: [
       'Voxel-sculpted animal anatomy',
-      'Cross-bonded 64 x 30-stud plinth',
+      'Cross-bonded 84 x 42-stud plinth',
       'Editable ocean mosaic',
       'Layered fins and flukes',
+      'Illuminated aquarium promenade',
     ],
     refinement:
       'The first candidate put a simplified whale on a one-layer plate field whose parallel runs stayed disconnected. ' +
       'The published monument cross-bonds the complete ocean plinth and expands the body, fins, flukes and surface detail.',
-    camera: { yaw: 34, pitch: 48, zoom: 1.02 },
+    camera: { yaw: 34, pitch: 48, zoom: 1.08 },
     maxPartsPerStep: 96,
     tensionAllowance: 0,
     hero: false,
     brief: {
       prompt:
         'A large brick-built blue whale monument with a readable body, broad flukes, side fins and white foam, mounted over an editable ocean mosaic.',
-      envelopeStuds: [64, null, 30],
+      envelopeStuds: [84, null, 42],
       palette: ['Medium Blue', 'Trans Light Blue', 'White', 'Dark Bluish Grey'],
       functions: ['Large animal figure', 'Editable water scene', 'Verified build sequence'],
     },
@@ -3108,20 +3876,22 @@ const DEMOS = [
     title: 'Sunline Suspension Bridge',
     discipline: 'Landmark infrastructure',
     category: 'landmarks',
-    tagline: 'Twin brick-red gateways carry a road and stepped golden hangers across a ninety-two-stud river.',
+    tagline: 'Twin brick-red gateways carry a raised road and stepped golden hangers across a 120-stud river district.',
     summary:
-      'An original city landmark on a fully editable river: a cross-bonded road deck, twin twelve-course gateway towers, ' +
-      'smooth traffic lanes and honest stud-connected hanger columns tracing the suspension profile on both edges.',
+      'An original city landmark on a fully editable river: a cross-bonded road deck raised on six masonry piers, twin eighteen-course gateway towers, ' +
+      'smooth traffic lanes, landscaped banks and honest stud-connected hanger columns tracing the suspension profile on both edges.',
     techniques: [
-      '92 x 34-stud river scene',
+      '120 x 50-stud river district',
       'Twin masonry gateway towers',
+      'Six structural river piers',
       'Cross-bonded suspended deck',
       'Stepped catenary hangers',
+      'Landscaped, illuminated approaches',
     ],
     refinement:
       'The first candidate stopped at a one-layer river study, leaving its plate runs disconnected and no crossing between the banks. ' +
       'The published build cross-bonds the river, adds the complete road deck, towers, lanes and two lines of suspension hangers.',
-    camera: { yaw: 32, pitch: 42, zoom: 0.98 },
+    camera: { yaw: 32, pitch: 42, zoom: 1.04 },
     maxPartsPerStep: 96,
     tensionAllowance: 320,
     tensionReason:
@@ -3131,7 +3901,7 @@ const DEMOS = [
     brief: {
       prompt:
         'An original large suspension bridge with twin brick-red gateway towers, a long road deck, golden vertical hangers and a fully editable river beneath it.',
-      envelopeStuds: [92, null, 34],
+      envelopeStuds: [120, null, 50],
       palette: ['Dark Red', 'Yellow', 'Medium Blue', 'Light Bluish Grey'],
       functions: ['Large landmark', 'Editable river scene', 'Verified build sequence'],
     },
@@ -3151,18 +3921,19 @@ const DEMOS = [
       'Grounded four-leg silhouette',
       'Ivory tusk accents',
       'Editable canyon mosaic',
+      'Canyon pines and trail lighting',
     ],
     refinement:
-      'The first candidate used a smaller silhouette over loose plate runs. The published figure cross-bonds a fifty-stud scene ' +
+      'The first candidate used a smaller silhouette over loose plate runs. The published figure cross-bonds a sixty-eight-stud scene ' +
       'and resolves the mammoth into a fuller body, grounded legs, ears, trunk and paired tusks.',
-    camera: { yaw: 38, pitch: 45, zoom: 1.04 },
+    camera: { yaw: 38, pitch: 45, zoom: 1.08 },
     maxPartsPerStep: 96,
     tensionAllowance: 0,
     hero: false,
     brief: {
       prompt:
         'A large brick-built woolly mammoth with a massive rounded body, four grounded legs, a lowered trunk, amber ears and white tusks on a canyon display plinth.',
-      envelopeStuds: [50, null, 32],
+      envelopeStuds: [68, null, 44],
       palette: ['Reddish Brown', 'Orange', 'White', 'Sand'],
       functions: ['Large animal figure', 'Editable scenic base', 'Verified build sequence'],
     },
@@ -3173,7 +3944,7 @@ const DEMOS = [
     title: 'Colossal Duck Float',
     discipline: 'Playful public art',
     category: 'creative',
-    tagline: 'A giant yellow duck, orange bill and all, bobbing over a forty-six-stud festival-water mosaic.',
+    tagline: 'A giant yellow duck, orange bill and all, bobbing over a sixty-four-stud illuminated festival basin.',
     summary:
       'A deliberately ridiculous public-art build at landmark scale: a round yellow body, oversized head, orange bill and black eye ' +
       'assembled from editable brick columns over a rippling blue festival basin.',
@@ -3182,18 +3953,19 @@ const DEMOS = [
       'Domed voxel body',
       'Graphic bill and eye accents',
       'Editable festival-water scene',
+      'Festival lighting and shoreline trees',
     ],
     refinement:
       'The first float was a small yellow mass on loose one-layer water. The published version cross-bonds the whole basin and ' +
       'separates the body, head, bill and eyes into a clear, giant duck silhouette.',
-    camera: { yaw: 34, pitch: 46, zoom: 1.02 },
+    camera: { yaw: 34, pitch: 46, zoom: 1.08 },
     maxPartsPerStep: 96,
     tensionAllowance: 0,
     hero: false,
     brief: {
       prompt:
         'A funny large-scale yellow duck public-art float with a huge rounded body, tall head, orange bill and black eyes on an editable blue festival basin.',
-      envelopeStuds: [46, null, 34],
+      envelopeStuds: [64, null, 46],
       palette: ['Yellow', 'Orange', 'Black', 'Trans Light Blue'],
       functions: ['Funny creative landmark', 'Editable scenic base', 'Verified build sequence'],
     },
@@ -3204,7 +3976,7 @@ const DEMOS = [
     title: 'Iron Lattice Lookout',
     discipline: 'Landmark ironwork',
     category: 'landmarks',
-    tagline: 'Two tiers of open lattice over an arched masonry plinth, topped by a clock stage with four hinged hands.',
+    tagline: 'Two tall tiers of open lattice rise from a landscaped civic garden to a clock stage and glazed lookout.',
     summary:
       'An original ironwork lookout: an arched plinth, two lattice tiers of columns and bonded decks stepping inward, ' +
       'and a clock stage whose four hands each sit on a real revolute hinge. The lattice and the clock are built by ' +
@@ -3214,12 +3986,13 @@ const DEMOS = [
       'Two tiers stepping inward',
       'Arched masonry plinth',
       'Four independently hinged clock hands',
+      'Glazed observation pavilion and lit gardens',
     ],
     refinement:
       'The first candidate stood the ironwork straight on the open plinth, so the lower lattice deck rested on a ' +
       'one-stud wall rim and nothing else \u2014 most of that deck measures as unsupported. The published set caps the ' +
       'plinth with two cross-bonded plate layers before the tiers go on, which is what carries the tower.',
-    camera: { yaw: 30, pitch: 22, zoom: 0.98 },
+    camera: { yaw: 30, pitch: 24, zoom: 1.06 },
     maxPartsPerStep: 64,
     tensionAllowance: 320,
     tensionReason:
@@ -3230,7 +4003,7 @@ const DEMOS = [
     brief: {
       prompt:
         'An ironwork lookout tower: an arched stone plinth, two tiers of open lattice stepping inward, and a clock stage near the top whose hands actually turn.',
-      envelopeStuds: [32, null, 32],
+      envelopeStuds: [56, null, 56],
       palette: ['Sand', 'Light Bluish Grey', 'Dark Bluish Grey', 'White'],
       functions: ['Open lattice structure', 'Articulated clock hands', 'Arched ground level'],
     },
@@ -3242,7 +4015,7 @@ const DEMOS = [
     discipline: 'Play set',
     category: 'architecture',
     tagline:
-      'A quayside podium with drive-in vehicle bays, a metro platform, a glazed control shaft and a crane that luffs.',
+      'An eighty-four-stud harbour district with drive-in bays, a metro platform, a glazed control shaft and a crane that luffs.',
     summary:
       'An original quayside play set rather than another facade: two full-height vehicle bays cut through the podium, ' +
       'a metro platform along the seaward edge, a glazed control shaft with a control room on top, and a quay crane ' +
@@ -3253,12 +4026,13 @@ const DEMOS = [
       'Glazed control shaft',
       'Crane on a real luffing hinge',
       'One subassembly per programme element',
+      'Lit promenade, cargo court and warehouse planting',
     ],
     refinement:
       'The rough candidate was a single glazed block on a plain slab \u2014 a tower with nothing to do. The published ' +
       'set cuts the podium open for vehicles, raises a platform along the quay, and puts a crane on the roof that ' +
       'the joint solver can actually drive.',
-    camera: { yaw: 36, pitch: 28, zoom: 1.02 },
+    camera: { yaw: 36, pitch: 28, zoom: 1.08 },
     maxPartsPerStep: 72,
     tensionAllowance: 420,
     tensionReason:
@@ -3269,7 +4043,7 @@ const DEMOS = [
     brief: {
       prompt:
         'A quayside control tower with two drive-in vehicle bays under the podium, a metro platform along the water, a glazed control shaft with a control room on top, and a working crane on the podium roof.',
-      envelopeStuds: [44, null, 30],
+      envelopeStuds: [84, null, 56],
       palette: ['Sand', 'White', 'Light Bluish Grey', 'Dark Bluish Grey', 'Yellow'],
       functions: ['Drive-in vehicle bays', 'Metro platform', 'Luffing crane', 'Verified build sequence'],
     },
@@ -3280,7 +4054,8 @@ const DEMOS = [
     title: 'Saucer Freighter',
     discipline: 'Vehicle and mechanism',
     category: 'vehicles',
-    tagline: 'A lozenge hull with sideways-stud skins, twin forward booms, a turret that turns and a ramp that opens.',
+    tagline:
+      'A faceted lozenge hull on a seventy-stud illuminated dock, with twin booms, a turning turret and opening ramp.',
     summary:
       'An original freighter: a cross-bonded keel, a sideways-stud hull skin built by the kernel\u2019s own SNOT planner, ' +
       'twin booms flanking a centred cockpit, and two real hinges \u2014 a dorsal turret and a boarding ramp \u2014 that the ' +
@@ -3291,23 +4066,25 @@ const DEMOS = [
       'Twin booms, centred cockpit',
       'Hinged boarding ramp',
       'Hinged dorsal turret',
+      'Illuminated shipyard apron and hull ribs',
     ],
     refinement:
       'The rough candidate was a single rectangular slab with the cockpit sitting on top of it \u2014 a box with a ' +
       'windscreen. The published set steps the hull in at bow and stern, wraps it in a genuinely clutched sideways ' +
       'skin, and replaces the moulded-on details with two hinges the kernel can actually drive.',
-    camera: { yaw: 42, pitch: 30, zoom: 1.04 },
+    camera: { yaw: 42, pitch: 30, zoom: 1.08 },
     maxPartsPerStep: 64,
-    tensionAllowance: 320,
+    tensionAllowance: 640,
     tensionReason:
       'The sideways skins hang from side-facing studs on the rim brackets and the hinged flaps rest on their ' +
-      'knuckles rather than clutching down into the deck. The statics pass counts both as tension-carried; the ' +
+      'knuckles rather than clutching down into the deck. The raised inner deck also spans the four cross-bonded ' +
+      'keel bands instead of being packed solid underneath. The statics pass counts these as tension-carried; the ' +
       'allowance is bounded so an actually unsupported panel still fails the gate.',
     hero: false,
     brief: {
       prompt:
         'An original saucer freighter with a stepped lozenge hull, sideways-stud skins, twin forward booms either side of a centred cockpit, a dorsal turret that turns and a boarding ramp that opens.',
-      envelopeStuds: [42, null, 22],
+      envelopeStuds: [70, null, 56],
       palette: ['Light Bluish Grey', 'Dark Bluish Grey', 'Dark Tan'],
       functions: ['Hinged boarding ramp', 'Hinged dorsal turret', 'Sideways-stud hull skin'],
     },
@@ -3318,19 +4095,23 @@ const DEMOS = [
     title: 'Harbour Street',
     discipline: 'Modular architecture',
     category: 'architecture',
-    tagline: 'A terrace of five shopfronts on a tiled street, every building and every floor separable.',
-    summary: 'Five shopfronts on a tiled street. Every building lifts out, every floor lifts off.',
+    tagline:
+      'Seven four-storey shopfronts, separated by alleys and finished with roof rooms, trees, lights and planted entries.',
+    summary:
+      'Seven four-storey shopfronts on a full street district. Every address lifts out, every floor lifts off, and the public realm is built at the same editable grain.',
     techniques: [
       'One subassembly per storey, per unit',
       'Tiled carriageway, kerb and pavement',
       'Seated shopfront doors and glazing',
       'Parapet roofline',
+      'Two-stud alleys and individual roof rooms',
+      'Street trees, lamps and planted thresholds',
     ],
     refinement:
       'The first candidate laid the terrace as one continuous shell on a painted ground plane, so nothing came ' +
       'apart and the street was a texture. The published set separates every unit and every floor, and lays the ' +
       'road surface as individual tiles.',
-    camera: { yaw: 34, pitch: 26, zoom: 1.12 },
+    camera: { yaw: 34, pitch: 28, zoom: 1.08 },
     maxPartsPerStep: 72,
     tensionAllowance: 480,
     tensionReason:
@@ -3340,8 +4121,8 @@ const DEMOS = [
     hero: false,
     brief: {
       prompt:
-        'A street of five modular shops with flats above, on a tiled road with kerbs and pavement, where every building and every floor can be lifted off separately.',
-      envelopeStuds: [76, null, 34],
+        'A street of seven four-storey modular shops with flats above, separate alleys, detailed roofs, trees, lights and planted thresholds, where every building and every floor can be lifted off separately.',
+      envelopeStuds: [134, null, 50],
       palette: ['Reddish Brown', 'Sand', 'Dark Tan', 'White', 'Tan'],
       functions: ['Separable units and storeys', 'Glazed shopfronts', 'Verified build sequence'],
     },
@@ -3352,31 +4133,36 @@ const DEMOS = [
     title: 'Meridian Tower',
     discipline: 'Modular architecture',
     category: 'architecture',
-    tagline: 'A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.',
-    summary: 'Twenty-two storeys, each its own subassembly. Every floor lifts off the one below it.',
+    tagline:
+      'A twenty-eight-storey modular high-rise with two setbacks, a complete civic plaza and real seated glazing.',
+    summary:
+      'Twenty-eight storeys, each its own subassembly, step through three distinct tower volumes above a landscaped plaza, pavilion and reflecting pool.',
     techniques: [
       'One subassembly per storey',
       'Cross-bonded deck between floors',
       'Seated window frames on every elevation',
       'Stepped crown and mast',
+      'Two structural setbacks',
+      'Landscaped plaza, pavilion and reflecting pool',
     ],
     refinement:
       'The massing study stacked the storeys as one continuous shell, so there was no seam to lift and the ' +
       'facades were blank. The published set separates every floor onto its own two-layer deck and glazes the ' +
       'elevations with frames the catalogue actually compiles.',
-    camera: { yaw: 38, pitch: 18, zoom: 1.06 },
+    camera: { yaw: 38, pitch: 20, zoom: 1.1 },
     maxPartsPerStep: 72,
-    tensionAllowance: 640,
+    tensionAllowance: 1_100,
     tensionReason:
       'Two things in this model are held in bearing rather than in clutch, and the statics pass counts both as ' +
       'tension-carried. The glazing is seated inside its frames, and the middle of each storey deck rests on the ' +
-      'walls below it at the perimeter rather than clutching down into them. Both are how a modular building is ' +
+      'walls below it at the perimeter rather than clutching down into them. The two setback transfer decks use ' +
+      'the same bearing condition. All three are how a modular building is ' +
       'actually assembled; the allowance is bounded so a genuinely floating storey still fails the gate.',
     hero: false,
     brief: {
       prompt:
-        'A twenty-two-storey modular tower on a plaza, where every floor lifts off separately, the elevations carry real windows, and the crown steps back to a mast.',
-      envelopeStuds: [58, null, 30],
+        'A twenty-eight-storey modular tower on a landscaped plaza, where every floor lifts off separately, the elevations carry real windows, two upper volumes set back, and the crown rises to a mast.',
+      envelopeStuds: [84, null, 52],
       palette: ['Sand', 'Tan', 'White', 'Light Bluish Grey', 'Dark Bluish Grey'],
       functions: ['Separable storeys', 'Glazed elevations', 'Verified build sequence'],
     },
@@ -3388,25 +4174,26 @@ const DEMOS = [
     discipline: 'Campus architecture',
     category: 'architecture',
     tagline:
-      'A 120 × 80-stud university campus with seven landmarks, a tiled quad, trees, Morrow Plots and 21 LEGO characters.',
+      'A 128 × 88-stud university campus with nine landmark structures, a tiled quad, mature trees, path lights and 21 LEGO characters.',
     summary:
       'A display-scale UIUC campus set anchored by the Illini Union and Foellinger Auditorium, with Altgeld Hall, ' +
       'Alma Mater, six flanking academic blocks, the Main Quad path geometry, Morrow Plots, mature trees and ' +
-      'brick-built students. The site finish alone is 9,600 individually editable pieces over a cross-bonded base.',
+      'brick-built students, an east visitor hall and a south garden pavilion. The site finish alone is 11,264 individually editable pieces over a cross-bonded base.',
     techniques: [
       '10,000+ catalog-backed pieces',
-      'Cross-bonded 120 × 80-stud foundation',
-      'Seven named campus landmarks',
+      'Cross-bonded 128 × 88-stud foundation',
+      'Nine landmark structures',
       'Stepped copper dome and bell tower',
       '18 campus figures',
       'Three-figure Alma Mater group',
+      'Twenty-eight mature trees and sixteen path lights',
     ],
     refinement:
       'The massing study established the Main Quad axis on a one-layer field, but its plate runs were disconnected. ' +
       'The published set cross-bonds the entire site, replaces the massing blocks with detailed landmark buildings, ' +
-      'and adds the 9,600-piece landscape, characters and buildable campus life.',
-    camera: { yaw: 34, pitch: 54, zoom: 0.96 },
-    showcase: { landmarkCount: 7, characterCount: 21, siteFinishParts: 9_600 },
+      'and adds the 11,264-piece landscape, characters and buildable campus life.',
+    camera: { yaw: 34, pitch: 54, zoom: 1.02 },
+    showcase: { landmarkCount: 9, characterCount: 21, siteFinishParts: 11_264 },
     showcaseProof: { characterDefinitionIds: ['90398'], siteFinishSubassemblyId: 'finish' },
     maxPartsPerStep: 64,
     tensionAllowance: 256,
@@ -3418,7 +4205,7 @@ const DEMOS = [
     brief: {
       prompt:
         'Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.',
-      envelopeStuds: [120, null, 80],
+      envelopeStuds: [128, null, 88],
       palette: ['Illinois orange and blue', 'Campus red brick', 'Copper green', 'Quad green', 'Limestone white'],
       functions: [
         '10,000+ editable pieces',

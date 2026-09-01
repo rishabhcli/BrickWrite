@@ -59,7 +59,10 @@ beforeAll(() => {
 
 const ranked = (): RefinementProposalV1[] => realResult.proposals.filter((p) => p.status === 'ranked')
 
-const resolved = (result: RefinementJobResult): RefinementRunner => () => Promise.resolve(result)
+const resolved =
+  (result: RefinementJobResult): RefinementRunner =>
+  () =>
+    Promise.resolve(result)
 
 const held = (): { runner: RefinementRunner; release: (result: RefinementJobResult) => void } => {
   let settle: (result: RefinementJobResult) => void = () => {}
@@ -186,6 +189,13 @@ describe('empty scope', () => {
     const { spy } = mount({ selection: [] })
     fireEvent.click(screen.getByRole('button', { name: /What is measured/ }))
     expect(spy.modals).toEqual(['refinement.objectives'])
+  })
+
+  it('turns a tune-up starter into a scoped instruction', () => {
+    const { session, spy } = mount({ selection: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Strengthen' }))
+    expect(spy.selected[0]).toEqual(Object.keys(fixtureDoc.parts))
+    expect(session.getState().instruction).toMatch(/Strengthen weak seams/)
   })
 })
 
@@ -344,7 +354,11 @@ describe('proposals', () => {
     await search()
     const second = ranked()[1]
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: `Proposal 2: ${second.label}, ${second.strategy}, score ${second.score.toFixed(2)}` }))
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: `Proposal 2: ${second.label}, ${second.strategy}, score ${second.score.toFixed(2)}`,
+        }),
+      )
     })
     expect(spy.selected.at(-1)).toEqual(second.changedPartIds)
   })
@@ -501,13 +515,13 @@ describe('accessibility', () => {
     mount()
     await search()
     const [first, second] = ranked()
-    expect(screen.getByRole('button', { name: new RegExp(`^Proposal 1: ${first.label}`), pressed: true })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: new RegExp(`^Proposal 1: ${first.label}`), pressed: true }),
+    ).toBeInTheDocument()
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Proposal 2: ${second.label}`) }))
     })
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(1),
-    )
+    await waitFor(() => expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(1))
   })
 
   it('drives accept from the keyboard alone', async () => {

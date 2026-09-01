@@ -151,7 +151,7 @@ describe('persistence', () => {
 
 describe('grid templates', () => {
   it('reserves splitter tracks between every dock and the viewport', () => {
-    expect(workspaceColumns(defaultLayout('desktop'))).toBe('268px 4px minmax(0, 1fr) 4px 34px')
+    expect(workspaceColumns(defaultLayout('desktop'))).toBe('268px 4px minmax(0, 1fr) 4px 316px')
   })
 
   it('leaves a reopen rail when a dock is collapsed', () => {
@@ -166,14 +166,14 @@ describe('grid templates', () => {
 
 describe('chrome', () => {
   it('matches the quieter shell strip heights', () => {
-    expect(TOPBAR_HEIGHT).toBe(44)
+    expect(TOPBAR_HEIGHT).toBe(52)
     expect(TOOLRAIL_HEIGHT).toBe(0)
     expect(STATUSBAR_HEIGHT).toBe(0)
-    expect(CHROME_HEIGHT).toBe(44)
+    expect(CHROME_HEIGHT).toBe(52)
   })
 
   it('opens into a build-first workspace', () => {
-    expect(defaultLayout().right.collapsed).toBe(true)
+    expect(defaultLayout().right.collapsed).toBe(false)
     expect(defaultLayout().bottom.collapsed).toBe(true)
     expect(defaultLayout().rightTab).toBe('design')
     expect(DEFAULT_SECTIONS['generation.panel']).toBe(true)
@@ -187,9 +187,9 @@ describe('chrome', () => {
     expect(defaultLayout().sections['generation.panel']).toBe(true)
   })
 
-  it('keeps optional docks closed and Design ready in every preset', () => {
+  it('keeps the creative dock visible and Design ready in every preset', () => {
     for (const preset of Object.values(LAYOUT_PRESETS)) {
-      expect(preset.layout.right.collapsed).toBe(true)
+      expect(preset.layout.right.collapsed).toBe(false)
       expect(preset.layout.bottom.collapsed).toBe(true)
       expect(preset.layout.rightTab).toBe('design')
     }

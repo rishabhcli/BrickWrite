@@ -1,14 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { cadEngine } from '../cad/engine'
 import { GlassPanel } from '../ui/liquid'
+import { Search, Sparkles, Wrench } from 'lucide-react'
 import { parseReferenceTokens, resolveReference, type SpatialReference } from './references'
 import { AgentSession, type SessionState } from './session'
 import type { AgentMode } from './modes'
@@ -62,11 +55,19 @@ export interface AgentWorkbenchProps {
   onCollapsedChange?: (collapsed: boolean) => void
 }
 
-export function AgentWorkbench({ session: injected, defaultCollapsed = false, collapsed, onCollapsedChange }: AgentWorkbenchProps) {
+export function AgentWorkbench({
+  session: injected,
+  defaultCollapsed = false,
+  collapsed,
+  onCollapsedChange,
+}: AgentWorkbenchProps) {
   const ownedSession = useMemo(() => injected ?? new AgentSession(), [injected])
-  useEffect(() => () => {
-    if (!injected) ownedSession.dispose()
-  }, [injected, ownedSession])
+  useEffect(
+    () => () => {
+      if (!injected) ownedSession.dispose()
+    },
+    [injected, ownedSession],
+  )
 
   const state = useSyncExternalStore<SessionState>(ownedSession.subscribe, ownedSession.getState, ownedSession.getState)
   const reducedMotion = usePrefersReducedMotion()
@@ -127,6 +128,11 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
     setDraft('')
     await ownedSession.send(text)
   }, [draft, ownedSession, state.busy])
+
+  const chooseStarter = useCallback((prompt: string) => {
+    setDraft(prompt)
+    requestAnimationFrame(() => composerRef.current?.focus())
+  }, [])
 
   const onComposerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -217,18 +223,26 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
           {state.transcript.length === 0 ? (
             <div className="bw-agent__empty">
               <h3>Nothing has been asked yet.</h3>
-              <p>Describe a change in your own words. The assistant reads the model before it plans, and every change it proposes waits for you.</p>
-              <ul>
-                <li>
-                  <code>@selection</code> — whatever is selected in the viewport
-                </li>
-                <li>
-                  <code>@part:&lt;id&gt;</code>, <code>@subassembly:&lt;id&gt;</code>, <code>@note:&lt;id&gt;</code>
-                </li>
-                <li>
-                  <code>@view</code> — what the camera is looking at
-                </li>
-              </ul>
+              <div className="bw-agent__starters" aria-label="Conversation starters">
+                <button
+                  type="button"
+                  onClick={() => chooseStarter('Inspect @selection and tell me the biggest structural risk.')}
+                >
+                  <Search size={15} aria-hidden="true" /> <span>Inspect</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => chooseStarter('Improve @selection while preserving its silhouette and palette.')}
+                >
+                  <Sparkles size={15} aria-hidden="true" /> <span>Improve</span>
+                </button>
+                <button type="button" onClick={() => chooseStarter('Plan the next useful building step from @view.')}>
+                  <Wrench size={15} aria-hidden="true" /> <span>Next step</span>
+                </button>
+              </div>
+              <p>
+                Use <code>@selection</code>, <code>@view</code>, or <code>@part:id</code> for context.
+              </p>
             </div>
           ) : (
             state.transcript.map((message) => (
@@ -248,7 +262,9 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
                     {message.references.map((reference) => (
                       <li key={reference.token} className="bw-agent__chip" data-resolved={reference.resolved}>
                         {reference.label}
-                        {!reference.resolved && <span className="bw-agent__visually-hidden"> — unresolved: {reference.problem}</span>}
+                        {!reference.resolved && (
+                          <span className="bw-agent__visually-hidden"> — unresolved: {reference.problem}</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -256,7 +272,11 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
                 {message.toolCalls && message.toolCalls.length > 0 && (
                   <ul className="bw-agent__toolcalls" aria-label="Tools used">
                     {message.toolCalls.map((call) => (
-                      <li key={call.id} className="bw-agent__toolcall" data-ok={call.ok === null ? 'pending' : String(call.ok)}>
+                      <li
+                        key={call.id}
+                        className="bw-agent__toolcall"
+                        data-ok={call.ok === null ? 'pending' : String(call.ok)}
+                      >
                         {call.name}
                         {call.ok === false ? ' · failed' : call.ok === true ? ' · ok' : ' · running'}
                       </li>
@@ -298,11 +318,14 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
 
         {reviewableWaves.length > 0 && (
           <section className="bw-agent__waves" aria-label="Proposed changes">
-            <h3>
-              Proposed changes ({pendingWaves.length} awaiting review)
-            </h3>
+            <h3>Proposed changes ({pendingWaves.length} awaiting review)</h3>
             {reviewableWaves.map((wave) => (
-              <article key={wave.id} className="bw-agent__wave" data-status={wave.status} aria-label={`Wave: ${wave.label}`}>
+              <article
+                key={wave.id}
+                className="bw-agent__wave"
+                data-status={wave.status}
+                aria-label={`Wave: ${wave.label}`}
+              >
                 <span className="bw-agent__wave-title">{wave.label}</span>
                 <span className="bw-agent__wave-meta">
                   {wave.summary} · {wave.operations.length} operation(s) · planned at r{wave.baseRevision}
@@ -387,7 +410,9 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
               {draftReferences.map((reference) => (
                 <li key={reference.token} className="bw-agent__chip" data-resolved={reference.resolved}>
                   {reference.label}
-                  {!reference.resolved && <span className="bw-agent__visually-hidden"> — unresolved: {reference.problem}</span>}
+                  {!reference.resolved && (
+                    <span className="bw-agent__visually-hidden"> — unresolved: {reference.problem}</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -405,10 +430,20 @@ export function AgentWorkbench({ session: injected, defaultCollapsed = false, co
             aria-describedby={`${panelId}-hint`}
           />
           <div className="bw-agent__composer-actions">
-            <button type="submit" className="bw-agent__button" data-variant="primary" disabled={state.busy || !draft.trim()}>
+            <button
+              type="submit"
+              className="bw-agent__button"
+              data-variant="primary"
+              disabled={state.busy || !draft.trim()}
+            >
               Send
             </button>
-            <button type="button" className="bw-agent__button" onClick={() => ownedSession.cancel()} disabled={!state.busy}>
+            <button
+              type="button"
+              className="bw-agent__button"
+              onClick={() => ownedSession.cancel()}
+              disabled={!state.busy}
+            >
               Cancel
             </button>
             <button

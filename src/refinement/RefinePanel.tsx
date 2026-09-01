@@ -1,6 +1,20 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { GlassPanel } from '../ui/liquid'
-import { Ban, Check, CircleAlert, Info, MousePointer2, Play, RotateCcw, SlidersHorizontal, Stethoscope, X } from 'lucide-react'
+import {
+  Ban,
+  Check,
+  CircleAlert,
+  FlipHorizontal2,
+  Info,
+  MousePointer2,
+  PackageMinus,
+  Play,
+  RotateCcw,
+  Rows3,
+  SlidersHorizontal,
+  Stethoscope,
+  X,
+} from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
 import { MAX_WEIGHT, objectiveList } from './objectives'
 import {
@@ -63,7 +77,16 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
   if (!selection.length && !running && !state.proposals.length) {
     return (
       <GlassPanel as="section" className="bw-refine" aria-label="Refine">
-        <EmptyScope api={api} partIds={partIds} outcome={state.outcome} onDismiss={() => session.clearOutcome()} />
+        <EmptyScope
+          api={api}
+          partIds={partIds}
+          outcome={state.outcome}
+          onDismiss={() => session.clearOutcome()}
+          onStarter={(instruction) => {
+            session.setInstruction(instruction)
+            api.select(partIds)
+          }}
+        />
       </GlassPanel>
     )
   }
@@ -141,7 +164,8 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
                     disabled={running}
                   />
                   <span className="bw-refine__weight-unit" id={`bw-refine-u-${objective.id}`}>
-                    {objective.unit} · {objective.direction === 'higher-is-better' ? 'higher is better' : 'lower is better'}
+                    {objective.unit} ·{' '}
+                    {objective.direction === 'higher-is-better' ? 'higher is better' : 'lower is better'}
                   </span>
                 </div>
               )
@@ -163,11 +187,7 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
               <Ban size={11} aria-hidden="true" /> Cancel search
             </button>
           ) : (
-            <button
-              className="bw-refine__btn bw-refine__btn--primary"
-              onClick={start}
-              disabled={!selection.length}
-            >
+            <button className="bw-refine__btn bw-refine__btn--primary" onClick={start} disabled={!selection.length}>
               <Play size={11} aria-hidden="true" /> Find refinements
             </button>
           )}
@@ -185,9 +205,7 @@ export function RefinePanel({ api, session }: { api: WorkbenchApi; session: Refi
           code={state.outcome.code}
           alert={state.outcome.kind === 'refused' || state.outcome.kind === 'stale'}
           action={
-            state.outcome.kind === 'stale'
-              ? { label: `Search again at r${document.revision}`, run: start }
-              : null
+            state.outcome.kind === 'stale' ? { label: `Search again at r${document.revision}`, run: start } : null
           }
           onDismiss={() => session.clearOutcome()}
         />
@@ -328,11 +346,13 @@ function EmptyScope({
   partIds,
   outcome,
   onDismiss,
+  onStarter,
 }: {
   api: WorkbenchApi
   partIds: string[]
   outcome: RefineState['outcome']
   onDismiss: () => void
+  onStarter: (instruction: string) => void
 }) {
   return (
     <>
@@ -349,38 +369,61 @@ function EmptyScope({
         />
       )}
       <div className="bw-refine__empty">
-        <div className="bw-refine__empty-title">
-          <Stethoscope size={14} aria-hidden="true" /> Pick a region to refine
+        <div className="bw-refine__sr-only">
+          <span>Pick a region to refine</span>
+          <span>Refine measures {objectiveList.length} objectives before and after.</span>
+          <span>A wall whose joints line up through two courses.</span>
         </div>
-        <p>
-          Refine reworks a region you name and reports what the rework cost. It measures {objectiveList.length}{' '}
-          objectives before and after — seam bonding, tipping margin, rarity, bare studs and the rest — and every
-          proposal shows all of them, including the ones it made worse.
-        </p>
-        <ul>
-          <li>A wall whose joints line up through two courses.</li>
-          <li>A roof that has to keep its outline but lose a third of its parts.</li>
-          <li>One subassembly you want mirrored properly.</li>
-        </ul>
-        <p className="bw-refine__hint">
-          Click parts in the viewport, shift-drag a marquee, or use Select → Connected. Nothing is written until you
-          accept a proposal.
-        </p>
+        <div className="bw-refine__empty-title">
+          <Stethoscope size={14} aria-hidden="true" /> Choose a tune-up
+        </div>
+        <div className="bw-refine__starters" aria-label="Refinement starters">
+          <button
+            type="button"
+            disabled={!partIds.length}
+            onClick={() =>
+              onStarter('Strengthen weak seams and unsupported connections without changing the silhouette.')
+            }
+          >
+            <Rows3 size={16} aria-hidden="true" />
+            <span>Strengthen</span>
+          </button>
+          <button
+            type="button"
+            disabled={!partIds.length}
+            onClick={() => onStarter('Use fewer parts while preserving the shape, connections, and visible palette.')}
+          >
+            <PackageMinus size={16} aria-hidden="true" />
+            <span>Simplify</span>
+          </button>
+          <button
+            type="button"
+            disabled={!partIds.length}
+            onClick={() => onStarter('Improve symmetry while preserving protected parts and articulation.')}
+          >
+            <FlipHorizontal2 size={16} aria-hidden="true" />
+            <span>Balance</span>
+          </button>
+        </div>
+        <p className="bw-refine__hint">Select a region for precision, or start with the whole build.</p>
         <div className="bw-refine__empty-actions">
           <button
             className="bw-refine__btn"
+            aria-label={`Select all ${partIds.length} parts`}
             onClick={() => api.select(partIds)}
             disabled={!partIds.length}
           >
-            <MousePointer2 size={11} aria-hidden="true" /> Select all {partIds.length} parts
+            <MousePointer2 size={11} aria-hidden="true" /> Whole build
           </button>
-          <button className="bw-refine__btn" onClick={() => api.openModal(OBJECTIVES_MODAL_ID)}>
-            <Info size={11} aria-hidden="true" /> What is measured
+          <button
+            className="bw-refine__btn"
+            aria-label="What is measured"
+            onClick={() => api.openModal(OBJECTIVES_MODAL_ID)}
+          >
+            <Info size={11} aria-hidden="true" /> {objectiveList.length} checks
           </button>
         </div>
-        {!partIds.length && (
-          <p className="bw-refine__hint">This document has no parts yet — place a brick before refining it.</p>
-        )}
+        {!partIds.length && <p className="bw-refine__hint">Add a brick to begin.</p>}
       </div>
     </>
   )
@@ -514,9 +557,7 @@ function ProposalCard({
               Cost: {row.label} {formatDelta(row.delta)}
             </span>
           ))}
-          {!improved.length && !regressed.length && (
-            <span className="bw-refine__chip">No measured axis moved</span>
-          )}
+          {!improved.length && !regressed.length && <span className="bw-refine__chip">No measured axis moved</span>}
         </span>
       </button>
       {proposal.warnings.map((warning) => (

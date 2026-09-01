@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Eye, X } from 'lucide-react'
+import { Check, Eye, X } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { catalog, searchCatalog } from '../../cad/catalog'
 import type { ResolvedPlacement } from '../../cad/placement'
@@ -10,6 +10,8 @@ import { Slot } from './ExtensionRegistry'
 import { EmptyBuildState } from './states'
 import type { Workbench } from './useWorkbench'
 import { ViewportQuickControls } from './ViewportQuickControls'
+import { ViewportNavigator } from './ViewportNavigator'
+import { SelectionHUD } from './SelectionHUD'
 
 /**
  * What each diagnostic view is showing.
@@ -78,6 +80,16 @@ export function ViewportStage({
         (proposal) => proposal.id === activeProposal.id || !pendingProposalIds.has(proposal.id),
       )
     : workbench.viewportProposals
+  const selectionPosition = state.selection.length
+    ? (state.selection
+        .map((id) => state.document.parts[id]?.transform.position)
+        .filter((position): position is readonly [number, number, number] => Boolean(position))
+        .reduce<[number, number, number]>(
+          (sum, position) => [sum[0] + position[0], sum[1] + position[1], sum[2] + position[2]],
+          [0, 0, 0],
+        )
+        .map((value) => value / state.selection.length) as [number, number, number])
+    : ([0, 0, 0] as const)
 
   const pickStarter = useCallback(() => {
     const first =
@@ -189,24 +201,24 @@ export function ViewportStage({
         {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
-      <div className="viewport-title-block">
-        {!placement && state.selection.length ? (
-          <button
-            className="selection-actions-trigger"
-            aria-label="Selection actions"
-            disabled={Boolean(placement)}
-            aria-expanded={Boolean(contextPoint)}
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              setContextPoint({ x: rect.left, y: rect.bottom + 6 })
-            }}
-          >
-            {workbench.selectedDefinition?.name ?? `${state.selection.length} parts selected`}
-            <ChevronDown size={12} />
-          </button>
-        ) : null}
-      </div>
+      {!placement && state.selection.length ? (
+        <SelectionHUD
+          count={state.selection.length}
+          label={workbench.selectedDefinition?.name ?? `${state.selection.length} parts`}
+          position={selectionPosition}
+          tool={workbench.tool}
+          onTool={workbench.setTool}
+          onFocus={workbench.focusSelection}
+          onGround={workbench.groundSelection}
+          onDuplicate={workbench.duplicateSelection}
+          onMore={(anchor) => {
+            const rect = anchor.getBoundingClientRect()
+            setContextPoint({ x: rect.left, y: rect.bottom + 6 })
+          }}
+        />
+      ) : null}
       <ViewportQuickControls workbench={workbench} />
+      <ViewportNavigator view={workbench.cameraView} onView={workbench.setCameraView} />
 
       {/* Ortho is an editing projection, not a diagnostic overlay. Its pressed
           toolbar button is enough; a large legend used to obscure the model. */}

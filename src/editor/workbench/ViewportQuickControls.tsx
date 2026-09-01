@@ -1,5 +1,4 @@
 import { Box, Focus, Grid3X3, Magnet, Scan } from 'lucide-react'
-import type { CameraView } from '../CadViewport'
 import { GlassIsland } from '../../ui/liquid'
 import type { Workbench } from './useWorkbench'
 
@@ -18,18 +17,6 @@ export function ViewportQuickControls({ workbench: w }: { workbench: Workbench }
   return (
     <div className="viewport-quick-controls" role="toolbar" aria-label="Viewport quick controls">
       <GlassIsland className="viewport-control-row" radius="section" blur="control">
-        <select
-          aria-label="Camera view"
-          value={w.cameraView}
-          onChange={(event) => w.setCameraView(event.target.value as CameraView)}
-        >
-          <option value="isometric">Isometric</option>
-          <option value="front">Front</option>
-          <option value="rear">Back</option>
-          <option value="left">Left</option>
-          <option value="right">Right</option>
-          <option value="top">Top</option>
-        </select>
         {/* `Box` rather than `Scan`: the projection toggle and Focus selection
             two buttons along were drawn with the same glyph at two sizes, so
             the toolbar showed one icon meaning two unrelated things. */}

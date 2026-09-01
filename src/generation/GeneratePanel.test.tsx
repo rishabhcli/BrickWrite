@@ -50,12 +50,19 @@ beforeAll(async () => {
   if (!realRun.candidates.length) throw new Error('The fixture brief produced no accepted candidate.')
 }, 60_000)
 
-const replay = (run?: GenerationRun): GenerationRunner => async (input) => {
-  for (const { event, index } of realPhases) input.onPhase(event, index)
-  return run ?? realRun
-}
+const replay =
+  (run?: GenerationRun): GenerationRunner =>
+  async (input) => {
+    for (const { event, index } of realPhases) input.onPhase(event, index)
+    return run ?? realRun
+  }
 
-const holdOpen = (): { runner: GenerationRunner; emit: (count: number) => void; settle: () => void; fail: (cause: unknown) => void } => {
+const holdOpen = (): {
+  runner: GenerationRunner
+  emit: (count: number) => void
+  settle: () => void
+  fail: (cause: unknown) => void
+} => {
   let resolveRun: (run: GenerationRun) => void = () => {}
   let rejectRun: (cause: unknown) => void = () => {}
   let onPhase: ((event: PhaseEvent, index: number) => void) | null = null
@@ -208,6 +215,15 @@ describe('the empty state', () => {
     expect(screen.queryByText(/Generating/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Compiling brief/)).not.toBeInTheDocument()
   })
+
+  it('turns a visual starter into an editable request', () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Vehicle' }))
+    expect(screen.getByLabelText('What should be built')).toHaveValue(
+      'A rugged exploration vehicle with working steering, storage, and a removable roof.',
+    )
+    expect(screen.getByRole('button', { name: /Compile brief/ })).toBeEnabled()
+  })
 })
 
 describe('compiling the brief', () => {
@@ -216,7 +232,12 @@ describe('compiling the brief', () => {
     const fetchImpl = vi.fn(async () =>
       ndjson([
         { type: 'accepted', requestId: 'r1' },
-        { type: 'result', value: brief, provenance: { provider: 'anthropic', model: 'claude-sonnet-5', promptHash: 'h', seed: 0, createdAt: '' }, usage: { inputTokens: 1, outputTokens: 2 } },
+        {
+          type: 'result',
+          value: brief,
+          provenance: { provider: 'anthropic', model: 'claude-sonnet-5', promptHash: 'h', seed: 0, createdAt: '' },
+          usage: { inputTokens: 1, outputTokens: 2 },
+        },
       ]),
     ) as unknown as typeof fetch
     mount({ client: { fetchImpl } })
@@ -234,8 +255,12 @@ describe('compiling the brief', () => {
   })
 
   it('says precisely why the route did not answer, and never invents a brief', async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'no_api_key', detail: 'ANTHROPIC_API_KEY is not set on the generation service.' }), { status: 503 }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: 'no_api_key', detail: 'ANTHROPIC_API_KEY is not set on the generation service.' }),
+          { status: 503 },
+        ),
     ) as unknown as typeof fetch
     mount({ client: { fetchImpl } })
     await compile()
@@ -256,8 +281,8 @@ describe('compiling the brief', () => {
   })
 
   it('offers the rule-based compiler as an explicit, labelled choice', async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'no_api_key', detail: 'no key' }), { status: 503 }),
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ error: 'no_api_key', detail: 'no key' }), { status: 503 }),
     ) as unknown as typeof fetch
     const { session } = mount({ client: { fetchImpl } })
     await compile()
@@ -368,7 +393,13 @@ describe('provider honesty', () => {
       if (String(input).includes('/api/brief')) {
         return ndjson([{ type: 'result', value: compileBriefDeterministically(PROMPT) }])
       }
-      return new Response(JSON.stringify({ error: 'model_provider_unavailable', detail: 'The generation service has no credential configured.' }), { status: 503 })
+      return new Response(
+        JSON.stringify({
+          error: 'model_provider_unavailable',
+          detail: 'The generation service has no credential configured.',
+        }),
+        { status: 503 },
+      )
     }) as unknown as typeof fetch
     const { session } = mount({ client: { fetchImpl }, useDefaultRunner: true })
     await compile()
@@ -408,7 +439,10 @@ describe('provider honesty', () => {
       runner: replay({
         ...realRun,
         candidates: [],
-        rejected: realRun.candidates.map((candidate) => ({ candidate, failures: ['2 collision(s) remain in the candidate'] })),
+        rejected: realRun.candidates.map((candidate) => ({
+          candidate,
+          failures: ['2 collision(s) remain in the candidate'],
+        })),
       }),
     })
     await compile()
@@ -432,10 +466,23 @@ describe('candidates', () => {
 
   it('lists every candidate with the metric vector the engine measured', async () => {
     await ready()
-    expect(screen.getByRole('heading', { name: new RegExp(`${realRun.candidates.length} candidates`) })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: new RegExp(`${realRun.candidates.length} candidates`) }),
+    ).toBeInTheDocument()
     const first = realRun.candidates[0]
-    const card = screen.getByRole('button', { name: new RegExp(`^Candidate 1: ${first.strategy}`) }).closest('li') as HTMLElement
-    for (const key of ['partCount', 'distinctElements', 'collisionCount', 'componentCount', 'buildOrderValid', 'withinBudget', 'supportMarginLdu', 'rarePartCount']) {
+    const card = screen
+      .getByRole('button', { name: new RegExp(`^Candidate 1: ${first.strategy}`) })
+      .closest('li') as HTMLElement
+    for (const key of [
+      'partCount',
+      'distinctElements',
+      'collisionCount',
+      'componentCount',
+      'buildOrderValid',
+      'withinBudget',
+      'supportMarginLdu',
+      'rarePartCount',
+    ]) {
       const row = CANDIDATE_METRICS.find((entry) => entry.key === key)!
       expect(within(card).getByText(row.label)).toBeInTheDocument()
       expect(within(card).getByText(row.value(first.metrics))).toBeInTheDocument()

@@ -30,13 +30,14 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Blue Whale Monument",
       "discipline": "Large animal sculpture",
       "category": "animals",
-      "tagline": "A sixty-four-stud blue whale with fins, flukes and foam rising from an editable ocean mosaic.",
-      "summary": "A display-scale whale built as hundreds of individually editable stud columns over a fully tiled ocean scene. The body swells in measured brick courses, the flukes spread across the water, and a white eye-and-foam pass keeps the silhouette readable from every orbit.",
+      "tagline": "An eighty-four-stud blue whale with fins, flukes and foam rising from an illuminated ocean promenade.",
+      "summary": "A display-scale whale built as hundreds of individually editable stud columns over a fully tiled ocean scene. The body swells in measured brick courses, the flukes spread across the water, and a white eye-and-foam pass keeps the silhouette readable from every orbit. Fourteen lit promenade posts and planted reef markers frame the monument without crowding it.",
       "techniques": [
         "Voxel-sculpted animal anatomy",
-        "Cross-bonded 64 x 30-stud plinth",
+        "Cross-bonded 84 x 42-stud plinth",
         "Editable ocean mosaic",
-        "Layered fins and flukes"
+        "Layered fins and flukes",
+        "Illuminated aquarium promenade"
       ],
       "showcase": null,
       "refinement": "The first candidate put a simplified whale on a one-layer plate field whose parallel runs stayed disconnected. The published monument cross-bonds the complete ocean plinth and expands the body, fins, flukes and surface detail.",
@@ -46,9 +47,9 @@ export const DEMO_MANIFEST: DemoManifest = {
       "brief": {
         "prompt": "A large brick-built blue whale monument with a readable body, broad flukes, side fins and white foam, mounted over an editable ocean mosaic.",
         "envelopeStuds": [
-          64,
+          84,
           null,
-          30
+          42
         ],
         "palette": [
           "Medium Blue",
@@ -65,7 +66,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 34,
         "pitch": 48,
-        "zoom": 1.02
+        "zoom": 1.08
       },
       "documentId": "demo_blue_whale_monument",
       "roughDocumentId": "demo_blue_whale_monument_rough",
@@ -75,86 +76,86 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/blue-whale-monument/document.json",
-          "bytes": 4726969,
-          "sha256": "47087ef0f2eb19f6bd78325e17065f2baf142a0846a11797565f2c555c10c127",
+          "bytes": 9231496,
+          "sha256": "e5a1d9239e55fab1cac6dcc26d10eefc0967b1af7159a34c8eda29c22b76109a",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/blue-whale-monument/rough.json",
-          "bytes": 1351835,
-          "sha256": "acc4a040913936d159fab89cd19ce9dfa9bbbe3c01665e5a0c5e2bfd08a43392",
+          "bytes": 1220786,
+          "sha256": "a73972ee0982238ce1be4984f0ac057e1ef4bf64a6826c7cf469204072feff54",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/blue-whale-monument/preview.json",
-          "bytes": 331427,
-          "sha256": "76d07d26f418eaf0b0e8dad1cebca844f063c0be88869ddaf1a5897d1d7d6f4f",
+          "bytes": 662320,
+          "sha256": "d3576ef86cc6865af3ee4ddaab4f8d0882956f2a9aeb8fb8cb40fd3961ca0ee4",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/blue-whale-monument/rough-preview.json",
-          "bytes": 119818,
-          "sha256": "91563fc0b6076a9de8798d3d0461ac7bb8894254cc1f88b09968f47d6dcdcc42",
+          "bytes": 108756,
+          "sha256": "603a419cd120914f0f5ae36067278e00b5d016fcca362e21c64bb8efec0044f3",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/blue-whale-monument/thumb.png",
-          "bytes": 33247,
-          "sha256": "5bc84260544ae5c09dd1a190c6181b0a96e5ebab5df7e5dbcbbd685868f2298a",
+          "bytes": 40676,
+          "sha256": "203e45d5f7839a9aeb4e85591db10cbb54050bd1f20d5f2bad5c0d43faad045f",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/blue-whale-monument/social.png",
-          "bytes": 64265,
-          "sha256": "d26bbe28746ab49dafef805125e1e7d0b9173cb1fe79906563c75bf5b636fd2e",
+          "bytes": 80291,
+          "sha256": "8c529f06931ddb369e5ab1175337f55ae273e5f81ec1b1bc4ea46b5ee6beaa4d",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 6534,
-        "connectionCount": 8296,
+        "partCount": 12794,
+        "connectionCount": 16059,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "virtualColorCount": 0,
-        "weakAttachmentCount": 1920,
+        "weakAttachmentCount": 3528,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -220,
+            -292,
             0
           ],
           "max": [
-            1280,
+            1680,
             0,
-            600
+            840
           ],
           "size": [
-            1280,
-            220,
-            600
+            1680,
+            292,
+            840
           ]
         },
         "footprintStuds": [
-          64,
-          30
+          84,
+          42
         ],
-        "heightPlates": 27.5,
-        "steps": 69,
+        "heightPlates": 36.5,
+        "steps": 135,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 3216.58,
-          "massLabel": "3.22 kg",
-          "measuredParts": 6534,
+          "massGrams": 6282.84,
+          "massLabel": "6.28 kg",
+          "measuredParts": 12794,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "64.0 × 30.0 studs",
-          "tippingMarginLdu": 293.33,
-          "restingParts": 158,
+          "supportLabel": "84.0 × 42.0 studs",
+          "tippingMarginLdu": 413.19,
+          "restingParts": 263,
           "stable": true,
           "overloadedGroups": 0,
           "unsupportedParts": 0,
@@ -164,12 +165,12 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 2179,
-        "connectionCount": 2140,
+        "partCount": 1976,
+        "connectionCount": 1937,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 39,
-        "disconnectedPartCount": 2031,
+        "disconnectedPartCount": 1824,
         "virtualColorCount": 0,
         "weakAttachmentCount": 924,
         "healthy": true,
@@ -195,19 +196,19 @@ export const DEMO_MANIFEST: DemoManifest = {
           22
         ],
         "heightPlates": 14.5,
-        "steps": 184,
+        "steps": 173,
         "buildOrderVerified": false,
         "buildOrderWarnings": [
           "38 parts begin a new independent island: they attach to nothing placed earlier, so each starts a separately-built subassembly."
         ],
         "statics": {
-          "massGrams": 937.73,
-          "massLabel": "938 g",
-          "measuredParts": 2179,
+          "massGrams": 840.04,
+          "massLabel": "840 g",
+          "measuredParts": 1976,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "42.0 × 22.0 studs",
-          "tippingMarginLdu": 213.76,
+          "tippingMarginLdu": 214.2,
           "restingParts": 963,
           "stable": true,
           "overloadedGroups": 0,
@@ -217,11 +218,11 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 4355,
-        "connectionsAdded": 6156,
+        "partsAdded": 10818,
+        "connectionsAdded": 14122,
         "componentsBefore": 39,
         "componentsAfter": 1,
-        "loosePartsBefore": 2031,
+        "loosePartsBefore": 1824,
         "loosePartsAfter": 0,
         "collisionsBefore": 0,
         "collisionsAfter": 0,
@@ -229,56 +230,66 @@ export const DEMO_MANIFEST: DemoManifest = {
         "unsupportedAfter": 0,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 937.73,
-        "massAfterGrams": 3216.58,
-        "stepsBefore": 184,
-        "stepsAfter": 69
+        "massBeforeGrams": 840.04,
+        "massAfterGrams": 6282.84,
+        "stepsBefore": 173,
+        "stepsAfter": 135
       },
       "bill": [
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 4456
+          "count": 8918
         },
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 1921
+          "count": 3529
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 87
+          "count": 164
         },
         {
-          "definitionId": "3034",
-          "name": "Plate 2 x 8",
-          "count": 30
-        },
-        {
-          "definitionId": "3795",
-          "name": "Plate 2 x 6",
-          "count": 14
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 67
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
+          "count": 40
+        },
+        {
+          "definitionId": "2445",
+          "name": "Plate 2 x 12",
+          "count": 21
+        },
+        {
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 21
+        },
+        {
+          "definitionId": "6141",
+          "name": "Plate Round 1 x 1 with Solid Stud",
           "count": 14
         },
         {
           "definitionId": "60479",
           "name": "Plate 1 x 12",
-          "count": 8
+          "count": 12
         },
         {
-          "definitionId": "4477",
-          "name": "Plate 1 x 10",
-          "count": 2
+          "definitionId": "32607",
+          "name": "Plant, Plate 1 x 1 Round with 3 Leaves",
+          "count": 4
         },
         {
           "definitionId": "3666",
           "name": "Plate 1 x 6",
-          "count": 1
+          "count": 3
         },
         {
           "definitionId": "78329",
@@ -286,7 +297,7 @@ export const DEMO_MANIFEST: DemoManifest = {
           "count": 1
         }
       ],
-      "distinctParts": 10,
+      "distinctParts": 12,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -303,13 +314,15 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Sunline Suspension Bridge",
       "discipline": "Landmark infrastructure",
       "category": "landmarks",
-      "tagline": "Twin brick-red gateways carry a road and stepped golden hangers across a ninety-two-stud river.",
-      "summary": "An original city landmark on a fully editable river: a cross-bonded road deck, twin twelve-course gateway towers, smooth traffic lanes and honest stud-connected hanger columns tracing the suspension profile on both edges.",
+      "tagline": "Twin brick-red gateways carry a raised road and stepped golden hangers across a 120-stud river district.",
+      "summary": "An original city landmark on a fully editable river: a cross-bonded road deck raised on six masonry piers, twin eighteen-course gateway towers, smooth traffic lanes, landscaped banks and honest stud-connected hanger columns tracing the suspension profile on both edges.",
       "techniques": [
-        "92 x 34-stud river scene",
+        "120 x 50-stud river district",
         "Twin masonry gateway towers",
+        "Six structural river piers",
         "Cross-bonded suspended deck",
-        "Stepped catenary hangers"
+        "Stepped catenary hangers",
+        "Landscaped, illuminated approaches"
       ],
       "showcase": null,
       "refinement": "The first candidate stopped at a one-layer river study, leaving its plate runs disconnected and no crossing between the banks. The published build cross-bonds the river, adds the complete road deck, towers, lanes and two lines of suspension hangers.",
@@ -319,9 +332,9 @@ export const DEMO_MANIFEST: DemoManifest = {
       "brief": {
         "prompt": "An original large suspension bridge with twin brick-red gateway towers, a long road deck, golden vertical hangers and a fully editable river beneath it.",
         "envelopeStuds": [
-          92,
+          120,
           null,
-          34
+          50
         ],
         "palette": [
           "Dark Red",
@@ -338,7 +351,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 32,
         "pitch": 42,
-        "zoom": 0.98
+        "zoom": 1.04
       },
       "documentId": "demo_sunline_suspension_bridge",
       "roughDocumentId": "demo_sunline_suspension_bridge_rough",
@@ -348,89 +361,89 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/sunline-suspension-bridge/document.json",
-          "bytes": 4386516,
-          "sha256": "c0afaf0a8e2829169156114fd6685b06c388f3e51ef50a939b1e024dcafb14f6",
+          "bytes": 7961487,
+          "sha256": "ea28b819d22399aca598cb72f6b47d33ddf1b8332512bcead62915363d763824",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/sunline-suspension-bridge/rough.json",
-          "bytes": 756337,
-          "sha256": "e7640d4750a3c3c1411c69886daf2a17e724d30fb620b28cb1ec266042d6051f",
+          "bytes": 755833,
+          "sha256": "a62ee9bb34bf950d1e136548b989f9fd49fc6430867c7c2969006d147434c946",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/sunline-suspension-bridge/preview.json",
-          "bytes": 227768,
-          "sha256": "019a5b3360a5a4fc9fbab84129d7d784d204129986195ef582678af8f0478222",
+          "bytes": 415746,
+          "sha256": "40dcac5f1d303ff39fd282429788d6af04af5a1ce144a29cf68f08931a4bea66",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/sunline-suspension-bridge/rough-preview.json",
-          "bytes": 71059,
-          "sha256": "1f948c636d9e4ba87a2fad711c5ff0c8e03bf7cdc706d6f4fb6537ce4db36ec0",
+          "bytes": 71201,
+          "sha256": "f2f5f3533cdd25ba4a0bb954980e15250db0549bb91de3c62d06b0c9024ca252",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/sunline-suspension-bridge/thumb.png",
-          "bytes": 38376,
-          "sha256": "c6db1d1bdaa5bda0443dd6652404d6c1e70798c6647051736b009fbe4c2ad87e",
+          "bytes": 49033,
+          "sha256": "d5ccff8b6f06196ff258b676413e25201184a993921fe0d64909b5023f00d95c",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/sunline-suspension-bridge/social.png",
-          "bytes": 65837,
-          "sha256": "b4845e63cfe25fe3c177022d87061c9ac149c25dfba3176c14f81288c39803c1",
+          "bytes": 85854,
+          "sha256": "220c4a56b986fd56f59a5c97eafbbebb0852e9854be3cf4fd15dd01d9a48a5c0",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 4295,
-        "connectionCount": 9170,
+        "partCount": 8021,
+        "connectionCount": 16433,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 0,
-        "weakAttachmentCount": 2954,
+        "virtualColorCount": 21,
+        "weakAttachmentCount": 6577,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -348,
+            -580,
             0
           ],
           "max": [
-            1840,
+            2400,
             0,
-            680
+            1000
           ],
           "size": [
-            1840,
-            348,
-            680
+            2400,
+            580,
+            1000
           ]
         },
         "footprintStuds": [
-          92,
-          34
+          120,
+          50
         ],
-        "heightPlates": 43.5,
-        "steps": 46,
+        "heightPlates": 72.5,
+        "steps": 87,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 2564.41,
-          "massLabel": "2.56 kg",
-          "measuredParts": 4295,
+          "massGrams": 4972.88,
+          "massLabel": "4.97 kg",
+          "measuredParts": 8021,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "92.0 × 34.0 studs",
-          "tippingMarginLdu": 339.94,
-          "restingParts": 249,
+          "supportLabel": "120.0 × 50.0 studs",
+          "tippingMarginLdu": 499.97,
+          "restingParts": 415,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 8,
+          "unsupportedParts": 19,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
@@ -490,8 +503,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 3019,
-        "connectionsAdded": 7938,
+        "partsAdded": 6745,
+        "connectionsAdded": 15201,
         "componentsBefore": 44,
         "componentsAfter": 1,
         "loosePartsBefore": 1243,
@@ -499,77 +512,77 @@ export const DEMO_MANIFEST: DemoManifest = {
         "collisionsBefore": 0,
         "collisionsAfter": 0,
         "unsupportedBefore": 0,
-        "unsupportedAfter": 8,
+        "unsupportedAfter": 19,
         "stableBefore": true,
         "stableAfter": true,
         "massBeforeGrams": 469.8,
-        "massAfterGrams": 2564.41,
+        "massAfterGrams": 4972.88,
         "stepsBefore": 131,
-        "stepsAfter": 46
+        "stepsAfter": 87
       },
       "bill": [
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 3128
+          "count": 5809
         },
         {
           "definitionId": "3070b",
           "name": "Tile 1 x 1 with Groove",
-          "count": 408
+          "count": 704
         },
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 282
+          "count": 530
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 193
+          "count": 369
         },
         {
           "definitionId": "3008",
           "name": "Brick 1 x 8",
-          "count": 48
+          "count": 140
         },
         {
-          "definitionId": "3010",
-          "name": "Brick 1 x 4",
-          "count": 48
-        },
-        {
-          "definitionId": "60479",
-          "name": "Plate 1 x 12",
-          "count": 26
-        },
-        {
-          "definitionId": "3034",
-          "name": "Plate 2 x 8",
-          "count": 25
-        },
-        {
-          "definitionId": "3795",
-          "name": "Plate 2 x 6",
-          "count": 25
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 89
         },
         {
           "definitionId": "3004",
           "name": "Brick 1 x 2",
-          "count": 24
+          "count": 80
         },
         {
           "definitionId": "3009",
           "name": "Brick 1 x 6",
-          "count": 24
+          "count": 72
+        },
+        {
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 60
+        },
+        {
+          "definitionId": "60479",
+          "name": "Plate 1 x 12",
+          "count": 34
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 19
+          "count": 28
+        },
+        {
+          "definitionId": "91988",
+          "name": "Plate 2 x 14",
+          "count": 28
         }
       ],
-      "distinctParts": 18,
+      "distinctParts": 20,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -592,19 +605,20 @@ export const DEMO_MANIFEST: DemoManifest = {
         "Voxel-sculpted quadruped anatomy",
         "Grounded four-leg silhouette",
         "Ivory tusk accents",
-        "Editable canyon mosaic"
+        "Editable canyon mosaic",
+        "Canyon pines and trail lighting"
       ],
       "showcase": null,
-      "refinement": "The first candidate used a smaller silhouette over loose plate runs. The published figure cross-bonds a fifty-stud scene and resolves the mammoth into a fuller body, grounded legs, ears, trunk and paired tusks.",
+      "refinement": "The first candidate used a smaller silhouette over loose plate runs. The published figure cross-bonds a sixty-eight-stud scene and resolves the mammoth into a fuller body, grounded legs, ears, trunk and paired tusks.",
       "hero": false,
       "tensionAllowance": 0,
       "tensionReason": null,
       "brief": {
         "prompt": "A large brick-built woolly mammoth with a massive rounded body, four grounded legs, a lowered trunk, amber ears and white tusks on a canyon display plinth.",
         "envelopeStuds": [
-          50,
+          68,
           null,
-          32
+          44
         ],
         "palette": [
           "Reddish Brown",
@@ -621,7 +635,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 38,
         "pitch": 45,
-        "zoom": 1.04
+        "zoom": 1.08
       },
       "documentId": "demo_copper_mammoth",
       "roughDocumentId": "demo_copper_mammoth_rough",
@@ -631,86 +645,86 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/copper-mammoth/document.json",
-          "bytes": 3307721,
-          "sha256": "f687d93912cfc89f1e54d778c3749982075adc1859a6fb0b65bfeec6c20c8fb3",
+          "bytes": 6888011,
+          "sha256": "95c407dad4dafa2256bf54a611d90c7f4245a3d41246e7986d2496ec3cb99c4f",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/copper-mammoth/rough.json",
-          "bytes": 928921,
-          "sha256": "a4b564d4f8f607f853517fd70d52b770580d95398f3413d4f83b2d0eebf5a1a5",
+          "bytes": 884446,
+          "sha256": "70aff2c4f9160386e3caf5969a4591a24325002ce3bc51be936ae30c9ad82350",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/copper-mammoth/preview.json",
-          "bytes": 224783,
-          "sha256": "e6cc25de38a1421441dca8dd69a569cea333a2bc24dec462c30c9539b014a7fe",
+          "bytes": 480080,
+          "sha256": "894e37ad4ec91f7d70efa9866137face76ef7fb2d22b5de7212f4d960470c372",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/copper-mammoth/rough-preview.json",
-          "bytes": 83056,
-          "sha256": "8aa951f3dc3eba49c4fa08eb274427ab4cfafb69ad7ae968d2b357cf6db819f8",
+          "bytes": 79349,
+          "sha256": "d9374932dd29e6e0e67f3471117846646d2e36e553201421610a4127bcb01e5a",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/copper-mammoth/thumb.png",
-          "bytes": 32437,
-          "sha256": "f0c0622c6a90a19b9e4943c853e90ba8b56f266785f2d12d8e9fc6c2203dcc94",
+          "bytes": 49327,
+          "sha256": "e426be4173050dc2a0b8b934676a11aaa2e416527a616577f2ca8131d6603a97",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/copper-mammoth/social.png",
-          "bytes": 65998,
-          "sha256": "1501b49b619e4a2001017cc831fb21e98a62eb0b0a2d9cb44b64fe6db9db36d2",
+          "bytes": 89098,
+          "sha256": "f60e33bf8c13044048fe70ac3440f39e823f01e7a0ce775e8d67be088769058d",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 4458,
-        "connectionCount": 5924,
+        "partCount": 9421,
+        "connectionCount": 12184,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 0,
-        "weakAttachmentCount": 1600,
+        "virtualColorCount": 15,
+        "weakAttachmentCount": 2992,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -220,
+            -292,
             0
           ],
           "max": [
-            1000,
+            1360,
             0,
-            640
+            880
           ],
           "size": [
-            1000,
-            220,
-            640
+            1360,
+            292,
+            880
           ]
         },
         "footprintStuds": [
-          50,
-          32
+          68,
+          44
         ],
-        "heightPlates": 27.5,
-        "steps": 48,
+        "heightPlates": 36.5,
+        "steps": 101,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 2204.36,
-          "massLabel": "2.20 kg",
-          "measuredParts": 4458,
+          "massGrams": 4645.69,
+          "massLabel": "4.65 kg",
+          "measuredParts": 9421,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "50.0 × 32.0 studs",
-          "tippingMarginLdu": 314.05,
-          "restingParts": 134,
+          "supportLabel": "68.0 × 44.0 studs",
+          "tippingMarginLdu": 434.11,
+          "restingParts": 229,
           "stable": true,
           "overloadedGroups": 0,
           "unsupportedParts": 0,
@@ -720,12 +734,12 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 1508,
-        "connectionCount": 1475,
+        "partCount": 1439,
+        "connectionCount": 1406,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 33,
-        "disconnectedPartCount": 1356,
+        "disconnectedPartCount": 1288,
         "virtualColorCount": 0,
         "weakAttachmentCount": 748,
         "healthy": true,
@@ -751,19 +765,19 @@ export const DEMO_MANIFEST: DemoManifest = {
           22
         ],
         "heightPlates": 14.5,
-        "steps": 128,
+        "steps": 124,
         "buildOrderVerified": false,
         "buildOrderWarnings": [
           "32 parts begin a new independent island: they attach to nothing placed earlier, so each starts a separately-built subassembly."
         ],
         "statics": {
-          "massGrams": 635.31,
-          "massLabel": "635 g",
-          "measuredParts": 1508,
+          "massGrams": 602.11,
+          "massLabel": "602 g",
+          "measuredParts": 1439,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "34.0 × 22.0 studs",
-          "tippingMarginLdu": 214.49,
+          "tippingMarginLdu": 214.74,
           "restingParts": 781,
           "stable": true,
           "overloadedGroups": 0,
@@ -773,11 +787,11 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 2950,
-        "connectionsAdded": 4449,
+        "partsAdded": 7982,
+        "connectionsAdded": 10778,
         "componentsBefore": 33,
         "componentsAfter": 1,
-        "loosePartsBefore": 1356,
+        "loosePartsBefore": 1288,
         "loosePartsAfter": 0,
         "collisionsBefore": 0,
         "collisionsAfter": 0,
@@ -785,54 +799,74 @@ export const DEMO_MANIFEST: DemoManifest = {
         "unsupportedAfter": 0,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 635.31,
-        "massAfterGrams": 2204.36,
-        "stepsBefore": 128,
-        "stepsAfter": 48
+        "massBeforeGrams": 602.11,
+        "massAfterGrams": 4645.69,
+        "stepsBefore": 124,
+        "stepsAfter": 101
       },
       "bill": [
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 2724
+          "count": 6117
         },
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 1600
+          "count": 2992
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 62
+          "count": 129
         },
         {
-          "definitionId": "3034",
-          "name": "Plate 2 x 8",
-          "count": 31
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 55
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 31
+          "count": 42
+        },
+        {
+          "definitionId": "2445",
+          "name": "Plate 2 x 12",
+          "count": 22
+        },
+        {
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 22
+        },
+        {
+          "definitionId": "4727",
+          "name": "Plant, Flower 2 x 2 Leaves - Angular",
+          "count": 10
+        },
+        {
+          "definitionId": "4728",
+          "name": "Plant, Flower 2 x 2 - Round [Open Stud]",
+          "count": 10
         },
         {
           "definitionId": "60479",
           "name": "Plate 1 x 12",
-          "count": 6
+          "count": 10
         },
         {
-          "definitionId": "3460",
-          "name": "Plate 1 x 8",
-          "count": 2
+          "definitionId": "32607",
+          "name": "Plant, Plate 1 x 1 Round with 3 Leaves",
+          "count": 4
         },
         {
-          "definitionId": "3666",
-          "name": "Plate 1 x 6",
-          "count": 2
+          "definitionId": "6141",
+          "name": "Plate Round 1 x 1 with Solid Stud",
+          "count": 4
         }
       ],
-      "distinctParts": 8,
+      "distinctParts": 14,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -849,13 +883,14 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Colossal Duck Float",
       "discipline": "Playful public art",
       "category": "creative",
-      "tagline": "A giant yellow duck, orange bill and all, bobbing over a forty-six-stud festival-water mosaic.",
+      "tagline": "A giant yellow duck, orange bill and all, bobbing over a sixty-four-stud illuminated festival basin.",
       "summary": "A deliberately ridiculous public-art build at landmark scale: a round yellow body, oversized head, orange bill and black eye assembled from editable brick columns over a rippling blue festival basin.",
       "techniques": [
         "Large-scale comic sculpture",
         "Domed voxel body",
         "Graphic bill and eye accents",
-        "Editable festival-water scene"
+        "Editable festival-water scene",
+        "Festival lighting and shoreline trees"
       ],
       "showcase": null,
       "refinement": "The first float was a small yellow mass on loose one-layer water. The published version cross-bonds the whole basin and separates the body, head, bill and eyes into a clear, giant duck silhouette.",
@@ -865,9 +900,9 @@ export const DEMO_MANIFEST: DemoManifest = {
       "brief": {
         "prompt": "A funny large-scale yellow duck public-art float with a huge rounded body, tall head, orange bill and black eyes on an editable blue festival basin.",
         "envelopeStuds": [
-          46,
+          64,
           null,
-          34
+          46
         ],
         "palette": [
           "Yellow",
@@ -884,7 +919,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 34,
         "pitch": 46,
-        "zoom": 1.02
+        "zoom": 1.08
       },
       "documentId": "demo_colossal_duck",
       "roughDocumentId": "demo_colossal_duck_rough",
@@ -894,86 +929,86 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/colossal-duck/document.json",
-          "bytes": 3622649,
-          "sha256": "560a73d5367807f18ace70454abf79a4c0a984877bc7321bf4c757151063f9da",
+          "bytes": 7572046,
+          "sha256": "ca2d0b081809287f81df807508e2128312c898e99f00af9fd9f17ceb17ed6b3c",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/colossal-duck/rough.json",
-          "bytes": 984780,
-          "sha256": "98e4e45b8ebdb456ec400f23a7cfccdbd5c20121602992c07d9a821c497c7b1b",
+          "bytes": 912426,
+          "sha256": "69a68296a20f660dae7f18b43514e2b37b69216654bd590dd5200a775c34e6d2",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/colossal-duck/preview.json",
-          "bytes": 255265,
-          "sha256": "2b5c6bc65503ec6735594ce5b3044516620fc57e386a8063d53d7535767bdc05",
+          "bytes": 537450,
+          "sha256": "fceda9d7b20956a39acf61a91de27ff504dcca168e43d538e01dd9bca734a9b1",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/colossal-duck/rough-preview.json",
-          "bytes": 88632,
-          "sha256": "5964d981f256a416b537d38e57c6e5b761cd1d8d8d6e8ab2911019acf7de80e9",
+          "bytes": 82958,
+          "sha256": "0c79e4866786c8fd2e3af8be9cabc6eacde5e0982c7b95915adae24573b73453",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/colossal-duck/thumb.png",
-          "bytes": 35219,
-          "sha256": "ec87a76b5b69067762413bebd153f8c8c2fdf663704afa75c142e1426d7c015d",
+          "bytes": 45488,
+          "sha256": "b671c1b65e9cdbc49cbce99ed8ba0839c3e3edadf2b59fc129bc387d8a59d880",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/colossal-duck/social.png",
-          "bytes": 61291,
-          "sha256": "ca1cf6b0bbe444e2741a18635b32ac9bd03bad35e513f9722f325ca6186cd967",
+          "bytes": 75874,
+          "sha256": "333cdc20389360e0a948053424c3a523ed03966afd7170035d3f22a24981955f",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 4975,
-        "connectionCount": 6397,
+        "partCount": 10515,
+        "connectionCount": 13221,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 8,
-        "weakAttachmentCount": 1564,
+        "virtualColorCount": 17,
+        "weakAttachmentCount": 2944,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -244,
+            -340,
             0
           ],
           "max": [
-            920,
+            1280,
             0,
-            680
+            920
           ],
           "size": [
-            920,
-            244,
-            680
+            1280,
+            340,
+            920
           ]
         },
         "footprintStuds": [
-          46,
-          34
+          64,
+          46
         ],
-        "heightPlates": 30.5,
-        "steps": 55,
+        "heightPlates": 42.5,
+        "steps": 112,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 2446.79,
-          "massLabel": "2.45 kg",
-          "measuredParts": 4975,
+          "massGrams": 5161.47,
+          "massLabel": "5.16 kg",
+          "measuredParts": 10515,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "46.0 × 34.0 studs",
-          "tippingMarginLdu": 333.57,
-          "restingParts": 142,
+          "supportLabel": "64.0 × 46.0 studs",
+          "tippingMarginLdu": 454.52,
+          "restingParts": 238,
           "stable": true,
           "overloadedGroups": 0,
           "unsupportedParts": 0,
@@ -983,12 +1018,12 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 1598,
-        "connectionCount": 1562,
+        "partCount": 1485,
+        "connectionCount": 1449,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 36,
-        "disconnectedPartCount": 1447,
+        "disconnectedPartCount": 1338,
         "virtualColorCount": 0,
         "weakAttachmentCount": 768,
         "healthy": true,
@@ -1014,19 +1049,19 @@ export const DEMO_MANIFEST: DemoManifest = {
           24
         ],
         "heightPlates": 14.5,
-        "steps": 141,
+        "steps": 139,
         "buildOrderVerified": false,
         "buildOrderWarnings": [
           "35 parts begin a new independent island: they attach to nothing placed earlier, so each starts a separately-built subassembly."
         ],
         "statics": {
-          "massGrams": 675.27,
-          "massLabel": "675 g",
-          "measuredParts": 1598,
+          "massGrams": 620.89,
+          "massLabel": "621 g",
+          "measuredParts": 1485,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "32.0 × 24.0 studs",
-          "tippingMarginLdu": 235.05,
+          "tippingMarginLdu": 235.54,
           "restingParts": 804,
           "stable": true,
           "overloadedGroups": 0,
@@ -1036,11 +1071,11 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 3377,
-        "connectionsAdded": 4835,
+        "partsAdded": 9030,
+        "connectionsAdded": 11772,
         "componentsBefore": 36,
         "componentsAfter": 1,
-        "loosePartsBefore": 1447,
+        "loosePartsBefore": 1338,
         "loosePartsAfter": 0,
         "collisionsBefore": 0,
         "collisionsAfter": 0,
@@ -1048,69 +1083,74 @@ export const DEMO_MANIFEST: DemoManifest = {
         "unsupportedAfter": 0,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 675.27,
-        "massAfterGrams": 2446.79,
-        "stepsBefore": 141,
-        "stepsAfter": 55
+        "massBeforeGrams": 620.89,
+        "massAfterGrams": 5161.47,
+        "stepsBefore": 139,
+        "stepsAfter": 112
       },
       "bill": [
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 3269
+          "count": 7265
         },
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 1564
+          "count": 2945
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 66
+          "count": 135
+        },
+        {
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 49
         },
         {
           "definitionId": "3034",
           "name": "Plate 2 x 8",
-          "count": 17
+          "count": 46
         },
         {
           "definitionId": "3795",
           "name": "Plate 2 x 6",
-          "count": 17
-        },
-        {
-          "definitionId": "3020",
-          "name": "Plate 2 x 4",
-          "count": 16
+          "count": 22
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 16
+          "count": 22
         },
         {
           "definitionId": "60479",
           "name": "Plate 1 x 12",
-          "count": 6
+          "count": 8
         },
         {
-          "definitionId": "78329",
-          "name": "Plate 1 x 5",
-          "count": 2
+          "definitionId": "6141",
+          "name": "Plate Round 1 x 1 with Solid Stud",
+          "count": 7
         },
         {
-          "definitionId": "3666",
-          "name": "Plate 1 x 6",
-          "count": 1
+          "definitionId": "32607",
+          "name": "Plant, Plate 1 x 1 Round with 3 Leaves",
+          "count": 4
         },
         {
-          "definitionId": "3710",
-          "name": "Plate 1 x 4",
-          "count": 1
+          "definitionId": "4727",
+          "name": "Plant, Flower 2 x 2 Leaves - Angular",
+          "count": 4
+        },
+        {
+          "definitionId": "4728",
+          "name": "Plant, Flower 2 x 2 - Round [Open Stud]",
+          "count": 4
         }
       ],
-      "distinctParts": 11,
+      "distinctParts": 15,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -1127,13 +1167,14 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Iron Lattice Lookout",
       "discipline": "Landmark ironwork",
       "category": "landmarks",
-      "tagline": "Two tiers of open lattice over an arched masonry plinth, topped by a clock stage with four hinged hands.",
+      "tagline": "Two tall tiers of open lattice rise from a landscaped civic garden to a clock stage and glazed lookout.",
       "summary": "An original ironwork lookout: an arched plinth, two lattice tiers of columns and bonded decks stepping inward, and a clock stage whose four hands each sit on a real revolute hinge. The lattice and the clock are built by the kernel’s own planners rather than drawn as solid walls with holes in them.",
       "techniques": [
         "Open lattice: columns between bonded decks",
         "Two tiers stepping inward",
         "Arched masonry plinth",
-        "Four independently hinged clock hands"
+        "Four independently hinged clock hands",
+        "Glazed observation pavilion and lit gardens"
       ],
       "showcase": null,
       "refinement": "The first candidate stood the ironwork straight on the open plinth, so the lower lattice deck rested on a one-stud wall rim and nothing else — most of that deck measures as unsupported. The published set caps the plinth with two cross-bonded plate layers before the tiers go on, which is what carries the tower.",
@@ -1143,9 +1184,9 @@ export const DEMO_MANIFEST: DemoManifest = {
       "brief": {
         "prompt": "An ironwork lookout tower: an arched stone plinth, two tiers of open lattice stepping inward, and a clock stage near the top whose hands actually turn.",
         "envelopeStuds": [
-          32,
+          56,
           null,
-          32
+          56
         ],
         "palette": [
           "Sand",
@@ -1161,8 +1202,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "camera": {
         "yaw": 30,
-        "pitch": 22,
-        "zoom": 0.98
+        "pitch": 24,
+        "zoom": 1.06
       },
       "documentId": "demo_iron_lattice_lookout",
       "roughDocumentId": "demo_iron_lattice_lookout_rough",
@@ -1172,20 +1213,20 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/iron-lattice-lookout/document.json",
-          "bytes": 2694388,
-          "sha256": "ac2538de9b205c3ba95a97d7a303e49f41aec2634ea1d1a3e1dddaf23f8b92fa",
+          "bytes": 6875469,
+          "sha256": "376776db15c1407744aac0d2c12d4ea5e51650f53a58e2365dd15ddd29ebde0e",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/iron-lattice-lookout/rough.json",
-          "bytes": 659827,
-          "sha256": "b5efc43c334db3e56ec0a79244a351ce5a9882f1d19d22a3d13351c2d7eb3314",
+          "bytes": 659901,
+          "sha256": "e19ea2c8802836f3da51fb1d4791f036ade9b37035c72f0c8f066aa0e4bfb158",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/iron-lattice-lookout/preview.json",
-          "bytes": 61347,
-          "sha256": "992fc1e2e582d7aae31b38a61457b21ac5b9079b0ab0adc8d3c487963563aa51",
+          "bytes": 254188,
+          "sha256": "ceea95251cc1aae73a2e5784a42b7149db517b3f545d020dea0ffddcc7274b1d",
           "contentType": "application/json"
         },
         "roughPreview": {
@@ -1196,65 +1237,65 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/iron-lattice-lookout/thumb.png",
-          "bytes": 15346,
-          "sha256": "ad4ca5a4c7a8dd9f75b80138cfcab316a854b6769482ffdcd888e9a13f7b184e",
+          "bytes": 22253,
+          "sha256": "8949c982da6bb9d042755ee4b8a0440c603a2c12aef394f9b5033138e0aca896",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/iron-lattice-lookout/social.png",
-          "bytes": 27303,
-          "sha256": "045de0bacd410d254407ec36c2f65b1b7cf0124d6a64cee3d2118efe57395d45",
+          "bytes": 38347,
+          "sha256": "ecfb0cdcd24e9f4a92dfb90926d883fad816e3d7377d8af99f84dbebd4d8a4b4",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 1118,
-        "connectionCount": 6588,
+        "partCount": 4734,
+        "connectionCount": 15522,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 81,
-        "weakAttachmentCount": 20,
+        "virtualColorCount": 124,
+        "weakAttachmentCount": 1647,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -900,
+            -1204,
             0
           ],
           "max": [
-            640,
+            1120,
             0,
-            640
+            1120
           ],
           "size": [
-            640,
-            900,
-            640
+            1120,
+            1204,
+            1120
           ]
         },
         "footprintStuds": [
-          32,
-          32
+          56,
+          56
         ],
-        "heightPlates": 112.5,
-        "steps": 19,
+        "heightPlates": 150.5,
+        "steps": 77,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 1879.98,
-          "massLabel": "1.88 kg",
-          "measuredParts": 1118,
+          "massGrams": 4557.75,
+          "massLabel": "4.56 kg",
+          "measuredParts": 4734,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "32.0 × 32.0 studs",
-          "tippingMarginLdu": 319.51,
-          "restingParts": 101,
+          "supportLabel": "56.0 × 56.0 studs",
+          "tippingMarginLdu": 559.77,
+          "restingParts": 232,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 40,
+          "unsupportedParts": 62,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
@@ -1314,8 +1355,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 793,
-        "connectionsAdded": 5019,
+        "partsAdded": 4409,
+        "connectionsAdded": 13953,
         "componentsBefore": 2,
         "componentsAfter": 1,
         "loosePartsBefore": 94,
@@ -1323,83 +1364,78 @@ export const DEMO_MANIFEST: DemoManifest = {
         "collisionsBefore": 0,
         "collisionsAfter": 0,
         "unsupportedBefore": 231,
-        "unsupportedAfter": 40,
+        "unsupportedAfter": 62,
         "stableBefore": true,
         "stableAfter": true,
         "massBeforeGrams": 454.16,
-        "massAfterGrams": 1879.98,
+        "massAfterGrams": 4557.75,
         "stepsBefore": 7,
-        "stepsAfter": 19
+        "stepsAfter": 77
       },
       "bill": [
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 596
+          "count": 2108
         },
         {
-          "definitionId": "3034",
-          "name": "Plate 2 x 8",
-          "count": 145
+          "definitionId": "3070b",
+          "name": "Tile 1 x 1 with Groove",
+          "count": 1604
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 93
+          "count": 262
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 67
+          "count": 140
         },
         {
-          "definitionId": "3795",
-          "name": "Plate 2 x 6",
-          "count": 59
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 130
+        },
+        {
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 64
         },
         {
           "definitionId": "3010",
           "name": "Brick 1 x 4",
-          "count": 24
-        },
-        {
-          "definitionId": "3023b",
-          "name": "Plate 1 x 2",
-          "count": 20
-        },
-        {
-          "definitionId": "3008",
-          "name": "Brick 1 x 8",
-          "count": 18
-        },
-        {
-          "definitionId": "3004",
-          "name": "Brick 1 x 2",
-          "count": 16
-        },
-        {
-          "definitionId": "3666",
-          "name": "Plate 1 x 6",
-          "count": 16
+          "count": 50
         },
         {
           "definitionId": "3022",
           "name": "Plate 2 x 2",
-          "count": 14
+          "count": 43
         },
         {
-          "definitionId": "2465",
-          "name": "Brick 1 x 16",
-          "count": 12
+          "definitionId": "3020",
+          "name": "Plate 2 x 4",
+          "count": 37
+        },
+        {
+          "definitionId": "2445",
+          "name": "Plate 2 x 12",
+          "count": 36
+        },
+        {
+          "definitionId": "3004",
+          "name": "Brick 1 x 2",
+          "count": 32
+        },
+        {
+          "definitionId": "91988",
+          "name": "Plate 2 x 14",
+          "count": 27
         }
       ],
-      "distinctParts": 19,
-      "planWarnings": [
-        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole."
-      ],
+      "distinctParts": 33,
+      "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
         "kernel": "src/cad — validation, collision, instructions, statics, snapping, assembly, raster",
@@ -1415,14 +1451,15 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Harbour Control Tower",
       "discipline": "Play set",
       "category": "architecture",
-      "tagline": "A quayside podium with drive-in vehicle bays, a metro platform, a glazed control shaft and a crane that luffs.",
+      "tagline": "An eighty-four-stud harbour district with drive-in bays, a metro platform, a glazed control shaft and a crane that luffs.",
       "summary": "An original quayside play set rather than another facade: two full-height vehicle bays cut through the podium, a metro platform along the seaward edge, a glazed control shaft with a control room on top, and a quay crane built by the kernel’s own planner on a real luffing hinge.",
       "techniques": [
         "Full-height drive-in vehicle bays",
         "Raised metro platform",
         "Glazed control shaft",
         "Crane on a real luffing hinge",
-        "One subassembly per programme element"
+        "One subassembly per programme element",
+        "Lit promenade, cargo court and warehouse planting"
       ],
       "showcase": null,
       "refinement": "The rough candidate was a single glazed block on a plain slab — a tower with nothing to do. The published set cuts the podium open for vehicles, raises a platform along the quay, and puts a crane on the roof that the joint solver can actually drive.",
@@ -1432,9 +1469,9 @@ export const DEMO_MANIFEST: DemoManifest = {
       "brief": {
         "prompt": "A quayside control tower with two drive-in vehicle bays under the podium, a metro platform along the water, a glazed control shaft with a control room on top, and a working crane on the podium roof.",
         "envelopeStuds": [
-          44,
+          84,
           null,
-          30
+          56
         ],
         "palette": [
           "Sand",
@@ -1453,7 +1490,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 36,
         "pitch": 28,
-        "zoom": 1.02
+        "zoom": 1.08
       },
       "documentId": "demo_harbour_control_tower",
       "roughDocumentId": "demo_harbour_control_tower_rough",
@@ -1463,108 +1500,108 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/harbour-control-tower/document.json",
-          "bytes": 4339578,
-          "sha256": "6c2af4f8a22daa22f53961e7f62f70565b4843e217bd55dbb31f6fce7234b82c",
+          "bytes": 9195647,
+          "sha256": "39318a88d7db2bb641884b583cd5b109e8ddbd85566f3f3a1087d38084da4d62",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/harbour-control-tower/rough.json",
-          "bytes": 1045080,
-          "sha256": "85eb62b10d076bce8412a1fbacdf0bb470ed3cabc7b510b93a4b6ec0df4047b3",
+          "bytes": 1069235,
+          "sha256": "58bae9ea31167c5e0ee821187faaf088729745976814ddea0ec1eb35d470fb0f",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/harbour-control-tower/preview.json",
-          "bytes": 61634,
-          "sha256": "8dbcf4173c54d4ca0ad118cc45816853187d45b460495398dcc1e8a7d43a9151",
+          "bytes": 194498,
+          "sha256": "d7dd38b0955464dd3f3db6481e7916679d43de5373e07abf98e67fbd220cba31",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/harbour-control-tower/rough-preview.json",
-          "bytes": 20869,
-          "sha256": "b5263a11f961e12358aac2bdda57ffbbf2ddd9a66117588b0db7a7f0c4fb0a13",
+          "bytes": 21841,
+          "sha256": "92a16bf6d5ff7fcea9763bcd0923cd5abc573f8660357b14273a6e0fa554c397",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/harbour-control-tower/thumb.png",
-          "bytes": 22138,
-          "sha256": "c35c013b88b18db4f412e6a064b815e3985eee2a6217364539d3f9a65b3d71e1",
+          "bytes": 23572,
+          "sha256": "3058abbcdc7ada06b349bc8d34f8fcd0b276519d154ce10103e38c545114d9b9",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/harbour-control-tower/social.png",
-          "bytes": 38864,
-          "sha256": "42c0cabbd431d3e897b35beac8fa97d4d877923ce540f2667ee58ba2c025dff2",
+          "bytes": 40396,
+          "sha256": "915a85a5dad731885d97b98b40e6566c632ab1b5da290e04a5feaf6373a65a02",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 1080,
-        "connectionCount": 10991,
+        "partCount": 3564,
+        "connectionCount": 22654,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 124,
-        "weakAttachmentCount": 23,
+        "virtualColorCount": 265,
+        "weakAttachmentCount": 1685,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -804,
+            -1244,
             0
           ],
           "max": [
-            1200,
+            1680,
             0,
-            800
+            1120
           ],
           "size": [
-            1200,
-            804,
-            800
+            1680,
+            1244,
+            1120
           ]
         },
         "footprintStuds": [
-          60,
-          40
+          84,
+          56
         ],
-        "heightPlates": 100.5,
-        "steps": 19,
+        "heightPlates": 155.5,
+        "steps": 52,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 3279.68,
-          "massLabel": "3.28 kg",
-          "measuredParts": 1080,
+          "massGrams": 6588.4,
+          "massLabel": "6.59 kg",
+          "measuredParts": 3564,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "60.0 × 40.0 studs",
-          "tippingMarginLdu": 351.8,
-          "restingParts": 207,
+          "supportLabel": "84.0 × 56.0 studs",
+          "tippingMarginLdu": 476.65,
+          "restingParts": 346,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 26,
+          "unsupportedParts": 73,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 302,
-        "connectionCount": 2615,
+        "partCount": 312,
+        "connectionCount": 2674,
         "collisionCount": 5,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "virtualColorCount": 25,
-        "weakAttachmentCount": 17,
+        "weakAttachmentCount": 18,
         "healthy": false,
         "boundsLdu": {
           "min": [
             0,
-            -364,
+            -436,
             0
           ],
           "max": [
@@ -1574,7 +1611,7 @@ export const DEMO_MANIFEST: DemoManifest = {
           ],
           "size": [
             560,
-            364,
+            436,
             400
           ]
         },
@@ -1582,21 +1619,21 @@ export const DEMO_MANIFEST: DemoManifest = {
           28,
           20
         ],
-        "heightPlates": 45.5,
+        "heightPlates": 54.5,
         "steps": 8,
         "buildOrderVerified": true,
         "buildOrderWarnings": [
-          "Step 7 adds part_0226 into a pose already enclosed by part_0154, part_0162 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 7 adds part_0227 into a pose already enclosed by part_0154, part_0163 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report."
+          "Step 7 adds part_0236 into a pose already enclosed by part_0154, part_0162 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 7 adds part_0237 into a pose already enclosed by part_0154, part_0163 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report."
         ],
         "statics": {
-          "massGrams": 759.81,
-          "massLabel": "760 g",
-          "measuredParts": 302,
+          "massGrams": 773.57,
+          "massLabel": "774 g",
+          "measuredParts": 312,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "28.0 × 20.0 studs",
-          "tippingMarginLdu": 196.96,
+          "tippingMarginLdu": 197.72,
           "restingParts": 63,
           "stable": true,
           "overloadedGroups": 0,
@@ -1606,8 +1643,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 778,
-        "connectionsAdded": 8376,
+        "partsAdded": 3252,
+        "connectionsAdded": 19980,
         "componentsBefore": 1,
         "componentsAfter": 1,
         "loosePartsBefore": 0,
@@ -1615,78 +1652,80 @@ export const DEMO_MANIFEST: DemoManifest = {
         "collisionsBefore": 5,
         "collisionsAfter": 0,
         "unsupportedBefore": 7,
-        "unsupportedAfter": 26,
+        "unsupportedAfter": 73,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 759.81,
-        "massAfterGrams": 3279.68,
+        "massBeforeGrams": 773.57,
+        "massAfterGrams": 6588.4,
         "stepsBefore": 8,
-        "stepsAfter": 19
+        "stepsAfter": 52
       },
       "bill": [
         {
+          "definitionId": "3070b",
+          "name": "Tile 1 x 1 with Groove",
+          "count": 1632
+        },
+        {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 221
-        },
-        {
-          "definitionId": "3034",
-          "name": "Plate 2 x 8",
-          "count": 99
-        },
-        {
-          "definitionId": "3005",
-          "name": "Brick 1 x 1",
-          "count": 96
-        },
-        {
-          "definitionId": "3008",
-          "name": "Brick 1 x 8",
-          "count": 94
+          "count": 426
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 87
+          "count": 269
         },
         {
-          "definitionId": "3020",
-          "name": "Plate 2 x 4",
+          "definitionId": "3034",
+          "name": "Plate 2 x 8",
+          "count": 227
+        },
+        {
+          "definitionId": "3008",
+          "name": "Brick 1 x 8",
+          "count": 200
+        },
+        {
+          "definitionId": "3005",
+          "name": "Brick 1 x 1",
+          "count": 156
+        },
+        {
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 84
+        },
+        {
+          "definitionId": "6111",
+          "name": "Brick 1 x 10",
+          "count": 78
+        },
+        {
+          "definitionId": "2445",
+          "name": "Plate 2 x 12",
           "count": 66
-        },
-        {
-          "definitionId": "3004",
-          "name": "Brick 1 x 2",
-          "count": 50
-        },
-        {
-          "definitionId": "3795",
-          "name": "Plate 2 x 6",
-          "count": 47
-        },
-        {
-          "definitionId": "2465",
-          "name": "Brick 1 x 16",
-          "count": 40
-        },
-        {
-          "definitionId": "3009",
-          "name": "Brick 1 x 6",
-          "count": 36
-        },
-        {
-          "definitionId": "3010",
-          "name": "Brick 1 x 4",
-          "count": 36
         },
         {
           "definitionId": "60479",
           "name": "Plate 1 x 12",
-          "count": 32
+          "count": 66
+        },
+        {
+          "definitionId": "60593",
+          "name": "Window 1 x 2 x 3 Flat Front",
+          "count": 60
+        },
+        {
+          "definitionId": "2465",
+          "name": "Brick 1 x 16",
+          "count": 56
         }
       ],
-      "distinctParts": 29,
+      "distinctParts": 32,
       "planWarnings": [
+        "No door frame 6 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 6 studs wide is compiled in this build, so that opening is a bare hole.",
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole."
       ],
       "provenance": {
@@ -1704,26 +1743,27 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Saucer Freighter",
       "discipline": "Vehicle and mechanism",
       "category": "vehicles",
-      "tagline": "A lozenge hull with sideways-stud skins, twin forward booms, a turret that turns and a ramp that opens.",
+      "tagline": "A faceted lozenge hull on a seventy-stud illuminated dock, with twin booms, a turning turret and opening ramp.",
       "summary": "An original freighter: a cross-bonded keel, a sideways-stud hull skin built by the kernel’s own SNOT planner, twin booms flanking a centred cockpit, and two real hinges — a dorsal turret and a boarding ramp — that the joint solver drives in the editor.",
       "techniques": [
         "Sideways-stud hull skin (SNOT)",
         "Stepped lozenge planform",
         "Twin booms, centred cockpit",
         "Hinged boarding ramp",
-        "Hinged dorsal turret"
+        "Hinged dorsal turret",
+        "Illuminated shipyard apron and hull ribs"
       ],
       "showcase": null,
       "refinement": "The rough candidate was a single rectangular slab with the cockpit sitting on top of it — a box with a windscreen. The published set steps the hull in at bow and stern, wraps it in a genuinely clutched sideways skin, and replaces the moulded-on details with two hinges the kernel can actually drive.",
       "hero": false,
-      "tensionAllowance": 320,
-      "tensionReason": "The sideways skins hang from side-facing studs on the rim brackets and the hinged flaps rest on their knuckles rather than clutching down into the deck. The statics pass counts both as tension-carried; the allowance is bounded so an actually unsupported panel still fails the gate.",
+      "tensionAllowance": 640,
+      "tensionReason": "The sideways skins hang from side-facing studs on the rim brackets and the hinged flaps rest on their knuckles rather than clutching down into the deck. The raised inner deck also spans the four cross-bonded keel bands instead of being packed solid underneath. The statics pass counts these as tension-carried; the allowance is bounded so an actually unsupported panel still fails the gate.",
       "brief": {
         "prompt": "An original saucer freighter with a stepped lozenge hull, sideways-stud skins, twin forward booms either side of a centred cockpit, a dorsal turret that turns and a boarding ramp that opens.",
         "envelopeStuds": [
-          42,
+          70,
           null,
-          22
+          56
         ],
         "palette": [
           "Light Bluish Grey",
@@ -1739,7 +1779,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 42,
         "pitch": 30,
-        "zoom": 1.04
+        "zoom": 1.08
       },
       "documentId": "demo_saucer_freighter",
       "roughDocumentId": "demo_saucer_freighter_rough",
@@ -1749,98 +1789,98 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/saucer-freighter/document.json",
-          "bytes": 3888833,
-          "sha256": "b9c020f74bbe5b0455c1130c5790011780a520b07db18a00204e51e8133afd05",
+          "bytes": 7113202,
+          "sha256": "ed834ba83f21bfdaadfd29747fe45ec01d2266b96ef6fd49476e3bb419509293",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/saucer-freighter/rough.json",
-          "bytes": 614334,
-          "sha256": "dcd1b968ae3d27cf899d08b818de1f99591858168f88d0a1d174133eb56edb7d",
+          "bytes": 536551,
+          "sha256": "4ded0b2d4aaec5d1ddc8284c6a9644845bf34bf7166eae2575fd92130917e0fa",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/saucer-freighter/preview.json",
-          "bytes": 117298,
-          "sha256": "832dadcae451b9eca8e99848e7aac141c1f4f9733ba88e13123f4197bc0624d9",
+          "bytes": 276515,
+          "sha256": "d7274a17f6372c3a3e8c6b02394bc2fb241b31e64fee9bc5fad2d7a3c9db5ac2",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/saucer-freighter/rough-preview.json",
-          "bytes": 17056,
-          "sha256": "6c3fcd37338722d4f5fbdbd8bd5d7b7729042e6ec94f67b7103fd5655b5a7f5c",
+          "bytes": 15305,
+          "sha256": "cae9a32a14fec6d97a17ffc9c515b2b70b0ef1c57ac49e8a01a824948fa1e083",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/saucer-freighter/thumb.png",
-          "bytes": 27700,
-          "sha256": "207d703c1300eb999967205623f2f637270b9d9610c4f107826f30793a264644",
+          "bytes": 46258,
+          "sha256": "c1a10b67da2080279ae45e19affc358fcd625498d68ba8ca2f29d60adc6d1c46",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/saucer-freighter/social.png",
-          "bytes": 48139,
-          "sha256": "7100e48c04e9d371db40c332ac89fef294b14fe3e5607e292d192ff82459eafd",
+          "bytes": 81637,
+          "sha256": "843768079930086f316d70c2acf3a2c96125878ccbcf5e86977cbc7d41514feb",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 2268,
-        "connectionCount": 9123,
+        "partCount": 5350,
+        "connectionCount": 16000,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "virtualColorCount": 4,
-        "weakAttachmentCount": 125,
+        "weakAttachmentCount": 1755,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -196,
+            -212,
             0
           ],
           "max": [
-            880,
+            1400,
             0,
-            640
+            1120
           ],
           "size": [
-            880,
-            196,
-            640
+            1400,
+            212,
+            1120
           ]
         },
         "footprintStuds": [
-          44,
-          32
+          70,
+          56
         ],
-        "heightPlates": 24.5,
-        "steps": 42,
+        "heightPlates": 26.5,
+        "steps": 90,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 2163.36,
-          "massLabel": "2.16 kg",
-          "measuredParts": 2268,
+          "massGrams": 4017.05,
+          "massLabel": "4.02 kg",
+          "measuredParts": 5350,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "44.0 × 32.0 studs",
-          "tippingMarginLdu": 319.45,
-          "restingParts": 134,
+          "supportLabel": "70.0 × 56.0 studs",
+          "tippingMarginLdu": 559.72,
+          "restingParts": 289,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 221,
+          "unsupportedParts": 462,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 253,
-        "connectionCount": 1479,
-        "collisionCount": 130,
+        "partCount": 229,
+        "connectionCount": 1299,
+        "collisionCount": 34,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
@@ -1872,36 +1912,36 @@ export const DEMO_MANIFEST: DemoManifest = {
         "steps": 11,
         "buildOrderVerified": true,
         "buildOrderWarnings": [
-          "Step 6 adds part_0226 into a pose already enclosed by part_0073, part_0155 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 6 adds part_0227 into a pose already enclosed by part_0073, part_0155 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0210 into a pose already enclosed by part_0196, part_0037 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0209 into a pose already enclosed by part_0184, part_0073 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0212 into a pose already enclosed by part_0198, part_0073 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0211 into a pose already enclosed by part_0187, part_0073 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0213 into a pose already enclosed by part_0199, part_0075 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0214 into a pose already enclosed by part_0190, part_0201 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0217 into a pose already enclosed by part_0207, part_0206 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0220 into a pose already enclosed by part_0201, part_0190. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0223 into a pose already enclosed by part_0171, part_0201 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0221 into a pose already enclosed by part_0191, part_0202. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 8 adds part_0215 into a pose already enclosed by part_0191, part_0201 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0230 into a pose already enclosed by part_0196, part_0151 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0229 into a pose already enclosed by part_0184, part_0153 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0232 into a pose already enclosed by part_0198, part_0151 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0231 into a pose already enclosed by part_0187, part_0155 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0233 into a pose already enclosed by part_0199, part_0149 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0234 into a pose already enclosed by part_0190, part_0155 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0237 into a pose already enclosed by part_0205, part_0149 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
-          "Step 9 adds part_0243 into a pose already enclosed by part_0201, part_0151 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report."
+          "Step 6 adds part_0202 into a pose already enclosed by part_0049, part_0131 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 6 adds part_0203 into a pose already enclosed by part_0049, part_0131 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0186 into a pose already enclosed by part_0172, part_0037 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0185 into a pose already enclosed by part_0160, part_0049 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0188 into a pose already enclosed by part_0174, part_0049 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0187 into a pose already enclosed by part_0163, part_0049 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0189 into a pose already enclosed by part_0175, part_0051 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0190 into a pose already enclosed by part_0166, part_0177 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0193 into a pose already enclosed by part_0183, part_0182 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0196 into a pose already enclosed by part_0177, part_0166. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0199 into a pose already enclosed by part_0147, part_0177 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0197 into a pose already enclosed by part_0167, part_0178. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 8 adds part_0191 into a pose already enclosed by part_0167, part_0177 +1. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0206 into a pose already enclosed by part_0172, part_0127 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0205 into a pose already enclosed by part_0160, part_0129 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0208 into a pose already enclosed by part_0174, part_0127 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0207 into a pose already enclosed by part_0163, part_0131 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0209 into a pose already enclosed by part_0175, part_0125 +4. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0210 into a pose already enclosed by part_0166, part_0131 +3. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0213 into a pose already enclosed by part_0181, part_0125 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report.",
+          "Step 9 adds part_0219 into a pose already enclosed by part_0177, part_0127 +2. Connected, but not reachable — place it before what encloses it. Boxes along six axes; may over-report."
         ],
         "statics": {
-          "massGrams": 390.76,
-          "massLabel": "391 g",
-          "measuredParts": 253,
+          "massGrams": 313.32,
+          "massLabel": "313 g",
+          "measuredParts": 229,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "18.0 × 14.0 studs",
-          "tippingMarginLdu": 138.8,
+          "tippingMarginLdu": 138.47,
           "restingParts": 28,
           "stable": true,
           "overloadedGroups": 0,
@@ -1911,86 +1951,86 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 2015,
-        "connectionsAdded": 7644,
+        "partsAdded": 5121,
+        "connectionsAdded": 14701,
         "componentsBefore": 1,
         "componentsAfter": 1,
         "loosePartsBefore": 0,
         "loosePartsAfter": 0,
-        "collisionsBefore": 130,
+        "collisionsBefore": 34,
         "collisionsAfter": 0,
         "unsupportedBefore": 48,
-        "unsupportedAfter": 221,
+        "unsupportedAfter": 462,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 390.76,
-        "massAfterGrams": 2163.36,
+        "massBeforeGrams": 313.32,
+        "massAfterGrams": 4017.05,
         "stepsBefore": 11,
-        "stepsAfter": 42
+        "stepsAfter": 90
       },
       "bill": [
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 1624
+          "count": 4168
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 151
-        },
-        {
-          "definitionId": "87087",
-          "name": "Brick Special 1 x 1 with Stud on 1 Side",
-          "count": 108
+          "count": 241
         },
         {
           "definitionId": "3034",
           "name": "Plate 2 x 8",
-          "count": 75
+          "count": 174
         },
         {
-          "definitionId": "3020",
-          "name": "Plate 2 x 4",
-          "count": 47
+          "definitionId": "87087",
+          "name": "Brick Special 1 x 1 with Stud on 1 Side",
+          "count": 124
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 45
+          "count": 113
         },
         {
-          "definitionId": "3022",
-          "name": "Plate 2 x 2",
-          "count": 44
+          "definitionId": "3005",
+          "name": "Brick 1 x 1",
+          "count": 75
+        },
+        {
+          "definitionId": "3795",
+          "name": "Plate 2 x 6",
+          "count": 68
+        },
+        {
+          "definitionId": "3062b",
+          "name": "Brick Round 1 x 1 Open Stud",
+          "count": 56
+        },
+        {
+          "definitionId": "3020",
+          "name": "Plate 2 x 4",
+          "count": 50
+        },
+        {
+          "definitionId": "6141",
+          "name": "Plate Round 1 x 1 with Solid Stud",
+          "count": 50
         },
         {
           "definitionId": "3008",
           "name": "Brick 1 x 8",
-          "count": 38
+          "count": 44
         },
         {
-          "definitionId": "3009",
-          "name": "Brick 1 x 6",
+          "definitionId": "91988",
+          "name": "Plate 2 x 14",
           "count": 28
-        },
-        {
-          "definitionId": "3666",
-          "name": "Plate 1 x 6",
-          "count": 20
-        },
-        {
-          "definitionId": "2465",
-          "name": "Brick 1 x 16",
-          "count": 18
-        },
-        {
-          "definitionId": "3010",
-          "name": "Brick 1 x 4",
-          "count": 16
         }
       ],
-      "distinctParts": 19,
+      "distinctParts": 25,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -2007,13 +2047,15 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Harbour Street",
       "discipline": "Modular architecture",
       "category": "architecture",
-      "tagline": "A terrace of five shopfronts on a tiled street, every building and every floor separable.",
-      "summary": "Five shopfronts on a tiled street. Every building lifts out, every floor lifts off.",
+      "tagline": "Seven four-storey shopfronts, separated by alleys and finished with roof rooms, trees, lights and planted entries.",
+      "summary": "Seven four-storey shopfronts on a full street district. Every address lifts out, every floor lifts off, and the public realm is built at the same editable grain.",
       "techniques": [
         "One subassembly per storey, per unit",
         "Tiled carriageway, kerb and pavement",
         "Seated shopfront doors and glazing",
-        "Parapet roofline"
+        "Parapet roofline",
+        "Two-stud alleys and individual roof rooms",
+        "Street trees, lamps and planted thresholds"
       ],
       "showcase": null,
       "refinement": "The first candidate laid the terrace as one continuous shell on a painted ground plane, so nothing came apart and the street was a texture. The published set separates every unit and every floor, and lays the road surface as individual tiles.",
@@ -2021,11 +2063,11 @@ export const DEMO_MANIFEST: DemoManifest = {
       "tensionAllowance": 480,
       "tensionReason": "Glazing is seated inside its frames and each storey deck rests on the walls below it at the perimeter rather than clutching down into them. The statics pass counts both as tension-carried; the allowance is bounded so a genuinely unsupported storey still fails.",
       "brief": {
-        "prompt": "A street of five modular shops with flats above, on a tiled road with kerbs and pavement, where every building and every floor can be lifted off separately.",
+        "prompt": "A street of seven four-storey modular shops with flats above, separate alleys, detailed roofs, trees, lights and planted thresholds, where every building and every floor can be lifted off separately.",
         "envelopeStuds": [
-          76,
+          134,
           null,
-          34
+          50
         ],
         "palette": [
           "Reddish Brown",
@@ -2042,8 +2084,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "camera": {
         "yaw": 34,
-        "pitch": 26,
-        "zoom": 1.12
+        "pitch": 28,
+        "zoom": 1.08
       },
       "documentId": "demo_harbour_street",
       "roughDocumentId": "demo_harbour_street_rough",
@@ -2053,8 +2095,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/harbour-street/document.json",
-          "bytes": 4860618,
-          "sha256": "3f1530df2a60caa15eae39af592f8dc64278668b4d0b3d5e81bd29f53eb44b58",
+          "bytes": 12897875,
+          "sha256": "c753812d947931f6537a75e360641af758a233a9b97d711ff0fa35bb19134856",
           "contentType": "application/json"
         },
         "rough": {
@@ -2065,8 +2107,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "preview": {
           "url": "/demos/harbour-street/preview.json",
-          "bytes": 166851,
-          "sha256": "32a5ac26e034b9644fe5b96013b447b2951b56d29661c1cd3728b0ec030c85ad",
+          "bytes": 430953,
+          "sha256": "dfe17dfa1eda5276843e38588546c5ca72a39a0723473d9f713e2ff37ec53019",
           "contentType": "application/json"
         },
         "roughPreview": {
@@ -2077,65 +2119,65 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/harbour-street/thumb.png",
-          "bytes": 28387,
-          "sha256": "61062bdf71eb2c6ded4423cc41d674ebc7020f612200d92100553494f867044b",
+          "bytes": 40544,
+          "sha256": "d8f91a680d78f7cc79e715bc08de8658a56e6413489a0c1199ca8b6889737e36",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/harbour-street/social.png",
-          "bytes": 46286,
-          "sha256": "e982509e6281b152fbf82fc8d28f61c6a57fa22e72256d4bf61648ade205dd54",
+          "bytes": 67118,
+          "sha256": "8dc607ff57cb656c51fa61983e5d8697e392e2e58844e701db5b7b2bde09fed6",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 3061,
-        "connectionCount": 10882,
+        "partCount": 7913,
+        "connectionCount": 29204,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 8,
-        "weakAttachmentCount": 1623,
+        "virtualColorCount": 38,
+        "weakAttachmentCount": 4735,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -452,
+            -628,
             0
           ],
           "max": [
-            1520,
+            2680,
             0,
-            680
+            1000
           ],
           "size": [
-            1520,
-            452,
-            680
+            2680,
+            628,
+            1000
           ]
         },
         "footprintStuds": [
-          76,
-          34
+          134,
+          50
         ],
-        "heightPlates": 56.5,
-        "steps": 45,
+        "heightPlates": 78.5,
+        "steps": 114,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 3628.34,
-          "massLabel": "3.63 kg",
-          "measuredParts": 3061,
+          "massGrams": 9562.91,
+          "massLabel": "9.56 kg",
+          "measuredParts": 7913,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "76.0 × 34.0 studs",
-          "tippingMarginLdu": 276.18,
-          "restingParts": 213,
+          "supportLabel": "134.0 × 50.0 studs",
+          "tippingMarginLdu": 385.89,
+          "restingParts": 466,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 70,
+          "unsupportedParts": 154,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
@@ -2195,8 +2237,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 1966,
-        "connectionsAdded": 8386,
+        "partsAdded": 6818,
+        "connectionsAdded": 26708,
         "componentsBefore": 34,
         "componentsAfter": 1,
         "loosePartsBefore": 673,
@@ -2204,103 +2246,85 @@ export const DEMO_MANIFEST: DemoManifest = {
         "collisionsBefore": 0,
         "collisionsAfter": 0,
         "unsupportedBefore": 16,
-        "unsupportedAfter": 70,
+        "unsupportedAfter": 154,
         "stableBefore": true,
         "stableAfter": true,
         "massBeforeGrams": 979.63,
-        "massAfterGrams": 3628.34,
+        "massAfterGrams": 9562.91,
         "stepsBefore": 42,
-        "stepsAfter": 45
+        "stepsAfter": 114
       },
       "bill": [
         {
           "definitionId": "3070b",
           "name": "Tile 1 x 1 with Groove",
-          "count": 1510
-        },
-        {
-          "definitionId": "3004",
-          "name": "Brick 1 x 2",
-          "count": 250
+          "count": 4497
         },
         {
           "definitionId": "3008",
           "name": "Brick 1 x 8",
-          "count": 230
-        },
-        {
-          "definitionId": "3010",
-          "name": "Brick 1 x 4",
-          "count": 140
-        },
-        {
-          "definitionId": "4282",
-          "name": "Plate 2 x 16",
-          "count": 132
+          "count": 560
         },
         {
           "definitionId": "3034",
           "name": "Plate 2 x 8",
-          "count": 107
+          "count": 473
         },
         {
-          "definitionId": "3005",
-          "name": "Brick 1 x 1",
-          "count": 100
+          "definitionId": "4282",
+          "name": "Plate 2 x 16",
+          "count": 343
         },
         {
-          "definitionId": "3020",
-          "name": "Plate 2 x 4",
-          "count": 92
+          "definitionId": "3009",
+          "name": "Brick 1 x 6",
+          "count": 252
         },
         {
-          "definitionId": "3832",
-          "name": "Plate 2 x 10",
-          "count": 91
+          "definitionId": "3004",
+          "name": "Brick 1 x 2",
+          "count": 238
         },
         {
           "definitionId": "3795",
           "name": "Plate 2 x 6",
-          "count": 90
+          "count": 231
+        },
+        {
+          "definitionId": "3832",
+          "name": "Plate 2 x 10",
+          "count": 220
+        },
+        {
+          "definitionId": "3010",
+          "name": "Brick 1 x 4",
+          "count": 168
         },
         {
           "definitionId": "60592",
           "name": "Window 1 x 2 x 2 Flat Front",
-          "count": 70
+          "count": 154
         },
         {
           "definitionId": "60601",
           "name": "Glass for Window 1 x 2 x 2 Flat",
-          "count": 70
+          "count": 154
+        },
+        {
+          "definitionId": "3005",
+          "name": "Brick 1 x 1",
+          "count": 140
         }
       ],
-      "distinctParts": 22,
+      "distinctParts": 28,
       "planWarnings": [
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
         "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there.",
-        "Course 1 shares 1 seam(s) with the course below over a 14-stud run; the available lengths do not permit a full stagger there."
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole.",
+        "No door frame 4 studs wide is compiled in this build, so that opening is a bare hole."
       ],
       "provenance": {
         "generator": "tools/build-demos.mjs",
@@ -2317,25 +2341,27 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Meridian Tower",
       "discipline": "Modular architecture",
       "category": "architecture",
-      "tagline": "A twenty-two-storey modular high-rise that lifts apart floor by floor, with real seated glazing.",
-      "summary": "Twenty-two storeys, each its own subassembly. Every floor lifts off the one below it.",
+      "tagline": "A twenty-eight-storey modular high-rise with two setbacks, a complete civic plaza and real seated glazing.",
+      "summary": "Twenty-eight storeys, each its own subassembly, step through three distinct tower volumes above a landscaped plaza, pavilion and reflecting pool.",
       "techniques": [
         "One subassembly per storey",
         "Cross-bonded deck between floors",
         "Seated window frames on every elevation",
-        "Stepped crown and mast"
+        "Stepped crown and mast",
+        "Two structural setbacks",
+        "Landscaped plaza, pavilion and reflecting pool"
       ],
       "showcase": null,
       "refinement": "The massing study stacked the storeys as one continuous shell, so there was no seam to lift and the facades were blank. The published set separates every floor onto its own two-layer deck and glazes the elevations with frames the catalogue actually compiles.",
       "hero": false,
-      "tensionAllowance": 640,
-      "tensionReason": "Two things in this model are held in bearing rather than in clutch, and the statics pass counts both as tension-carried. The glazing is seated inside its frames, and the middle of each storey deck rests on the walls below it at the perimeter rather than clutching down into them. Both are how a modular building is actually assembled; the allowance is bounded so a genuinely floating storey still fails the gate.",
+      "tensionAllowance": 1100,
+      "tensionReason": "Two things in this model are held in bearing rather than in clutch, and the statics pass counts both as tension-carried. The glazing is seated inside its frames, and the middle of each storey deck rests on the walls below it at the perimeter rather than clutching down into them. The two setback transfer decks use the same bearing condition. All three are how a modular building is actually assembled; the allowance is bounded so a genuinely floating storey still fails the gate.",
       "brief": {
-        "prompt": "A twenty-two-storey modular tower on a plaza, where every floor lifts off separately, the elevations carry real windows, and the crown steps back to a mast.",
+        "prompt": "A twenty-eight-storey modular tower on a landscaped plaza, where every floor lifts off separately, the elevations carry real windows, two upper volumes set back, and the crown rises to a mast.",
         "envelopeStuds": [
-          58,
+          84,
           null,
-          30
+          52
         ],
         "palette": [
           "Sand",
@@ -2352,8 +2378,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       },
       "camera": {
         "yaw": 38,
-        "pitch": 18,
-        "zoom": 1.06
+        "pitch": 20,
+        "zoom": 1.1
       },
       "documentId": "demo_meridian_tower",
       "roughDocumentId": "demo_meridian_tower_rough",
@@ -2363,103 +2389,103 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/meridian-tower/document.json",
-          "bytes": 11882518,
-          "sha256": "8502295f852a0768e98ccf59da2c01afed9004ba604ff40ec0e0904da25540c5",
+          "bytes": 19987512,
+          "sha256": "715c19719bb9fe2a0e323a4a7bc89191c05ddd82f279f787d1f299ae43d8e9b6",
           "contentType": "application/json"
         },
         "rough": {
           "url": "/demos/meridian-tower/rough.json",
-          "bytes": 3271257,
-          "sha256": "89da0338213756a0ada3b64f268bc53a2730502a274a7e99b68391257baa0e28",
+          "bytes": 3309405,
+          "sha256": "fabdd0d015c2cdbfa9092ae56628a1bda0156448ca463c31d2ff72b31b1aed0a",
           "contentType": "application/json"
         },
         "preview": {
           "url": "/demos/meridian-tower/preview.json",
-          "bytes": 264924,
-          "sha256": "9ca7b4c16e260e22d98e657e8f6f0362dee6ae93bc5d4e0ef101cebad482a22b",
+          "bytes": 496275,
+          "sha256": "407e4c29a9434438ce13616d5108ae5dc15820aac7c2aabb3af9f85aabfe7384",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/meridian-tower/rough-preview.json",
-          "bytes": 115523,
-          "sha256": "85f5bb11234678d5b761b48565457e2e7e4fd28a563ab2643a9da531ac1d8d75",
+          "bytes": 116942,
+          "sha256": "80475383cf9d1dec69ce583811d537d8f4438c2ae20ed1ff17e4bc44139f2387",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/meridian-tower/thumb.png",
-          "bytes": 14401,
-          "sha256": "fc0f2441df1deefab53d25e68c6e0c856f2ecdb951459679a4347b5295d55b3c",
+          "bytes": 16938,
+          "sha256": "5e4efe53d5906f2c81a42d7df07b1c1c1d11a64db62ab3e0ddb56abf4663437e",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/meridian-tower/social.png",
-          "bytes": 22865,
-          "sha256": "ff599ab07dc4b7c6c75b80e2756553392080aaae72c244643c9009acc664a91f",
+          "bytes": 27704,
+          "sha256": "bb72d51716af77b6f3765d8fec8e3a4122746d8690a5de37297c7acd1c0786cc",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 4767,
-        "connectionCount": 28196,
+        "partCount": 8895,
+        "connectionCount": 47385,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 93,
-        "weakAttachmentCount": 1587,
+        "virtualColorCount": 154,
+        "weakAttachmentCount": 3854,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -3428,
+            -4244,
             0
           ],
           "max": [
-            1160,
+            1680,
             0,
-            600
+            1040
           ],
           "size": [
-            1160,
-            3428,
-            600
+            1680,
+            4244,
+            1040
           ]
         },
         "footprintStuds": [
-          58,
-          30
+          84,
+          52
         ],
-        "heightPlates": 428.5,
-        "steps": 68,
+        "heightPlates": 530.5,
+        "steps": 136,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 9818.68,
-          "massLabel": "9.82 kg",
-          "measuredParts": 4767,
+          "massGrams": 16180.55,
+          "massLabel": "16.18 kg",
+          "measuredParts": 8895,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "58.0 × 30.0 studs",
-          "tippingMarginLdu": 299.98,
-          "restingParts": 143,
+          "supportLabel": "84.0 × 52.0 studs",
+          "tippingMarginLdu": 519.98,
+          "restingParts": 322,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 411,
+          "unsupportedParts": 855,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
       },
       "roughValidation": {
         "revision": 1,
-        "partCount": 2118,
-        "connectionCount": 7268,
+        "partCount": 2134,
+        "connectionCount": 7382,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 53,
         "disconnectedPartCount": 1060,
         "virtualColorCount": 15,
-        "weakAttachmentCount": 1335,
+        "weakAttachmentCount": 1337,
         "healthy": true,
         "boundsLdu": {
           "min": [
@@ -2490,103 +2516,124 @@ export const DEMO_MANIFEST: DemoManifest = {
           "8 parts have no connection at all and cannot be attached in any step."
         ],
         "statics": {
-          "massGrams": 2668.93,
-          "massLabel": "2.67 kg",
-          "measuredParts": 2118,
+          "massGrams": 2708.15,
+          "massLabel": "2.71 kg",
+          "measuredParts": 2134,
           "unmeasuredParts": 0,
           "coverage": 1,
           "supportLabel": "58.0 × 30.0 studs",
           "tippingMarginLdu": 299.97,
-          "restingParts": 1344,
+          "restingParts": 1342,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 87,
+          "unsupportedParts": 90,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
       },
       "delta": {
-        "partsAdded": 2649,
-        "connectionsAdded": 20928,
+        "partsAdded": 6761,
+        "connectionsAdded": 40003,
         "componentsBefore": 53,
         "componentsAfter": 1,
         "loosePartsBefore": 1060,
         "loosePartsAfter": 0,
         "collisionsBefore": 0,
         "collisionsAfter": 0,
-        "unsupportedBefore": 87,
-        "unsupportedAfter": 411,
+        "unsupportedBefore": 90,
+        "unsupportedAfter": 855,
         "stableBefore": true,
         "stableAfter": true,
-        "massBeforeGrams": 2668.93,
-        "massAfterGrams": 9818.68,
+        "massBeforeGrams": 2708.15,
+        "massAfterGrams": 16180.55,
         "stepsBefore": 69,
-        "stepsAfter": 68
+        "stepsAfter": 136
       },
       "bill": [
         {
           "definitionId": "3070b",
           "name": "Tile 1 x 1 with Groove",
-          "count": 1246
-        },
-        {
-          "definitionId": "3622",
-          "name": "Brick 1 x 3",
-          "count": 644
+          "count": 3324
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 483
+          "count": 955
         },
         {
-          "definitionId": "60592",
-          "name": "Window 1 x 2 x 2 Flat Front",
-          "count": 318
-        },
-        {
-          "definitionId": "60601",
-          "name": "Glass for Window 1 x 2 x 2 Flat",
-          "count": 318
+          "definitionId": "3622",
+          "name": "Brick 1 x 3",
+          "count": 936
         },
         {
           "definitionId": "3008",
           "name": "Brick 1 x 8",
-          "count": 298
+          "count": 488
         },
         {
-          "definitionId": "3004",
-          "name": "Brick 1 x 2",
-          "count": 282
+          "definitionId": "60592",
+          "name": "Window 1 x 2 x 2 Flat Front",
+          "count": 470
+        },
+        {
+          "definitionId": "60601",
+          "name": "Glass for Window 1 x 2 x 2 Flat",
+          "count": 470
         },
         {
           "definitionId": "2465",
           "name": "Brick 1 x 16",
-          "count": 238
+          "count": 352
         },
         {
           "definitionId": "3034",
           "name": "Plate 2 x 8",
+          "count": 351
+        },
+        {
+          "definitionId": "3832",
+          "name": "Plate 2 x 10",
+          "count": 246
+        },
+        {
+          "definitionId": "60479",
+          "name": "Plate 1 x 12",
+          "count": 174
+        },
+        {
+          "definitionId": "3004",
+          "name": "Brick 1 x 2",
           "count": 158
         },
         {
           "definitionId": "3010",
           "name": "Brick 1 x 4",
-          "count": 144
-        },
-        {
-          "definitionId": "3832",
-          "name": "Plate 2 x 10",
-          "count": 134
-        },
-        {
-          "definitionId": "91988",
-          "name": "Plate 2 x 14",
-          "count": 115
+          "count": 128
         }
       ],
-      "distinctParts": 24,
-      "planWarnings": [],
+      "distinctParts": 35,
+      "planWarnings": [
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there.",
+        "Course 4 shares 1 seam(s) with the course below over a 46-stud run; the available lengths do not permit a full stagger there."
+      ],
       "provenance": {
         "generator": "tools/build-demos.mjs",
         "kernel": "src/cad — validation, collision, instructions, statics, snapping, assembly, raster",
@@ -2602,31 +2649,32 @@ export const DEMO_MANIFEST: DemoManifest = {
       "title": "Illinois Main Quad campus",
       "discipline": "Campus architecture",
       "category": "architecture",
-      "tagline": "A 120 × 80-stud university campus with seven landmarks, a tiled quad, trees, Morrow Plots and 21 LEGO characters.",
-      "summary": "A display-scale UIUC campus set anchored by the Illini Union and Foellinger Auditorium, with Altgeld Hall, Alma Mater, six flanking academic blocks, the Main Quad path geometry, Morrow Plots, mature trees and brick-built students. The site finish alone is 9,600 individually editable pieces over a cross-bonded base.",
+      "tagline": "A 128 × 88-stud university campus with nine landmark structures, a tiled quad, mature trees, path lights and 21 LEGO characters.",
+      "summary": "A display-scale UIUC campus set anchored by the Illini Union and Foellinger Auditorium, with Altgeld Hall, Alma Mater, six flanking academic blocks, the Main Quad path geometry, Morrow Plots, mature trees and brick-built students, an east visitor hall and a south garden pavilion. The site finish alone is 11,264 individually editable pieces over a cross-bonded base.",
       "techniques": [
         "10,000+ catalog-backed pieces",
-        "Cross-bonded 120 × 80-stud foundation",
-        "Seven named campus landmarks",
+        "Cross-bonded 128 × 88-stud foundation",
+        "Nine landmark structures",
         "Stepped copper dome and bell tower",
         "18 campus figures",
-        "Three-figure Alma Mater group"
+        "Three-figure Alma Mater group",
+        "Twenty-eight mature trees and sixteen path lights"
       ],
       "showcase": {
-        "landmarkCount": 7,
+        "landmarkCount": 9,
         "characterCount": 21,
-        "siteFinishParts": 9600
+        "siteFinishParts": 11264
       },
-      "refinement": "The massing study established the Main Quad axis on a one-layer field, but its plate runs were disconnected. The published set cross-bonds the entire site, replaces the massing blocks with detailed landmark buildings, and adds the 9,600-piece landscape, characters and buildable campus life.",
+      "refinement": "The massing study established the Main Quad axis on a one-layer field, but its plate runs were disconnected. The published set cross-bonds the entire site, replaces the massing blocks with detailed landmark buildings, and adds the 11,264-piece landscape, characters and buildable campus life.",
       "hero": true,
       "tensionAllowance": 256,
       "tensionReason": "Window panes are seated inside their frames rather than carried in vertical compression. The statics pass counts those glazed inserts as tension-carried, measures their mass, and still checks every attachment group against the conservative clutch assumption.",
       "brief": {
         "prompt": "Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.",
         "envelopeStuds": [
-          120,
+          128,
           null,
-          80
+          88
         ],
         "palette": [
           "Illinois orange and blue",
@@ -2645,7 +2693,7 @@ export const DEMO_MANIFEST: DemoManifest = {
       "camera": {
         "yaw": 34,
         "pitch": 54,
-        "zoom": 0.96
+        "zoom": 1.02
       },
       "documentId": "demo_illinois_main_quad",
       "roughDocumentId": "demo_illinois_main_quad_rough",
@@ -2655,8 +2703,8 @@ export const DEMO_MANIFEST: DemoManifest = {
       "assets": {
         "document": {
           "url": "/demos/illinois-main-quad/document.json",
-          "bytes": 12544456,
-          "sha256": "ab2d39d4bf6134b785a20e0c7884500b889aba4a04c838539ed6dd574bc7434d",
+          "bytes": 15235519,
+          "sha256": "e4e981f8a7aeb2635df784006517256651691da690d132e5b2d6b3820be4c5aa",
           "contentType": "application/json"
         },
         "rough": {
@@ -2667,8 +2715,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "preview": {
           "url": "/demos/illinois-main-quad/preview.json",
-          "bytes": 615099,
-          "sha256": "9d80306675dd18eb26d426ee46c71be9477a61866a8868bd00aa5ca7a335b3c7",
+          "bytes": 746174,
+          "sha256": "e418b5f495c3e81c4ca8aaa82f1820de14a7f90c94664577d5545aedc708ba76",
           "contentType": "application/json"
         },
         "roughPreview": {
@@ -2679,65 +2727,65 @@ export const DEMO_MANIFEST: DemoManifest = {
         },
         "thumbnail": {
           "url": "/demos/illinois-main-quad/thumb.png",
-          "bytes": 48249,
-          "sha256": "ee59a426fc9933316938884a2baa35e2e8785e78bd5dcdccdc220f25f699ff47",
+          "bytes": 48246,
+          "sha256": "40daec906142c4bc36625017225cc2da7f3305e9abb5cd5882980fdbd00a8001",
           "contentType": "image/png"
         },
         "social": {
           "url": "/demos/illinois-main-quad/social.png",
-          "bytes": 91291,
-          "sha256": "d919e3ed540cf897d390a1e5e98c7e28827a0d04c4b4b89f59c256fc073a0fe7",
+          "bytes": 89084,
+          "sha256": "f5f6e89f8d68c994e8739aec59de07e53afd4905fba9bc897ef4a76a6bc8355a",
           "contentType": "image/png"
         }
       },
       "validation": {
         "revision": 1,
-        "partCount": 11493,
-        "connectionCount": 26496,
+        "partCount": 13844,
+        "connectionCount": 32172,
         "collisionCount": 0,
         "unverifiedCollisions": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
-        "virtualColorCount": 55,
-        "weakAttachmentCount": 9077,
+        "virtualColorCount": 99,
+        "weakAttachmentCount": 10636,
         "healthy": true,
         "boundsLdu": {
           "min": [
             0,
-            -356,
+            -404,
             0
           ],
           "max": [
-            2400,
+            2560,
             0,
-            1600
+            1760
           ],
           "size": [
-            2400,
-            356,
-            1600
+            2560,
+            404,
+            1760
           ]
         },
         "footprintStuds": [
-          120,
-          80
+          128,
+          88
         ],
-        "heightPlates": 44.5,
-        "steps": 185,
+        "heightPlates": 50.5,
+        "steps": 221,
         "buildOrderVerified": true,
         "buildOrderWarnings": [],
         "statics": {
-          "massGrams": 7902.38,
-          "massLabel": "7.90 kg",
-          "measuredParts": 11493,
+          "massGrams": 9747.06,
+          "massLabel": "9.75 kg",
+          "measuredParts": 13844,
           "unmeasuredParts": 0,
           "coverage": 1,
-          "supportLabel": "120.0 × 80.0 studs",
-          "tippingMarginLdu": 783.6,
-          "restingParts": 654,
+          "supportLabel": "128.0 × 88.0 studs",
+          "tippingMarginLdu": 843.9,
+          "restingParts": 807,
           "stable": true,
           "overloadedGroups": 0,
-          "unsupportedParts": 56,
+          "unsupportedParts": 68,
           "massBasis": "Computed from each part’s exact compiled LDraw volume at 1.05 g/cm³. LDraw models idealized solids, so absolute mass runs roughly 8–15% heavy against a moulded element; the bias is uniform, so centre of mass, load share and tipping margin are unaffected.",
           "clutchGramsPerStud": 100
         }
@@ -2798,8 +2846,8 @@ export const DEMO_MANIFEST: DemoManifest = {
         }
       },
       "delta": {
-        "partsAdded": 11067,
-        "connectionsAdded": 25580,
+        "partsAdded": 13418,
+        "connectionsAdded": 31256,
         "componentsBefore": 206,
         "componentsAfter": 1,
         "loosePartsBefore": 352,
@@ -2807,77 +2855,77 @@ export const DEMO_MANIFEST: DemoManifest = {
         "collisionsBefore": 0,
         "collisionsAfter": 0,
         "unsupportedBefore": 0,
-        "unsupportedAfter": 56,
+        "unsupportedAfter": 68,
         "stableBefore": true,
         "stableAfter": true,
         "massBeforeGrams": 2075.86,
-        "massAfterGrams": 7902.38,
+        "massAfterGrams": 9747.06,
         "stepsBefore": 214,
-        "stepsAfter": 185
+        "stepsAfter": 221
       },
       "bill": [
         {
           "definitionId": "3024",
           "name": "Plate 1 x 1",
-          "count": 7996
+          "count": 9610
         },
         {
           "definitionId": "3070b",
           "name": "Tile 1 x 1 with Groove",
-          "count": 1607
+          "count": 1657
         },
         {
           "definitionId": "4282",
           "name": "Plate 2 x 16",
-          "count": 542
-        },
-        {
-          "definitionId": "3008",
-          "name": "Brick 1 x 8",
-          "count": 190
+          "count": 643
         },
         {
           "definitionId": "3062b",
           "name": "Brick Round 1 x 1 Open Stud",
-          "count": 114
+          "count": 282
+        },
+        {
+          "definitionId": "3008",
+          "name": "Brick 1 x 8",
+          "count": 278
         },
         {
           "definitionId": "3034",
           "name": "Plate 2 x 8",
-          "count": 113
+          "count": 174
         },
         {
           "definitionId": "3622",
           "name": "Brick 1 x 3",
+          "count": 148
+        },
+        {
+          "definitionId": "3004",
+          "name": "Brick 1 x 2",
           "count": 106
         },
         {
           "definitionId": "3832",
           "name": "Plate 2 x 10",
-          "count": 90
-        },
-        {
-          "definitionId": "91988",
-          "name": "Plate 2 x 14",
-          "count": 79
-        },
-        {
-          "definitionId": "3004",
-          "name": "Brick 1 x 2",
-          "count": 68
+          "count": 104
         },
         {
           "definitionId": "3010",
           "name": "Brick 1 x 4",
-          "count": 64
+          "count": 74
+        },
+        {
+          "definitionId": "3009",
+          "name": "Brick 1 x 6",
+          "count": 72
         },
         {
           "definitionId": "3005",
           "name": "Brick 1 x 1",
-          "count": 62
+          "count": 70
         }
       ],
-      "distinctParts": 35,
+      "distinctParts": 38,
       "planWarnings": [],
       "provenance": {
         "generator": "tools/build-demos.mjs",

@@ -383,19 +383,19 @@ domain list.
 ## Distribution budgets
 
 `npm run build` ends with `tools/check-dist-budget.mjs`. It fails before deploy
-when `dist/` exceeds 160 MiB total, 16,000 files, or 20 MiB for one file. The
+when `dist/` exceeds 200 MiB total, 16,000 files, or 20 MiB for one file. The
 file-count and single-file budgets deliberately retain headroom below
 Cloudflare Pages' current Free-plan limits of 20,000 files and 25 MiB per file;
 the total-size ceiling is Brickwright's own delivery/operability budget because
 Pages publishes no aggregate-byte limit. Override values only for a deliberate,
 reviewed migration using the `DIST_*` variables documented in `.env.example`.
 
-The total was raised from 100 MiB when the demo collection was rebuilt around a
-few large sets rather than many small ones. Each set ships 10-15 MiB and the
-catalogue alone is ~69 MiB. Nearly all of a set's bytes are its stored
-connection graph — the tower's is 10.9 MiB of an 11.2 MiB document, against 1.1
-MiB of parts — so the cheapest future saving is there rather than in the
-collection's size.
+The total was raised from 160 MiB when all ten demos were rebuilt as complete
+scenes. Together they now carry more than 85,000 editable parts; their source
+assets occupy about 122 MiB and the complete production output is about 185 MiB.
+Nearly all of a set's bytes are its stored connection graph, so the cheapest
+future saving remains graph encoding rather than shrinking the collection back
+to sparse massing studies.
 
 ## Rollback
 

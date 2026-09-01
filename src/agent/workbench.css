@@ -134,6 +134,38 @@
   color: var(--bw-agent-text);
 }
 
+.bw-agent__empty > p {
+  margin: 0.65rem 0 0;
+  color: var(--bw-agent-muted);
+  font-size: 0.7rem;
+}
+
+.bw-agent__starters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+  margin-top: 0.65rem;
+}
+
+.bw-agent__starters button {
+  min-width: 0;
+  min-height: 3rem;
+  display: grid;
+  place-items: center;
+  gap: 0.18rem;
+  border: 1px solid var(--bw-agent-border);
+  border-radius: 14px;
+  background: var(--bw-agent-surface-sunken);
+  color: var(--bw-agent-muted);
+  font: 700 0.58rem var(--bw-agent-display);
+  cursor: pointer;
+}
+
+.bw-agent__starters button:hover {
+  border-color: color-mix(in srgb, var(--bw-agent-accent) 48%, transparent);
+  color: var(--bw-agent-accent);
+}
+
 .bw-agent__empty ul {
   margin: 0.35rem 0 0;
   padding-left: 1.1rem;

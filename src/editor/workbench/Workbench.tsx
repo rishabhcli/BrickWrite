@@ -7,7 +7,7 @@ import { cadEngine } from '../../cad/engine'
 import type { SharedMutationId } from '../../cad/capabilities'
 import { inspectModelHealth, type ModelHealthIssue } from '../../cad/modelHealth'
 import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
-import { GlassDock, GlassTabs } from '../../ui/liquid'
+import { GlassDock } from '../../ui/liquid'
 import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
 import { markWelcomeSeen, WelcomeGuide } from '../WelcomeGuide'
@@ -72,6 +72,7 @@ import {
 import { resetPreferences } from './persistence'
 import { IDLE_CONNECT, useWorkbench } from './useWorkbench'
 import { visibilityActive } from './selection'
+import { WorkbenchIcon } from './WorkbenchIcons'
 
 /**
  * The workbench shell.
@@ -91,7 +92,27 @@ export interface WorkbenchProps {
 }
 
 const DESIGN_SECTION_IDS = ['generation.panel', 'refinement.panel', 'agent.workbench'] as const
+type DesignSurfaceId = (typeof DESIGN_SECTION_IDS)[number]
+const DESIGN_SURFACES: readonly { id: DesignSurfaceId; label: string; icon: 'generate' | 'refine' | 'agent' }[] = [
+  { id: 'generation.panel', label: 'Make', icon: 'generate' },
+  { id: 'refinement.panel', label: 'Tune', icon: 'refine' },
+  { id: 'agent.workbench', label: 'Ask', icon: 'agent' },
+]
 const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'inspector', 'connect'] as const
+const OBJECT_SURFACES = [
+  { id: 'model.explorer', label: 'Map', icon: Boxes },
+  { id: 'selection', label: 'Pick', icon: MousePointer2 },
+  { id: 'transform', label: 'Move', icon: Move3d },
+  { id: 'inspector', label: 'Inspect', icon: SlidersHorizontal },
+  { id: 'connect', label: 'Mate', icon: CircleDot },
+] as const
+const LEFT_SURFACES = [
+  { id: 'palette', label: 'Parts', icon: 'parts' },
+  { id: 'cloud.projects', label: 'Builds', icon: 'projects' },
+  { id: 'cloud.members', label: 'Share', icon: 'share' },
+  { id: 'cloud.presence', label: 'Live', icon: 'presence' },
+] as const
+type LeftSurfaceId = (typeof LEFT_SURFACES)[number]['id']
 const isDesignSection = (id: string) => (DESIGN_SECTION_IDS as readonly string[]).includes(id)
 const isObjectSection = (id: string) => (OBJECT_SECTION_IDS as readonly string[]).includes(id)
 
@@ -153,6 +174,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null)
   const [inspectorView, setInspectorView] = useState<InspectorView>('object')
   const [activeHealthIssueId, setActiveHealthIssueId] = useState<string | null>(null)
+  const [activeDesignSurface, setActiveDesignSurface] = useState<DesignSurfaceId>('generation.panel')
+  const [activeLeftSurface, setActiveLeftSurface] = useState<LeftSurfaceId>('palette')
   /**
    * Bumped every time something asks for Generate.
    *
@@ -196,6 +219,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       if (surface === 'feedback') setTimelineView('feedback')
       if (surface === 'review') setTimelineView('review')
       if (surface === 'generation') setPromptFocusToken((token) => token + 1)
+      if (surface === 'generation') setActiveDesignSurface('generation.panel')
+      if (surface === 'refinement') setActiveDesignSurface('refinement.panel')
+      if (surface === 'agent') setActiveDesignSurface('agent.workbench')
       // `health` and `inspector` are two surfaces sharing one panel, so asking
       // for either has to land on that one — otherwise a reveal returns whatever
       // tab was last looked at, and an agent calling `workspace_reveal` gets a
@@ -503,6 +529,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   }, [layout])
 
   const focusSearch = useCallback(() => {
+    setActiveLeftSurface('palette')
     if (rawLayout.left.collapsed) updateLayout({ ...rawLayout, left: { ...rawLayout.left, collapsed: false } })
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-catalog-search]')?.focus())
   }, [rawLayout, updateLayout])
@@ -715,6 +742,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const connectActive = workbench.tool === 'connect'
   const rightTab = connectActive ? 'object' : layout.rightTab
   const rightSectionOpen = (id: string) => rightTab === 'object' && !connectActive && sections[id] === true
+  const activeObjectSurface = connectActive
+    ? 'connect'
+    : (OBJECT_SECTION_IDS.find((id) => sections[id] === true) ?? 'selection')
 
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
@@ -732,28 +762,54 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         data-preset={layout.preset ?? 'custom'}
       >
         {/* The editor's outline began at h2, so assistive technology had no
-          * top-level heading for the route and no way to hear which document
-          * was open without reading the chrome. It is hidden because the
-          * document name is already on screen in the title bar. */}
+         * top-level heading for the route and no way to hear which document
+         * was open without reading the chrome. It is hidden because the
+         * document name is already on screen in the title bar. */}
         <h1 className="visually-hidden">{workbench.state.document.name} — Brickwright editor</h1>
         <TopBar workbench={workbench} />
-        <Toolbar workbench={workbench} shortcuts={shortcuts} onImport={workbench.importModel} timelineOpen={!layout.bottom.collapsed} onToggleTimeline={() => toggleDock('bottom')} />
+        <Toolbar
+          workbench={workbench}
+          shortcuts={shortcuts}
+          onImport={workbench.importModel}
+          timelineOpen={!layout.bottom.collapsed}
+          onToggleTimeline={() => toggleDock('bottom')}
+        />
 
         {layout.left.collapsed ? (
           <CollapsedRail dock="left" label="Palette" onExpand={() => toggleDock('left')} />
         ) : (
           <GlassDock as="div" className="dock dock-left" role="region" aria-label="Palette dock">
-            <div className="dock-head">
-              <Blocks size={15} aria-label="Parts library" />
+            <div className="dock-head left-tool-head">
+              <div className="left-tool-switcher" role="tablist" aria-label="Library and collaboration tools">
+                {LEFT_SURFACES.map((surface) => (
+                  <button
+                    key={surface.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeLeftSurface === surface.id}
+                    aria-controls="left-tool-panel"
+                    className={activeLeftSurface === surface.id ? 'active' : ''}
+                    title={surface.label}
+                    onClick={() => setActiveLeftSurface(surface.id)}
+                  >
+                    <WorkbenchIcon name={surface.icon} size={15} />
+                    <span>{surface.label}</span>
+                  </button>
+                ))}
+              </div>
               <DockCollapseButton dock="left" onCollapse={() => toggleDock('left')} />
             </div>
-            <div className="dock-scroll">
+            <div
+              id="left-tool-panel"
+              className={`dock-scroll left-dock-${activeLeftSurface.replace('.', '-')}`}
+              role="tabpanel"
+            >
               <DockSection
                 id="palette"
                 title="Parts"
                 icon={<Blocks size={11} />}
-                open={sections.palette !== false}
-                onToggle={() => toggleSection('palette')}
+                open={activeLeftSurface === 'palette'}
+                onToggle={() => setActiveLeftSurface('palette')}
                 grow
               >
                 <PalettePanel
@@ -781,8 +837,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     id={id}
                     title={title ?? id}
                     icon={icon}
-                    open={sections[id] === true}
-                    onToggle={() => toggleSection(id)}
+                    open={id === activeLeftSurface}
+                    grow={id === activeLeftSurface}
+                    onToggle={() => {
+                      if (LEFT_SURFACES.some((surface) => surface.id === id)) setActiveLeftSurface(id as LeftSurfaceId)
+                    }}
                   >
                     {content}
                   </DockSection>
@@ -819,27 +878,76 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           <CollapsedRail dock="right" label="Design and Object" onExpand={() => toggleDock('right')} />
         ) : (
           <GlassDock as="div" className="dock dock-right" role="region" aria-label="Inspector dock">
-            <div className="dock-head">
-              <GlassTabs
-                className="right-dock-tabs"
-                aria-label="Right dock view"
-                tabs={[
-                  { id: 'design', label: 'Design' },
-                  { id: 'object', label: 'Object' },
-                ]}
-                value={rightTab}
-                onValueChange={(value) => {
-                  if (value !== 'design' && value !== 'object') return
-                  updateLayout({
-                    ...rawLayout,
-                    right: { ...rawLayout.right, collapsed: false },
-                    rightTab: value,
-                  })
-                }}
-              />
+            <div className="dock-head right-tool-head">
+              <div className="right-tool-switcher" role="tablist" aria-label="Design and object tools">
+                {DESIGN_SURFACES.map((surface) => {
+                  const selected = rightTab === 'design' && activeDesignSurface === surface.id
+                  return (
+                    <button
+                      key={surface.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls="right-tool-panel"
+                      title={
+                        surface.id === 'generation.panel'
+                          ? 'Generate a build'
+                          : surface.id === 'refinement.panel'
+                            ? 'Refine a region'
+                            : 'Ask the design partner'
+                      }
+                      className={selected ? 'active' : ''}
+                      onClick={() => {
+                        if (workbench.tool === 'connect') workbench.setTool('select')
+                        setActiveDesignSurface(surface.id)
+                        updateLayout({
+                          ...rawLayout,
+                          right: { ...rawLayout.right, collapsed: false },
+                          rightTab: 'design',
+                          sections: { ...rawLayout.sections, [surface.id]: true },
+                        })
+                      }}
+                    >
+                      <WorkbenchIcon name={surface.icon} size={15} />
+                      <span>{surface.label}</span>
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rightTab === 'object'}
+                  aria-controls="right-tool-panel"
+                  title="Object tools"
+                  className={rightTab === 'object' ? 'active' : ''}
+                  onClick={() => {
+                    const visibleObjectSurface =
+                      OBJECT_SECTION_IDS.find((id) => rawLayout.sections[id] === true) ?? 'selection'
+                    updateLayout(
+                      applyWorkbenchSectionFocus(
+                        {
+                          ...rawLayout,
+                          right: { ...rawLayout.right, collapsed: false },
+                          rightTab: 'object',
+                        },
+                        visibleObjectSurface,
+                        true,
+                      ),
+                    )
+                  }}
+                >
+                  <WorkbenchIcon name="object" size={15} />
+                  <span>Object</span>
+                </button>
+              </div>
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
             </div>
-            <div className={`dock-scroll right-dock-${rightTab}`} role="tabpanel" aria-label={`${rightTab} tools`}>
+            <div
+              id="right-tool-panel"
+              className={`dock-scroll right-dock-${rightTab}`}
+              role="tabpanel"
+              aria-label={`${rightTab} tools`}
+            >
               {rightTab === 'design' ? (
                 <Slot
                   id="panel-right"
@@ -848,9 +956,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       id={id}
                       title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
                       icon={icon}
-                      open={sections[id] !== false}
-                      grow={sections[id] !== false}
-                      onToggle={() => toggleSection(id)}
+                      open={id === activeDesignSurface}
+                      grow={id === activeDesignSurface}
+                      onToggle={() => {
+                        if (isDesignSection(id)) setActiveDesignSurface(id as DesignSurfaceId)
+                      }}
                     >
                       {content}
                     </DockSection>
@@ -858,6 +968,48 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 />
               ) : (
                 <>
+                  <div className="object-tool-switcher" role="toolbar" aria-label="Object tools">
+                    {OBJECT_SURFACES.map(({ id, label, icon: Icon }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={activeObjectSurface === id ? 'active' : ''}
+                        aria-pressed={activeObjectSurface === id}
+                        title={
+                          id === 'model.explorer'
+                            ? 'Browse the model map'
+                            : id === 'selection'
+                              ? 'Selection tools'
+                              : id === 'transform'
+                                ? 'Exact transform tools'
+                                : id === 'inspector'
+                                  ? 'Inspect object properties'
+                                  : 'Connect two parts'
+                        }
+                        onClick={() => {
+                          if (id === 'connect') {
+                            workbench.setTool('connect')
+                            return
+                          }
+                          if (workbench.tool === 'connect') workbench.setTool('select')
+                          updateLayout(
+                            applyWorkbenchSectionFocus(
+                              {
+                                ...rawLayout,
+                                right: { ...rawLayout.right, collapsed: false },
+                                rightTab: 'object',
+                              },
+                              id,
+                              true,
+                            ),
+                          )
+                        }}
+                      >
+                        <Icon size={14} />
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
                   <DockSection
                     id="connect"
                     title="Connect"
