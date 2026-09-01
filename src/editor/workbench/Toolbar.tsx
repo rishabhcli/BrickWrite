@@ -15,6 +15,7 @@ import {
   Lock,
   Maximize2,
   MousePointer2,
+  Hand,
   Move3d,
   Redo2,
   Rotate3d,
@@ -124,6 +125,20 @@ export function Toolbar({
             <div className="rail-divider" />
             <div className="toolgroup compact-tools selection-tools" aria-label={`${selected} selected`}>
               <span className="selection-tool-count">{selected}</span>
+              {/* First, because moving the thing you just selected is the most
+                * common next action — and until now the only always-visible
+                * control named after it was the Move *tool*, which arms a
+                * translate gizmo rather than picking the part up. Someone
+                * hunting for how to move a brick found that button, dragged,
+                * got nothing, and concluded the editor could not do it. */}
+              <IconButton
+                icon={<Hand />}
+                label="Reposition"
+                shortcut={chord('edit.reposition')}
+                disabled={selected !== 1}
+                disabledReason="select one part"
+                onClick={() => workbench.pickUpSelection()}
+              />
               <IconButton
                 icon={<CopyPlus />}
                 label="Duplicate selection"
