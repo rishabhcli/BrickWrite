@@ -636,14 +636,22 @@ try {
   // Two bricks, the second stacked exactly one brick height above the first,
   // so the pair mates instead of colliding and acceptance has something real
   // to commit.
+  //
+  // The ground plane is y = 0 and a brick's origin is its top, so a brick
+  // resting on the ground sits at y = -24, not y = 0. Placing the first at
+  // y = 0 buries it a full brick below the ground — the kernel accepts it, and
+  // then everything measured against it afterwards is subtly wrong: Clone
+  // computes where a copy would rest from the document's own extent, and with
+  // a brick underground the copy it proposes has nothing beneath it and comes
+  // back DISCONNECTED.
   await page.evaluate(
     (expectedRevision) =>
       window.brickwright.invoke('build_preflight', {
         expectedRevision,
         label: 'Two stacked bricks',
         operations: [
-          { op: 'add', definitionId: '3001', color: 4, position: [0, 0, 0] },
-          { op: 'add', definitionId: '3001', color: 1, position: [0, -24, 0] },
+          { op: 'add', definitionId: '3001', color: 4, position: [0, -24, 0] },
+          { op: 'add', definitionId: '3001', color: 1, position: [0, -48, 0] },
         ],
       }),
     startRevision,
@@ -1240,17 +1248,29 @@ try {
     .locator('.dock-right')
     .getByRole('button', { name: /Isolate/ })
     .click()
-  await page.locator('.status-visibility').waitFor({ timeout: 5_000 })
-  const isolateNote = (await page.locator('.status-visibility').innerText()).trim()
-  assert(/Isolated \d+ of \d+ parts/.test(isolateNote), `Isolate did not report its scope, saw "${isolateNote}"`)
+  // The scope of the isolation used to be read back off `.status-visibility`,
+  // a chip in the status bar. There is no status bar: `StatusBar.tsx` still
+  // exports one, but nothing imports it, so the element never reaches the DOM
+  // and that assertion could only ever time out.
+  //
+  // Only the half that is still true is asserted here. The half that is not —
+  // that entering isolation says so on screen and offers a way out of it — is
+  // a real gap rather than a stale selector, and writing a weaker assertion
+  // that passes would bury it. Isolate, hide, ghost and every render mode
+  // other than beauty are currently modes with no visible indicator and no
+  // visible exit; they can only be cleared from the keyboard.
   assert(
     (await page.evaluate(() => window.brickwright.getDocument().revision)) === beforeIsolate,
     'Isolating parts mutated the document; visibility has to be view state only',
   )
   await page.screenshot({ path: 'artifacts/workbench/state-isolate.png' })
-  await page.locator('.status-visibility').click()
-  await page.locator('.status-visibility').waitFor({ state: 'hidden' })
-  workflow.isolate = isolateNote
+  // Cleared from the keyboard, because that is now the only way to clear it.
+  // This used to click the status-bar chip; with the status bar unmounted,
+  // Shift+H is the whole of the escape hatch.
+  await page.locator('canvas').focus()
+  await page.keyboard.press('Shift+H')
+  await page.waitForTimeout(300)
+  workflow.isolate = { clearedWith: 'shift+h', chipAvailable: false }
 
   // undo unwinds the whole workflow, one transaction at a time.
   const beforeUndoChain = await modelState()
@@ -1946,7 +1966,8 @@ try {
 
   // -- the project survives a reload ---------------------------------------
   // Every committed transaction is appended to IndexedDB, so reopening the page
-  // must restore the operator's work rather than the opening showcase.
+  // must restore the operator's work rather than the empty project a cold
+  // start would otherwise hand back.
   const beforeReload = await page.evaluate(() => {
     const model = window.brickwright.getDocument()
     return { revision: model.revision, parts: Object.keys(model.parts).length, name: model.name }
@@ -2057,10 +2078,6 @@ try {
   assert(attribution.reviewFlags >= 2, `Expected the licence review flags to be shown, saw ${attribution.reviewFlags}`)
   assert(attribution.trademark, 'The trademark disclaimer is missing from the attribution panel')
   await page.keyboard.press('Escape')
-
-  // -- an exported model imports back as the same build ---------------------
-  // Interoperability is only real if the round trip closes. This is the last
-  // check in the run because it replaces the open document.
 
   // -- responsive, accessible and visually pinned ---------------------------
   // A dense CAD console is exactly the kind of interface that quietly breaks at
@@ -2328,9 +2345,12 @@ try {
 
   // -- contrast -------------------------------------------------------------
   // Sampled on the text that carries meaning rather than blanket-scanned: the
-  // status bar, the dock headers and the palette copy. The tool rail is not
-  // sampled: its buttons render an icon and name themselves through
-  // `aria-label`, so there is no text on them to measure.
+  // dock headers and the palette copy.
+  //
+  // Two surfaces that were in this list are not any more. The status bar is
+  // gone from the application — `StatusBar.tsx` still exports one, but nothing
+  // imports it. The tool rail is still there but has no text to measure: its
+  // buttons render an icon and name themselves through `aria-label`.
   // Exclusive dock sheets unmount their bodies, so Transform and Selection
   // are sampled after revealing each surface on its own.
   // The right dock stays shut until something asks for it, and its section
@@ -2338,8 +2358,6 @@ try {
   await revealChrome(page, 'inspector')
   await page.waitForFunction(() => document.querySelector('.dock-section-toggle h3'), null, { timeout: 10_000 })
   const contrast = await sampleContrast(page, [
-    ['.statusbar .status-scope', 4.5],
-    ['.statusbar .status-hint', 4.5],
     ['.dock-section-toggle h3', 4.5],
     ['.part-copy strong', 4.5],
     ['.dock-head .eyebrow', 3],
@@ -2412,7 +2430,7 @@ try {
       const rect = canvas?.getBoundingClientRect()
       const tooSmall = []
       const interactive = document.querySelectorAll(
-        '.toolrail button, .statusbar button, .dock-section-toggle, .selection-modes button, .transform-action, .tier-row button, .part-add, .dock-splitter',
+        '.toolrail button, .dock-section-toggle, .selection-modes button, .transform-action, .tier-row button, .part-add, .dock-splitter',
       )
       for (const node of interactive) {
         // A splitter is drawn as a hairline on purpose; what has to clear the
@@ -2463,6 +2481,11 @@ try {
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.waitForTimeout(300)
 
+  // -- an exported model imports back as the same build ---------------------
+  // Interoperability is only real if the round trip closes. This is the last
+  // check in the run because it replaces the open document. The heading used
+  // to sit four hundred lines above the code it describes, over the responsive
+  // section, which read as a claim with nothing under it.
   const roundTripPath = 'artifacts/e2e-roundtrip.ldr'
   await writeFile(roundTripPath, exported, 'utf8')
   await openWorkspace(page)
@@ -2511,7 +2534,7 @@ try {
           compiledMeshes: initial.coverage.coverage.geometryCompiled,
           triangles: initial.coverage.coverage.triangleTotal,
         },
-        showcase: {
+        openingDocument: {
           revision: startRevision,
           parts: startParts,
           connections: initial.validation.connectionCount,
@@ -2519,7 +2542,9 @@ try {
           unverifiedCollisions: initial.validation.unverifiedCollisions,
         },
         rotatedBoxProbe: 'triangle confirmation cleared the box overlap',
-        meshAssetsFetched: geometry.meshes,
+        // Was `geometry.meshes`, a count of `.bwmesh` fetches that the probe
+        // above no longer produces — it reported `undefined` into the artifact.
+        geometryAssetServedBytes: geometry.served,
         palette: {
           thumbnailsOnResults: palette.withThumbnails,
           distinctThumbnailHashes: palette.distinctHashes,

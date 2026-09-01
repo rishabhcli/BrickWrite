@@ -79,8 +79,10 @@ bounding-box overlap between a rotated brick and its neighbour is cleared by tri
 confirmation; the shortcut dialog blocks model commands and restores focus; and the export's
 type-1 line count matches the document.
 
-The opening document is a 33-part rover with **207 mated connectors, 0 collisions and 1
-connected component**, verified by a unit test so the invariant cannot regress.
+The editor opens on an empty project. The 33-part rover this used to describe is now a
+unit-test fixture (`createShowcaseDocument`) rather than what anyone opens: **207 mated
+connectors, 0 collisions and 1 connected component**, still verified by a unit test so the
+invariant cannot regress, but no longer a copy handed to every new project.
 
 ## Productionization pass 1
 

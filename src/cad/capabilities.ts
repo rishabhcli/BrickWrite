@@ -120,7 +120,14 @@ function refuseIllegalAdds(document: ModelDocument, operations: readonly CadOper
     throw new SharedCapabilityError(
       'DISCONNECTED',
       `The new parts would leave ${hovering[0]} floating with no clutch and no ground under ${hovering.length === 1 ? 'it' : 'them'}.`,
-      'Offset along the ground so copies rest or clutch. Do not invent a hover in Y. Mate an already-placed hovering brick with connect_parts. Prefer anchorPartId or along over invented XYZ.',
+      // Read by both audiences. This is the text a person sees in a toast when
+      // Clone or Array refuses, so it cannot be four sentences of tool names:
+      // it used to end "Mate an already-placed hovering brick with
+      // connect_parts. Prefer anchorPartId or along over invented XYZ", which
+      // tells somebody who just pressed a button nothing they can act on. The
+      // steering an agent needs — offset on the ground, do not lift in Y, mate
+      // rather than hover — survives without naming a tool to do it with.
+      'Offset along the ground so copies rest or clutch, rather than lifting them in Y. A part that already hovers has to be mated onto something placed.',
       { partIds: hovering },
     )
   }
