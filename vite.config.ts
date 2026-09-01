@@ -126,6 +126,17 @@ export default defineConfig({
      * single file actually types — gets the same pool as CI.
      */
     maxWorkers: '25%',
+    /*
+     * The default 5 s budget is a per-test budget spent mostly on other tests.
+     * A suite that renders the shell imports React, the router and every
+     * surface it touches while three other workers are doing the same, so the
+     * wall clock a `render` + `findBy*` pair takes is set by import bandwidth
+     * rather than by anything the test asserts: `shell.test.tsx` passes in
+     * 6.5 s on its own and has timed out at 5 s inside the full run. Raising
+     * the floor keeps a loaded machine from reporting a scheduling delay as a
+     * failed assertion; a test that is genuinely hung still fails, 10 s later.
+     */
+    testTimeout: 15_000,
     // `process.env` only; `import.meta.env` is cleared by `envDir` above.
     env: {
       VITE_HEXCLAVE_PROJECT_ID: '',
