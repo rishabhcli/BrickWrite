@@ -8,6 +8,7 @@ import {
   Globe,
   Link2,
   Lock,
+  Hand,
   Magnet,
   Palette,
   Pipette,
@@ -435,6 +436,20 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       </div>
 
       <div className="transform-actions">
+        {/* Reposition was reachable only from the right-click menu and the `m`
+         * chord, while the toolbar's "Move" button selects a translate gizmo —
+         * so the one action named after what a person wants to do was the one
+         * thing that did not do it. It picks the part up onto the cursor and
+         * the next click reseats it, snapped, which is the same path the
+         * palette uses to place a new part. */}
+        <ActionButton
+          icon={<Hand size={12} />}
+          label="Reposition"
+          shortcut="M"
+          disabled={single === undefined}
+          reason="Select one part to pick it up."
+          onClick={() => workbench.pickUpSelection()}
+        />
         <ActionButton
           icon={<ArrowDownToLine size={12} />}
           label="Ground"
