@@ -687,7 +687,9 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
     generation_compile: async (input) => {
       const generation = await generationModule()
       try {
-        return await generation.getGenerationHost().compileFromServer(input.prompt as string | undefined)
+        const host = generation.getGenerationHost()
+        const prompt = input.prompt as string | undefined
+        return input.useModel === false ? host.compileLocal(prompt) : await host.compileFromServer(prompt)
       } catch (cause) {
         const refusal = generation.refusalOf(cause)
         if (!refusal) throw cause
@@ -695,16 +697,6 @@ export function createToolHost(options: ToolHostOptions): ToolHost {
       }
     },
 
-    generation_compile_local: async (input) => {
-      const generation = await generationModule()
-      try {
-        return generation.getGenerationHost().compileLocal(input.prompt as string | undefined)
-      } catch (cause) {
-        const refusal = generation.refusalOf(cause)
-        if (!refusal) throw cause
-        return fail(refusal.code, refusal.message, refusal.repair, refusal.details)
-      }
-    },
 
     generation_set: async (input) => {
       const generation = await generationModule()

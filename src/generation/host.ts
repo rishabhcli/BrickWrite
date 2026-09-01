@@ -168,7 +168,7 @@ export async function compileBriefFromServer(prompt?: string) {
     throw new ContractError(
       'MODEL_UNAVAILABLE',
       state.briefIssue?.detail ?? 'The brief route is not available.',
-      'Call generation_compile_local, or fix the /api/brief credential and retry.',
+      'Call generation_compile with useModel false, or fix the /api/brief credential and retry.',
       { state: compactGeneration(state) },
     )
   }
@@ -176,7 +176,7 @@ export async function compileBriefFromServer(prompt?: string) {
     throw new ContractError(
       'INTERNAL_ERROR',
       state.briefIssue?.detail ?? 'Brief compilation failed.',
-      'Fix the prompt or call generation_compile_local.',
+      'Fix the prompt or call generation_compile with useModel false.',
       { state: compactGeneration(state) },
     )
   }
@@ -205,7 +205,7 @@ export function setGeneration(input: {
   if (input.candidateCount !== undefined) session.setCandidateCount(input.candidateCount)
   if (input.brief) {
     if (!session.getState().brief) {
-      throw new ContractError('INVALID_INPUT', 'No brief is ready to edit.', 'Call generation_compile or generation_compile_local first.')
+      throw new ContractError('INVALID_INPUT', 'No brief is ready to edit.', 'Call generation_compile first.')
     }
     session.editBrief(input.brief, input.reason ?? 'agent edit')
   }
@@ -217,7 +217,7 @@ export async function runGeneration(useModel?: boolean) {
   const session = getGenerationSession()
   const before = session.getState()
   if (!before.brief) {
-    throw new ContractError('INVALID_INPUT', 'No brief is ready.', 'Call generation_compile or generation_compile_local first.')
+    throw new ContractError('INVALID_INPUT', 'No brief is ready.', 'Call generation_compile first.')
   }
   const open = unresolvedConflicts(before)
   if (open.length) {

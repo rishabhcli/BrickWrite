@@ -46,6 +46,8 @@ type ToolDefinition = ModelContextToolDefinition
 
 const WorkspaceRevealSchema = z.object({
   surface: z.enum(CHROME_SURFACES),
+  /** Health issue id or proposal id, for the two surfaces that hold a queue. */
+  focusId: z.string().min(1).max(240).optional(),
 })
 
 const WorkspaceFocusSchema = z
@@ -57,14 +59,6 @@ const WorkspaceFocusSchema = z
   .refine((request) => Boolean(request.partIds) !== Boolean(request.subassemblyId), {
     message: 'Pass exactly one of partIds or subassemblyId.',
   })
-
-const ProposalReviewFocusSchema = z.object({
-  proposalId: z.string().min(1).max(160).optional(),
-})
-
-const ModelHealthFocusSchema = z.object({
-  issueId: z.string().min(1).max(240).optional(),
-})
 
 const ApplySchema = z.object({
   proposalId: z.string().min(1).max(120),
@@ -200,54 +194,24 @@ const readTools: ToolDefinition[] = [
     description:
       'Open a workbench dock section so a human can see what the agent is working on. '
       + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, timeline, review, feedback. '
+      + 'For health and review, pass focusId to land on one issue or proposal; omit it for the most urgent. '
       + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
     annotations: { readOnlyHint: true },
     execute: (input) => {
       try {
         const request = WorkspaceRevealSchema.parse(input)
+        // `health` and `review` are queues rather than plain panels: opening
+        // one without landing on an item leaves the human to hunt for whatever
+        // the agent meant. Those two focus; every other surface just opens.
+        if (request.surface === 'health') {
+          return json({ ...profileContext(), ...focusModelHealth(request.focusId), chrome: readChrome() })
+        }
+        if (request.surface === 'review') {
+          return json({ ...profileContext(), ...focusProposalReview(request.focusId), chrome: readChrome() })
+        }
         return json({
           ...revealChrome(request.surface),
-          chrome: readChrome(),
-        })
-      } catch (cause) {
-        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
-      }
-    },
-  },
-  {
-    name: 'proposal_review_focus',
-    description:
-      'Open the shared measured change-review queue and focus one pending kernel proposal. '
-      + 'Does not accept, reject, or mutate the document. Omit proposalId to show the newest preflight.',
-    inputSchema: jsonSchemaOf(ProposalReviewFocusSchema),
-    annotations: { readOnlyHint: true },
-    execute: (input) => {
-      try {
-        const request = ProposalReviewFocusSchema.parse(input)
-        return json({
-          ...profileContext(),
-          ...focusProposalReview(request.proposalId),
-          chrome: readChrome(),
-        })
-      } catch (cause) {
-        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
-      }
-    },
-  },
-  {
-    name: 'model_health_focus',
-    description:
-      'Open the shared Model Health navigator and focus one exact deterministic issue. '
-      + 'Omit issueId to open the highest-severity current issue. This changes only selection, camera, and inspector chrome.',
-    inputSchema: jsonSchemaOf(ModelHealthFocusSchema),
-    annotations: { readOnlyHint: true },
-    execute: (input) => {
-      try {
-        const request = ModelHealthFocusSchema.parse(input)
-        return json({
-          ...profileContext(),
-          ...focusModelHealth(request.issueId),
           chrome: readChrome(),
         })
       } catch (cause) {

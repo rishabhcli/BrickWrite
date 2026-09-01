@@ -184,8 +184,6 @@ describe('WebMCP surface inventory', () => {
     'share_prepare',
     'workspace_reveal',
     'workspace_focus',
-    'proposal_review_focus',
-    'model_health_focus',
   ]
   const inspectHidden = ['generation_apply', 'project_open', 'refinement_apply', 'share_fork_to_project']
   const proposeOnly = ['generation_preview', 'refinement_select']
@@ -308,7 +306,7 @@ describe('WebMCP surface inventory', () => {
     })
     const revision = cadEngine.getDocument().revision
 
-    const focused = await invoke('proposal_review_focus', { proposalId: 'proposal_exact' })
+    const focused = await invoke('workspace_reveal', { surface: 'review', focusId: 'proposal_exact' })
 
     expect(seen).toEqual(['proposal_exact'])
     expect(focused).toMatchObject({
@@ -340,7 +338,7 @@ describe('WebMCP surface inventory', () => {
     })
     const revision = cadEngine.getDocument().revision
 
-    const focused = await invoke('model_health_focus', { issueId: 'collision:pair_a_b' })
+    const focused = await invoke('workspace_reveal', { surface: 'health', focusId: 'collision:pair_a_b' })
 
     expect(seen).toEqual(['collision:pair_a_b'])
     expect(focused).toMatchObject({
@@ -426,7 +424,7 @@ describe('generation tools', () => {
   })
 
   it('compiles locally, runs without a model, previews in Propose and applies as an agent in Build', async () => {
-    const compiled = await invoke('generation_compile_local', { prompt: ARMCHAIR })
+    const compiled = await invoke('generation_compile', { prompt: ARMCHAIR, useModel: false })
     expect(compiled.briefPhase).toBe('ready')
     expect(compiled.brief).toMatchObject({ subject: expect.any(String) })
     for (const field of (compiled.unresolvedConflicts as string[] | undefined) ?? []) {
@@ -466,7 +464,7 @@ describe('generation tools', () => {
   })
 
   it('redacts a stale expectedRevision through the error envelope', async () => {
-    await invoke('generation_compile_local', { prompt: ARMCHAIR })
+    await invoke('generation_compile', { prompt: ARMCHAIR, useModel: false })
     const compiled = await invoke('generation_state')
     for (const field of (compiled.unresolvedConflicts as string[] | undefined) ?? []) {
       await invoke('generation_set', { conflict: { field, choice: 'compiler' } })

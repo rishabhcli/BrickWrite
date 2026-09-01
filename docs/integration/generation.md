@@ -577,8 +577,7 @@ assistant compiled appears in the panel.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
-| `generation_compile` | read | Prose → `DesignBrief` through `/api/brief`. |
-| `generation_compile_local` | read | The same brief from rules in the browser, no model call. |
+| `generation_compile` | read | Prose → `DesignBrief` through `/api/brief`. `useModel: false` compiles from rules in the browser instead, which is the answer to `MODEL_UNAVAILABLE`. |
 | `generation_set` | read | Prompt, candidate count, brief fields, conflict resolutions. |
 | `generation_run` | read | Runs the pipeline. Writes nothing. |
 | `generation_state` | read | The compact session: brief, candidates, ghost, outcome. |

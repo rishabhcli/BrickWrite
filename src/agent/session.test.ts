@@ -719,7 +719,7 @@ describe('generate-first', () => {
     const { session, transport } = makeSession([
       {
         text: ['Compiling. '],
-        toolCalls: [{ name: 'generation_compile_local', input: { prompt: 'A harbour control tower 20 x 16 studs, 24 studs tall' } }],
+        toolCalls: [{ name: 'generation_compile', input: { prompt: 'A harbour control tower 20 x 16 studs, 24 studs tall', useModel: false } }],
       },
       { text: ['Running. '], toolCalls: [{ name: 'generation_run', input: { useModel: false } }] },
       { text: ['Staging. '], toolCalls: [{ name: 'generation_preview', input: { candidateId: 'cand_brick' } }] },
@@ -729,7 +729,7 @@ describe('generate-first', () => {
     await session.send('Build a harbour control tower with a crane and a metro station')
 
     const names = lastToolResults(transport).map((result) => result.name)
-    expect(names).toEqual(['generation_compile_local', 'generation_run', 'generation_preview'])
+    expect(names).toEqual(['generation_compile', 'generation_run', 'generation_preview'])
     expect(names).not.toContain('preflight_placement')
     const waves = session.getState().waves
     expect(waves).toHaveLength(1)
@@ -740,7 +740,7 @@ describe('generate-first', () => {
 
   it('stops building on top of a candidate that is still under review', async () => {
     const { session, transport } = makeSession([
-      { text: ['a'], toolCalls: [{ name: 'generation_compile_local', input: { prompt: 'A harbour control tower' } }] },
+      { text: ['a'], toolCalls: [{ name: 'generation_compile', input: { prompt: 'A harbour control tower', useModel: false } }] },
       { text: ['b'], toolCalls: [{ name: 'generation_run', input: { useModel: false } }] },
       { text: ['c'], toolCalls: [{ name: 'generation_preview', input: { candidateId: 'cand_brick' } }] },
       { text: ['d'], toolCalls: [{ name: 'scene_overview', input: {} }] },

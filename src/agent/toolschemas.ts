@@ -73,6 +73,10 @@ export const CapabilitySearchInput = z.strictObject({
  */
 export const GenerationCompileInput = z.strictObject({
   prompt: z.string().max(4000).optional().describe('The build request in plain words. Omit to compile whatever prompt the session already holds.'),
+  useModel: z
+    .boolean()
+    .default(true)
+    .describe('True asks the model through /api/brief. False compiles from rules in this browser, which is what to do when the model reports MODEL_UNAVAILABLE.'),
 })
 
 export const GenerationSetInput = z.strictObject({
@@ -223,14 +227,7 @@ export const ASSISTANT_TOOLS: readonly AssistantToolDeclaration[] = [
     name: 'generation_compile',
     kind: 'read',
     description:
-      'Compile a build request in plain words into a DesignBrief: subject, envelope in studs, scale, palette, part budget, symmetry and functions, each with the evidence in the sentence that produced it. This is step one of building something whole — a tower, a freighter, a clock palace — and it is what "build me X" means. Contradictions are reported, never silently resolved. On MODEL_UNAVAILABLE, call generation_compile_local. Reads only.',
-    schema: GenerationCompileInput,
-  },
-  {
-    name: 'generation_compile_local',
-    kind: 'read',
-    description:
-      'Compile the same brief from rules in this browser, with no model call. Use when generation_compile reports MODEL_UNAVAILABLE. Reads only.',
+      'Compile a build request in plain words into a DesignBrief: subject, envelope in studs, scale, palette, part budget, symmetry and functions, each with the evidence in the sentence that produced it. This is step one of building something whole — a tower, a freighter, a clock palace — and it is what "build me X" means. Contradictions are reported, never silently resolved. On MODEL_UNAVAILABLE, call again with useModel false to compile from rules in this browser. Reads only.',
     schema: GenerationCompileInput,
   },
   {

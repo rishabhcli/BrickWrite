@@ -7,6 +7,17 @@ const PromptSchema = z.object({
   prompt: z.string().max(4000).optional(),
 })
 
+/**
+ * `generation_run` already spells the same choice `useModel`. Compiling used to
+ * spell it as a second tool the caller was told to reach for after the first
+ * one failed, which is a worse contract for an agent: it has to notice an error
+ * code and know the name of the fallback, and it doubles the surface for one
+ * decision.
+ */
+const CompileSchema = PromptSchema.extend({
+  useModel: z.boolean().default(true),
+})
+
 const GenerationSetSchema = z.object({
   prompt: z.string().max(4000).optional(),
   candidateCount: z.number().int().min(1).max(6).optional(),
@@ -45,23 +56,19 @@ export const generationReadTools = [
   tool({
     name: 'generation_compile',
     description:
-      'Compile the current prompt into a DesignBrief through /api/brief. On MODEL_UNAVAILABLE, call generation_compile_local. Does not mutate the CAD document.',
-    inputSchema: jsonSchemaOf(PromptSchema),
+      'Compile the current prompt into a DesignBrief. useModel=true (the default) goes through /api/brief; '
+      + 'useModel=false compiles from rules in this browser, which is the path to take when the model reports '
+      + 'MODEL_UNAVAILABLE. Does not mutate the CAD document.',
+    inputSchema: jsonSchemaOf(CompileSchema),
     annotations: { readOnlyHint: true },
     execute: async (input) => {
-      const request = PromptSchema.parse(input ?? {})
-      return json(await (await host()).compileBriefFromServer(request.prompt))
-    },
-  }),
-  tool({
-    name: 'generation_compile_local',
-    description:
-      'Compile the prompt into a DesignBrief from rules in this browser. Use when generation_compile reports MODEL_UNAVAILABLE. Does not mutate the CAD document.',
-    inputSchema: jsonSchemaOf(PromptSchema),
-    annotations: { readOnlyHint: true },
-    execute: async (input) => {
-      const request = PromptSchema.parse(input ?? {})
-      return json((await host()).compileBriefLocal(request.prompt))
+      const request = CompileSchema.parse(input ?? {})
+      const surface = await host()
+      return json(
+        request.useModel
+          ? await surface.compileBriefFromServer(request.prompt)
+          : surface.compileBriefLocal(request.prompt),
+      )
     },
   }),
   tool({

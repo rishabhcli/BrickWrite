@@ -301,7 +301,7 @@ describe('generation through the Design Partner', () => {
   const body = (result: { content: string }) => JSON.parse(result.content) as Record<string, never>
 
   const drive = async (host: ReturnType<typeof createToolHost>) => {
-    const compiled = body(await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } }))
+    const compiled = body(await host.execute({ id: 'c1', name: 'generation_compile', input: { prompt: ARMCHAIR, useModel: false } }))
     for (const field of (compiled.unresolvedConflicts as string[]) ?? []) {
       await host.execute({ id: `s_${field}`, name: 'generation_set', input: { conflict: { field, choice: 'compiler' } } })
     }
@@ -342,7 +342,7 @@ describe('generation through the Design Partner', () => {
 
   it('shares one session with the Generate panel', async () => {
     const host = createToolHost({ waves: new WaveLedger() })
-    await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } })
+    await host.execute({ id: 'c1', name: 'generation_compile', input: { prompt: ARMCHAIR, useModel: false } })
     expect(getGenerationSession().getState().prompt).toBe(ARMCHAIR)
 
     getGenerationSession().setPrompt('A harbour control tower')
@@ -353,7 +353,7 @@ describe('generation through the Design Partner', () => {
   it('reads in Inspect but refuses to stage anything there', async () => {
     cadEngine.setAutonomy('inspect')
     const host = createToolHost({ waves: new WaveLedger() })
-    const compiled = await host.execute({ id: 'c1', name: 'generation_compile_local', input: { prompt: ARMCHAIR } })
+    const compiled = await host.execute({ id: 'c1', name: 'generation_compile', input: { prompt: ARMCHAIR, useModel: false } })
     expect(compiled.ok).toBe(true)
     expect((await host.execute({ id: 's1', name: 'generation_state', input: {} })).ok).toBe(true)
 

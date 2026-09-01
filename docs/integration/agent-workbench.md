@@ -207,8 +207,7 @@ arguments with the same objects. There is no second declaration to drift.
 | `notes_read` | all | spatial builder notes |
 | `render_capture` | all | framing, bounds, coverage; pixels when a renderer or encoder is wired |
 | `validate_model` | all | collisions, connectivity, colour evidence, constraints |
-| `generation_compile` | all | a sentence → a `DesignBrief`, with the evidence for every field |
-| `generation_compile_local` | all | the same brief from rules in the browser, with no model call |
+| `generation_compile` | all | a sentence → a `DesignBrief`, with the evidence for every field. `useModel: false` compiles from rules in the browser with no model call |
 | `generation_set` | all | prompt, candidate count, brief fields, conflict resolutions |
 | `generation_run` | all | runs the four-phase pipeline and scores the candidates |
 | `generation_state` | all | the shared generation session — the Generate panel's session, not a copy |
