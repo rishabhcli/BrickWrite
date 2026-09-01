@@ -2,8 +2,10 @@
 
 Ten workstreams landed in parallel; this file is still the ownership contract
 between them. Surfaces are mounted: `src/App.tsx` lists agent, generate, refine
-and cloud contributions; `src/main.tsx` registers every route in
-`PLATFORM_ROUTES`.
+and cloud contributions. `src/main.tsx` registers landing, explore, editor,
+share, gallery and projects; `src/platform/AppShell.tsx` registers account.
+`PLATFORM_ROUTES` in `src/platform/routes.ts` is the shell's static table of
+paths and boot stages, not the registration list.
 
 ## Ownership
 

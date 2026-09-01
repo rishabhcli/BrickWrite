@@ -389,7 +389,8 @@ npm run verify:all       # check + demos:check + the full browser matrix
 
 `npm run check` is the unit-and-build gate CI always blocks on. `verify:all` is the
 workstation gate: it also rebuilds the published demos byte-identically and runs every
-browser suite. Hosted CI splits those suites — `landing`, `production` and `share` block
+browser suite. Hosted CI also runs `audit:runtime` and `demos:check` before splitting
+those suites — `landing`, `production` and `share` block
 deploy; `e2e-smoke` and `renderer` run on GPU-less runners as signal only. `cad-editing`
 runs in `test:e2e:all` and is not on the hosted matrix. Details in
 [docs/deployment.md](docs/deployment.md).

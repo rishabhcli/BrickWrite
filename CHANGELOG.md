@@ -50,7 +50,7 @@ tagged release.
 ### Verification
 
 - Vitest suite is ~2,900 tests across 200+ files (`npm run check`).
-- Hosted CI: `check` + `demos:check`; `landing` / `production` / `share` block
+- Hosted CI: `audit:runtime` + `check` + `demos:check`; `landing` / `production` / `share` block
   deploy; GPU suites (`e2e-smoke`, `renderer`) are signal-only.
 - Smoke run no longer depends on a deleted opening rover or an unmounted
   status bar.

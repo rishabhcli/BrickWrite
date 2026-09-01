@@ -164,10 +164,13 @@ The landing hero is forced to **Blue Whale Monument**; the manifest marks
 | Illinois Main Quad campus | Campus architecture | 11,493 | 26,496 | 185 | 7.90 kg | 784 LDU |
 
 Structure is laid by `planEnclosure`, `planWall`, `planBrickField` and the
-mechanism planners (`build_crane`, `build_lattice`, `build_snot_hull`,
-`build_clock_faces`) where the brief asks for them; voxel sculptures are
+mechanism planners (`planCrane`, `planLattice`, `planSnotHull`,
+`planClockFaces`) where the brief asks for them; voxel sculptures are
 column-placed against the compiled connectors. Every mate still goes through
 `bestSnapTransform`, the same 6-DOF solver a drag in the editor runs through.
+Those `plan*` functions are what `tools/build-demos.mjs` calls. The matching
+Command Deck / WebMCP capability ids are `build_crane`, `build_lattice`,
+`build_snot_hull` and `build_clock_faces`.
 
 ### The gates
 

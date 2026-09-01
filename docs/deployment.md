@@ -45,10 +45,12 @@ client completion rules, limits, and local verification coverage.
 
 ## What CI does, and what it deliberately does not
 
-The `verify` job on every push and pull request runs catalog integrity, `npm run check`
-(lint, the unit suite, strict TypeScript for all three programs, the production build)
-and `npm run demos:check`. That is not a single `verify:all` invocation: `verify:all` is
-the workstation command that also runs every browser suite.
+The `verify` job on every push and pull request runs `npm run audit:runtime`
+(high-severity advisories on production dependencies), catalog integrity,
+`npm run check` (lint, the unit suite, strict TypeScript for all three programs,
+the production build) and `npm run demos:check`. That is not a single
+`verify:all` invocation: `verify:all` is the workstation command that also runs
+every browser suite.
 
 The browser suites under `tools/e2e/` then run one runner per suite, split across two jobs
 by a single question — **does this suite need a GPU?**
@@ -192,8 +194,9 @@ npx convex deploy -y
 ## Verifying a release
 
 `npm run verify:all` is the full local gate (`check` + `demos:check` + every browser
-suite). Hosted CI runs `check` and `demos:check` in `verify`, then the split acceptance
-matrix. Two of the suites exist specifically for this deployment shape:
+suite). Hosted CI's `verify` job runs `audit:runtime`, catalog integrity, `check` and
+`demos:check`, then the split acceptance matrix. Two of the suites exist specifically
+for this deployment shape:
 
 - `tools/e2e/production.mjs` serves the built `dist/` — not Vite's development
   graph — and executes both the landing page and the CAD editor. It exists
