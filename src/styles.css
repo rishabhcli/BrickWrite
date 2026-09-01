@@ -68,13 +68,23 @@
   /*
    * What a control is allowed to animate.
    *
-   * `transition: all` was on 42 rules. It does not mean "the properties I
-   * change" — it is a standing order to animate every property that ever
-   * differs, so dragging a dock splitter started a width transition on every
-   * button inside that dock, and a card whose hover rule also moved `padding`
-   * and `border-radius` animated a relayout on every pointer crossing. The six
-   * below are the only properties any of those rules actually varied, and each
-   * is paint or composite work: none of them can trigger layout.
+   * `transition: all` was on 42 rules. Reading every state selector those rules
+   * govern turned up exactly six properties between them — the six below — and
+   * measuring found no frame-time difference from naming them, which is worth
+   * recording plainly: this change bought no speed, and was not made for any.
+   *
+   * It was made because `all` does not mean "the properties I change", it means
+   * whatever this element's computed values happen to differ by. Today that is
+   * six paint-and-composite properties. The day someone adds `padding` to a
+   * `:hover` rule it silently becomes a relayout on every pointer crossing, and
+   * nothing in the diff will say so. Naming them is the difference between a
+   * property list that gets reviewed and one that gets discovered.
+   *
+   * Two things that sound like they belong here and do not: a transition cannot
+   * animate a width that comes from a parent's layout (the computed value stays
+   * `auto`, so dragging a dock splitter never animated the controls inside it),
+   * and the layout-ish properties on `.part-card` live in its base rule, not in
+   * its state rules, so they never transitioned either.
    */
   --t-control:
     background var(--motion-fast) var(--ease),

@@ -4416,11 +4416,11 @@
  * one just answered — the chevron turns, and everything below it jumps.
  *
  * Transform and opacity only. A true accordion animates height, which is
- * layout, and the tallest section here holds sixty part cards; paying a
- * relayout per frame to reveal them is the trade this file has just spent 42
- * rules getting out of. No fill mode either, so the transform is gone once the
- * animation ends rather than leaving every dock section a containing block for
- * anything positioned inside it. */
+ * layout, and the tallest section here holds sixty part cards — a relayout per
+ * frame to reveal them, on a machine already spending its budget on the
+ * viewport. No fill mode either, so the transform is gone once the animation
+ * ends rather than leaving every dock section a containing block for anything
+ * positioned inside it. */
 .dock-section.open > .dock-section-body {
   animation: dock-section-in var(--motion-base) var(--ease);
 }
