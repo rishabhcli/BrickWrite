@@ -103,7 +103,8 @@ function mount(contributions: readonly (() => null)[] = []) {
       <Workbench contributions={contributions} />
     </MemoryRouter>,
   )
-  // The first-run guide is modal; a beginner clears it before touching anything.
+  // The guide no longer opens itself, but a session that has been sent to it
+  // deliberately still has to be cleared before anything else can be reached.
   click('.welcome-start')
 }
 
@@ -241,13 +242,13 @@ describe('the beginner path through the shell', () => {
       </MemoryRouter>,
     )
 
-    // The reveal arrives while the first-run dialog still owns focus, which is
-    // exactly the first-run ordering, and the panel has not mounted its field.
-    expect(document.querySelector('.welcome-guide')).not.toBeNull()
-    act(() => void window.dispatchEvent(new CustomEvent('brickwright:intent-describe')))
+    // Nothing stands between the route and the field on first run any more:
+    // the guide no longer opens itself, so the reveal mounts the panel and the
+    // caret lands in it without a dialog to dismiss first.
+    expect(document.querySelector('.welcome-guide')).toBeNull()
     expect(document.querySelector('.bw-gen textarea')).toBeNull()
 
-    click('.welcome-start')
+    act(() => void window.dispatchEvent(new CustomEvent('brickwright:intent-describe')))
     await frames()
 
     expect(document.activeElement).toBe(document.querySelector('.bw-gen textarea'))

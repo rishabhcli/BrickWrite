@@ -26,11 +26,10 @@ export function SelectionPanel({ workbench }: { workbench: Workbench }) {
     <div className={`selection-panel ${selected ? '' : 'is-empty'}`}>
       <div className="selection-summary" role="status">
         <strong>{selected ? `${selected} of ${total} selected` : 'Nothing selected'}</strong>
-        <small>
-          {selected
-            ? 'Modes below expand the selection from what the document already records.'
-            : 'Click a part, or shift-drag a box.'}
-        </small>
+        {/* Only the empty state earns a sentence, because only the empty state
+         * is asking for something. Once parts are selected the count says it,
+         * and the buttons underneath are labelled. */}
+        {selected ? null : <small>Click a part, or shift-drag a box.</small>}
       </div>
 
       {selected > 0 && (

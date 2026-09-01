@@ -352,7 +352,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       ) : (
         <p className="transform-multi-note">
           {disabled
-            ? 'Select a part to type an exact pose. Steppers below work on any number of parts.'
+            ? 'Select a part to move or turn it.'
             : `${parts.length} parts selected — exact fields need one part. The steppers, align and distribute all work on the whole selection.`}
         </p>
       )}

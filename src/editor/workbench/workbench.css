@@ -8054,3 +8054,12 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .part-context-menu button:disabled { opacity: .35; cursor: default; }
 .part-context-menu button.danger { color: #ff9b86; }
 .part-context-menu [role='separator'] { border-top: 1px solid var(--line); margin: 4px 5px; }
+
+/* An empty Transform panel used to render its whole control surface disabled:
+ * scope, three reference modes, three origins, axis locks, snap, a step size,
+ * nine steppers, turn, ground/clone/array, mirror/paint/pick, focus and a
+ * three-row align grid — forty-odd controls, none of which can do anything
+ * until something is selected. That is not information, it is a wall. With no
+ * selection the panel says what it is and what to do, and nothing else. */
+.transform-panel[data-scope='empty'] > *:not(.transform-scope):not(.transform-multi-note) { display: none; }
+.transform-panel[data-scope='empty'] .transform-multi-note { margin: 0; color: var(--faint); }
