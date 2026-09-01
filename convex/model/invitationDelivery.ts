@@ -1,3 +1,5 @@
+import { logConvexEvent } from './log'
+
 /** Provider submission is server-only; shared state lives in invitationLifecycle. */
 export const INVITATION_DELIVERY_TIMEOUT_MS = 10_000
 
@@ -139,9 +141,21 @@ export async function sendInvitationEmail(args: {
           status: 'failed',
           reason: `${provider} did not accept the invitation (HTTP ${Number.isInteger(status) && status >= 100 && status <= 599 ? status : response.status}). Check the email configuration. Delivery is not confirmed; retrying may send another message.`,
         }
-  } catch {
-    // Do not propagate arbitrary network errors containing endpoint credentials,
-    // tokens, payloads or provider response text into owner-visible metadata.
+  } catch (cause) {
+    // Owner-visible metadata stays generic: an arbitrary network error can carry
+    // endpoint credentials, tokens, payloads or provider response text, and that
+    // string is rendered in a project's invitation list.
+    //
+    // The operator still needs to know *why* sends are failing, though, so the
+    // cause goes to the deployment log instead — through a redactor that strips
+    // credential shapes and anything email-shaped. Silently dropping it is how a
+    // misconfigured provider looks like nothing happening.
+    logConvexEvent({
+      level: 'error',
+      service: 'convex/invitations',
+      message: 'The invitation email request failed or timed out.',
+      cause,
+    })
     return {
       status: 'failed',
       reason: 'The email request failed or timed out. Delivery is not confirmed; retrying may send another message.',

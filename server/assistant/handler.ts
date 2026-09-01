@@ -28,6 +28,7 @@ import { AnthropicModelProvider, ProviderRequestError, classifyUpstream } from '
 import { SYSTEM_PROMPT, groundingBlock } from './prompt.js'
 import { anthropicTools } from './tools.js'
 import { sanitizeMessage } from './sanitize.js'
+import type { RouteContext } from '../dispatch.js'
 
 /**
  * The `/api/assistant` route.
@@ -163,7 +164,7 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
   )
   const maxOutputTokens = options.maxOutputTokens ?? Number(process.env.BRICKWRIGHT_ASSISTANT_MAX_TOKENS ?? 8192)
 
-  async function handleChat(response: ServerResponse, body: ChatRequest, span: RequestLifetime) {
+  async function handleChat(response: ServerResponse, body: ChatRequest, span: RequestLifetime, context?: RouteContext) {
     if (body.messages[0]?.role !== 'user') {
       sendError(response, 400, 'BAD_REQUEST', 'A conversation must open with a user message.')
       return
@@ -258,6 +259,12 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
           ? { cacheReadInputTokens: message.usage.cache_read_input_tokens }
           : {}),
       })
+      // Per turn, not per request: a tool-using conversation is several model
+      // calls and metering only the last one would undercount most of them.
+      context?.reportUsage?.({
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
+      })
 
       const stop =
         message.stop_reason === 'tool_use'
@@ -315,7 +322,7 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
     }
   }
 
-  async function handleStructured(response: ServerResponse, body: StructuredRequest, span: RequestLifetime) {
+  async function handleStructured(response: ServerResponse, body: StructuredRequest, span: RequestLifetime, context?: RouteContext) {
     if (!provider.configured) {
       sendError(
         response,
@@ -342,6 +349,7 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
         }),
         span.signal,
       )
+      context?.reportUsage?.(result.usage)
       sendJson(response, 200, { ok: true, value: result.value, provenance: result.provenance, usage: result.usage })
     } catch (cause) {
       if (span.reason === 'client') {
@@ -367,7 +375,12 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
 
   return {
     prefix: '/api/assistant',
-    async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
+    async handle(
+      request: IncomingMessage,
+      response: ServerResponse,
+      url: URL,
+      context?: RouteContext,
+    ): Promise<boolean> {
       if (url.pathname === '/api/assistant/health') {
         sendJson(response, 200, {
           ok: true,
@@ -443,8 +456,8 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
           return true
         }
 
-        if (request_.data.kind === 'chat') await handleChat(response, request_.data, span)
-        else await handleStructured(response, request_.data, span)
+        if (request_.data.kind === 'chat') await handleChat(response, request_.data, span, context)
+        else await handleStructured(response, request_.data, span, context)
         return true
       } finally {
         span.dispose()

@@ -11,6 +11,19 @@ SHARE_ORIGIN = "https://brickwrite.tech"
 binding = "SHARE_KV"
 id = "5bcfe6a058614b66beae3449cb211b2b"
 
+# Retained as the fallback counter. `functions/api/[[route]].ts` consults it
+# only when API_RATE_LIMITER is absent, because two counters that disagree are
+# worse than either alone.
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
 id = "57b3c96243a842dc8e3cb2254915fa60"
+
+# The atomic spend control in front of the model provider key.
+#
+# KV cannot express increment-and-test: `get` then `put` is two operations with
+# a gap, and KV is eventually consistent, so concurrent requests read the same
+# stale count and the ceiling does not hold. `period` accepts only 10 or 60.
+[[ratelimits]]
+name = "API_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

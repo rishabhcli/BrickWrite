@@ -181,6 +181,167 @@ npx convex env set --prod HEXCLAVE_PROJECT_ID <project-id>
 npx convex deploy -y
 ```
 
+## Spend controls, and the bindings they need
+
+Two ceilings sit in front of the model provider key. Both are **off** until the
+deployment gives them somewhere to count, and both say so rather than pretending
+otherwise — `curl -s https://brickwrite.tech/api/health` reports
+`"metering": "ready"` or `"metering": "unconfigured"`.
+
+### The edge request limiter — Cloudflare `[[ratelimits]]`
+
+`functions/api/[[route]].ts` caps paid paths at 20 POSTs per 60 seconds. It
+prefers the native rate-limiting binding, which is atomic:
+
+```toml
+[[ratelimits]]
+name = "API_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+```
+
+Already in `wrangler.toml`. `namespace_id` must be unique per account, and
+`period` accepts only `10` or `60`. Two bindings sharing a `namespace_id` share
+counters, which is occasionally what you want and never what you want by
+accident.
+
+If the binding is absent the Function falls back to the `RATE_LIMIT_KV` counter,
+which is `get` then `put` — two operations with a gap, against an eventually
+consistent store that throttles repeated writes to one key. The ceiling then
+holds on average rather than exactly. Keep the KV namespace bound; it is the
+fallback, and with the binding present it is never read.
+
+**Failure direction: closed.** A limiter that cannot answer refuses the request.
+An unparseable KV counter reads as over-limit, not as a fresh allowance.
+
+### The per-account token ceiling — an atomic counter
+
+The edge bounds *frequency*. It does not bound *money*: one request can be an
+`xhigh` chat leg, and `/api/generate` fans out to a dozen model calls.
+`server/security/budget.ts` meters weighted tokens per Hexclave account per UTC
+day, defaulting to 2,000,000 (output weighted ×5).
+
+It needs a counter with an atomic increment. `server/security/budgetStore.ts`
+speaks the Upstash REST protocol — no client library, and Redis `INCRBY` is the
+primitive `BudgetStore.increment` is defined in terms of. Set both variables on
+the **Vercel** project:
+
+```
+BRICKWRIGHT_BUDGET_REDIS_URL=https://<your-counter>.upstash.io
+BRICKWRIGHT_BUDGET_REDIS_TOKEN=<rest-token>
+```
+
+Half-configured is treated as not configured, deliberately: a URL without its
+token would fail every read, and `checkBudget` fails closed on a *configured*
+store — so a half-configured meter would refuse all paid traffic rather than
+none.
+
+**Failure direction: split, on purpose.** A configured meter that cannot be
+*read* refuses the request, because an unknown balance is not an allowance. A
+metering *write* that fails never fails the request — the answer was already
+produced and paid for; the next call is the one that gets refused. Losing a write
+undercounts by one call, losing a read would uncap the account.
+
+Verify: `curl -s https://brickwrite.tech/api/health | jq .metering`.
+
+## Publication ownership
+
+Writes to `/publications/*` used to be gated by `SHARE_PUBLISH_TOKEN` alone —
+one deployment-wide bearer, with no per-caller identity — so any principal
+holding it could revoke, retarget or mint links against any publication.
+
+A publication now records `ownerSubject`, and every mutation compares the caller
+against it. Two principals can write:
+
+- **A verified Hexclave session.** `functions/_lib/session.ts` checks the ES256
+  signature against the project's published JWKS — the same key set
+  `convex/auth.config.ts` hands Convex. Requires these on the **Pages** project:
+
+  ```
+  HEXCLAVE_PROJECT_ID=<project-id>
+  HEXCLAVE_API_URL=https://api.hexclave.com   # optional; this is the default
+  ```
+
+  Without `HEXCLAVE_PROJECT_ID` no session can be verified and only the operator
+  secret works — the pre-ownership behaviour, which is the safe direction to
+  degrade in.
+
+- **The operator secret**, `SHARE_PUBLISH_TOKEN`, which now identifies *an
+  operator* rather than everyone. It is what `tools/e2e/share.mjs`,
+  `functions/_dev/*` and migration scripts authenticate as, and it stores
+  `ownerSubject: "@operator"`.
+
+### Grandfathering existing records
+
+**No migration is required, and none is provided.** Publications written before
+this carry no `ownerSubject`, and those are administrable by the operator secret
+only — a narrower door than the one they were created through, never a wider
+one. A session cannot claim one, because there is nothing to compare it against.
+
+To hand a legacy publication to its real owner, set the field with the operator
+credential and that account's Hexclave subject:
+
+```bash
+# Read the record, add ownerSubject, write it back. Do this with the operator
+# bearer; there is no endpoint that reassigns ownership, deliberately.
+npx wrangler kv key get --binding SHARE_KV "pub:slug:<slug>" > /tmp/pub.json
+jq '.ownerSubject = "<hexclave-subject>"' /tmp/pub.json > /tmp/pub.owned.json
+npx wrangler kv key put --binding SHARE_KV "pub:slug:<slug>" --path /tmp/pub.owned.json
+```
+
+A non-owner attempting a write gets `404`, not `403`: for a `private` or
+`unlisted` publication, confirming that a slug exists is exactly the fact its
+publisher chose not to disclose.
+
+### Unlisted links are exchanged for a cookie
+
+`?t=<secret>` is now a bootstrap. On first presentation of a token that actually
+grants access, `/share/:slug` responds `303` to the clean path and sets
+`bw_share_link_<slug>` — `HttpOnly; Secure; SameSite=Lax`, scoped by `Path` to
+that one publication. A query string ends up in Cloudflare's access log, the
+visitor's history and session restore, and every proxy in between; `redactShareUrl`
+reaches none of those.
+
+Both credentials are accepted, URL first, so a stale `?t=` in someone's history
+cannot lock them out of a publication they already hold a working cookie for.
+`SameSite=Lax` is deliberate: third-party framing is what `/embed/:slug` is for,
+and widening the cookie to `None` would make every embed a carrier for the
+secret.
+
+## Invitation links expire in 72 hours
+
+Down from 14 days. An invitation is a bearer credential that sits in an inbox, a
+shared mailbox or a mail archive for its whole lifetime. Owners will need to
+resend more often; that is the trade, and it is the one worth making.
+
+Acceptance is still keyed on the token plus a signed-in identity, not on an
+email claim — `convex/invitations.ts` explains why. What is new is that a
+**verified** address which contradicts the invited one is refused, so a
+forwarded invite does not transfer access. An absent or unverified claim accepts
+exactly as before, so this cannot lock out a provider that does not assert
+addresses.
+
+## Where the logs go
+
+All three surfaces emit one JSON object per failure, in the same shape —
+`ts`, `level`, `service`, `message`, `cause` — so a single aggregator query
+finds a failure wherever it happened:
+
+| Surface | Emitter | Sink |
+|---|---|---|
+| Vercel Node API | `server/log.ts` → stdout/stderr | Vercel log drain |
+| Cloudflare Functions | `functions/_lib/log.ts` → `console.error` | Pages Logpush |
+| Convex | `convex/model/log.ts` → `console.*` | `npx convex logs`, or a Convex log stream |
+
+Each has its own redactor, and each is tested. Model keys, proxy secrets,
+bearer tokens and JWTs are matched by shape; the Convex one additionally strips
+anything email-shaped, because that deployment stores an address in exactly one
+table and a log line is a copy.
+
+**Nothing subscribes to any of these yet.** Configuring a drain, a Logpush job,
+a Convex log stream and a synthetic check against `/api/health` is the remaining
+work, and it is deployment configuration rather than code.
+
 ## Verifying a release
 
 `npm run verify:all` is what CI runs. Two of its suites exist specifically for

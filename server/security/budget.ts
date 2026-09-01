@@ -32,15 +32,19 @@
  *     removing it during an outage would be the one behaviour they did not ask
  *     for.
  *
- * ## What this does not solve
+ * ## Two ways to count, and why the interface has both
  *
- * The read-modify-write below is not atomic, exactly like the edge rate limiter
- * it sits beside (`04-security.md` finding 3). Two concurrent requests can both
- * read the same balance and both proceed. That is a real gap and it is not fixed
- * here: fixing it needs an atomic counter primitive from the store, which is a
- * deployment decision rather than a code one. What this does guarantee is that
- * sustained spend converges on the ceiling instead of being unbounded — the
- * overshoot is bounded by concurrency, not by time.
+ * `BudgetStore.increment` is an indivisible add-and-return. When a store offers
+ * one it is the only thing `recordUsage` calls, and every token spent is
+ * counted. When it does not, the fallback reads then writes — and two requests
+ * that overlap read the same balance and one increment is lost. That is not a
+ * theoretical difference: twenty-five overlapping writes of forty tokens record
+ * forty, not one thousand, which `budget.test.ts` asserts.
+ *
+ * Both are kept because the choice belongs to the deployment. A self-hosted
+ * instance with a plain key-value store should meter approximately rather than
+ * not at all; a production deployment should bind a counter that increments.
+ * `docs/deployment.md` names the ones that qualify.
  */
 
 /** Tokens, weighted. Output costs several times input on every current model. */
@@ -73,6 +77,18 @@ export const weightedTokens = (usage: UsageAmount): number =>
 export interface BudgetStore {
   read(key: string): Promise<string | null>
   write(key: string, value: string, ttlSeconds: number): Promise<void>
+  /**
+   * Add `by` to the counter at `key` and return the new total, indivisibly.
+   *
+   * Optional because not every store has one, and a deployment with only
+   * `read`/`write` should still meter approximately rather than not at all. When
+   * it is present `recordUsage` uses nothing else: the read in the fallback path
+   * is precisely what makes two concurrent writers lose an increment.
+   *
+   * Redis `INCRBY`, a Cloudflare Durable Object, and Postgres
+   * `UPDATE … SET n = n + $1 RETURNING n` all satisfy this.
+   */
+  increment?(key: string, by: number, ttlSeconds: number): Promise<number>
 }
 
 export type BudgetStatus = 'unconfigured' | 'ready'
@@ -174,11 +190,16 @@ export async function recordUsage(userId: string, usage: UsageAmount, at = new D
   const active = store
   if (!active) return
   const key = keyFor(userId, dayKey(at))
+  const spent = weightedTokens(usage)
   try {
+    if (active.increment) {
+      await active.increment(key, spent, KEY_TTL_SECONDS)
+      return
+    }
     const raw = await active.read(key)
     const previous = raw === null ? 0 : Number.parseInt(raw, 10)
     const base = Number.isFinite(previous) && previous > 0 ? previous : 0
-    await active.write(key, String(base + weightedTokens(usage)), KEY_TTL_SECONDS)
+    await active.write(key, String(base + spent), KEY_TTL_SECONDS)
   } catch {
     // Deliberately silent here; the read path is where the ceiling is enforced.
   }

@@ -377,8 +377,23 @@ try {
     'the mint response leaked the stored hash',
   )
 
-  const withToken = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`)
-  assert(withToken.ok, `a valid token returned ${withToken.status}`)
+  // `?t=` is a bootstrap, not the credential. A valid one is exchanged for a
+  // path-scoped HttpOnly cookie and redirected to the address without it, so
+  // the secret stops travelling in a query string that edge logs, browser
+  // history and every intervening proxy retain. `redirect: 'manual'` because
+  // Node's fetch keeps no cookie jar: following the redirect automatically
+  // would drop the cookie and land on the page that correctly refuses.
+  const handoff = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`, {
+    redirect: 'manual',
+  })
+  assert(handoff.status === 303, `a valid token returned ${handoff.status} instead of the cookie handoff`)
+  assert(handoff.headers.get('location') === `/share/${slug}`, 'the handoff did not clear the token from the URL')
+  const setCookie = handoff.headers.get('set-cookie') ?? ''
+  assert(setCookie.includes('HttpOnly') && setCookie.includes('Secure'), 'the link cookie is not HttpOnly and Secure')
+  assert(setCookie.includes(`Path=/share/${slug}`), 'the link cookie is not scoped to this publication')
+
+  const withToken = await fetch(`${edgeUrl}/share/${slug}`, { headers: { cookie: setCookie.split(';')[0] } })
+  assert(withToken.ok, `the exchanged cookie returned ${withToken.status}`)
   const unlistedHtml = await withToken.text()
   assert(meta(unlistedHtml, 'name="robots"').startsWith('noindex'), 'an unlisted page is indexable')
   assert(!unlistedHtml.includes(minted.token.split('.')[1]), 'the unlisted page echoed the token secret')

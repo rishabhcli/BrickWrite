@@ -4,10 +4,24 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 // to native ESM rather than bundling local modules, so extensionless imports
 // fail in the Node runtime even though TypeScript can resolve them locally.
 import { createAssistantRoute } from '../server/assistant/handler.js'
+import type { RouteContext } from '../server/dispatch.js'
 import { createGenerationRoute } from '../server/generation/index.js'
 import { authorizePaidRoute } from '../server/security/auth.js'
+import { budgetStatus, checkBudget, configureBudget, recordUsage } from '../server/security/budget.js'
+import { budgetStoreFromEnv } from '../server/security/budgetStore.js'
+import { logProcessEvent } from '../server/log.js'
 
 const routes = [createAssistantRoute(), createGenerationRoute()]
+
+/*
+ * Installed at module scope, once per cold start.
+ *
+ * `configureBudget` is idempotent and the store holds no per-request state, so
+ * doing this on import rather than per invocation avoids rebuilding it on every
+ * warm call. A deployment with no counter configured gets null, which is a
+ * supported mode: metering is off and `/api/health` says so.
+ */
+configureBudget(budgetStoreFromEnv())
 
 function json(response: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) {
   response.writeHead(status, {
@@ -51,27 +65,66 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   if (url.pathname === '/api/health') {
-    json(response, 200, { ok: true, routes: routes.map((route) => route.prefix) })
+    json(response, 200, { ok: true, routes: routes.map((route) => route.prefix), metering: budgetStatus() })
     return
   }
 
+  let context: RouteContext | undefined
+  let metering: Array<Promise<void>> = []
   if (requiresIdentity(url.pathname, request.method)) {
     const authorization = await authorizePaidRoute(request)
     if (!authorization.ok) {
       json(response, authorization.status, { error: authorization.code, detail: authorization.detail })
       return
     }
+
+    // The edge caps requests; this caps tokens, which is what is actually
+    // bought. Checked before the call, because refusing after the tokens are
+    // spent would meter nothing.
+    const { userId } = authorization.identity
+    const verdict = await checkBudget(userId)
+    if (!verdict.ok) {
+      json(
+        response,
+        429,
+        { error: verdict.code, detail: verdict.detail },
+        verdict.retryAfterSeconds ? { 'retry-after': String(verdict.retryAfterSeconds) } : {},
+      )
+      return
+    }
+
+    /*
+     * Metering writes are started immediately and settled before this handler
+     * returns.
+     *
+     * Not awaited at the call site, because a route reports usage mid-stream and
+     * blocking there would stall the response. Not left floating either: a
+     * serverless invocation may be frozen the moment the handler resolves, and a
+     * promise that has not settled by then is a write that never happens — which
+     * is how a ceiling silently stops counting.
+     */
+    metering = []
+    context = {
+      userId,
+      reportUsage(usage) {
+        metering.push(recordUsage(userId, usage))
+      },
+    }
   }
 
   for (const route of routes) {
     if (!url.pathname.startsWith(route.prefix)) continue
     try {
-      if (await route.handle(request, response, url)) return
+      if (await route.handle(request, response, url, context)) return
     } catch (cause) {
-      process.stderr.write(`[api] ${route.prefix} failed: ${String(cause)}\n`)
+      logProcessEvent({ level: 'error', service: 'api', message: `${route.prefix} failed`, cause })
       if (!response.headersSent) json(response, 500, { error: 'internal_error' })
       else response.end()
       return
+    } finally {
+      // `recordUsage` never rejects, so this only waits; it cannot turn a
+      // metering failure into a request failure.
+      if (metering.length) await Promise.allSettled(metering)
     }
   }
   json(response, 404, { error: 'not_found', detail: `No route claimed ${url.pathname}` })

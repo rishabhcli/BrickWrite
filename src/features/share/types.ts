@@ -262,6 +262,18 @@ export interface Publication {
   revokedAt: string | null
   /** Set by moderation. A hidden publication is unreachable, not deleted. */
   moderation: ModerationState | null
+  /**
+   * The account that published this, and the only one that may change it.
+   *
+   * The Hexclave subject of a verified session, or `@operator` for anything
+   * published with the deployment-wide tooling secret.
+   *
+   * Optional because publications written before ownership existed carry no
+   * owner. Those are grandfathered: only the operator secret can administer
+   * them, which is a narrower door than the one they were created through, and
+   * never a wider one. New publications always record an owner.
+   */
+  ownerSubject?: string
 }
 
 export interface ModerationState {
