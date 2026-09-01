@@ -109,7 +109,7 @@ it('defers an early context menu for right click and discards it for right pan',
 
 it('blocks secondary native TransformControls releases but preserves camera multitouch', async () => {
   const { installPointerRouter } = await import('./pointerRouter')
-  const { TransformControls } = await import('three-stdlib/controls/TransformControls.js')
+  const { TransformControls } = await import('three-stdlib')
   const { Object3D, PerspectiveCamera } = await import('three')
   const canvas = document.createElement('canvas')
   document.body.append(canvas)
