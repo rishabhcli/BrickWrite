@@ -1075,12 +1075,6 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bw-studio *,
-  .bw-studio *::before,
-  .bw-studio *::after {
-    animation: none !important;
-    transition: none !important;
-  }
   .bw-studio .bw-pavilion {
     transform: none;
   }

@@ -256,7 +256,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bw-cloud-backdrop { backdrop-filter: none; }
-  .bw-cloud *, .bw-cloud-dialog * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 
 /* --- Members, invitations and live collaboration ------------------------ */

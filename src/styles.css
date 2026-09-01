@@ -44,7 +44,54 @@
   --green-glow: rgba(152, 213, 109, 0.4);
   --red: #ff6753;
   --display: 'Chakra Petch', 'DIN Condensed', sans-serif;
+
+  /*
+   * Motion, in three steps.
+   *
+   * Fifty-six transitions in the editor ran at eight different durations
+   * between 0.13s and 0.22s. Nobody can see the difference between 0.15s and
+   * 0.16s, but two controls sitting next to each other answering the same
+   * hover at different moments reads as unsteadiness. The three below are
+   * named for what the motion is doing, which is the only distinction worth
+   * keeping.
+   */
+  /** A control acknowledging the pointer. Short enough to read as the control
+      being solid rather than as a fade of it. */
+  --motion-fast: 90ms;
+  /** A control changing what it is — armed, locked, active, rotated open. */
+  --motion-base: 160ms;
+  /** Something arriving on screen, or leaving it. */
+  --motion-slow: 240ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
   --spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /*
+   * What a control is allowed to animate.
+   *
+   * `transition: all` was on 42 rules. It does not mean "the properties I
+   * change" — it is a standing order to animate every property that ever
+   * differs, so dragging a dock splitter started a width transition on every
+   * button inside that dock, and a card whose hover rule also moved `padding`
+   * and `border-radius` animated a relayout on every pointer crossing. The six
+   * below are the only properties any of those rules actually varied, and each
+   * is paint or composite work: none of them can trigger layout.
+   */
+  --t-control:
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+  /** The same six on a card or a row, where the larger surface carries the
+      extra travel time without feeling slow. */
+  --t-surface:
+    background var(--motion-base) var(--spring),
+    border-color var(--motion-base) var(--spring),
+    color var(--motion-base) var(--spring),
+    box-shadow var(--motion-base) var(--spring),
+    opacity var(--motion-base) var(--spring),
+    transform var(--motion-base) var(--spring);
 }
 
 * {
@@ -114,6 +161,38 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
+}
+
+/*
+ * One motion preference, honoured once.
+ *
+ * Seven stylesheets each carried their own copy of this rule, scoped to their
+ * own root class — `.bw-find *`, `.bw-studio *`, `.bw-surface *`, `.bw-refine
+ * *`, `.bw-cloud *`, `.bw-gen *` — at four different magic durations (`none`,
+ * `.01ms`, `0.001ms`, `0.01ms`). Every one of them said the same thing, and a
+ * stylesheet added tomorrow would have honoured the preference only if someone
+ * remembered to write an eighth. This file is in the entry graph, so stating it
+ * here states it for every route, including the ones not written yet.
+ *
+ * Duration-zeroing rather than `animation: none`, because `none` also discards
+ * `animation-fill-mode: both` — an entrance that holds its opening frame would
+ * be left holding it. A near-zero duration runs the animation to its settled
+ * state instantly, which is what the preference asks for: reduced motion means
+ * arriving at the end, not travelling there faster.
+ *
+ * Surfaces still override individual settled states (`.bw-reveal`,
+ * `.bw-pavilion`, `.pf-mark`); those say *where* to land, not how long to take,
+ * and are the only reason to write this media query anywhere else.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::-webkit-scrollbar {

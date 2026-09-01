@@ -547,11 +547,3 @@
 .bw-gen-dialog__table td[data-tone='bad'] { color: var(--bw-g-red); }
 .bw-gen-dialog__table td[data-selected='true'] { background: color-mix(in srgb, var(--bw-g-cyan) 8%, transparent); }
 
-@media (prefers-reduced-motion: reduce) {
-  .bw-gen *,
-  .bw-gen-dialog *,
-  .bw-gen-status * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
