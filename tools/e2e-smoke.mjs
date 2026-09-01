@@ -1913,11 +1913,21 @@ try {
     const model = window.brickwright.getDocument()
     const origins = Object.values(model.parts).map((part) => part.transform.position)
     // The kernel refuses parts that would hover, so the batch is laid out flat
-    // on the ground the rest of the build already rests on, one identity so
-    // every copy shares a bottom face, and clear of the model in X so nothing
-    // collides. It stays beside the build, which the camera refit keeps in
-    // frame, so the counters still describe geometry that is genuinely drawn.
-    const groundY = Math.max(...origins.map((origin) => origin[1]))
+    // on the ground, one identity so every copy shares a bottom face, and clear
+    // of the model in X so nothing collides. It stays beside the build, which
+    // the camera refit keeps in frame, so the counters still describe geometry
+    // that is genuinely drawn.
+    //
+    // The ground is computed from the plate's own geometry rather than from
+    // where the other parts sit. A part rests on the ground when the bottom of
+    // its bounding box is at y = 0, and a part's origin is its top, so that
+    // height is `-bounds.max[1]` — which differs per identity. Copying the
+    // y of whatever else is in the document only works while everything is the
+    // same height as the thing being placed: with bricks on the ground at -24
+    // and plates being added, all 400 came back DISCONNECTED, floating 16 LDU
+    // up with nothing under them.
+    const plate = (await window.brickwright.invoke('part_inspect', { id: '3024' }))?.structuredContent?.definition
+    const groundY = -plate.dimensions.bounds.max[1]
     const clearX = Math.max(...origins.map((origin) => origin[0])) + 200
     const baseZ = Math.min(...origins.map((origin) => origin[2]))
     const operations = []
@@ -2367,7 +2377,9 @@ try {
   const contrast = await sampleContrast(page, [
     ['.dock-section-toggle h3', 4.5],
     ['.part-copy strong', 4.5],
-    ['.dock-head .eyebrow', 3],
+    // `.dock-head .eyebrow` was here. The dock heads carry no text now — the
+    // left one is an icon and a collapse button, the right one is tabs — so
+    // there is nothing in them to measure a contrast ratio against.
     ['.part-copy span', 3],
   ])
   await revealChrome(page, 'transform')

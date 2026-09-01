@@ -4305,12 +4305,6 @@
   border-bottom: 1px solid var(--dock-line);
   background: rgba(8, 12, 14, 0.85);
 }
-.dock-head .eyebrow {
-  color: var(--faint);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
 .dock-collapse {
   width: 22px;
   height: 20px;
