@@ -16,7 +16,7 @@ import {
   Star,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { catalog, getColor, searchCatalogPage } from '../../cad/catalog'
 import { geometryCache } from '../../cad/mesh'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../../cad/catalog-loader'
@@ -145,7 +145,23 @@ export interface PalettePanelProps {
   onDragEnd?: () => void
 }
 
-export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm, onDragPart, onDropPart, onDragEnd }: PalettePanelProps) {
+/**
+ * Memoised, because this panel is the most expensive thing in the shell and
+ * almost nothing it draws depends on the model.
+ *
+ * `useWorkbench` subscribes to the kernel with no selector, so every commit —
+ * including a commit that only changed the selection — replaces the snapshot
+ * and re-renders the whole shell. That re-rendered sixty part cards, each with
+ * its own preview, plus the three-hundred-and-twenty-two-entry colour table,
+ * on every click in the viewport, every camera move and every tool switch, to
+ * produce identical output each time.
+ *
+ * The two props that matter are primitives and the six callbacks below them
+ * are `useCallback`s over empty dependency arrays, so the default shallow
+ * comparison is the correct one: the palette now re-renders when the active
+ * colour or the armed part changes, and not otherwise.
+ */
+export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm, onDragPart, onDropPart, onDragEnd }: PalettePanelProps) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All parts')
   const [tier, setTier] = useState<CatalogTier | 'all'>('placeable')
@@ -814,7 +830,7 @@ export function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm
       </div>
     </aside>
   )
-}
+})
 
 /** Facet count for one tier, or the total across all of them. */
 function tierCount(page: CatalogSearchPage, tier: CatalogTier | 'all', state: string): string {
