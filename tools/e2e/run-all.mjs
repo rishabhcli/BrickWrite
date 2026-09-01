@@ -15,8 +15,12 @@ import { spawn } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const PORT = Number(process.env.BRICKWRIGHT_E2E_PORT ?? 4174)
-const url = process.env.BRICKWRIGHT_E2E_URL ?? `http://127.0.0.1:${PORT}`
+const url = process.env.BRICKWRIGHT_E2E_URL ?? `http://127.0.0.1:${process.env.BRICKWRIGHT_E2E_PORT ?? 4174}`
+// The port the server is started on follows the URL the suites are given.
+// Setting only BRICKWRIGHT_E2E_URL used to start Vite on 4174 and then wait for
+// a different port until the deadline — which is the shape of every "the suite
+// hung for no reason" report from a machine that already had something on 4174.
+const PORT = Number(process.env.BRICKWRIGHT_E2E_PORT ?? new URL(url).port ?? 4174)
 
 const reachable = async () => {
   try {

@@ -24,6 +24,16 @@ import { chromium } from 'playwright'
 
 const url = process.env.BRICKWRIGHT_E2E_URL ?? 'http://127.0.0.1:4174'
 /**
+ * The port the fallback server is started on, taken from the URL rather than
+ * repeated as a literal.
+ *
+ * When the two were written separately, pointing `BRICKWRIGHT_E2E_URL` at a
+ * free port still started Vite on 4174, so the run either drove whatever else
+ * was already listening there or waited for a server that was never coming.
+ * Deriving it is what makes this suite safe to run beside another one.
+ */
+const port = new URL(url).port || '4174'
+/**
  * The editor is one surface among several the platform shell routes to, so the
  * acceptance run navigates to it explicitly rather than assuming it owns `/`.
  */
@@ -119,13 +129,6 @@ async function sampleContrast(page, samples) {
 
 /** Same detector as `tools/e2e/renderer.mjs` — widen waits, never drop assertions. */
 /**
- * Camera, snap, render, delivery and help moved behind the Workspace trigger
- * when the tool rail was cut to four modes, so anything under it has to be
- * revealed before it can be clicked. Activating an item closes the popover and
- * hands focus back to the trigger, which is where a modal opened from in here
- * returns focus on close.
- */
-/**
  * The toolbar's undo/redo, scoped so a document label cannot impersonate it.
  *
  * `getByRole('button', { name: 'Undo' })` matches accessible names by
@@ -137,21 +140,6 @@ async function sampleContrast(page, samples) {
  */
 const historyButton = (page, name) => page.locator('.history-tools').getByRole('button', { name })
 
-async function closeWorkspace(page) {
-  const popover = page.getByRole('dialog', { name: 'Workspace actions' })
-  if (!(await popover.count())) return
-  await page.keyboard.press('Escape')
-  await popover.waitFor({ state: 'hidden' })
-}
-
-async function openWorkspace(page) {
-  const popover = page.getByRole('dialog', { name: 'Workspace actions' })
-  // The trigger toggles, so a blind click would close a popover that is already
-  // showing. Callers reveal the menu before every group they drive.
-  if (await popover.count()) return
-  await page.getByRole('button', { name: 'Workspace' }).click()
-  await popover.waitFor()
-}
 
 const SOFTWARE_RASTERISER = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i
 let onCpu = false
@@ -161,7 +149,7 @@ try {
   if (!(await available())) {
     server = spawn(
       process.execPath,
-      ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4174', '--strictPort'],
+      ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', port, '--strictPort'],
       { stdio: 'ignore' },
     )
     await waitForServer()
@@ -249,7 +237,6 @@ try {
   // rot silently once nothing opens it automatically.
   const welcome = page.getByRole('dialog', { name: 'Before the first brick' })
   assert((await welcome.count()) === 0, 'The first-run guide opened itself over the viewport')
-  await openWorkspace(page)
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
   const welcomeKeys = page.getByRole('dialog', { name: 'Keyboard' })
   await welcomeKeys.waitFor({ timeout: 10_000 })
@@ -498,10 +485,11 @@ try {
   await page.waitForTimeout(150)
 
   // -- keyboard command map is a real modal, not decorative chrome ----------
-  const workspaceTrigger = page.getByRole('button', { name: 'Workspace' })
+  // Render, delivery and help are direct toolbar controls now, so the button
+  // that opens the modal is also the one focus must come back to.
+  const shortcutsTrigger = page.getByRole('button', { name: 'Keyboard shortcuts' })
   const activeToolBeforeModal = await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')
-  await openWorkspace(page)
-  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  await shortcutsTrigger.click()
   const shortcutDialog = page.getByRole('dialog', { name: 'Keyboard' })
   await shortcutDialog.waitFor()
   await page.keyboard.press('g')
@@ -512,7 +500,7 @@ try {
   await page.keyboard.press('Escape')
   await shortcutDialog.waitFor({ state: 'hidden' })
   assert(
-    await workspaceTrigger.evaluate((node) => document.activeElement === node),
+    await shortcutsTrigger.evaluate((node) => document.activeElement === node),
     'Closing the command map did not restore focus to the control that opened it',
   )
   await page.keyboard.press('?')
@@ -522,8 +510,8 @@ try {
 
   // -- the Command Deck is the human face of the WebMCP capability registry -
   const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')
-  await openWorkspace(page)
-  await page.getByRole('button', { name: 'Command deck' }).click()
+  const commandTrigger = page.getByRole('button', { name: 'Command deck' })
+  await commandTrigger.click()
   const commandDialog = page.getByRole('dialog', { name: 'Command Deck' })
   await commandDialog.waitFor()
   // Parity is the Command Deck's entire claim, so it is checked against the
@@ -565,7 +553,7 @@ try {
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
   assert(
-    await workspaceTrigger.evaluate((node) => document.activeElement === node),
+    await commandTrigger.evaluate((node) => document.activeElement === node),
     'Closing the Command Deck did not restore focus to the control that opened it',
   )
 
@@ -1403,7 +1391,6 @@ try {
     revision: window.brickwright.getDocument().revision,
     name: window.brickwright.getDocument().name,
   }))
-  await openWorkspace(page)
   await page.getByRole('button', { name: 'Command deck' }).click()
   await commandDialog.getByRole('button', { name: /Rename project/ }).click()
   await commandDialog.getByLabel('Project name').fill('Human + Agent Survey Rover')
@@ -1499,9 +1486,6 @@ try {
   await page.locator('.proposal-overlay').waitFor({ state: 'detached' })
 
   // -- export round-trips the exact document -------------------------------
-  // Delivery moved into the Workspace popover with camera, snap and render, so
-  // the menu is revealed before the export controls are driven.
-  await openWorkspace(page)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /EXPORT LDR/i }).click()
   const download = await downloadPromise
@@ -1512,7 +1496,6 @@ try {
 
   // The delivery menu exposes the richer outputs without taking the direct LDR
   // action away from the toolbar.
-  await openWorkspace(page)
   await page.getByRole('button', { name: 'More export options' }).click()
   const mpdPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /Assembly MPD/i }).click()
@@ -1545,7 +1528,6 @@ try {
   )
   await page.locator('.export-panel > header').getByRole('button', { name: 'Close export' }).click()
   // Put the menu away again; left open it covers the docks the run drives next.
-  await closeWorkspace(page)
 
   await revealChrome(page, 'inspector')
   await page.getByRole('button', { name: /VALIDATE/ }).click()
@@ -2124,13 +2106,8 @@ try {
   await shot('state-timeline-history')
   await page.locator('.timeline-switch button', { hasText: 'STEPS' }).click()
 
-  // Render mode sits in the Workspace popover with camera and snap now. The
-  // menu is put away again before each shot so the artifact frames the
-  // viewport rather than the menu that selected the mode.
   const setRenderMode = async (mode) => {
-    await openWorkspace(page)
     await page.getByLabel('Viewport render mode').selectOption(mode)
-    await closeWorkspace(page)
   }
   await setRenderMode('connections')
   await page.waitForTimeout(300)
@@ -2507,7 +2484,6 @@ try {
   // section, which read as a claim with nothing under it.
   const roundTripPath = 'artifacts/e2e-roundtrip.ldr'
   await writeFile(roundTripPath, exported, 'utf8')
-  await openWorkspace(page)
   await page.getByRole('button', { name: 'More export options' }).click()
   // Deliverables offers both an LDraw import and a project-JSON one; this round
   // trip is LDraw, so the input is picked by what it accepts.
