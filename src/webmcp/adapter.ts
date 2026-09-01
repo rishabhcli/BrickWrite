@@ -585,13 +585,22 @@ const readTools: ToolDefinition[] = [
         const state = cadEngine.getSnapshot()
         const result = computeBuildOrder(state.document, {
           maxPartsPerStep: Number((input as { args?: { maxPartsPerStep?: number } }).args?.maxPartsPerStep) || undefined,
+          // An agent reading this order will hand it to a person. The graph
+          // check alone would call a mechanism sequenced after the shell that
+          // encloses it "verified", so the physical check is paid for here even
+          // though the generation pipeline, which runs per candidate, cannot.
+          checkInsertability: true,
         })
         return json({
           documentRevision: state.document.revision,
           steps: result.steps.map((step) => ({ index: step.index, name: step.name, partIds: step.partIds })),
           warnings: result.warnings,
           guarantee:
-            'Every part attaches to structure placed in an earlier step, except those listed as beginning a new island.',
+            'Every part attaches to structure placed in an earlier step, except those listed as beginning a new island. '
+            + 'Each part is additionally checked for a way in: at the moment its step introduces it, its bounding box is '
+            + 'retracted along the six axes against everything already placed, and a part left with no clear approach is '
+            + 'reported as BLOCKED_INSERTION. That sweep is axis-aligned and uses boxes rather than geometry, so it may '
+            + 'over-report a part a hand could thread in at an angle; it is a warning and never withholds a step.',
           verified: verifyBuildOrder(state.document, result.steps).valid,
         })
       }

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   allowsAxialFlip,
   connectorsCompatible,
+  enumerateMatings,
   isExclusiveFamily,
   jointFor,
 } from './connections'
-import type { ConnectionFamily } from './types'
+import { basisFromAxisAngle, basisFromEulerDegrees } from './math'
+import type { ConnectionFamily, ConnectionFeature } from './types'
 
 const pair = (a: ConnectionFamily, b: ConnectionFamily, genderA: 'male' | 'female' | 'neutral' = 'male', genderB: 'male' | 'female' | 'neutral' = 'female') =>
   connectorsCompatible({ family: a, gender: genderA }, { family: b, gender: genderB })
@@ -135,5 +137,92 @@ describe('the freedom a mated pair keeps', () => {
     // lower bound, and `Object.is(-0, 0)` is false, so asserting the endpoints
     // would be a test of the sign of zero rather than of the travel.
     expect(joint.maxLdu - joint.minLdu).toBe(0)
+  })
+})
+
+/**
+ * The poses a mated pair admits, for the two families the snap solver's own
+ * tests leave out.
+ *
+ * `src/cad/snapping.test.ts` enumerates stud/anti-stud, pin/pin-hole and
+ * generic/generic. Ball/socket and bar/clip sit in the compatible-pairs table
+ * above and were never enumerated anywhere, which matters because they are the
+ * two whose insertion semantics differ most sharply: a bar is a plain rod and
+ * which end enters the clip is not a distinction, while a ball enters its
+ * socket one way round. `allowsAxialFlip` draws that line, and these tests
+ * check that `enumerateMatings` actually spends it on the candidate set rather
+ * than agreeing with it in principle.
+ */
+describe('the poses a mated pair admits', () => {
+  const feature = (
+    family: ConnectionFamily,
+    gender: 'male' | 'female',
+    extra: Partial<ConnectionFeature> = {},
+  ): ConnectionFeature => ({
+    id: `${family}_${gender}`,
+    family,
+    gender,
+    pos: [0, 0, 0],
+    src: 'ldcad',
+    ...extra,
+  })
+
+  it('offers a ball exactly one seat, and never a flipped one', () => {
+    const matings = enumerateMatings(feature('ball', 'male'), feature('socket', 'female'))
+    // A ball joint has no discrete candidates to enumerate. The socket accepts
+    // one seating position and every orientation about it, so sampling quarter
+    // turns the way a keyed interface is sampled would invent choices that are
+    // not choices.
+    expect(matings).toHaveLength(1)
+    expect(matings[0].joint).toEqual({ kind: 'spherical' })
+    expect(matings[0].offsetLdu).toBe(0)
+    // The half of the contrast with a bar that lives in the candidate set, not
+    // just in the predicate.
+    expect(allowsAxialFlip('ball', 'socket')).toBe(false)
+    expect(matings.some((entry) => entry.flipped)).toBe(false)
+  })
+
+  it('seats a ball at the asked-for rotation exactly rather than near it', () => {
+    const desired = basisFromEulerDegrees([0, 30, 0])
+    const matings = enumerateMatings(feature('ball', 'male'), feature('socket', 'female'), {
+      desiredRelativeBasis: desired,
+    })
+    expect(matings).toHaveLength(1)
+    expect(matings[0].certainty).toBe('chosen')
+    // Spherical freedom means the best fit *is* the request. Asserted on the
+    // basis rather than `angleDegrees`, which stays 0 here because no single
+    // axis angle describes a ball's pose — reading it would look like the hint
+    // had been ignored.
+    matings[0].mating.basis.forEach((value, index) => expect(value).toBeCloseTo(desired[index], 6))
+    expect(matings[0].flipped).toBe(false)
+  })
+
+  it('lets a bar enter its clip from either end', () => {
+    const matings = enumerateMatings(feature('bar', 'male', { axial: 8 }), feature('clip', 'female', { axial: 8 }))
+    expect(allowsAxialFlip('bar', 'clip')).toBe(true)
+    // Four quarter turns, each offered both ways round, and none of the eight
+    // collapsed by the dedupe: an axial flip of a rotation about the connector
+    // axis is not itself a rotation about that axis.
+    expect(matings).toHaveLength(8)
+    expect(matings.filter((entry) => entry.flipped)).toHaveLength(4)
+    expect([...new Set(matings.map((entry) => entry.angleDegrees))].sort((a, b) => a - b)).toEqual([0, 90, 180, 270])
+    expect(matings.every((entry) => entry.joint.kind === 'cylindrical')).toBe(true)
+  })
+
+  it('slides a bar to the asked-for depth, from both ends', () => {
+    const matings = enumerateMatings(
+      feature('bar', 'male', { axial: 8 }),
+      feature('clip', 'female', { axial: 8 }),
+      { desiredRelativeBasis: basisFromAxisAngle([0, 1, 0], 0.7), desiredOffsetLdu: 3 },
+    )
+    const chosen = matings.filter((entry) => entry.certainty === 'chosen')
+    // The continuous rotation is solved rather than sampled, and because the
+    // bar flips, the solved angle is offered from both ends at both depths.
+    expect(chosen).toHaveLength(4)
+    for (const entry of chosen) expect((entry.angleDegrees * Math.PI) / 180).toBeCloseTo(0.7, 5)
+    expect(new Set(chosen.map((entry) => entry.flipped))).toEqual(new Set([false, true]))
+    // `axial: 8` is +/-4 LDU of travel, so 3 is reachable, and it is offered
+    // alongside the seated position rather than replacing it.
+    expect([...new Set(matings.map((entry) => entry.offsetLdu))].sort((a, b) => a - b)).toEqual([0, 3])
   })
 })

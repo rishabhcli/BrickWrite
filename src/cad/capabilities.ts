@@ -1217,11 +1217,34 @@ export function planSharedMutation(
 
     case 'apply_build_order': {
       const maxPartsPerStep = args.maxPartsPerStep === undefined ? undefined : integer(args.maxPartsPerStep, 6, 1, 100, 'maxPartsPerStep')
-      const result = computeBuildOrder(context.document, { maxPartsPerStep })
+      // `checkInsertability` is off by default because the generation pipeline
+      // runs `computeBuildOrder` once per candidate and cannot afford it. This
+      // is the other kind of caller: a person asked for a build order and is
+      // about to follow it, so the graph answer alone — every part touches
+      // something placed earlier — is not the question they asked. It costs a
+      // few hundred milliseconds once, on an explicit command.
+      const result = computeBuildOrder(context.document, { maxPartsPerStep, checkInsertability: true })
       if (!result.steps.length) {
         throw new SharedCapabilityError('INVALID_OPERATION', 'The model has no parts to sequence.', 'Place parts before generating a build order.')
       }
-      return { capability, label: 'Generate build order', operations: [{ type: 'steps.replace', steps: result.steps }], summary: `${result.steps.length} verified steps; ${result.unsupportedPartIds.length} independently started island${result.unsupportedPartIds.length === 1 ? '' : 's'}.` }
+      const blocked = result.warnings.filter((warning) => warning.code === 'BLOCKED_INSERTION')
+      return {
+        capability,
+        label: 'Generate build order',
+        operations: [{ type: 'steps.replace', steps: result.steps }],
+        summary:
+          `${result.steps.length} verified steps; ${result.unsupportedPartIds.length} independently started island${result.unsupportedPartIds.length === 1 ? '' : 's'}`
+          + `${blocked.length ? `; ${blocked.length} step${blocked.length === 1 ? '' : 's'} place a part with no clear approach` : ''}.`,
+        // The warnings are the reason the check was paid for. Computing them
+        // and returning only a count would leave the caller knowing something
+        // is wrong and not which part, which is worse than not checking.
+        report: {
+          steps: result.steps.length,
+          unsupportedPartIds: result.unsupportedPartIds,
+          blockedInsertions: blocked.length,
+          warnings: result.warnings,
+        },
+      }
     }
 
     case 'rename_document': {
