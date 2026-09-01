@@ -1,28 +1,8 @@
 import { lazy } from 'react'
-import { config as configureZod } from 'zod'
 import { Workbench } from './editor/workbench'
 // Editor foundation establishes the shared reset and tokens before the lazy
 // Workbench module mounts its chrome stylesheet.
 import './styles.css'
-
-/**
- * Stop zod probing for `eval` before the editor defines a schema.
- *
- * zod feature-detects its JIT by calling `new Function` once and catching the
- * failure. Under a Content-Security-Policy the attempt is reported even though
- * the throw is swallowed and nothing breaks, so the deployed editor logged a
- * `script-src` violation per load for a question zod was only asking.
- *
- * Nothing is given up by answering it in advance: the compiler is opt-in via
- * `zod/compile` and this app never opts in, so `jitless` disables a fast path
- * that was never running. See zod's own note beside `allowsEval`.
- *
- * Here rather than in `main.tsx` because the entry is landing-critical and
- * importing zod there put 24 KiB of gzipped schema code in front of the
- * marketing page. This module is the lazily loaded editor route, which is
- * where the schemas — and the violation — actually are.
- */
-configureZod({ jitless: true })
 
 // Contributions register optional workbench surfaces and can arrive after the
 // core CAD cockpit paints. Keeping them behind lazy boundaries removes the

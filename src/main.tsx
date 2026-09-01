@@ -1,3 +1,6 @@
+// First import in the application: it must beat every module that builds a
+// zod schema. See the file for why.
+import './platform/zod-jitless'
 import '@fontsource/chakra-petch/500.css'
 import '@fontsource/chakra-petch/600.css'
 import '@fontsource-variable/manrope'
