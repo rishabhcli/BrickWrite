@@ -751,7 +751,14 @@
 
 .panel {
   min-height: 0;
-  background: var(--panel);
+  /* Same material as .topbar and the dock, rather than a flat fill. The two
+   * side panels were the only large chrome surfaces still painted with an
+   * opaque colour, which is what made the glass read as decoration applied to
+   * a few floating controls instead of as the surface the whole tool is made
+   * of. Geometry is untouched: fill, edge and specular only. */
+  background: var(--glass-fill);
+  border-right: 1px solid var(--glass-edge-outer);
+  box-shadow: inset 0 1px 0 var(--glass-edge-inner);
   position: relative;
   z-index: 8;
 }
@@ -4459,8 +4466,9 @@
   align-items: center;
   gap: 14px;
   padding: 8px 0;
-  background: var(--dock-bg);
-  border-right: 1px solid var(--line);
+  background: var(--glass-fill);
+  border-right: 1px solid var(--glass-edge-outer);
+  box-shadow: inset 0 1px 0 var(--glass-edge-inner);
 }
 .dock-rail.right {
   border-right: 0;

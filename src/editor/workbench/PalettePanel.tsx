@@ -116,6 +116,12 @@ export function PartPreview({ record, color }: { record: CatalogSearchRecord; co
         width={thumbnail.size}
         height={thumbnail.size}
         loading="lazy"
+        /* An image is natively draggable. Pressing one and moving hands the
+         * pointer to the browser's own drag-and-drop, which fires
+         * pointercancel — and that killed the card's pointer drag on the very
+         * first move, so dragging a part into the viewport did nothing at all
+         * while clicking the card and then clicking the grid still worked. */
+        draggable={false}
       />
     </div>
   )

@@ -10,7 +10,7 @@ import {
   jointOverrideIndex,
   type MatedPair,
 } from './snapping'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import { createBlankDocument, createEmptyDocument } from './sample'
 import { introducedCollisions } from './collisionGate'
 import {
   adjacencyFromRecordedEdges,
@@ -530,7 +530,7 @@ export class CadEngine {
   /** Connector index kept alive across revisions for the commit path. */
   private connectorWorld = new IncrementalConnectorWorld()
 
-  constructor(initialDocument: ModelDocument = createShowcaseDocument()) {
+  constructor(initialDocument: ModelDocument = createBlankDocument()) {
     this.document = seedConnections(normalizeDocument(clone(initialDocument)))
     this.connectorWorld.sync(this.document)
     this.snapshot = this.buildSnapshot()
@@ -1036,7 +1036,7 @@ export class CadEngine {
   }
 }
 
-export const cadEngine = new CadEngine(createShowcaseDocument())
+export const cadEngine = new CadEngine(createBlankDocument())
 
 export const commandBus = {
   dispatch: (

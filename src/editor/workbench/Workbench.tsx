@@ -10,7 +10,7 @@ import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
 import { GlassDock, GlassTabs } from '../../ui/liquid'
 import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
-import { markWelcomeSeen, WelcomeGuide, welcomeUnseen } from '../WelcomeGuide'
+import { markWelcomeSeen, WelcomeGuide } from '../WelcomeGuide'
 import { CollapsedRail, DockCollapseButton, DockSection, DockSplitter, useViewportSize } from './Dock'
 import {
   createExtensionRegistry,
@@ -548,7 +548,10 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   useEffect(() => {
     if (bootModal.current) return
     bootModal.current = true
-    if (welcomeUnseen()) workbench.setModal('core:welcome')
+    // The guide no longer opens itself. A modal over the viewport on first
+    // load is the first thing an operator has to dismiss before they can see
+    // the tool at all, and it says less than the empty grid behind it does.
+    // It stays reachable from the shortcuts sheet's "replay welcome".
     // Only ever on the first commit; the guide is a first-run state, not a
     // condition that can recur mid-session.
   }, [])
