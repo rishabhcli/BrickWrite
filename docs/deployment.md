@@ -188,28 +188,24 @@ deployment gives them somewhere to count, and both say so rather than pretending
 otherwise — `curl -s https://brickwrite.tech/api/health` reports
 `"metering": "ready"` or `"metering": "unconfigured"`.
 
-### The edge request limiter — Cloudflare `[[ratelimits]]`
+### The edge request limiter — `RATE_LIMIT_KV`
 
 `functions/api/[[route]].ts` caps paid paths at 20 POSTs per 60 seconds. It
-prefers the native rate-limiting binding, which is atomic:
+prefers a native `[[ratelimits]]` binding, which is atomic — and **cannot have
+one here.** That binding is a Workers feature; wrangler fails the Pages deploy
+outright with `Configuration file for Pages projects does not support
+"ratelimits"`. It sat in `wrangler.toml` for one commit without ever being
+deployed, because the run that added it stopped before the deploy job.
 
-```toml
-[[ratelimits]]
-name = "API_RATE_LIMITER"
-namespace_id = "1001"
-simple = { limit = 20, period = 60 }
-```
+What runs is the `RATE_LIMIT_KV` counter: `get` then `put` — two operations with
+a gap, against an eventually consistent store that throttles repeated writes to
+one key. The ceiling holds on average rather than exactly, and the overshoot is
+bounded by concurrency. Keep the KV namespace bound; nothing else is counting.
 
-Already in `wrangler.toml`. `namespace_id` must be unique per account, and
-`period` accepts only `10` or `60`. Two bindings sharing a `namespace_id` share
-counters, which is occasionally what you want and never what you want by
-accident.
-
-If the binding is absent the Function falls back to the `RATE_LIMIT_KV` counter,
-which is `get` then `put` — two operations with a gap, against an eventually
-consistent store that throttles repeated writes to one key. The ceiling then
-holds on average rather than exactly. Keep the KV namespace bound; it is the
-fallback, and with the binding present it is never read.
+The `API_RATE_LIMITER` branch stays in the Function and stays tested, so moving
+the proxy to a Worker later is a deployment change rather than a code change.
+That move is the only way to get the atomic counter; editing `wrangler.toml` is
+not.
 
 **Failure direction: closed.** A limiter that cannot answer refuses the request.
 An unparseable KV counter reads as over-limit, not as a fresh allowance.
