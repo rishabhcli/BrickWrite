@@ -252,7 +252,7 @@
 }
 .pf-account__identity strong {
   display: block;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
 }
 .pf-account__identity small {
@@ -272,7 +272,7 @@
   border-bottom: 1px solid var(--line, #1c272a);
   color: var(--ink, #f0f5f6);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: pointer;
   text-decoration: none;
   transition: all 0.16s ease;
@@ -551,7 +551,7 @@
 }
 .pf-auth__intro p {
   color: var(--muted, #8a9ba0);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.7;
   margin: 0 0 14px;
   max-width: 46ch;
@@ -585,7 +585,7 @@
 }
 .pf-account-page__header p {
   color: var(--muted, #8a9ba0);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.7;
   margin: 0;
   max-width: 62ch;

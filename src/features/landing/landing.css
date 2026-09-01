@@ -469,7 +469,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 }
 .bw-demo-body p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--bw-muted);
 }

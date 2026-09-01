@@ -383,7 +383,7 @@ function DemoExplorer({ route }: { route: ReturnType<typeof useLandingRoute> }) 
               </span>
             </button>
             <p className="bw-note">Copies the snapshot into a project of your own and opens it. The demo is never modified.</p>
-            {fork.outcome && !fork.outcome.ok ? <ForkResult demo={demo} outcome={fork.outcome} /> : null}
+            {fork.outcome && !fork.outcome.ok ? <ForkResult outcome={fork.outcome} /> : null}
           </div>
 
           <details className="bw-explore-report">
@@ -753,37 +753,24 @@ function SelectedPart({ preview, index, onClear }: { preview: DemoPreview; index
   )
 }
 
-function ForkResult({ demo, outcome }: { demo: DemoEntry; outcome: ForkOutcome }) {
-  if (!outcome.ok) {
-    return (
-      <p className="bw-fork-note error" role="alert">
-        {outcome.message}
-      </p>
-    )
-  }
+/**
+ * The only fork outcome that still needs saying.
+ *
+ * A successful fork opens the fork, so there is nothing left to report: the
+ * editor is already on screen with the project in it. This used to render a
+ * success note — "Copied to a local project as X — N parts" — with an "Open it
+ * in the editor" link underneath, which was a second click to reach somewhere
+ * the first click could have gone, and a paragraph describing a thing the
+ * operator could see for themselves.
+ *
+ * Only the failure survives, because a fork that did not happen leaves nothing
+ * on screen to infer it from.
+ */
+function ForkResult({ outcome }: { outcome: Extract<ForkOutcome, { ok: false }> }) {
   return (
-    <div className="bw-fork-note good" role="status">
-      <p style={{ margin: 0 }}>
-        {outcome.destination === 'cloud'
-          ? `Copied to a cloud project through the ${outcome.adapter} adapter`
-          : 'Copied to a local project in this browser'}{' '}
-        as <b>{outcome.name}</b> — {outcome.parts} parts. {demo.title} itself is unchanged.
-      </p>
-      {outcome.destination === 'local' && outcome.note ? <p style={{ margin: '6px 0 0' }}>{outcome.note}</p> : null}
-      <a
-        className="bw-button small"
-        style={{ marginTop: 10 }}
-        href={hrefFor({ kind: 'editor-project', projectId: outcome.projectId })}
-        onClick={anchor({ kind: 'editor-project', projectId: outcome.projectId }, () =>
-          trackLanding({ name: 'editor.opened', from: 'explore', withProject: true }),
-        )}
-      >
-        Open it in the editor{' '}
-        <span className="bw-key" aria-hidden="true">
-          →
-        </span>
-      </a>
-    </div>
+    <p className="bw-fork-note error" role="alert">
+      {outcome.message}
+    </p>
   )
 }
 

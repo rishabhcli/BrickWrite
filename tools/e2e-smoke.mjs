@@ -1552,6 +1552,30 @@ try {
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
   // -- the build sequence is derived and verified, not authored -------------
+  // Derived against a crane rather than against whatever the run happens to
+  // have left standing. The undo chain above unwinds the workflow back to the
+  // two bricks it started from, and a two-brick stack cannot demonstrate a
+  // multi-layer ordering — it was asserting `steps > 2` against a document
+  // that can only ever produce one or two. `build_crane` plans a four-course
+  // mast, which has real dependency layers, and the section below then
+  // articulates the same crane's luffing joint instead of raising a second
+  // one.
+  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  const crane = await page.evaluate(() =>
+    window.brickwright.invoke('action_mutate', {
+      action: 'build_crane',
+      expectedRevision: window.brickwright.getDocument().revision,
+      // Its own patch of ground. The default origin lands on top of the two
+      // bricks this run started from, and a mast planted through them is a
+      // collision rather than a mechanism.
+      args: { boomStuds: 6, originLdu: [400, 0, 400] },
+    }),
+  )
+  assert(
+    !crane?.structuredContent?.error,
+    `Building the crane failed: ${JSON.stringify(crane?.structuredContent?.error)}`,
+  )
+
   const sequence = await page.evaluate(async () => {
     const derived = (await window.brickwright.invoke('action_read', { action: 'compute_build_order' }))
       ?.structuredContent
@@ -1576,27 +1600,10 @@ try {
 
   // -- the model contains a real mechanism, and it can be driven ------------
   // This used to read the hinged rear hatch off the opening showcase. With no
-  // showcase to read, the run builds a mechanism instead: `build_crane` is a
-  // shared capability that plans a four-course mast on a real 3937/3938
-  // luffing joint, so articulation is still exercised against a genuine
+  // showcase to read, the crane raised above supplies the mechanism: a real
+  // 3937/3938 luffing joint, so articulation is exercised against a genuine
   // assembly rather than a synthetic fixture — and the generator that produces
-  // it comes under test at the same time.
-  //
-  // Build mode is entered here rather than after the probe, because raising
-  // the crane is itself a mutation.
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
-  const crane = await page.evaluate(() =>
-    window.brickwright.invoke('action_mutate', {
-      action: 'build_crane',
-      expectedRevision: window.brickwright.getDocument().revision,
-      args: { boomStuds: 6 },
-    }),
-  )
-  assert(
-    !crane?.structuredContent?.error,
-    `Building the crane failed: ${JSON.stringify(crane?.structuredContent?.error)}`,
-  )
-
+  // it is under test at the same time.
   const articulation = await page.evaluate(async () => {
     const hatch = Object.values(window.brickwright.getDocument().parts).find((part) => part.definitionId === '3938')
     if (!hatch) return { error: 'the crane produced no hinge top plate' }

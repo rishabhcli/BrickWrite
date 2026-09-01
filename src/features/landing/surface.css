@@ -243,7 +243,7 @@ body:has(.bw-surface),
 .bw-note {
   margin: 0;
   color: var(--bw-muted);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .bw-mono {
@@ -354,7 +354,7 @@ body:has(.bw-surface),
   color: var(--bw-ink);
   font: inherit;
   font-family: var(--bw-display);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;

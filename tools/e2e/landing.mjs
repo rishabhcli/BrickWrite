@@ -517,9 +517,19 @@ try {
   const canonicalBefore = sha256(await readFile(path.join(ROOT, 'public/demos', heroDemo.id, 'document.json')))
   await page.goto(`${SHARED_URL}/explore?demo=${heroDemo.id}`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: /Edit this build/ }).click()
-  await page.locator('.bw-fork-note.good').waitFor({ timeout: 20_000 })
-  const forkNote = await page.locator('.bw-fork-note.good').innerText()
-  check(/local project/i.test(forkNote), `an anonymous visitor gets a local project (saw "${forkNote.slice(0, 90)}")`)
+  // "Edit this build" forks and opens the fork in one click. It used to leave a
+  // success note on the explore page carrying a second "Open it in the editor"
+  // link to follow, and this waited on that note. Both are gone: a note that
+  // says a thing worked, next to a link to the thing, is two steps where the
+  // button already was one. The navigation is now the evidence the fork
+  // succeeded, and the project id it carries is what the rest of this section
+  // checks against.
+  await page.waitForURL('**/editor?project=**', { timeout: 20_000 })
+  const forkedProjectId = new URL(page.url()).searchParams.get('project')
+  check(
+    /^doc_/.test(forkedProjectId ?? ''),
+    `an anonymous visitor lands in the editor on a project of their own (saw "${forkedProjectId}")`,
+  )
 
   const stored = await page.evaluate(async () => {
     const open = () =>
@@ -569,17 +579,20 @@ try {
     notes.push('editor handoff skipped by BRICKWRIGHT_E2E_SKIP_EDITOR_HANDOFF')
     process.stdout.write('  note  editor handoff skipped by environment\n')
   } else {
-    const handoff = page.getByRole('link', { name: /Open it in the editor/ })
-    const handoffHref = await handoff.getAttribute('href')
-    check(/^\/editor\?project=/.test(handoffHref ?? ''), `the handoff points at the editor (saw ${handoffHref})`)
-    await handoff.click()
-    await page.waitForURL('**/editor?project=**', { timeout: 20_000 })
+    // The fork above already navigated here, so there is no second link to
+    // follow. What is left to prove is that the destination is a working
+    // editor holding the project the fork created, rather than a URL that
+    // merely looks right.
     await page.locator('canvas').first().waitFor({ timeout: 90_000 })
     const editorParts = await page.evaluate(() => {
       const api = window.brickwright
       return api ? Object.keys(api.getDocument().parts).length : null
     })
     check(editorParts !== null, 'the editor booted its kernel after the handoff')
+    check(
+      forkedProjectId === forked?.id,
+      `the editor opened the project the fork created (url ${forkedProjectId}, stored ${forked?.id})`,
+    )
     pass(`editor handoff (${editorParts} parts in the editor)`)
   }
 
@@ -613,10 +626,21 @@ try {
   await authedFork.waitFor({ state: 'visible', timeout: 30_000 })
   check(await authedFork.isEnabled(), 'the signed-in visitor is offered the fork')
   await authedFork.click({ force: true })
-  await authedPage.locator('.bw-fork-note.good').waitFor({ timeout: 20_000 })
-  const cloudNote = await authedPage.locator('.bw-fork-note.good').innerText()
+  // Same one-click fork as the anonymous path: a success opens the fork rather
+  // than describing it, so there is no note to read the destination off. That
+  // the cloud adapter ran at all is established by the adapter's own record —
+  // `createProject` is what sets `__brickwrightForkInput`, and the local path
+  // never calls it — and the URL establishes that the visitor was taken to the
+  // project that adapter returned. Navigation is client-side, so the record
+  // set on the explore page is still on the window afterwards.
+  await authedPage.waitForURL('**/editor?project=**', { timeout: 20_000 })
+  const cloudProjectId = new URL(authedPage.url()).searchParams.get('project')
   const forkInput = await authedPage.evaluate(() => window.__brickwrightForkInput)
-  check(/cloud project/i.test(cloudNote), `a signed-in visitor gets a cloud project (saw "${cloudNote.slice(0, 90)}")`)
+  check(Boolean(forkInput), 'a signed-in visitor is forked through the registered cloud adapter')
+  check(
+    cloudProjectId === 'cloud_e2e_1',
+    `the signed-in visitor lands on the project the adapter created (saw ${cloudProjectId})`,
+  )
   check(forkInput?.source?.demoId === secondDemo.id, 'the adapter is told which demo the fork came from')
   check(
     forkInput?.source?.sha256 === secondDemo.assets.document.sha256,
@@ -625,11 +649,6 @@ try {
   check(
     forkInput?.parts === secondDemo.validation.partCount,
     `the adapter receives all ${secondDemo.validation.partCount} parts`,
-  )
-  const cloudHandoff = await authedPage.getByRole('link', { name: /Open it in the editor/ }).getAttribute('href')
-  check(
-    cloudHandoff === '/editor?project=cloud_e2e_1',
-    `the cloud fork hands off to its own project (saw ${cloudHandoff})`,
   )
   report.cloudFork = forkInput
   await authed.close()
