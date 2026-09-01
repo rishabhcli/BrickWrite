@@ -7685,7 +7685,7 @@
 /* Modelling controls stay within reach, without covering the building surface. */
 .viewport-quick-controls {
   position: absolute;
-  top: 40px;
+  top: 70px;
   left: 14px;
   z-index: 5;
   display: grid;
@@ -7705,6 +7705,28 @@
   color: var(--muted);
 }
 .viewport-control-row > svg { margin-left: 6px; }
+.grid-preset-group {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid #ffffff0b;
+  border-radius: 8px;
+  background: #02070842;
+}
+.viewport-control-row .grid-preset-group button {
+  min-width: 26px;
+  height: 23px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: #71868a;
+  font: 700 8px var(--display);
+}
+.viewport-control-row .grid-preset-group button[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--cyan) 30%, transparent);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  color: var(--cyan);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--cyan) 52%, transparent);
+}
 /* Camera on one side, grid on the other. Without it the merged row reads as
    six unrelated buttons; with it, as two answers to two questions. */
 .viewport-control-divider {
@@ -8133,19 +8155,37 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   font-size: 11px;
   font-weight: 650;
 }
-.selection-hud-position { display: flex; align-items: center; gap: 7px; }
-.selection-hud-position i {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
+.selection-hud-position { display: flex; align-items: center; gap: 3px; }
+.selection-hud-position .number-field { width: 52px; }
+.selection-hud-position .number-field > span {
+  position: absolute;
+  width: 14px;
+  margin: 10px 0 0 6px;
   color: #71888c;
-  font: 700 8px var(--display);
-  font-style: normal;
+  pointer-events: none;
 }
-.selection-hud-position i[data-axis='x'] { color: #ff806f; }
-.selection-hud-position i[data-axis='y'] { color: #a2d975; }
-.selection-hud-position i[data-axis='z'] { color: #7ac9e6; }
-.selection-hud-position b { color: #a9bbbe; font: 600 9px var(--display); }
+.selection-hud-position .number-field:nth-child(1) > span { color: #ff806f; }
+.selection-hud-position .number-field:nth-child(2) > span { color: #a2d975; }
+.selection-hud-position .number-field:nth-child(3) > span { color: #7ac9e6; }
+.selection-hud-position .number-field > div {
+  height: 30px;
+  border-color: #ffffff0a;
+  border-radius: 8px;
+  background: #02070838;
+}
+.selection-hud-position .number-field > div:focus-within {
+  border-color: color-mix(in srgb, var(--cyan) 48%, transparent);
+  background: #081315;
+}
+.selection-hud-position .number-field input {
+  height: 100%;
+  padding: 0 4px 0 19px;
+  color: #b7c8ca;
+  font-size: 9px;
+  text-align: right;
+}
+.selection-hud-position .number-field em { display: none; }
+.selection-hud-position .number-field.disabled { opacity: .42; }
 .selection-hud-divider {
   width: 1px;
   height: 22px;
@@ -8252,7 +8292,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   .selection-hud-position { display: none; }
   .selection-hud-identity { padding-right: 4px; }
   .selection-hud-action { width: 31px; }
-  .viewport-quick-controls { top: 70px; }
 }
 @media (max-width: 760px) {
   .selection-hud { top: 10px; max-width: calc(100% - 112px); }

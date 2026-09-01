@@ -80,17 +80,6 @@ export function ViewportStage({
         (proposal) => proposal.id === activeProposal.id || !pendingProposalIds.has(proposal.id),
       )
     : workbench.viewportProposals
-  const selectionPosition = state.selection.length
-    ? (state.selection
-        .map((id) => state.document.parts[id]?.transform.position)
-        .filter((position): position is readonly [number, number, number] => Boolean(position))
-        .reduce<[number, number, number]>(
-          (sum, position) => [sum[0] + position[0], sum[1] + position[1], sum[2] + position[2]],
-          [0, 0, 0],
-        )
-        .map((value) => value / state.selection.length) as [number, number, number])
-    : ([0, 0, 0] as const)
-
   const pickStarter = useCallback(() => {
     const first =
       searchCatalog({ requireGeometry: true, limit: 1, text: 'brick 2 x 4' })[0] ??
@@ -205,12 +194,14 @@ export function ViewportStage({
         <SelectionHUD
           count={state.selection.length}
           label={workbench.selectedDefinition?.name ?? `${state.selection.length} parts`}
-          position={selectionPosition}
+          position={workbench.selectionPosition}
+          locks={workbench.transformPrefs.locks}
           tool={workbench.tool}
           onTool={workbench.setTool}
           onFocus={workbench.focusSelection}
           onGround={workbench.groundSelection}
           onDuplicate={workbench.duplicateSelection}
+          onPosition={workbench.positionSelection}
           onMore={(anchor) => {
             const rect = anchor.getBoundingClientRect()
             setContextPoint({ x: rect.left, y: rect.bottom + 6 })
