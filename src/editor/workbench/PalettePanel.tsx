@@ -156,10 +156,17 @@ export interface PalettePanelProps {
  * on every click in the viewport, every camera move and every tool switch, to
  * produce identical output each time.
  *
- * The two props that matter are primitives and the six callbacks below them
- * are `useCallback`s over empty dependency arrays, so the default shallow
- * comparison is the correct one: the palette now re-renders when the active
- * colour or the armed part changes, and not otherwise.
+ * The two props that matter are primitives, and the six callbacks below them
+ * reduce — through `armPart` and `buildPartAt` — to `activeColor`, `gridLdu`
+ * and two `useCallback`s over empty dependency arrays. None of them closes over
+ * the snapshot, which is the whole reason the default shallow comparison is the
+ * correct one here: a selection commit re-renders the shell and hands this
+ * panel the identical eight props, so it stops.
+ *
+ * That is a contract, not a property of the code as written, and adding a
+ * dependency to any of those callbacks would quietly dissolve it. `palette
+ * re-rendering` in panels.test.tsx asserts both halves — that the shell really
+ * does re-render on a selection-only commit, and that the props survive it.
  */
 export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm, onDragPart, onDropPart, onDragEnd }: PalettePanelProps) {
   const [query, setQuery] = useState('')

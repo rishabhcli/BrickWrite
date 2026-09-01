@@ -581,3 +581,57 @@ describe('command palette', () => {
     expect(onShortcuts.mock.calls[0][0]['tool.move']).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Palette re-rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * The palette is memoised, and a memo is only as good as the props feeding it.
+ *
+ * `useWorkbench` subscribes to the kernel with no selector, so it re-renders on
+ * every commit — including one that only moved the selection. That is the
+ * premise these assert first, because a memo that looks like it works because
+ * the parent stopped re-rendering is not the thing being tested.
+ *
+ * The contract that makes the memo hold is that every callback the palette
+ * receives is a `useCallback` over an empty dependency array. Adding a
+ * dependency to any of them would silently restore the behaviour this replaced
+ * — sixty part cards and the colour table rebuilt on every viewport click — and
+ * nothing else in the suite would notice.
+ */
+describe('palette re-rendering', () => {
+  const captureProps = () => {
+    const seen: Array<{ activeColor: number; callbacks: unknown[] }> = []
+    render(
+      <Harness>
+        {(w) => {
+          seen.push({
+            activeColor: w.activeColor,
+            callbacks: [w.recolorSelection, w.addPart, w.armPart, w.beginPartDrag, w.dropPart, w.endPartDrag],
+          })
+          return null
+        }}
+      </Harness>,
+    )
+    return seen
+  }
+
+  it('re-renders the shell on a selection-only commit', () => {
+    const seen = captureProps()
+    const before = seen.length
+    select(showcasePartIds().slice(0, 1))
+    expect(seen.length).toBeGreaterThan(before)
+  })
+
+  it('hands the palette identical props across that commit', () => {
+    const seen = captureProps()
+    const before = seen.at(-1)!
+    select(showcasePartIds().slice(0, 1))
+    const after = seen.at(-1)!
+    expect(after.activeColor).toBe(before.activeColor)
+    after.callbacks.forEach((callback, index) => {
+      expect(callback).toBe(before.callbacks[index])
+    })
+  })
+})
