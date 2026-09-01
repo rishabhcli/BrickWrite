@@ -1,6 +1,6 @@
-import type { ModelDocument } from '../../cad/types'
-import type { DemoEntry } from '../../demos'
-import { loadDocumentText } from '../../demos'
+import type { ModelDocument } from '../cad/types'
+import type { DemoEntry } from './index'
+import { loadDocumentText } from './assets'
 
 /**
  * Forking a demo.
@@ -158,7 +158,7 @@ export async function forkDemo(
   }
 
   try {
-    const { ProjectRepository, IndexedDbDriver, MemoryDriver, indexedDbAvailable } = await import('../../cad/persistence')
+    const { ProjectRepository, IndexedDbDriver, MemoryDriver, indexedDbAvailable } = await import('../cad/persistence')
     const durable = indexedDbAvailable()
     const repository = new ProjectRepository(durable ? new IndexedDbDriver() : new MemoryDriver())
     const taken = new Set((await repository.listProjects()).map((project) => project.projectId))

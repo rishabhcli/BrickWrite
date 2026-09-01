@@ -4,7 +4,7 @@ import { setKnownDemoIds, trackLanding } from '../landing/analytics'
 import { hrefFor, navigate, useLandingRoute } from '../landing/navigation'
 import { PlateAtmosphere, StageHud } from '../landing/plate'
 import { usePointerField } from '../landing/reveal'
-import { forkDemo, type ForkOutcome } from './fork'
+import { forkDemo, type ForkOutcome } from '../../demos/fork'
 import { PART_FIELDS, layerCount } from './projection'
 import './explore.css'
 

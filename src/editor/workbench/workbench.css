@@ -8067,3 +8067,44 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
  * selection the panel says what it is and what to do, and nothing else. */
 .transform-panel[data-scope='empty'] > *:not(.transform-scope):not(.transform-multi-note) { display: none; }
 .transform-panel[data-scope='empty'] .transform-multi-note { margin: 0; color: var(--faint); }
+
+/* One-click starts over an empty document. The row sits under the single-brick
+ * button because the two answer different questions: "give me a brick" and
+ * "give me something already built". */
+.viewport-empty-starters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.viewport-empty-starters > span {
+  color: var(--faint);
+  font: 500 9px var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.viewport-empty-starter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 11px;
+  background: var(--glass-fill-control);
+  border: 1px solid var(--glass-edge-outer);
+  border-radius: var(--r-control);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+.viewport-empty-starter:hover:not(:disabled) {
+  border-color: var(--cyan);
+}
+.viewport-empty-starter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.viewport-empty-starter small {
+  color: var(--faint);
+  font: 500 9px var(--display);
+}

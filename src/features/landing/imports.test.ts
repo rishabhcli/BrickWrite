@@ -130,8 +130,11 @@ describe('the envelope renderer', () => {
   })
 
   it('keeps the project store behind a dynamic import in the fork path', () => {
-    const source = readFileSync(path.join(ROOT, 'src/features/explore/fork.ts'), 'utf8')
-    expect(source).toMatch(/await import\('\.\.\/\.\.\/cad\/persistence'\)/)
+    // Forking moved to `src/demos` when the editor's empty state needed it too:
+    // it never had an explore-specific dependency, and re-exporting it through
+    // a feature barrel meant anything importing explore pulled it along.
+    const source = readFileSync(path.join(ROOT, 'src/demos/fork.ts'), 'utf8')
+    expect(source).toMatch(/await import\('\.\.\/cad\/persistence'\)/)
     expect(staticSpecifiers(source).some((specifier) => specifier.includes('cad/persistence'))).toBe(false)
   })
 })

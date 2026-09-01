@@ -35,4 +35,4 @@ export {
   type CloudProjectAdapter,
   type ForkDestination,
   type ForkOutcome,
-} from './fork'
+} from '../../demos/fork'

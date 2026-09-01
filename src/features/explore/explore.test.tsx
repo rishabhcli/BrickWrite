@@ -12,7 +12,7 @@ import {
 } from '../landing/analytics'
 import { installBrowserDoubles } from '../landing/testing'
 import { ExplorePage } from './ExplorePage'
-import { forkDemo, registerCloudProjectAdapter, type CloudForkInput } from './fork'
+import { forkDemo, registerCloudProjectAdapter, type CloudForkInput } from '../../demos/fork'
 
 const ROOT = path.resolve(__dirname, '..', '..', '..')
 const digestOf = (demoId: string) =>

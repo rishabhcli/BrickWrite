@@ -1,5 +1,6 @@
 import { CircleAlert, CloudOff, LoaderCircle, PackageOpen, Sparkles } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { session } from '../../cad/session'
 
 /**
  * The states an editor is in when it is not simply working.
@@ -18,12 +19,73 @@ import type { ReactNode } from 'react'
  * finish. One press now lands a brick, selected, with its handles already up.
  * How to place the *next* one is the sentence above it.
  */
+type Starter = { id: string; title: string; parts: number }
+
+/**
+ * The library is fetched here rather than imported.
+ *
+ * `src/demos` carries the full generated manifest, and the editor's critical
+ * chunk has no reason to hold a hundred kilobytes of showcase metadata for a
+ * panel that only appears over an empty document. Loading it on mount keeps
+ * the cost where the panel is.
+ */
+function useStarters(): Starter[] {
+  const [starters, setStarters] = useState<Starter[]>([])
+  useEffect(() => {
+    let live = true
+    void import('../../demos').then(({ DEMOS }) => {
+      if (!live) return
+      setStarters(
+        DEMOS.slice(0, 3).map((demo) => ({ id: demo.id, title: demo.title, parts: demo.validation.partCount })),
+      )
+    })
+    return () => { live = false }
+  }, [])
+  return starters
+}
+
 export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }) {
+  const starters = useStarters()
+  const [opening, setOpening] = useState<string | null>(null)
+  const busy = useRef(false)
+
+  const open = async (id: string) => {
+    if (busy.current) return
+    busy.current = true
+    setOpening(id)
+    try {
+      const [{ getDemo }, { forkDemo }] = await Promise.all([import('../../demos'), import('../../demos/fork')])
+      const demo = getDemo(id)
+      if (!demo) return
+      const outcome = await forkDemo(demo)
+      if (outcome.ok) await session.openProject(outcome.projectId)
+    } finally {
+      busy.current = false
+      setOpening(null)
+    }
+  }
+
   return (
     <div className="viewport-empty" data-state="empty">
       <div className="viewport-empty-mark" aria-hidden="true"><span /><span /><span /></div>
       <strong>Drag a part here</strong>
       <button onClick={onPickStarter}>Start with a brick</button>
+      {starters.length > 0 && (
+        <div className="viewport-empty-starters">
+          <span>or open a build</span>
+          {starters.map((starter) => (
+            <button
+              key={starter.id}
+              className="viewport-empty-starter"
+              disabled={opening !== null}
+              onClick={() => void open(starter.id)}
+            >
+              {opening === starter.id ? 'Opening…' : starter.title}
+              <small>{starter.parts.toLocaleString()} parts</small>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
