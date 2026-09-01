@@ -147,7 +147,7 @@
   border-radius: 4px;
   padding: 6px 11px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .bw-share-reset:hover {
@@ -165,7 +165,7 @@
 .bw-share-scrubber h3 {
   margin: 0;
   font-family: var(--bw-display);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--bw-muted);
@@ -280,7 +280,7 @@
 }
 .bw-share-note {
   color: var(--bw-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bw-badge {
@@ -347,7 +347,7 @@
   background: var(--bw-panel-2);
   color: var(--bw-ink);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--bw-display);
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -393,7 +393,7 @@
   color: var(--bw-ink);
   padding: 7px 9px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-share-bar-actions {
   display: flex;
@@ -408,7 +408,7 @@
   border-radius: 4px;
   padding: 6px 11px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .bw-share-bar-actions button:hover {
@@ -419,7 +419,7 @@
   margin: 7px 0 0;
   min-height: 1.4em;
   color: var(--bw-green);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bw-share-bom {
@@ -428,7 +428,7 @@
 .bw-share-bom h2 {
   margin: 0 0 8px;
   font-family: var(--bw-display);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--bw-muted);
@@ -548,7 +548,7 @@
 .bw-studio-caption {
   margin: 8px 0 0;
   color: var(--bw-faint);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--bw-display);
   letter-spacing: 0.05em;
 }
@@ -568,7 +568,7 @@
   border-radius: 4px;
   padding: 7px 12px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .bw-studio-preview-actions button:hover:not(:disabled) {
@@ -691,7 +691,7 @@
   gap: 8px;
   margin-top: 8px;
   color: var(--bw-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-studio-caps {
   margin-top: 10px;
@@ -706,7 +706,7 @@
 .bw-studio-commit {
   margin: 0 0 10px;
   color: var(--bw-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .bw-studio-commit strong {
@@ -734,12 +734,12 @@
   margin: 9px 0 0;
   min-height: 1.4em;
   color: var(--bw-cyan);
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-studio-error {
   margin: 8px 0 0;
   color: var(--bw-red);
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-studio-published a {
   color: var(--bw-green);

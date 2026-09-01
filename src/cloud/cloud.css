@@ -25,7 +25,7 @@
   gap: 8px;
   padding: 8px 10px 10px;
   color: var(--bw-cloud-ink);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -52,8 +52,8 @@
   background: var(--bw-cloud-panel-2);
 }
 
-.bw-cloud-notice strong { font-size: 11px; font-weight: 600; }
-.bw-cloud-notice p { margin: 0; color: var(--bw-cloud-muted); font-size: 10.5px; }
+.bw-cloud-notice strong { font-size: 12px; font-weight: 600; }
+.bw-cloud-notice p { margin: 0; color: var(--bw-cloud-muted); font-size: 10px; }
 .bw-cloud-notice[data-tone='neutral'] { border-left-color: var(--bw-cloud-line-hi); }
 .bw-cloud-notice[data-tone='active'] { border-left-color: var(--bw-cloud-cyan); }
 .bw-cloud-notice[data-tone='warn'] { border-left-color: var(--bw-cloud-orange); }
@@ -102,12 +102,12 @@
 
 .bw-cloud-project[data-open='true'] { border-color: var(--bw-cloud-cyan); }
 .bw-cloud-project-head { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
-.bw-cloud-project-name { font-weight: 600; font-size: 11.5px; overflow-wrap: anywhere; }
+.bw-cloud-project-name { font-weight: 600; font-size: 12px; overflow-wrap: anywhere; }
 .bw-cloud-project-meta { color: var(--bw-cloud-faint); font-size: 10px; font-variant-numeric: tabular-nums; }
 
 .bw-cloud-badge {
   font-family: var(--bw-cloud-display);
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
@@ -151,7 +151,7 @@
   border-radius: 4px;
   color: var(--bw-cloud-ink);
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bw-cloud-field:focus-visible { outline: 1px solid var(--bw-cloud-cyan); outline-offset: -1px; }
@@ -166,8 +166,8 @@
   gap: 6px;
 }
 
-.bw-cloud-confirm p { margin: 0; color: var(--bw-cloud-ink); font-size: 10.5px; }
-.bw-cloud-empty { color: var(--bw-cloud-muted); font-size: 10.5px; margin: 0; }
+.bw-cloud-confirm p { margin: 0; color: var(--bw-cloud-ink); font-size: 10px; }
+.bw-cloud-empty { color: var(--bw-cloud-muted); font-size: 10px; margin: 0; }
 .bw-cloud-error { color: var(--bw-cloud-red); }
 .bw-cloud-inline-form { display: flex; gap: 4px; align-items: center; }
 
@@ -192,7 +192,7 @@
   border: 1px solid var(--line-hi, #344247);
   border-radius: 4px;
   color: var(--ink, #dce4e5);
-  font-size: 11px;
+  font-size: 12px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, .55);
 }
 
@@ -230,7 +230,7 @@
 
 .bw-cloud-branch[data-kind='conflict'] { border-color: color-mix(in srgb, var(--orange, #f5a33f) 55%, transparent); }
 .bw-cloud-branch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.bw-cloud-branch-head h3 { margin: 0; font-size: 11.5px; font-weight: 600; }
+.bw-cloud-branch-head h3 { margin: 0; font-size: 12px; font-weight: 600; }
 
 .bw-cloud-version {
   border: 1px solid var(--line, #253034);
@@ -246,10 +246,10 @@
 .bw-cloud-version-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .bw-cloud-version-label { font-weight: 600; overflow-wrap: anywhere; }
 .bw-cloud-version-rev { color: var(--faint, #75838a); font-variant-numeric: tabular-nums; font-size: 10px; }
-.bw-cloud-version-notes { margin: 0; color: var(--muted, #7c8a8f); font-size: 10.5px; }
+.bw-cloud-version-notes { margin: 0; color: var(--muted, #7c8a8f); font-size: 10px; }
 
 .bw-cloud-diff { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.bw-cloud-diff li { color: var(--muted, #7c8a8f); font-size: 10.5px; }
+.bw-cloud-diff li { color: var(--muted, #7c8a8f); font-size: 10px; }
 .bw-cloud-unrestorable { color: var(--orange, #f5a33f); }
 
 .bw-cloud-scroll { display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow: auto; }
@@ -320,7 +320,7 @@
    * against this surface. The ring keeps a dark one visible. */
   box-shadow: 0 0 0 1px var(--bw-cloud-line-hi);
 }
-.bw-cloud-peer-name { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.bw-cloud-peer-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .bw-cloud-peer-meta {
   flex: 1;
   color: var(--bw-cloud-faint);

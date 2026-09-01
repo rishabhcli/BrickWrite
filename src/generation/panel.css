@@ -32,7 +32,7 @@
   gap: 10px;
   padding: 2px 0 8px;
   color: var(--bw-g-ink);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -113,7 +113,7 @@
   background: var(--bw-g-void);
   border: 1px solid var(--bw-g-line);
   color: var(--bw-g-ink);
-  font-size: 11px;
+  font-size: 12px;
   border-radius: 4px;
   resize: vertical;
 }
@@ -261,7 +261,7 @@
 
 .bw-gen__progress-head strong {
   font-family: var(--bw-g-display);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -392,7 +392,7 @@
 
 .bw-gen__candidate[data-selected='true'] .bw-gen__rank { color: var(--bw-g-cyan); border-color: var(--bw-g-cyan); }
 
-.bw-gen__pick strong { font-size: 11px; }
+.bw-gen__pick strong { font-size: 12px; }
 
 .bw-gen__grid {
   grid-column: 1 / -1;
@@ -494,7 +494,7 @@
   border: 1px solid var(--bw-g-line-hi);
   border-radius: 4px;
   color: var(--bw-g-ink);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bw-gen-dialog__head {

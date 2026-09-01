@@ -180,7 +180,7 @@ body:has(.bw-studio) #pf-main {
   border-color: #f47b52;
 }
 .bw-studio-footnote {
-  font-size: 8px;
+  font-size: 9px;
   color: #8e9687;
   margin: 23px 0 0;
 }
@@ -197,7 +197,7 @@ body:has(.bw-studio) #pf-main {
   color: #b9c0af;
   text-decoration: none;
   letter-spacing: 0.02em;
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-scroll-cue span {
   color: #f47b52;
@@ -207,7 +207,7 @@ body:has(.bw-studio) #pf-main {
   animation: studio-scroll 2.6s ease-in-out infinite;
 }
 .bw-studio-baseline > span {
-  font-size: 8px;
+  font-size: 9px;
 }
 
 /* SVG solids: actual faces and studs, no image/video or rendering dependencies. */
@@ -258,7 +258,7 @@ body:has(.bw-studio) #pf-main {
 }
 .bw-sculpture-coordinate {
   position: absolute;
-  font-size: 7px;
+  font-size: 9px;
   color: #8a9781;
   pointer-events: none;
 }
@@ -285,7 +285,7 @@ body:has(.bw-studio) #pf-main {
   border: 1px solid #ffffff21;
   border-radius: 4px;
   font:
-    600 11px/1.5 'Manrope Variable',
+    600 12px/1.5 'Manrope Variable',
     sans-serif;
   transition:
     background 0.2s,
@@ -394,13 +394,13 @@ body:has(.bw-studio) #pf-main {
 .bw-constellation-card > span,
 .bw-constellation-card > small {
   color: #99a28f;
-  font: 500 7px/1.4 var(--bw-display);
+  font: 500 9px/1.4 var(--bw-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 .bw-constellation-card > strong {
   font:
-    600 11px/1.2 'Manrope Variable',
+    600 12px/1.2 'Manrope Variable',
     sans-serif;
 }
 .bw-constellation-card > small {
@@ -482,7 +482,7 @@ body:has(.bw-studio) #pf-main {
 }
 .bw-campus-layout .bw-stage-caption {
   color: #686f63;
-  font-size: 7px;
+  font-size: 9px;
   background: transparent;
   padding-inline: 0;
   border-color: #b5b7a84d;
@@ -508,7 +508,7 @@ body:has(.bw-studio) #pf-main {
   color: #545d4c;
 }
 .bw-campus-layout .bw-stage-step span {
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1.5;
   color: #727868;
 }
@@ -521,7 +521,7 @@ body:has(.bw-studio) #pf-main {
   display: none;
 }
 .bw-campus-notes .bw-studio-label {
-  font-size: 8px;
+  font-size: 9px;
   color: #767d6c;
   margin-bottom: 28px;
 }
@@ -562,12 +562,12 @@ body:has(.bw-studio) #pf-main {
   border: 0;
   border-bottom: 1px solid #c9cabf;
   font:
-    600 11px/1.35 'Manrope Variable',
+    600 12px/1.35 'Manrope Variable',
     sans-serif;
 }
 .bw-spotlight-picker button span {
   color: #8a8d81;
-  font: 600 7px/1.5 var(--bw-display);
+  font: 600 9px/1.5 var(--bw-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -674,7 +674,7 @@ body:has(.bw-studio) #pf-main {
   text-shadow: none;
 }
 .bw-studio .bw-assembly-metric {
-  font-size: 8px;
+  font-size: 9px;
   background: transparent;
   border-color: #78955a66;
   color: #c3d7ae;
@@ -721,7 +721,7 @@ body:has(.bw-studio) #pf-main {
   color: #e6e7dc;
   background: #293626db;
   border-color: #9ea89755;
-  font-size: 8px;
+  font-size: 9px;
 }
 .bw-studio .bw-demo-body {
   padding: 22px 0 0;
@@ -752,7 +752,7 @@ body:has(.bw-studio) #pf-main {
   color: #2e3225;
   border: 0;
   box-shadow: none;
-  font-size: 7px;
+  font-size: 9px;
 }
 .bw-studio .bw-compact-gates {
   border-color: #bac2ac;
@@ -878,7 +878,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     padding-top: 15px;
   }
   .bw-studio-topline {
-    font-size: 7px;
+    font-size: 9px;
     letter-spacing: 0.07em;
   }
   .bw-studio-topline > span {
@@ -913,7 +913,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
   }
   .bw-studio-footnote {
     margin-top: 20px;
-    font-size: 7px;
+    font-size: 9px;
   }
   .bw-sculpture {
     width: min(100%, 470px);
@@ -968,7 +968,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     height: 310px;
   }
   .bw-campus-layout .bw-stage-caption {
-    font-size: 7px;
+    font-size: 9px;
   }
   .bw-campus-layout .bw-stage-track {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -981,7 +981,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     display: none;
   }
   .bw-campus-layout .bw-stage-step b {
-    font-size: 8px;
+    font-size: 9px;
   }
   .bw-campus-notes .bw-studio-label {
     margin-bottom: 20px;
@@ -1012,7 +1012,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
   .bw-studio .bw-assembly-section::before {
     left: var(--bw-gutter);
     top: 24px;
-    font-size: 8px;
+    font-size: 9px;
   }
   .bw-studio .bw-assembly-visual {
     height: 46svh;
@@ -1022,7 +1022,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     min-height: 54px;
   }
   .bw-studio .bw-assembly-stagebar-label {
-    font-size: 7px;
+    font-size: 9px;
     padding-left: 12px;
   }
   .bw-studio .bw-assembly-chapter {
@@ -1110,7 +1110,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     background: #20281f;
   }
   .bw-studio .bw-assembly-stagebar-buttons button {
-    font-size: 7px;
+    font-size: 9px;
     letter-spacing: 0;
   }
   .bw-studio .bw-assembly-figure b {
@@ -1120,10 +1120,10 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     text-transform: none;
   }
   .bw-studio .bw-assembly-hud span {
-    font-size: 6px;
+    font-size: 9px;
   }
   .bw-studio .bw-assembly-hud strong {
-    font-size: 8px;
+    font-size: 9px;
   }
   .bw-studio .bw-assembly-brickfield {
     inset: 23% 4% 15%;

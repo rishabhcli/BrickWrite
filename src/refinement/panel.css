@@ -33,7 +33,7 @@
   gap: 10px;
   padding: 2px 0 8px;
   color: var(--bw-r-ink);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -201,7 +201,7 @@
   background: var(--bw-r-void);
   border: 1px solid var(--bw-r-line-hi);
   color: var(--bw-r-ink);
-  font-size: 11px;
+  font-size: 12px;
   border-radius: 4px;
   resize: vertical;
 }
@@ -312,7 +312,7 @@
 
 .bw-refine__progress-head strong {
   font-family: var(--bw-r-display);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -432,7 +432,7 @@
 }
 
 .bw-refine__pick strong {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--bw-r-ink);
 }
 
@@ -741,7 +741,7 @@
   border: 1px solid var(--bw-r-line-hi);
   border-radius: 4px;
   color: var(--bw-r-ink);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bw-refine-dialog__head {
@@ -779,7 +779,7 @@
 
 .bw-refine-dialog__objective h3 {
   margin: 0 0 2px;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--bw-r-display);
   letter-spacing: .05em;
   color: var(--bw-r-cyan);

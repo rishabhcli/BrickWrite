@@ -85,7 +85,7 @@
   border-radius: 4px;
   padding: 5px 10px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .bw-gallery-collections button.is-active,
@@ -162,7 +162,7 @@
 }
 .bw-gallery-nothumb {
   color: var(--bw-faint);
-  font-size: 11px;
+  font-size: 12px;
   font-style: italic;
 }
 .bw-gallery-meta {
@@ -180,7 +180,7 @@
 .bw-gallery-byline {
   margin: 0;
   color: var(--bw-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .bw-gallery-absent {
   color: var(--bw-faint);
@@ -205,7 +205,7 @@
 }
 .bw-gallery-fork {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--bw-muted);
 }
 .bw-gallery-tags {
@@ -243,7 +243,7 @@
   border-radius: 4px;
   padding: 9px 18px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--bw-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -284,7 +284,7 @@
   border-radius: 4px;
   padding: 8px 15px;
   font-family: var(--bw-display);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -346,7 +346,7 @@
   border-radius: 4px;
   padding: 7px 13px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .bw-gallery-dialog-actions button.is-primary {
@@ -423,7 +423,7 @@
 }
 .bw-gallery-filter-menu > summary em {
   color: var(--bw-orange);
-  font-size: 8px;
+  font-size: 9px;
   font-style: normal;
 }
 .bw-gallery-filter-menu[open] > summary {

@@ -230,7 +230,7 @@
 }
 .bw-templates-disclosure > summary small {
   color: var(--bw-faint);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
