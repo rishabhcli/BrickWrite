@@ -52,7 +52,12 @@ describe('production API proxy', () => {
     await expect(response.text()).resolves.toBe('one\ntwo\n')
   })
 
-  it('bounds each credential and address to twenty paid calls per minute', async () => {
+  it('bounds each address to the window ceiling regardless of the credential offered', async () => {
+    /*
+     * The bucket used to include the `Authorization` header, which this layer
+     * never verifies — so a different header per request was a different bucket
+     * per request, and the ceiling stopped existing for anyone who noticed.
+     */
     vi.stubGlobal('fetch', async () => new Response('{}'))
     const kv = new MemoryRateLimit()
     const env = {
@@ -60,7 +65,55 @@ describe('production API proxy', () => {
       BRICKWRIGHT_PROXY_SECRET: 'proxy-proof',
       RATE_LIMIT_KV: kv,
     }
-    for (let index = 0; index < 20; index += 1) {
+    const send = (credential: string) =>
+      onRequest({
+        request: new Request('https://brickwrite.tech/api/brief', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${credential}`, 'cf-connecting-ip': '203.0.113.7' },
+          body: '{}',
+        }),
+        env,
+      })
+
+    for (let index = 0; index < 120; index += 1) {
+      expect((await send(`rotating-${index}`)).status).toBe(200)
+    }
+    expect((await send('rotating-again')).status).toBe(429)
+    // One address, one bucket, however many credentials it presented.
+    expect(kv.values.size).toBe(1)
+  })
+
+  it('keeps addresses apart', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const kv = new MemoryRateLimit()
+    const env = {
+      BRICKWRIGHT_API_ORIGIN: 'https://brickwrite-api.vercel.app',
+      BRICKWRIGHT_PROXY_SECRET: 'proxy-proof',
+      RATE_LIMIT_KV: kv,
+    }
+    const send = (ip: string) =>
+      onRequest({
+        request: new Request('https://brickwrite.tech/api/brief', {
+          method: 'POST',
+          headers: { authorization: 'Bearer same-user', 'cf-connecting-ip': ip },
+          body: '{}',
+        }),
+        env,
+      })
+    for (let index = 0; index < 120; index += 1) expect((await send('203.0.113.7')).status).toBe(200)
+    expect((await send('203.0.113.7')).status).toBe(429)
+    expect((await send('198.51.100.4')).status).toBe(200)
+  })
+
+  it('bounds each address to the documented paid calls per minute', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const kv = new MemoryRateLimit()
+    const env = {
+      BRICKWRIGHT_API_ORIGIN: 'https://brickwrite-api.vercel.app',
+      BRICKWRIGHT_PROXY_SECRET: 'proxy-proof',
+      RATE_LIMIT_KV: kv,
+    }
+    for (let index = 0; index < 120; index += 1) {
       const response = await onRequest({
         request: new Request('https://brickwrite.tech/api/brief', {
           method: 'POST', headers: { authorization: 'Bearer same-user' }, body: '{}',
@@ -110,7 +163,7 @@ describe('production API proxy', () => {
     expect(kv.values.size).toBe(0)
   })
 
-  it('keys the atomic limiter on the credential rather than the raw header', async () => {
+  it('keys the atomic limiter on a hash rather than anything readable', async () => {
     vi.stubGlobal('fetch', async () => new Response('{}'))
     const seen: string[] = []
     await onRequest({

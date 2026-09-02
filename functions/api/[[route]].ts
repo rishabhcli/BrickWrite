@@ -27,7 +27,20 @@ interface ApiProxyEnv {
 
 const PAID_PATHS = new Set(['/api/assistant', '/api/generate', '/api/brief'])
 const WINDOW_SECONDS = 60
-const REQUESTS_PER_WINDOW = 20
+
+/**
+ * Paid requests one address may make in a window.
+ *
+ * Coarse on purpose. This bounds abuse and origin load; the money is bounded a
+ * layer in, per verified account, by `server/security/concurrency.ts` and the
+ * token ceiling in `server/security/budget.ts` — both keyed on a subject this
+ * layer cannot verify. Splitting the job that way is what lets the number here
+ * be generous enough not to refuse real work: a candidate generation is a model
+ * call per candidate per phase, each its own request, so a large one is dozens.
+ * An address is shared by a household or an office, and a ceiling that stops a
+ * build somebody asked for is not a security control, it is an outage.
+ */
+const REQUESTS_PER_WINDOW = 120
 
 function json(status: number, body: unknown, retryAfter?: number): Response {
   return new Response(JSON.stringify(body), {
@@ -50,13 +63,22 @@ async function digest(value: string): Promise<string> {
 /**
  * The caller, as a key.
  *
- * Hashed before it becomes a limiter key or a KV key. A dashboard listing must
- * never turn into a list of live session headers.
+ * The connecting address and nothing else. It used to include the
+ * `Authorization` header, which this layer never verifies — so the bucket was
+ * chosen by the caller, and a different header per request meant a fresh bucket
+ * per request. That is not a weaker limit, it is no limit: anyone who tried got
+ * unbounded paid requests through to the origin, which then paid to verify each
+ * one before refusing it.
+ *
+ * `cf-connecting-ip` is written by the edge and overwritten if a client sends
+ * it, which is the property a bucket key needs. Anything the caller supplies can
+ * only ever create buckets, never narrow one.
+ *
+ * Hashed anyway, so a limiter dashboard listing keys does not become a list of
+ * visitor addresses.
  */
 async function callerKey(request: Request): Promise<string> {
-  const identity = request.headers.get('authorization') ?? ''
-  const ip = request.headers.get('cf-connecting-ip') ?? 'unknown'
-  return digest(`${ip}\n${identity}`)
+  return digest(request.headers.get('cf-connecting-ip') ?? 'unknown')
 }
 
 /**

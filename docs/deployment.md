@@ -193,16 +193,24 @@ npx convex deploy -y
 
 ## Spend controls, and the bindings they need
 
-Two ceilings sit in front of the model provider key. Both are **off** until the
-deployment gives them somewhere to count, and both say so rather than pretending
-otherwise — `curl -s https://brickwrite.tech/api/health` reports
-`"metering": "ready"` or `"metering": "unconfigured"`.
+Three ceilings sit in front of the model provider key: requests per address at
+the edge, then requests in flight and tokens per day per verified account. Each
+is **off** until the deployment gives it somewhere to count, and each says so
+rather than pretending otherwise — `curl -s https://brickwrite.tech/api/health`
+reports `"metering"` and `"concurrency"`.
 
 ### The edge request limiter — `RATE_LIMIT_KV`
 
-`functions/api/[[route]].ts` caps paid paths at 20 POSTs per 60 seconds. It
-prefers a native `[[ratelimits]]` binding, which is atomic — and **cannot have
-one here.** That binding is a Workers feature; wrangler fails the Pages deploy
+`functions/api/[[route]].ts` caps paid paths at 120 POSTs per 60 seconds, keyed
+on `cf-connecting-ip` alone. It used to include the `Authorization` header,
+which this layer never verifies — so the bucket was the caller's to choose and a
+rotating header meant no ceiling at all. Coarse per address on purpose: the
+money is bounded per verified account further in, by the in-flight ceiling and
+the token ceiling below, and a per-address number low enough to matter would
+refuse a large candidate generation.
+
+It prefers a native `[[ratelimits]]` binding, which is atomic — and **cannot
+have one here.** That binding is a Workers feature; wrangler fails the Pages deploy
 outright with `Configuration file for Pages projects does not support
 "ratelimits"`. It sat in `wrangler.toml` for one commit without ever being
 deployed, because the run that added it stopped before the deploy job.
