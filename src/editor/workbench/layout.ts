@@ -242,3 +242,33 @@ export const bottomHeight = (layout: WorkbenchLayout): number =>
 export function workspaceRows(layout: WorkbenchLayout): string {
   return `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`
 }
+
+/**
+ * How tightly Object companions share the 300px column.
+ *
+ * Companions may all be open at once. Without a density clamp every open
+ * sheet tries to grow, and five of them pack into unreadably thin bands.
+ */
+export type ObjectDockDensity = 'roomy' | 'compact' | 'packed'
+
+export const OBJECT_GROW_PRIORITY = [
+  'connect',
+  'transform',
+  'inspector',
+  'selection',
+  'model.explorer',
+] as const
+
+export function objectDockDensity(openCount: number): ObjectDockDensity {
+  if (openCount <= 1) return 'roomy'
+  if (openCount === 2) return 'compact'
+  return 'packed'
+}
+
+/** Exactly one open companion absorbs spare height. */
+export function objectGrowId(openIds: readonly string[]): string | null {
+  for (const id of OBJECT_GROW_PRIORITY) {
+    if (openIds.includes(id)) return id
+  }
+  return openIds[0] ?? null
+}

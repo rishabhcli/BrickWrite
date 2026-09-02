@@ -1,7 +1,7 @@
 import { ArrowLeft, Check, CircleDot, Link2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { cadEngine } from '../../cad/engine'
-import { catalog } from '../../cad/catalog'
+import { catalog, STUD_LDU } from '../../cad/catalog'
 import { getWorldConnectors, type WorldConnector } from '../../cad/snapping'
 import { listConnectSolutions } from '../../cad/placement'
 import { canonicalisePose } from './transform'
@@ -42,18 +42,33 @@ export function describeConnectHudLabel(
  */
 
 /**
- * Chip text a person can tell apart.
+ * Chip text a person can tell apart on a stud grid.
  *
- * Family names repeat on every stud of a 2x4. Index within that family, plus
- * gender, is the smallest unique label that is still a connector rather than a
- * raw feature id.
+ * Family+gender+index is unique but not spatial: "stud M3" does not say which
+ * corner. Local stud cells (part-frame X, Z) do.
  */
+export function connectorStudCell(connector: WorldConnector): readonly [number, number] {
+  const pos = connector.feature.pos
+  const cell = (value: number) => {
+    const rounded = Math.round(value / STUD_LDU)
+    return rounded === 0 ? 0 : rounded
+  }
+  return [cell(pos[0]), cell(pos[2])]
+}
+
 export function connectorChipLabel(connector: WorldConnector, siblings: readonly WorldConnector[]): string {
-  const family = siblings.filter((entry) => entry.family === connector.family)
-  const index = family.findIndex((entry) => entry.id === connector.id) + 1
   const gender = connector.gender === 'male' ? 'M' : connector.gender === 'female' ? 'F' : 'N'
+  const family = siblings.filter((entry) => entry.family === connector.family)
   if (family.length <= 1) return `${connector.family} ${gender}`
-  return `${connector.family} ${gender}${index}`
+  const [sx, sz] = connectorStudCell(connector)
+  const cell = `${sx},${sz}`
+  const sameCell = family.filter((entry) => {
+    const other = connectorStudCell(entry)
+    return other[0] === sx && other[1] === sz
+  })
+  if (sameCell.length <= 1) return `${connector.family} ${gender} ${cell}`
+  const index = sameCell.findIndex((entry) => entry.id === connector.id) + 1
+  return `${connector.family} ${gender} ${cell}.${index}`
 }
 
 function ConnectorChips({
@@ -285,10 +300,10 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
                   disabled={candidates.length < 2}
                   title={
                     listed.truncated
-                      ? `Ranked; showing the first ${candidates.length} of ${listed.considered} legal mates`
+                      ? `Spatial grid; showing ${candidates.length} of ${listed.considered} legal mates`
                       : candidates.length < 2
                         ? 'Only one solution'
-                        : 'Cycle to the next ranked mate'
+                        : 'Cycle to the next seat in document X then Z'
                   }
                 >
                   Solution {connect.candidateIndex + 1} of {candidates.length}

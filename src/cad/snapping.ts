@@ -406,6 +406,23 @@ export interface SnapSolverOptions {
   /** Restrict the target side to one connector (Connect tool). */
   targetFeatureId?: string
   maxCandidates?: number
+  /**
+   * Drag wants the best seat first. Connect review walks a stud grid in
+   * document space, so a huge plate is not truncated to its highest scores.
+   */
+  order?: 'score' | 'spatial'
+}
+
+export function compareSnapSpatially(a: SnapCandidate, b: SnapCandidate): number {
+  const pa = a.transform.position
+  const pb = b.transform.position
+  return (
+    pa[0] - pb[0] ||
+    pa[2] - pb[2] ||
+    pa[1] - pb[1] ||
+    a.targetFeatureId.localeCompare(b.targetFeatureId) ||
+    a.movingFeatureId.localeCompare(b.movingFeatureId)
+  )
 }
 
 /**
@@ -536,14 +553,16 @@ export function findSnapCandidates(
     }
   }
 
-  return candidates
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        a.cursorTranslationLdu - b.cursorTranslationLdu ||
-        a.movingFeatureId.localeCompare(b.movingFeatureId),
-    )
-    .slice(0, maxCandidates)
+  const ordered =
+    options.order === 'spatial'
+      ? candidates.sort(compareSnapSpatially)
+      : candidates.sort(
+          (a, b) =>
+            b.score - a.score ||
+            a.cursorTranslationLdu - b.cursorTranslationLdu ||
+            a.movingFeatureId.localeCompare(b.movingFeatureId),
+        )
+  return ordered.slice(0, maxCandidates)
 }
 
 /**

@@ -29,6 +29,7 @@ import {
   planAlign,
   planDistribute,
   readNumericPose,
+  readSelectionAttitude,
   referenceBasis,
   resolvePivot,
   rotatePose,
@@ -93,6 +94,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
   const single = parts.length === 1 ? parts[0] : undefined
   const extent = useMemo(() => selectionExtent(state.document, state.selection), [state.document, state.selection])
   const numeric = parts[0] ? readNumericPose(parts[0].transform) : null
+  const attitude = readSelectionAttitude(parts)
   const position = single ? single.transform.position : resolvePivot(parts, 'centre')
 
   /**
@@ -320,8 +322,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
         <>
           {!single && (
             <p className="transform-multi-note">
-              Position the selection’s centre and turn it as one. Euler numbers are the lead
-              part; a typed change rotates the whole set about the pivot.
+              {attitude.mixed
+                ? 'Mixed orientations — Euler fields stay blank rather than showing the lead brick. Use Turn to rotate the set as one.'
+                : 'Position the selection’s centre and turn it as one. Shared Euler is the group attitude.'}
             </p>
           )}
           {transformPrefs.frame !== 'world' && (
@@ -350,17 +353,35 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {/* Euler degrees are a display affordance only. The document stores an
               exact basis; these fields decompose it for editing and recompose on
               commit, through the same canonical path the gizmo uses. */}
-          {numeric && (
+          {numeric && !attitude.mixed && (
             <div className="fields-grid rotation-fields" role="group" aria-label="Rotation in degrees">
               {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
                 <NumberField
                   key={`r_${axis}_${parts.map((part) => part.id).join('|')}`}
                   label={axis}
-                  value={numeric.rotationDegrees[index]}
+                  value={(attitude.rotationDegrees ?? numeric.rotationDegrees)[index]}
                   suffix="°"
                   disabled={transformPrefs.locks[(['x', 'y', 'z'] as const)[index]]}
                   onCommit={(value) => setRotation(index as 0 | 1 | 2, value)}
                 />
+              ))}
+            </div>
+          )}
+          {attitude.mixed && (
+            <div
+              className="fields-grid rotation-fields"
+              data-mixed="true"
+              role="group"
+              aria-label="Mixed orientations"
+            >
+              {(['RX', 'RY', 'RZ'] as const).map((axis) => (
+                <label key={axis} className="number-field disabled mixed-euler">
+                  <span>{axis}</span>
+                  <div>
+                    <input disabled value="" placeholder="MIXED" aria-label={`${axis} mixed orientations`} />
+                    <em>°</em>
+                  </div>
+                </label>
               ))}
             </div>
           )}

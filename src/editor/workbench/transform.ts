@@ -191,6 +191,36 @@ export function gizmoAxisVisible(locks: AxisLocks): { showX: boolean; showY: boo
 }
 
 /**
+ * Which TransformControls space matches the named reference frame.
+ *
+ * The gizmo was hardcoded to `local`, so a WORLD lock hid the part's own ring
+ * rather than the document axis the HUD named. WORLD must use world space;
+ * LOCAL and MATE follow the proxy.
+ */
+export function gizmoSpace(frame: ReferenceFrame): 'world' | 'local' {
+  return frame === 'world' ? 'world' : 'local'
+}
+
+export interface SelectionAttitude {
+  readonly rotationDegrees: Vec3 | null
+  readonly mixed: boolean
+}
+
+/**
+ * Euler the numeric fields may honestly show for a selection.
+ *
+ * One part (or several that share a basis) is a single attitude. Mixed
+ * orientations are not the lead brick's Euler with extra bodies attached.
+ */
+export function readSelectionAttitude(parts: readonly PartInstance[]): SelectionAttitude {
+  if (!parts.length) return { rotationDegrees: null, mixed: false }
+  const keyOf = (part: PartInstance) => poseKey({ position: [0, 0, 0], basis: part.transform.basis })
+  const lead = keyOf(parts[0]!)
+  if (parts.some((part) => keyOf(part) !== lead)) return { rotationDegrees: null, mixed: true }
+  return { rotationDegrees: eulerDegreesFromBasis(parts[0]!.transform.basis as Mat3), mixed: false }
+}
+
+/**
  * Freeze locked Euler components of a relative rotation, in the named frame.
  *
  * WORLD locks document XYZ rings. LOCAL/MATE lock the gizmo's own rings —

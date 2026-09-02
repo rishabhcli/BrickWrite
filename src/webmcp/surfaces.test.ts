@@ -21,6 +21,8 @@ import {
   setModelHealthHandler,
   setProposalReviewHandler,
   setWorkspaceFocusHandler,
+  setConnectSteerHandler,
+  mergeConnectSteer,
 } from './chrome'
 
 const ARMCHAIR = 'A green armchair 6 x 6 studs, 6 studs tall, at most 90 pieces'
@@ -184,6 +186,7 @@ describe('WebMCP surface inventory', () => {
     'share_prepare',
     'workspace_reveal',
     'workspace_focus',
+    'workspace_connect',
   ]
   const inspectHidden = ['generation_apply', 'project_open', 'refinement_apply', 'share_fork_to_project']
   const proposeOnly = ['generation_preview', 'refinement_select']
@@ -260,6 +263,23 @@ describe('WebMCP surface inventory', () => {
       applied: true,
       dock: 'right',
       section: 'connect',
+    })
+  })
+
+  it('lets an agent pick a Connect stage and solution, not only reveal the sheet', async () => {
+    adapter.start()
+    const seen: string[] = []
+    setChromeRevealHandler((surface) => seen.push(surface))
+    setConnectSteerHandler((request) => mergeConnectSteer(null, request, (id) => id === 'part_a' || id === 'part_b'))
+    const steered = await invoke('workspace_connect', {
+      sourcePartId: 'part_a',
+      targetPartId: 'part_b',
+      candidateIndex: 2,
+    })
+    expect(seen).toEqual(['connect'])
+    expect(steered).toMatchObject({
+      applied: true,
+      connect: { stage: 'review', sourcePartId: 'part_a', targetPartId: 'part_b', candidateIndex: 2 },
     })
   })
 

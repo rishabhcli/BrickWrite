@@ -55,6 +55,9 @@ export interface ChromeConnect {
   stage: 'source' | 'target' | 'review'
   sourcePartId: string | null
   targetPartId: string | null
+  sourceFeatureId: string | null
+  targetFeatureId: string | null
+  candidateIndex: number
 }
 
 export interface ChromeSnapshot {
@@ -133,11 +136,103 @@ export interface ModelHealthReceipt extends ModelHealthResolution {
 
 export type ModelHealthHandler = (issueId?: string) => ModelHealthResolution
 
+export interface ConnectSteerRequest {
+  readonly stage?: ChromeConnect['stage']
+  readonly sourcePartId?: string | null
+  readonly targetPartId?: string | null
+  readonly sourceFeatureId?: string | null
+  readonly targetFeatureId?: string | null
+  readonly candidateIndex?: number
+}
+
+export interface ConnectSteerResolution {
+  readonly connect: ChromeConnect
+  readonly sourceFound: boolean | null
+  readonly targetFound: boolean | null
+}
+
+export interface ConnectSteerReceipt extends ConnectSteerResolution {
+  readonly applied: boolean
+  readonly revealed: ChromeReveal
+}
+
+export type ConnectSteerHandler = (request: ConnectSteerRequest) => ConnectSteerResolution
+
+export const IDLE_CHROME_CONNECT: ChromeConnect = {
+  stage: 'source',
+  sourcePartId: null,
+  targetPartId: null,
+  sourceFeatureId: null,
+  targetFeatureId: null,
+  candidateIndex: 0,
+}
+
+/**
+ * Merge a Connect steer into the current flow without committing a mate.
+ *
+ * Missing part ids stay missing rather than being written as live selections.
+ * Review requires both ends; otherwise the stage falls back to whichever end
+ * is actually named.
+ */
+export function mergeConnectSteer(
+  current: ChromeConnect | null | undefined,
+  request: ConnectSteerRequest,
+  partExists: (id: string) => boolean,
+): ConnectSteerResolution {
+  const next: ChromeConnect = { ...(current ?? IDLE_CHROME_CONNECT) }
+  let sourceFound: boolean | null = null
+  let targetFound: boolean | null = null
+
+  if ('sourcePartId' in request) {
+    const id = request.sourcePartId ?? null
+    if (id === null) {
+      next.sourcePartId = null
+      sourceFound = null
+    } else {
+      sourceFound = partExists(id)
+      if (sourceFound) next.sourcePartId = id
+    }
+  }
+  if ('targetPartId' in request) {
+    const id = request.targetPartId ?? null
+    if (id === null) {
+      next.targetPartId = null
+      targetFound = null
+    } else {
+      targetFound = partExists(id)
+      if (targetFound) next.targetPartId = id
+    }
+  }
+  if ('sourceFeatureId' in request) next.sourceFeatureId = request.sourceFeatureId ?? null
+  if ('targetFeatureId' in request) next.targetFeatureId = request.targetFeatureId ?? null
+  if (typeof request.candidateIndex === 'number' && Number.isFinite(request.candidateIndex)) {
+    next.candidateIndex = Math.max(0, Math.floor(request.candidateIndex))
+  }
+
+  if (request.stage) {
+    next.stage = request.stage
+  } else if (next.sourcePartId && next.targetPartId) {
+    next.stage = 'review'
+  } else if (next.sourcePartId) {
+    next.stage = 'target'
+  } else {
+    next.stage = 'source'
+  }
+
+  if (next.stage === 'review' && (!next.sourcePartId || !next.targetPartId)) {
+    next.stage = next.sourcePartId ? 'target' : 'source'
+  }
+  if (next.stage === 'target' && !next.sourcePartId) next.stage = 'source'
+
+  return { connect: next, sourceFound, targetFound }
+}
+
 let snapshot: ChromeSnapshot | null = null
 let revealHandler: ChromeRevealHandler | null = null
 let focusHandler: WorkspaceFocusHandler | null = null
 let proposalReviewHandler: ProposalReviewHandler | null = null
 let modelHealthHandler: ModelHealthHandler | null = null
+let connectSteerHandler: ConnectSteerHandler | null = null
 
 export function publishChrome(next: ChromeSnapshot | null): void {
   snapshot = next
@@ -161,6 +256,10 @@ export function setProposalReviewHandler(handler: ProposalReviewHandler | null):
 
 export function setModelHealthHandler(handler: ModelHealthHandler | null): void {
   modelHealthHandler = handler
+}
+
+export function setConnectSteerHandler(handler: ConnectSteerHandler | null): void {
+  connectSteerHandler = handler
 }
 
 export function revealChrome(surface: ChromeSurface): ChromeReveal {
@@ -210,6 +309,17 @@ export function focusProposalReview(proposalId?: string): ProposalReviewReceipt 
   return {
     ...resolution,
     applied: Boolean(proposalReviewHandler),
+    revealed,
+  }
+}
+
+/** Arm Connect and pick a stage, pair, feature or listed solution. Does not commit. */
+export function steerConnect(request: ConnectSteerRequest): ConnectSteerReceipt {
+  const revealed = revealChrome('connect')
+  const resolution = connectSteerHandler?.(request) ?? mergeConnectSteer(snapshot?.connect, request, () => false)
+  return {
+    ...resolution,
+    applied: Boolean(connectSteerHandler),
     revealed,
   }
 }
@@ -301,4 +411,5 @@ export function resetChrome(): void {
   focusHandler = null
   proposalReviewHandler = null
   modelHealthHandler = null
+  connectSteerHandler = null
 }

@@ -15,6 +15,9 @@ import {
   setProposalReviewHandler,
   setWorkspaceFocusHandler,
   withChromeReveal,
+  mergeConnectSteer,
+  setConnectSteerHandler,
+  steerConnect,
 } from './chrome'
 
 afterEach(resetChrome)
@@ -237,5 +240,32 @@ describe('chrome reveal', () => {
     expect(next.right.collapsed).toBe(false)
     expect(next.sections.connect).toBe(true)
     expect(next.sections.inspector).toBe(true)
+  })
+})
+
+describe('connect steer', () => {
+  it('promotes a named pair to review without inventing missing parts', () => {
+    const known = new Set(['a', 'b'])
+    const merged = mergeConnectSteer(null, { sourcePartId: 'a', targetPartId: 'b' }, (id) => known.has(id))
+    expect(merged.connect.stage).toBe('review')
+    expect(merged.connect.sourcePartId).toBe('a')
+    expect(merged.connect.targetPartId).toBe('b')
+    const missing = mergeConnectSteer(merged.connect, { targetPartId: 'ghost' }, (id) => known.has(id))
+    expect(missing.targetFound).toBe(false)
+    expect(missing.connect.targetPartId).toBe('b')
+  })
+
+  it('steers Connect through the mounted handler without committing', () => {
+    const seen: string[] = []
+    setChromeRevealHandler((surface) => seen.push(surface))
+    setConnectSteerHandler((request) => mergeConnectSteer(null, request, (id) => id === 'part_a'))
+    const receipt = steerConnect({ sourcePartId: 'part_a', candidateIndex: 3 })
+    expect(seen).toEqual(['connect'])
+    expect(receipt).toMatchObject({
+      applied: true,
+      sourceFound: true,
+      connect: { stage: 'target', sourcePartId: 'part_a', candidateIndex: 3 },
+      revealed: { surface: 'connect', dock: 'right', section: 'connect' },
+    })
   })
 })

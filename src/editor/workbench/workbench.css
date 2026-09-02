@@ -8774,6 +8774,45 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   flex: 1 1 auto;
   min-height: 0;
 }
+.right-dock-object .dock-section.open:not(.grow) {
+  flex: 0 1 auto;
+}
+.right-dock-object[data-object-density='compact'] .dock-section.open:not(.grow) {
+  max-height: 46%;
+}
+.right-dock-object[data-object-density='packed'] {
+  --object-density-gap: 4px;
+}
+.right-dock-object[data-object-density='packed'] .object-tool-switcher {
+  padding: 4px;
+  gap: 2px;
+}
+.right-dock-object[data-object-density='packed'] .object-tool-switcher button {
+  height: 32px;
+}
+.right-dock-object[data-object-density='packed'] .dock-section.open > header,
+.right-dock-object[data-object-density='compact'] .dock-section.open > header {
+  min-height: 28px;
+  height: 28px;
+}
+.right-dock-object[data-object-density='packed'] .dock-section.open:not(.grow) {
+  max-height: 28%;
+  min-height: 0;
+}
+.right-dock-object[data-object-density='packed'] .dock-section.open.grow {
+  flex: 1 1 auto;
+  min-height: 96px;
+}
+.right-dock-object[data-object-density='packed'] .dock-section-body {
+  padding-block: 6px;
+}
+.proposal-overlay-reviewing {
+  font: 700 9px var(--font-chrome);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  padding: 0 8px;
+}
 
 /* A shelf, not a mystery gear. The custom mode marks stay large enough to scan
    while all secondary tools keep compact icon-only footprints. */

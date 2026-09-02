@@ -46,6 +46,8 @@ import {
   workspaceColumns,
   workspaceRows,
   bottomHeight,
+  objectDockDensity,
+  objectGrowId,
   type DockId,
   type LayoutPresetId,
   type WorkbenchLayout,
@@ -55,8 +57,10 @@ import {
   applyChromeReveal,
   applyDockFocus,
   focusProposalReview,
+  mergeConnectSteer,
   publishChrome,
   setChromeRevealHandler,
+  setConnectSteerHandler,
   setModelHealthHandler,
   setProposalReviewHandler,
   setWorkspaceFocusHandler,
@@ -257,6 +261,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                 stage: workbenchRef.current.connect.stage,
                 sourcePartId: workbenchRef.current.connect.sourcePartId,
                 targetPartId: workbenchRef.current.connect.targetPartId,
+                sourceFeatureId: workbenchRef.current.connect.sourceFeatureId,
+                targetFeatureId: workbenchRef.current.connect.targetFeatureId,
+                candidateIndex: workbenchRef.current.connect.candidateIndex,
               }
             : null,
       })
@@ -407,6 +414,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
               stage: workbench.connect.stage,
               sourcePartId: workbench.connect.sourcePartId,
               targetPartId: workbench.connect.targetPartId,
+              sourceFeatureId: workbench.connect.sourceFeatureId,
+              targetFeatureId: workbench.connect.targetFeatureId,
+              candidateIndex: workbench.connect.candidateIndex,
             }
           : null,
     })
@@ -451,6 +461,33 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         found: Boolean(proposal),
         pending: proposals.length,
       }
+    })
+    setConnectSteerHandler((request) => {
+      const snapshot = cadEngine.getSnapshot()
+      const current = workbenchRef.current.connect
+      const merged = mergeConnectSteer(
+        {
+          stage: current.stage,
+          sourcePartId: current.sourcePartId,
+          targetPartId: current.targetPartId,
+          sourceFeatureId: current.sourceFeatureId,
+          targetFeatureId: current.targetFeatureId,
+          candidateIndex: current.candidateIndex,
+        },
+        request,
+        (id) => Boolean(snapshot.document.parts[id]),
+      )
+      workbenchRef.current.setTool('connect')
+      workbenchRef.current.setConnect({
+        stage: merged.connect.stage,
+        sourcePartId: merged.connect.sourcePartId,
+        sourceFeatureId: merged.connect.sourceFeatureId,
+        targetPartId: merged.connect.targetPartId,
+        targetFeatureId: merged.connect.targetFeatureId,
+        candidateIndex: merged.connect.candidateIndex,
+      })
+      if (merged.connect.sourcePartId) cadEngine.setSelection([merged.connect.sourcePartId])
+      return merged
     })
     setModelHealthHandler((issueId) => {
       const snapshot = cadEngine.getSnapshot()
@@ -523,6 +560,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       setWorkspaceFocusHandler(null)
       setProposalReviewHandler(null)
       setModelHealthHandler(null)
+      setConnectSteerHandler(null)
     }
   }, [location.hash, location.pathname, location.search, navigate, revealWorkbenchSurface])
 
@@ -738,6 +776,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const rightTab = layout.rightTab
   const rightSectionOpen = (id: string) =>
     rightTab === 'object' && (id === 'connect' ? connectActive || sections.connect === true : sections[id] === true)
+  const openObjectIds = OBJECT_SECTION_IDS.filter((id) => rightSectionOpen(id))
+  const objectDensity = objectDockDensity(openObjectIds.length)
+  const objectGrow = objectGrowId(openObjectIds)
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
       {contributions.map((Contribution, index) => (
@@ -856,6 +897,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         <ViewportStage
           workbench={workbench}
           activeProposalId={activeProposalId}
+          reviewSurfaceOpen={!layout.bottom.collapsed && timelineView === 'review'}
           onReviewProposal={(proposalId) => {
             setActiveProposalId(proposalId)
             focusProposalReview(proposalId)
@@ -939,6 +981,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             <div
               id="right-tool-panel"
               className={`dock-scroll right-dock-${rightTab}`}
+              data-object-density={rightTab === 'object' ? objectDensity : undefined}
+              data-object-open={rightTab === 'object' ? String(openObjectIds.length) : undefined}
               role="tabpanel"
               aria-label={`${rightTab} tools`}
             >
@@ -1024,7 +1068,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     title="Connect"
                     icon={<CircleDot size={11} />}
                     open={connectActive}
-                    grow={connectActive && !rightSectionOpen('inspector') && !rightSectionOpen('transform')}
+                    grow={objectGrow === 'connect'}
                     onToggle={() => workbench.setTool(connectActive ? 'select' : 'connect')}
                   >
                     <ConnectPanel workbench={workbench} />
@@ -1035,7 +1079,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     icon={<Boxes size={11} />}
                     badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
                     open={rightSectionOpen('model.explorer')}
-                    grow={rightSectionOpen('model.explorer')}
+                    grow={objectGrow === 'model.explorer'}
                     onToggle={() => toggleSection('model.explorer')}
                   >
                     <ModelExplorerPanel workbench={workbench} />
@@ -1046,7 +1090,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     icon={<MousePointer2 size={11} />}
                     badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
                     open={rightSectionOpen('selection')}
-                    grow={rightSectionOpen('selection') && state.selection.length > 0}
+                    grow={objectGrow === 'selection'}
                     onToggle={() => toggleSection('selection')}
                   >
                     <SelectionPanel workbench={workbench} />
@@ -1056,7 +1100,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     title="Transform"
                     icon={<Move3d size={11} />}
                     open={rightSectionOpen('transform')}
-                    grow={rightSectionOpen('transform')}
+                    grow={objectGrow === 'transform'}
                     onToggle={() => toggleSection('transform')}
                   >
                     <TransformPanel workbench={workbench} />
@@ -1066,7 +1110,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     title={inspectorView === 'validate' ? 'Model health' : 'Inspector'}
                     icon={inspectorView === 'validate' ? <CircleAlert size={11} /> : <SlidersHorizontal size={11} />}
                     open={rightSectionOpen('inspector')}
-                    grow={rightSectionOpen('inspector')}
+                    grow={objectGrow === 'inspector'}
                     onToggle={() => toggleSection('inspector')}
                   >
                     <InspectorPanel

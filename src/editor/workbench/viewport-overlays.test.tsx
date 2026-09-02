@@ -242,4 +242,17 @@ describe('viewport overlay stacking', () => {
     expect(order[0]).toMatch(/placement-bar/)
     expect(order[1]).toMatch(/proposal-overlay/)
   })
+
+  it('does not duplicate Accept/Reject when timeline Review already shows the ghost', () => {
+    render(
+      <OverlayHost>
+        <ViewportStage workbench={overlayWorkbench()} reviewSurfaceOpen />
+      </OverlayHost>,
+    )
+    const overlay = document.querySelector('.proposal-overlay')
+    expect(overlay?.getAttribute('data-review-duplicate')).toBe('true')
+    expect(overlay?.textContent).toMatch(/Reviewing in timeline/)
+    expect(overlay?.textContent).not.toMatch(/Accept/)
+    expect(overlay?.querySelector('[aria-label="Reject proposal"]')).toBeNull()
+  })
 })
