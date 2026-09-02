@@ -72,6 +72,11 @@ async function setup(count = 3) {
     t.run(async (ctx) => ({
       transactions: (await ctx.db.query('transactions').collect()).length,
       audits: (await ctx.db.query('auditEvents').collect()).length,
+      // One per committed batch, not one per edit: the count is a statement
+      // about how many times the outbox actually reached the deployment.
+      appendAudits: (await ctx.db.query('auditEvents').collect()).filter(
+        (row) => row.action === 'transaction.append',
+      ).length,
     }))
   return { deployment, t, backend, base, project, history, transactions, args, appendOne, counts }
 }
@@ -103,7 +108,44 @@ it('round-trips the original payloads and audit entries, not a squashed replacem
   // timestamp, not the separate wall-clock read used by the live engine.
   expect(restored.document).toEqual({ ...h.history.final, updatedAt: h.history.transactions.at(-1)!.timestamp })
   expect(restored.replayed).toEqual(h.history.transactions)
-  expect(await h.counts()).toEqual({ transactions: 3, audits: before.audits + 3 })
+  expect(await h.counts()).toMatchObject({ transactions: 3, appendAudits: before.appendAudits + 1 })
+})
+
+it('records one audit event for a batch, naming the range it advanced', async () => {
+  /*
+   * Per transaction, this was the loudest writer in the deployment, and
+   * everything it recorded is already a `transactions` row with more detail.
+   * What it cost was the audit trail: `auditTrail` reads the newest events, so
+   * on any project being built in, all of them were edits and none were the
+   * role or visibility changes an audit is read for.
+   */
+  const h = await setup()
+  const before = await h.counts()
+  value(await h.backend.appendTransactions(h.args))
+
+  const after = await h.counts()
+  expect(after.transactions).toBe(before.transactions + 3)
+  expect(after.appendAudits).toBe(before.appendAudits + 1)
+
+  const event = await h.t.run(async (ctx) =>
+    (await ctx.db.query('auditEvents').collect()).findLast((row) => row.action === 'transaction.append'),
+  )
+  expect(event?.detail).toMatchObject({ count: 3, toRevision: 3 })
+  expect(event?.category).toBe('content')
+})
+
+it('leaves control events readable on a project full of edits', async () => {
+  // The point of the split. A bounded read of the newest events used to be all
+  // edits; asking for `control` now answers the question an audit is for.
+  const h = await setup()
+  value(await h.backend.appendTransactions(h.args))
+  value(await h.backend.renameProject({ projectId: h.project.projectId, name: 'Renamed' }))
+
+  const control = value(
+    await h.backend.auditTrail({ projectId: h.project.projectId, category: 'control', limit: 50 }),
+  )
+  expect(control.map((row) => row.action)).toContain('project.rename')
+  expect(control.map((row) => row.action)).not.toContain('transaction.append')
 })
 
 it.each(['checksum', 'schema', 'envelope', 'gap', 'duplicate', 'order'])(
@@ -416,7 +458,7 @@ describe('batched claim and outbox through real Convex functions', () => {
       const retried = value(await store.claim(h.base.id))
       expect(retried.transactionsUploaded).toBe(when === 'before' ? 70 : 20)
       expect(retried.headRevision).toBe(120)
-      expect(await h.counts()).toEqual({ transactions: 120, audits: 121 })
+      expect(await h.counts()).toMatchObject({ transactions: 120 })
       expect(value(await local.loadProject(h.base.id))?.document).toEqual({
         ...h.history.final,
         updatedAt: h.history.transactions.at(-1)!.timestamp,
@@ -452,7 +494,7 @@ describe('batched claim and outbox through real Convex functions', () => {
     expect(await driver.range('meta', 'outbox:')).toHaveLength(65)
     expect((await h.counts()).transactions).toBe(50)
     expect(await outbox.reconnected()).toMatchObject({ status: 'idle', pending: 0 })
-    expect(await h.counts()).toEqual({ transactions: 65, audits: 66 })
+    expect(await h.counts()).toMatchObject({ transactions: 65 })
   })
 
   it('refuses a partial success receipt and keeps the outbox retryable', async () => {
@@ -466,7 +508,7 @@ describe('batched claim and outbox through real Convex functions', () => {
     })
     expect(await outbox.drain()).toMatchObject({ status: 'offline', pending: 3 })
     expect(await outbox.reconnected()).toMatchObject({ status: 'idle', pending: 0 })
-    expect(await h.counts()).toEqual({ transactions: 3, audits: 4 })
+    expect(await h.counts()).toMatchObject({ transactions: 3 })
   })
 
   it('recovers after local acknowledgement persistence fails partway through a committed batch', async () => {
@@ -484,7 +526,7 @@ describe('batched claim and outbox through real Convex functions', () => {
     fault.mockRestore()
     const restarted = new Outbox(driver, h.backend)
     expect(await restarted.reconnected()).toMatchObject({ status: 'idle', pending: 0 })
-    expect(await h.counts()).toEqual({ transactions: 10, audits: 11 })
+    expect(await h.counts()).toMatchObject({ transactions: 10 })
   })
 
   it('does not combine transactions across a checkpoint', async () => {

@@ -1,3 +1,4 @@
+import { auditCategory } from '../../../convex/model/audit'
 import { invitationRetryAt, type InvitationDeliveryStatus } from '../../../convex/model/invitationLifecycle'
 import { roleAllows, type Capability, type CloudRole } from '../../../convex/model/capabilities'
 import { canonicalJson, checksumOfText, utf8Bytes } from '../../../convex/model/checksum'
@@ -636,6 +637,9 @@ export class FakeConvexDeployment {
       projectId: row.projectId,
       actorSubject: row.actorSubject,
       action: row.action,
+      // Derived from the action, exactly as the deployment derives it for rows
+      // written before the split existed.
+      category: auditCategory(row.action),
       at: this.iso(row.at),
       detail: row.detail,
     }

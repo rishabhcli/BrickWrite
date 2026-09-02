@@ -310,9 +310,18 @@ export default defineSchema({
     projectId: v.id('projects'),
     actorSubject: v.string(),
     action: v.string(),
+    /**
+     * `content` for a change to the model, `control` for a change to who may
+     * make one. Indexed because filtering after the fact cannot work: content
+     * events outnumber control events by orders of magnitude, so a bounded read
+     * of the newest rows returns nothing but edits. Absent on rows written
+     * before the split existed.
+     */
+    category: v.optional(v.union(v.literal('content'), v.literal('control'))),
     at: v.number(),
     detail: auditDetail,
   })
     .index('by_project_at', ['projectId', 'at'])
+    .index('by_project_category_at', ['projectId', 'category', 'at'])
     .index('by_actor_at', ['actorSubject', 'at']),
 })

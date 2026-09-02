@@ -194,6 +194,9 @@ export async function appendTransactionBatch(
 
   const now = Date.now()
   const receipts: AppendTransactionsValue['transactions'] = []
+  let appended = 0
+  let appendedBytes = 0
+  let firstRevision: number | null = null
   for (const { entry, bytes, digest, existing } of prepared) {
     const transactionId =
       existing?._id ??
@@ -211,13 +214,11 @@ export async function appendTransactionBatch(
         catalogVersion: entry.catalogVersion,
         createdAt: now,
       }))
-    if (!existing)
-      await writeAuditEvent(ctx, {
-        projectId: project._id,
-        actorSubject: identity.subject,
-        action: 'transaction.append',
-        detail: { revision: entry.resultRevision, bytes, branch: branch.name },
-      })
+    if (!existing) {
+      appended += 1
+      appendedBytes += bytes
+      if (firstRevision === null) firstRevision = entry.resultRevision
+    }
     receipts.push({
       clientTransactionId: entry.clientTransactionId,
       transactionId,
@@ -226,6 +227,26 @@ export async function appendTransactionBatch(
     })
   }
   if (hasNew) {
+    // One event for the batch, not one per transaction.
+    //
+    // Per transaction, this was the loudest writer in the deployment by orders
+    // of magnitude, and everything it recorded — who, when, which revision — is
+    // already a row in `transactions`, in more detail. What it cost was the
+    // audit trail itself: a bounded read of the newest events returned nothing
+    // but edits, so the role changes and visibility changes an audit is read
+    // for were never in it.
+    await writeAuditEvent(ctx, {
+      projectId: project._id,
+      actorSubject: identity.subject,
+      action: 'transaction.append',
+      detail: {
+        count: appended,
+        fromRevision: firstRevision ?? headRevision,
+        toRevision: headRevision,
+        bytes: appendedBytes,
+        branch: branch.name,
+      },
+    })
     await ctx.db.patch(branch._id, { headRevision, updatedAt: now })
     await ctx.db.patch(project._id, { updatedAt: now })
   }

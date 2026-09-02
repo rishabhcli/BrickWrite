@@ -257,7 +257,12 @@ export class ConvexCloudBackend implements CloudBackend {
   }): Promise<CloudResult<CloudSnapshotRecord | null>> {
     return this.ask(refs.projects.latestCheckpoint, args)
   }
-  auditTrail(args: { projectId: string; limit?: number }): Promise<CloudResult<CloudAuditRecord[]>> {
+  auditTrail(args: {
+    projectId: string
+    limit?: number
+    /** `control` for access and lifecycle changes only; omit for everything. */
+    category?: 'content' | 'control'
+  }): Promise<CloudResult<CloudAuditRecord[]>> {
     return this.ask(refs.projects.auditTrail, args)
   }
 

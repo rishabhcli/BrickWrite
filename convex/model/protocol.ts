@@ -313,6 +313,8 @@ export interface CloudAuditRecord {
   projectId: string
   actorSubject: string
   action: string
+  /** Derived for rows written before the split, so a reader never sees a gap. */
+  category: 'content' | 'control'
   at: string
   /** Scalars only, filtered by `model/audit.ts`. */
   detail: Record<string, string | number | boolean>

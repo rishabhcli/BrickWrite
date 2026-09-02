@@ -1,5 +1,6 @@
 import { invitationRetryAt } from './invitationLifecycle'
 import type { Doc } from '../_generated/dataModel'
+import { auditCategory } from './audit'
 import { iso } from './auth'
 import type {
   CloudAuditRecord,
@@ -152,6 +153,7 @@ export const auditRecord = (row: Doc<'auditEvents'>): CloudAuditRecord => ({
   projectId: row.projectId,
   actorSubject: row.actorSubject,
   action: row.action,
+  category: row.category ?? auditCategory(row.action),
   at: iso(row.at),
   detail: row.detail,
 })

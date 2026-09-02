@@ -437,15 +437,32 @@ export const latestCheckpoint = query({
 })
 
 export const auditTrail = query({
-  args: { projectId: v.string(), limit: v.optional(v.number()) },
+  args: {
+    projectId: v.string(),
+    limit: v.optional(v.number()),
+    /** `control` answers "who changed access, and when"; omit for everything. */
+    category: v.optional(v.union(v.literal('content'), v.literal('control'))),
+  },
   handler: async (ctx, args): Promise<CloudResult<CloudAuditRecord[]>> => {
     const authorised = await authoriseProject(ctx, args.projectId, 'audit.read')
     if (!authorised.ok) return authorised
-    const rows = await ctx.db
-      .query('auditEvents')
-      .withIndex('by_project_at', (q) => q.eq('projectId', authorised.value.project._id))
-      .order('desc')
-      .take(Math.min(Math.max(args.limit ?? 100, 1), 500))
+    const projectId = authorised.value.project._id
+    const take = Math.min(Math.max(args.limit ?? 100, 1), 500)
+    // Narrowed by index rather than filtered afterwards. Content events
+    // outnumber control events by orders of magnitude, so a filter applied to a
+    // bounded read of the newest rows returns an empty list on any project that
+    // is actually being built in.
+    const rows = args.category
+      ? await ctx.db
+          .query('auditEvents')
+          .withIndex('by_project_category_at', (q) => q.eq('projectId', projectId).eq('category', args.category))
+          .order('desc')
+          .take(take)
+      : await ctx.db
+          .query('auditEvents')
+          .withIndex('by_project_at', (q) => q.eq('projectId', projectId))
+          .order('desc')
+          .take(take)
     return { ok: true, value: rows.map(auditRecord) }
   },
 })
