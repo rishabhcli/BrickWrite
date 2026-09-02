@@ -1,7 +1,8 @@
 import { v } from 'convex/values'
 import { listOverflow } from './model/discovery'
 import type { Id } from './_generated/dataModel'
-import { mutation, query } from './_generated/server'
+import { internal } from './_generated/api'
+import { internalMutation, mutation, query } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
 import { authoriseProject, iso, resolveBranch } from './model/auth'
 import {
@@ -12,7 +13,13 @@ import {
   type CloudVersionRecord,
 } from './model/protocol'
 import { branchRecord, versionRecord } from './model/records'
-import { latestBranchCheckpoint, readSnapshot, recordCheckpointGroup, writeSnapshot } from './model/snapshots'
+import {
+  deleteSnapshotGroup,
+  latestBranchCheckpoint,
+  readSnapshot,
+  recordCheckpointGroup,
+  writeSnapshot,
+} from './model/snapshots'
 import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/checksum'
 import { isRevision } from './model/history'
 import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
@@ -126,6 +133,70 @@ export const list = query({
     const overflow = listOverflow(rows.length, 200, 'discovery:versions')
     if (overflow) return overflow
     return { ok: true, value: rows.map(versionRecord) }
+  },
+})
+
+/**
+ * Deletes a named version, and the document it pinned.
+ *
+ * The per-project ceiling refused a two-hundred-and-first version and told the
+ * caller to delete one, and there was no way to. It is also the only way to
+ * reclaim a version's snapshot: automatic checkpoints are pruned to a window,
+ * a named one is kept forever by design, and forever is a lot of eight-megabyte
+ * documents on a project somebody has been saving into for a year.
+ *
+ * The creator may remove their own; removing somebody else's needs
+ * `project.delete`, which only an owner holds. A version is how a collaborator
+ * refers to a point in history, so taking one away is an owner's decision
+ * rather than any editor's.
+ *
+ * The log is untouched. A version is a name for a revision, not the revision,
+ * and the branch replays exactly as it did before.
+ */
+export const remove = mutation({
+  args: { projectId: v.string(), versionId: v.string() },
+  handler: async (ctx, args): Promise<CloudResult<{ removed: boolean }>> => {
+    const reader = await authoriseProject(ctx, args.projectId, 'project.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+
+    const version = await ctx.db.get(args.versionId as Id<'versions'>)
+    if (!version || version.projectId !== project._id) {
+      return cloudFailure(
+        'NOT_FOUND',
+        'That version does not belong to this project.',
+        'Reload the version list and choose again.',
+      )
+    }
+    if (version.createdBySubject !== identity.subject) {
+      const authorised = await authoriseProject(ctx, args.projectId, 'project.delete')
+      if (!authorised.ok) return authorised
+    }
+
+    // The row goes first, so nothing can follow it to a group being emptied.
+    await ctx.db.delete(version._id)
+    await writeAuditEvent(ctx, {
+      projectId: project._id,
+      actorSubject: identity.subject,
+      action: 'version.delete',
+      detail: { label: version.label, revision: version.revision },
+    })
+    // Scheduled for the same reason checkpoint pruning is: the chunks have to
+    // be read to be deleted and a whole document does not fit alongside this.
+    await ctx.scheduler.runAfter(0, internal.versions.pruneVersionSnapshot, {
+      groupId: version.snapshotGroupId,
+    })
+    return { ok: true, value: { removed: true } }
+  },
+})
+
+/** Empties a deleted version's snapshot group, a bounded pass at a time. */
+export const pruneVersionSnapshot = internalMutation({
+  args: { groupId: v.string() },
+  handler: async (ctx, args): Promise<void> => {
+    if (await deleteSnapshotGroup(ctx, args.groupId, 'version')) {
+      await ctx.scheduler.runAfter(0, internal.versions.pruneVersionSnapshot, { groupId: args.groupId })
+    }
   },
 })
 

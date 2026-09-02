@@ -376,6 +376,9 @@ export class ConvexCloudBackend implements CloudBackend {
   removeComment(args: { projectId: string; commentId: string }): Promise<CloudResult<{ removed: number }>> {
     return this.tell(refs.comments.remove, args)
   }
+  removeVersion(args: { projectId: string; versionId: string }): Promise<CloudResult<{ removed: boolean }>> {
+    return this.tell(refs.versions.remove, args)
+  }
   setCommentStatus(args: {
     projectId: string
     commentId: string

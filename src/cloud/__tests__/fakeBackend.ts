@@ -1409,6 +1409,32 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: this.db.branchRecord(branch) }
   }
 
+  /** Mirrors `convex/versions.ts:remove`: creator, or an owner. */
+  async removeVersion(args: { projectId: string; versionId: string }): Promise<CloudResult<{ removed: boolean }>> {
+    const offline = this.guard<{ removed: boolean }>()
+    if (offline) return offline
+    const reader = this.authorise(args.projectId, 'project.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+    const version = this.db.versions.find((row) => row._id === args.versionId)
+    if (!version || version.projectId !== project._id) {
+      return fail(
+        'NOT_FOUND',
+        'That version does not belong to this project.',
+        'Reload the version list and choose again.',
+      )
+    }
+    if (version.createdBySubject !== identity.subject) {
+      const authorised = this.authorise(args.projectId, 'project.delete')
+      if (!authorised.ok) return authorised
+    }
+    this.db.versions.splice(this.db.versions.indexOf(version), 1)
+    for (const chunk of this.db.snapshots.filter((row) => row.groupId === version.snapshotGroupId)) {
+      this.db.snapshots.splice(this.db.snapshots.indexOf(chunk), 1)
+    }
+    return { ok: true, value: { removed: true } }
+  }
+
   async createVersion(args: CreateVersionArgs): Promise<CloudResult<CloudVersionRecord>> {
     const offline = this.guard<CloudVersionRecord>()
     if (offline) return offline

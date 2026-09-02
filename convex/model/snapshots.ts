@@ -202,6 +202,36 @@ export const CHECKPOINT_RETENTION = 8
 /** Chunks removed per pruning pass, so one pass stays inside a mutation's read budget. */
 export const CHECKPOINT_PRUNE_CHUNKS = 8
 
+/**
+ * Deletes part of one snapshot group of a given kind, or reports nothing to do.
+ *
+ * `kind` is checked per chunk rather than trusted from the caller: a group id is
+ * the only argument, and the one mistake worth making impossible is deleting a
+ * live checkpoint through a path meant for a named version.
+ *
+ * Chunk zero goes first, so a pass that stops halfway leaves nothing a reader
+ * will follow — `readSnapshot` peeks at the group and `latestBranchCheckpoint`
+ * selects on chunk zero. Returns whether another pass is needed, so the caller
+ * reschedules rather than reading a whole document in one transaction.
+ */
+export async function deleteSnapshotGroup(
+  ctx: MutationCtx,
+  groupId: string,
+  kind: 'checkpoint' | 'version',
+): Promise<boolean> {
+  const chunks = await ctx.db
+    .query('snapshots')
+    .withIndex('by_group', (q) => q.eq('groupId', groupId))
+    .take(CHECKPOINT_PRUNE_CHUNKS)
+  let removed = 0
+  for (const chunk of chunks) {
+    if (chunk.kind !== kind) continue
+    await ctx.db.delete(chunk._id)
+    removed += 1
+  }
+  return removed > 0 && chunks.length === CHECKPOINT_PRUNE_CHUNKS
+}
+
 /** Appends a checkpoint group to the branch's window. */
 export async function recordCheckpointGroup(
   ctx: MutationCtx,

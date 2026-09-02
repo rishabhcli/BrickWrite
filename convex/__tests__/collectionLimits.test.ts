@@ -1,6 +1,6 @@
 // @vitest-environment edge-runtime
 import { describe, expect, test } from 'vitest'
-import { api } from '../_generated/api'
+import { api, internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import { COLLECTION_LIMITS } from '../model/limits'
 import { codeOf, expectOk, harness, person, seedProject, snapshotUpload, subjectOf, type Harness } from './harness'
@@ -464,5 +464,154 @@ describe('deleting a project', () => {
     const other = await seedProject(t, { owner: 'other', members: { editor: 'editor' } })
     expect(other.projectId).toBeTruthy()
     expect(await grants(t, subjectOf('editor'))).toBe(1)
+  })
+})
+
+describe('deleting a version', () => {
+  const chunksFor = (t: Harness, projectId: Id<'projects'>): Promise<number> =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('snapshots')
+          .withIndex('by_project_kind_revision', (q) => q.eq('projectId', projectId).eq('kind', 'version'))
+          .collect()
+      ).length,
+    )
+
+  const claim = (t: Harness, as: string) =>
+    t.withIdentity(person(as)).mutation(api.projects.create, {
+      localProjectId: 'doc-1',
+      name: 'My build',
+      schemaVersion: 2,
+      catalogVersion: 'fixture-1',
+    })
+
+  /** `localProjectId` must match the project's, or the upload is refused. */
+  const save = (t: Harness, as: string, projectId: string, label: string, localProjectId = 'doc-1') =>
+    t.withIdentity(person(as)).mutation(api.versions.create, {
+      projectId,
+      label,
+      snapshot: snapshotUpload({ localProjectId, revision: 0 }),
+    })
+
+  test('reclaims the document it pinned, and leaves the log alone', async () => {
+    // The only way to get a named snapshot back: automatic checkpoints are
+    // pruned to a window, a named one is kept forever by design.
+    const t = harness()
+    const project = expectOk(await claim(t, 'owner'))
+    const version = expectOk(await save(t, 'owner', project.projectId, 'milestone'))
+    expect(await chunksFor(t, project.projectId as Id<'projects'>)).toBeGreaterThan(0)
+
+    const before = expectOk(
+      await t.withIdentity(person('owner')).query(api.transactions.listSince, {
+        projectId: project.projectId,
+        sinceRevision: 0,
+      }),
+    ).length
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.remove, { projectId: project.projectId, versionId: version.versionId }),
+    )
+    await t.finishAllScheduledFunctions(() => {})
+
+    expect(await chunksFor(t, project.projectId as Id<'projects'>)).toBe(0)
+    // A version is a name for a revision, not the revision.
+    expect(
+      expectOk(
+        await t.withIdentity(person('owner')).query(api.transactions.listSince, {
+          projectId: project.projectId,
+          sinceRevision: 0,
+        }),
+      ).length,
+    ).toBe(before)
+  })
+
+  test('lets a project at its ceiling save another', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    const now = Date.now()
+    let last: Id<'versions'> | null = null
+    await t.run(async (ctx) => {
+      for (let index = 0; index < COLLECTION_LIMITS.versionsPerProject; index += 1) {
+        last = await ctx.db.insert('versions', {
+          projectId: seeded.projectId,
+          branchId: seeded.branchId,
+          revision: index,
+          label: `v${index}`,
+          snapshotGroupId: `group-${index}`,
+          documentChecksum: 'x',
+          createdBySubject: subjectOf('owner'),
+          createdAt: now + index,
+        })
+      }
+    })
+    expect(codeOf(await save(t, 'owner', seeded.projectId, 'one more', 'local-owner'))).toBe('COLLECTION_FULL')
+
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.remove, { projectId: seeded.projectId, versionId: last! }),
+    )
+    expect(codeOf(await save(t, 'owner', seeded.projectId, 'one more', 'local-owner'))).toBe('ok')
+  })
+
+  test('lets an editor remove their own but not somebody else’s', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    const mine = expectOk(await save(t, 'editor', seeded.projectId, 'mine', 'local-owner'))
+    const theirs = expectOk(await save(t, 'owner', seeded.projectId, 'theirs', 'local-owner'))
+
+    expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.versions.remove, { projectId: seeded.projectId, versionId: mine.versionId }),
+    )
+    // A version is how a collaborator refers to a point in history, so taking
+    // one away is an owner's decision rather than any editor's.
+    expect(
+      codeOf(
+        await t
+          .withIdentity(person('editor'))
+          .mutation(api.versions.remove, { projectId: seeded.projectId, versionId: theirs.versionId }),
+      ),
+    ).toBe('FORBIDDEN')
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.remove, { projectId: seeded.projectId, versionId: theirs.versionId }),
+    )
+  })
+
+  test('never reaches a checkpoint through the version path', async () => {
+    // `kind` is checked per chunk rather than trusted, so a group id passed to
+    // the version pruner cannot empty the checkpoint a branch opens from.
+    const t = harness()
+    const project = expectOk(await claim(t, 'owner'))
+    await t.run(async (ctx) => {
+      const branch = (await ctx.db.get(project.projectId as Id<'projects'>))!.defaultBranchId!
+      await ctx.db.insert('snapshots', {
+        projectId: project.projectId as Id<'projects'>,
+        branchId: branch,
+        groupId: 'shared-group',
+        kind: 'checkpoint',
+        revision: 0,
+        chunkIndex: 0,
+        chunkCount: 1,
+        data: '{}',
+        checksum: 'x',
+        bytes: 2,
+        schemaVersion: 2,
+        catalogVersion: 'fixture-1',
+        createdBySubject: subjectOf('owner'),
+        createdAt: Date.now(),
+      })
+    })
+    await t.mutation(internal.versions.pruneVersionSnapshot, { groupId: 'shared-group' })
+
+    const left = await t.run(async (ctx) =>
+      (await ctx.db.query('snapshots').withIndex('by_group', (q) => q.eq('groupId', 'shared-group')).collect()).length,
+    )
+    expect(left).toBe(1)
   })
 })

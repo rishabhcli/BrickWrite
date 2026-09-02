@@ -179,6 +179,8 @@ export interface CloudBackend {
   addComment(args: AddCommentArgs): Promise<CloudResult<CloudCommentRecord>>
   /** Removes a comment and its replies. Returns how many rows went. */
   removeComment(args: { projectId: string; commentId: string }): Promise<CloudResult<{ removed: number }>>
+  /** Removes a named version and the document it pinned. The log is untouched. */
+  removeVersion(args: { projectId: string; versionId: string }): Promise<CloudResult<{ removed: boolean }>>
   setCommentStatus(args: {
     projectId: string
     commentId: string
