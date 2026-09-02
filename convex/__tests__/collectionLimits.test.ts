@@ -23,23 +23,25 @@ const fill = async (t: Harness, count: number, insert: (ctx: never, index: numbe
 
 /** Rows a seeded project already has, so `fill` lands exactly on the ceiling. */
 const seededComments = (t: Harness, projectId: Id<'projects'>) =>
-  t.run(async (ctx) =>
-    (
-      await ctx.db
-        .query('comments')
-        .withIndex('by_project_created', (q) => q.eq('projectId', projectId))
-        .collect()
-    ).length,
+  t.run(
+    async (ctx) =>
+      (
+        await ctx.db
+          .query('comments')
+          .withIndex('by_project_created', (q) => q.eq('projectId', projectId))
+          .collect()
+      ).length,
   )
 
 const seededBranches = (t: Harness, projectId: Id<'projects'>) =>
-  t.run(async (ctx) =>
-    (
-      await ctx.db
-        .query('branches')
-        .withIndex('by_project', (q) => q.eq('projectId', projectId))
-        .collect()
-    ).length,
+  t.run(
+    async (ctx) =>
+      (
+        await ctx.db
+          .query('branches')
+          .withIndex('by_project', (q) => q.eq('projectId', projectId))
+          .collect()
+      ).length,
   )
 
 describe('comments', () => {
@@ -101,10 +103,12 @@ describe('comments', () => {
     })
     // The project total is nowhere near its ceiling; only the anchor is full.
     expect(codeOf(refused)).toBe('COLLECTION_FULL')
-    expectOk(await t.withIdentity(person('owner')).query(api.comments.forPart, {
-      projectId: seeded.projectId,
-      partId: 'part_hot',
-    }))
+    expectOk(
+      await t.withIdentity(person('owner')).query(api.comments.forPart, {
+        projectId: seeded.projectId,
+        partId: 'part_hot',
+      }),
+    )
   })
 })
 
