@@ -5,7 +5,31 @@ import { catalog } from '../../cad/catalog'
 import { getWorldConnectors } from '../../cad/snapping'
 import { legalConnectCandidates } from '../../cad/placement'
 import { canonicalisePose } from './transform'
-import { IDLE_CONNECT, type Workbench } from './useWorkbench'
+import { IDLE_CONNECT, type ConnectFlow, type Workbench } from './useWorkbench'
+import type { ModelDocument, PartInstance } from '../../cad/types'
+
+function partLabel(part: PartInstance | undefined): string | null {
+  if (!part) return null
+  return catalog.get(part.definitionId)?.name ?? part.definitionId
+}
+
+/**
+ * What HUD, inspector and the Connect sheet should all call the in-progress mate.
+ *
+ * Kernel selection stays the moving part (transforms must not drag the target),
+ * so chrome that only reads `state.selection` silently drops the named target.
+ */
+export function describeConnectHudLabel(
+  connect: Pick<ConnectFlow, 'stage' | 'sourcePartId' | 'targetPartId'>,
+  document: ModelDocument,
+  fallback: string,
+): string {
+  const sourceName = partLabel(connect.sourcePartId ? document.parts[connect.sourcePartId] : undefined)
+  const targetName = partLabel(connect.targetPartId ? document.parts[connect.targetPartId] : undefined)
+  if (sourceName && targetName) return `${sourceName} → ${targetName}`
+  if (sourceName && connect.stage !== 'source') return `Moving ${sourceName}`
+  return fallback
+}
 
 /**
  * Connect, as two explicit stages.
@@ -59,7 +83,8 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
   }, [preview, source, target?.definitionId, workbench])
 
   const back = useCallback(() => {
-    if (connect.stage === 'review') setConnect({ ...connect, stage: 'target', targetPartId: null, targetFeatureId: null, candidateIndex: 0 })
+    if (connect.stage === 'review')
+      setConnect({ ...connect, stage: 'target', targetPartId: null, targetFeatureId: null, candidateIndex: 0 })
     else if (connect.stage === 'target') setConnect(IDLE_CONNECT)
   }, [connect, setConnect])
 
@@ -98,11 +123,19 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
       data-stage={connect.stage}
       tabIndex={connect.stage === 'review' ? 0 : undefined}
       onKeyDown={onPanelKey}
-      aria-label={connect.stage === 'review' ? 'Connect review. Tab cycles solutions, Shift+Tab leaves, Enter commits.' : undefined}
+      aria-label={
+        connect.stage === 'review'
+          ? 'Connect review. Tab cycles solutions, Shift+Tab leaves, Enter commits.'
+          : undefined
+      }
     >
       <ol className="connect-stages" aria-label="Connect progress">
         {['Pick the part that moves', 'Pick what it mates onto', 'Review and commit'].map((label, index) => (
-          <li key={label} className={index === stageIndex ? 'current' : index < stageIndex ? 'done' : ''} aria-current={index === stageIndex}>
+          <li
+            key={label}
+            className={index === stageIndex ? 'current' : index < stageIndex ? 'done' : ''}
+            aria-current={index === stageIndex}
+          >
             <span>{index < stageIndex ? <Check size={9} /> : index + 1}</span>
             {label}
           </li>
@@ -193,33 +226,61 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
         <section className="connect-review">
           <header>
             <span className="eyebrow">RESULTING MATE</span>
-            <em>{candidates.length} solution{candidates.length === 1 ? '' : 's'}</em>
+            <em>
+              {candidates.length} solution{candidates.length === 1 ? '' : 's'}
+            </em>
           </header>
           {preview ? (
             <>
               <dl className="connect-preview">
-                <div><dt>Simultaneous mates</dt><dd>{preview.matches.length}</dd></div>
-                <div><dt>Certainty</dt><dd>{preview.certainty}</dd></div>
-                <div><dt>Moves</dt><dd>{preview.cursorTranslationLdu.toFixed(1)} LDU · {preview.cursorRotationDeg.toFixed(1)}°</dd></div>
-                <div><dt>Seat</dt><dd>{preview.movingFeatureId} → {preview.targetFeatureId}</dd></div>
+                <div>
+                  <dt>Simultaneous mates</dt>
+                  <dd>{preview.matches.length}</dd>
+                </div>
+                <div>
+                  <dt>Certainty</dt>
+                  <dd>{preview.certainty}</dd>
+                </div>
+                <div>
+                  <dt>Moves</dt>
+                  <dd>
+                    {preview.cursorTranslationLdu.toFixed(1)} LDU · {preview.cursorRotationDeg.toFixed(1)}°
+                  </dd>
+                </div>
+                <div>
+                  <dt>Seat</dt>
+                  <dd>
+                    {preview.movingFeatureId} → {preview.targetFeatureId}
+                  </dd>
+                </div>
               </dl>
               <div className="connect-cycle">
-                <button type="button" onClick={cycle} disabled={candidates.length < 2} title={candidates.length < 2 ? 'Only one solution' : 'Cycle to the next ranked mate'}>
+                <button
+                  type="button"
+                  onClick={cycle}
+                  disabled={candidates.length < 2}
+                  title={candidates.length < 2 ? 'Only one solution' : 'Cycle to the next ranked mate'}
+                >
                   Solution {connect.candidateIndex + 1} of {candidates.length}
                 </button>
               </div>
             </>
           ) : (
             <p className="connect-empty">
-              No legal mate exists between these two parts with the connectors chosen. Widen either side to ANY, or
-              pick a different target — the solver refuses rather than inventing a pose.
+              No legal mate exists between these two parts with the connectors chosen. Widen either side to ANY, or pick
+              a different target — the solver refuses rather than inventing a pose.
             </p>
           )}
         </section>
       )}
 
       <footer className="connect-actions">
-        <button type="button" onClick={back} disabled={connect.stage === 'source'} title={connect.stage === 'source' ? 'Nothing to go back to' : 'Back one stage'}>
+        <button
+          type="button"
+          onClick={back}
+          disabled={connect.stage === 'source'}
+          title={connect.stage === 'source' ? 'Nothing to go back to' : 'Back one stage'}
+        >
           <ArrowLeft size={12} /> BACK
         </button>
         <button type="button" onClick={() => setConnect(IDLE_CONNECT)} title="Abandon this mate">

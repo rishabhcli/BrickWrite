@@ -12,6 +12,7 @@ import type { Workbench } from './useWorkbench'
 import { ViewportQuickControls } from './ViewportQuickControls'
 import { ViewportNavigator } from './ViewportNavigator'
 import { SelectionHUD } from './SelectionHUD'
+import { describeConnectHudLabel } from './ConnectPanel'
 
 /**
  * What each diagnostic view is showing.
@@ -196,29 +197,46 @@ export function ViewportStage({
         {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
-      {!placement && state.selection.length ? (
-        <SelectionHUD
-          count={state.selection.length}
-          label={
-            workbench.selectedDefinition?.name ??
-            (state.selection.length === 1
-              ? (state.document.parts[state.selection[0]]?.definitionId ?? 'Selected part')
-              : `${state.selection.length} selected`)
-          }
-          position={workbench.selectionPosition}
-          locks={workbench.transformPrefs.locks}
-          tool={workbench.tool}
-          onTool={workbench.setTool}
-          onFocus={workbench.focusSelection}
-          onGround={workbench.groundSelection}
-          onDuplicate={workbench.duplicateSelection}
-          onPosition={workbench.positionSelection}
-          onMore={(anchor) => {
-            const rect = anchor.getBoundingClientRect()
-            setContextPoint({ x: rect.left, y: rect.bottom + 6 })
-          }}
-        />
-      ) : null}
+      <div className="viewport-top-stack" data-overlay-stack="top">
+        {workbench.playbackStep !== null && (
+          <div className="instruction-overlay">
+            <span>BUILD PLAYBACK</span>
+            <strong>
+              STEP {String(workbench.playbackStep + 1).padStart(2, '0')} /{' '}
+              {String(state.document.steps.length).padStart(2, '0')}
+            </strong>
+            <em>{state.document.steps[workbench.playbackStep]?.name}</em>
+            <button onClick={() => workbench.setPlaybackStep(null)} aria-label="Stop build playback">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+        {!placement && state.selection.length ? (
+          <SelectionHUD
+            count={state.selection.length}
+            label={describeConnectHudLabel(
+              workbench.connect,
+              state.document,
+              workbench.selectedDefinition?.name ??
+                (state.selection.length === 1
+                  ? (state.document.parts[state.selection[0]]?.definitionId ?? 'Selected part')
+                  : `${state.selection.length} selected`),
+            )}
+            position={workbench.selectionPosition}
+            locks={workbench.transformPrefs.locks}
+            tool={workbench.tool}
+            onTool={workbench.setTool}
+            onFocus={workbench.focusSelection}
+            onGround={workbench.groundSelection}
+            onDuplicate={workbench.duplicateSelection}
+            onPosition={workbench.positionSelection}
+            onMore={(anchor) => {
+              const rect = anchor.getBoundingClientRect()
+              setContextPoint({ x: rect.left, y: rect.bottom + 6 })
+            }}
+          />
+        ) : null}
+      </div>
       <ViewportQuickControls workbench={workbench} />
       <ViewportNavigator view={workbench.cameraView} onView={workbench.setCameraView} />
 
@@ -242,46 +260,33 @@ export function ViewportStage({
         </div>
       )}
 
-      {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
+      <div className="viewport-bottom-stack" data-overlay-stack="bottom">
+        {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
+        {activeProposal && (
+          <div className="proposal-overlay">
+            <span className="proposal-pulse" />
+            <div>
+              <small>GHOST PROPOSAL</small>
+              <strong>{activeProposal.label}</strong>
+            </div>
+            <em>{activeProposal.operations.length} edits</em>
+            {onReviewProposal && (
+              <button onClick={() => onReviewProposal(activeProposal.id)}>
+                <Eye size={13} /> Review
+              </button>
+            )}
+            <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
+              <Check size={13} /> Accept
+            </button>
+            <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
+              <X size={13} />
+            </button>
+          </div>
+        )}
+      </div>
       {contextPoint && <PartContextMenu workbench={workbench} point={contextPoint} onClose={closeContext} />}
 
       {state.validation.partCount === 0 && !placement && <EmptyBuildState onPickStarter={pickStarter} />}
-
-      {workbench.playbackStep !== null && (
-        <div className="instruction-overlay">
-          <span>BUILD PLAYBACK</span>
-          <strong>
-            STEP {String(workbench.playbackStep + 1).padStart(2, '0')} /{' '}
-            {String(state.document.steps.length).padStart(2, '0')}
-          </strong>
-          <em>{state.document.steps[workbench.playbackStep]?.name}</em>
-          <button onClick={() => workbench.setPlaybackStep(null)} aria-label="Stop build playback">
-            <X size={12} />
-          </button>
-        </div>
-      )}
-
-      {activeProposal && (
-        <div className="proposal-overlay">
-          <span className="proposal-pulse" />
-          <div>
-            <small>GHOST PROPOSAL</small>
-            <strong>{activeProposal.label}</strong>
-          </div>
-          <em>{activeProposal.operations.length} edits</em>
-          {onReviewProposal && (
-            <button onClick={() => onReviewProposal(activeProposal.id)}>
-              <Eye size={13} /> Review
-            </button>
-          )}
-          <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
-            <Check size={13} /> Accept
-          </button>
-          <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
-            <X size={13} />
-          </button>
-        </div>
-      )}
 
       {/* Extension point. Agent overlays, share badges and refinement diffs draw
           here without this file knowing they exist. */}

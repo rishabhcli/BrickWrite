@@ -1062,6 +1062,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       onRecolor={workbench.recolorSelection}
                       onProtect={workbench.protectSelection}
                       onSelectIds={(ids) => cadEngine.setSelection(ids)}
+                      connect={workbench.connect}
                     />
                   </DockSection>
                 </>

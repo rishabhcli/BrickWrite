@@ -321,7 +321,18 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
               Position the selection’s centre. All {parts.length} parts move together.
             </p>
           )}
-          <div className="fields-grid" role="group" aria-label="Position in LDraw units">
+          {transformPrefs.frame !== 'world' && (
+            <p className="transform-frame-note">
+              Typed coordinates stay world LDU. {transformPrefs.frame === 'local' ? 'LOCAL' : 'MATE'} only turns the
+              gizmo and the steppers.
+            </p>
+          )}
+          <div
+            className="fields-grid"
+            data-position-frame="world"
+            role="group"
+            aria-label="World position in LDraw units"
+          >
             {(['X', 'Y', 'Z'] as const).map((axis, index) => (
               <NumberField
                 key={`p_${axis}_${state.selection.join('|')}`}

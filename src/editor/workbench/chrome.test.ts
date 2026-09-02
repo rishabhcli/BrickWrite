@@ -43,7 +43,9 @@ describe('workbench chrome polish', () => {
   })
 
   it('gives NumberField and catalog search a workbench focus-visible ring', () => {
-    expect(withoutComments).toMatch(/\.number-field:has\(:focus-visible\)\s*>\s*div\s*\{[^}]*outline:\s*2px solid var\(--cyan\)/)
+    expect(withoutComments).toMatch(
+      /\.number-field:has\(:focus-visible\)\s*>\s*div\s*\{[^}]*outline:\s*2px solid var\(--cyan\)/,
+    )
     expect(withoutComments).toMatch(/\.search-field:has\(:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--cyan\)/)
   })
 
@@ -152,5 +154,14 @@ describe('workbench chrome polish', () => {
 
   it('does not restyle island tools from an 1180px window', () => {
     expect(withoutComments).not.toMatch(/@media \(max-width:\s*1180px\)/)
+  })
+
+  it('keeps HUD world units on a laptop instead of hiding the fields', () => {
+    const [laptop] = mediaBlocks(withoutComments, '1160px')
+    expect(laptop).toContain('.selection-hud-name')
+    expect(laptop).not.toMatch(/\.selection-hud-position\s*\{[^}]*display:\s*none/)
+    expect(withoutComments).not.toMatch(/\.selection-hud-position \.number-field em \{ display: none/)
+    expect(withoutComments).toMatch(/\.viewport-top-stack/)
+    expect(withoutComments).toMatch(/\.viewport-bottom-stack/)
   })
 })

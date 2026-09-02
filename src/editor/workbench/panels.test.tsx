@@ -357,6 +357,7 @@ describe('transform controls', () => {
 
   it('offers world, local and connector reference frames', () => {
     renderTransform()
+    select([showcasePartIds()[0]])
     const group = screen.getByRole('radiogroup', { name: 'Reference frame' })
     const options = within(group).getAllByRole('radio')
     expect(options.map((option) => option.textContent)).toEqual(['WORLD', 'LOCAL', 'MATE'])
@@ -367,6 +368,10 @@ describe('transform controls', () => {
         .getAllByRole('radio')[1]
         .getAttribute('aria-checked'),
     ).toBe('true')
+    expect(screen.getByText(/Typed coordinates stay world LDU/i)).toBeVisible()
+    expect(
+      screen.getByRole('group', { name: 'World position in LDraw units' }).getAttribute('data-position-frame'),
+    ).toBe('world')
   })
 
   it('offers a pivot choice for rotation', () => {
@@ -700,7 +705,9 @@ describe('command palette', () => {
 
   it('traps focus so Tab cannot leave the dialog', () => {
     const { container } = renderPalette()
-    const focusable = [...container.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled)')]
+    const focusable = [
+      ...container.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled)'),
+    ]
     const last = focusable[focusable.length - 1]
     last.focus()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' })

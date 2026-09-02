@@ -7,6 +7,8 @@ import type { EngineSnapshot, PartDefinition, PartInstance, Transform, Validatio
 import { Slot } from './ExtensionRegistry'
 import { ModelHealthPanel } from './ModelHealthPanel'
 import { NumberField } from './NumberField'
+import { describeConnectHudLabel } from './ConnectPanel'
+import type { ConnectFlow } from './useWorkbench'
 
 /** How many observed colours the inspector shows before offering the rest. */
 const INSPECTOR_SWATCH_LIMIT = 18
@@ -38,6 +40,8 @@ interface InspectorPanelProps {
   onProtect: (protect: boolean) => void
   onSelectIds: (ids: string[]) => void
   onArticulate: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
+  /** Two-stage Connect naming, so OBJECT does not pretend the kernel selection is the whole mate. */
+  connect?: ConnectFlow
 }
 
 export type InspectorView = 'object' | 'validate'
@@ -63,7 +67,10 @@ export function validateTabLabel(report: ValidationReport): string {
   if (watches) {
     return `Validate, ${watches} watch${watches === 1 ? '' : 'es'}`
   }
-  return 'Validate, healthy'
+  // Statics stay off this path. Calling a kernel-clear document "healthy" here
+  // is a lie the moment hanging bricks exist, so the closed tab only claims
+  // what the snapshot actually ran.
+  return 'Validate, kernel clear'
 }
 
 /** Tab name once VALIDATE is open — matches the health panel, including statics. */
@@ -104,6 +111,7 @@ export function InspectorPanel({
   onProtect,
   onSelectIds,
   onArticulate,
+  connect,
 }: InspectorPanelProps) {
   const [localView, setLocalView] = useState<InspectorView>('object')
   const [allColors, setAllColors] = useState(false)
@@ -187,7 +195,12 @@ export function InspectorPanel({
           onClick={() => setTab('validate')}
         >
           VALIDATE
-          <span className={validateReady ? 'healthy-dot' : 'warning-dot'} aria-hidden="true" />
+          <span
+            className={
+              health ? (validateReady ? 'healthy-dot' : 'warning-dot') : validateReady ? 'kernel-dot' : 'warning-dot'
+            }
+            aria-hidden="true"
+          />
         </button>
       </div>
       {tab === 'object' ? (
@@ -212,6 +225,9 @@ export function InspectorPanel({
                 </p>
               </div>
             </section>
+            {connect && connect.sourcePartId && connect.stage !== 'source' ? (
+              <p className="connect-mate-note">{describeConnectHudLabel(connect, state.document, 'Connect')}</p>
+            ) : null}
             <section className="property-section">
               <header>
                 <span>TRANSFORM</span>
@@ -479,8 +495,25 @@ export function InspectorPanel({
                 <p>
                   The kernel has {kernelParts.length} parts in the selection
                   {inspectIdentities(kernelParts)}. Click a single brick to see its transform, connectors and ownership,
-                  or recolour the set from the palette.
+                  or paint the whole set here.
                 </p>
+                <div className="swatches inspector-swatches inspector-set-swatches">
+                  {inspectorSetSwatches(kernelParts).map((code) => {
+                    const color = getColor(code)
+                    const applied = kernelParts.every((part) => part.color === code)
+                    return (
+                      <button
+                        key={code}
+                        className={applied ? 'selected' : ''}
+                        style={{ '--swatch': color.hex } as React.CSSProperties}
+                        onClick={() => onRecolor(code)}
+                        aria-label={`${color.name}, LDraw colour ${code}`}
+                        aria-pressed={applied}
+                        title={`${color.name} · LDraw ${code}`}
+                      />
+                    )
+                  })}
+                </div>
               </>
             ) : kernelParts.length === 1 ? (
               <>
@@ -534,4 +567,20 @@ function inspectIdentities(parts: PartInstance[]): string {
   if (ids.length === 1) return ` · ${ids[0]}`
   if (ids.length <= 3) return ` · ${ids.join(', ')}`
   return ` · ${ids.length} identities`
+}
+
+/** Colours the set already uses, then observed catalogue colours, capped. */
+export function inspectorSetSwatches(parts: PartInstance[]): number[] {
+  const seen = new Set<number>()
+  const codes: number[] = []
+  const push = (code: number) => {
+    if (seen.has(code)) return
+    seen.add(code)
+    codes.push(code)
+  }
+  for (const part of parts) push(part.color)
+  for (const part of parts) {
+    for (const code of catalog.get(part.definitionId)?.availableColors ?? []) push(code)
+  }
+  return codes.slice(0, INSPECTOR_SWATCH_LIMIT)
 }
