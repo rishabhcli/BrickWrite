@@ -83,6 +83,7 @@ const { default: handler } = await import('./[...route]')
 const { configureBudget, DEFAULT_DAILY_TOKEN_CEILING } = await import('../server/security/budget.js')
 const { configureConcurrency, DEFAULT_MAX_IN_FLIGHT } = await import('../server/security/concurrency.js')
 const { budgetStoreFromEnv } = await import('../server/security/budgetStore.js')
+const { GATE_REFUSALS } = await import('../src/agent/protocol')
 
 interface Captured {
   status: number
@@ -360,6 +361,91 @@ describe('the in-flight ceiling', () => {
     await settle()
     open()
     for (const response of await Promise.all(inFlight)) expect(response.status).toBe(200)
+  })
+})
+
+describe('what the caller is told', () => {
+  /**
+   * Every refusal in front of the route answers `{ error, detail }`, which is a
+   * different envelope from the route's own. The browser transport used to
+   * understand only the route's, so a spend ceiling — the one refusal with a
+   * genuinely useful sentence attached — reached the user as "the assistant API
+   * returned 429".
+   *
+   * This drives each control to refuse and asserts the client can name what
+   * happened and has a sentence to show for it.
+   */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  const refusals = async (): Promise<Array<{ error: string; detail: unknown }>> => {
+    const seen: Array<{ error: string; detail: unknown }> = []
+    const record = (captured: Captured) => seen.push(json(captured))
+
+    record(await call('/api/assistant', { proxied: false }))
+
+    authorization = { ok: false, status: 401, code: 'unauthorized', detail: 'Sign in to use model-backed tools.' }
+    record(await call('/api/assistant'))
+    authorization = { ok: false, status: 403, code: 'restricted', detail: 'Complete the required account checks.' }
+    record(await call('/api/assistant'))
+    authorization = verified
+
+    record(await call('/api/nothing-here', { method: 'GET' }))
+
+    configureConcurrency(budgetStoreFromEnv(), 1)
+    let open!: () => void
+    parked = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const held = call('/api/assistant')
+    await settle()
+    record(await call('/api/assistant'))
+    open()
+    await held
+    parked = null
+
+    configureConcurrency({
+      async read() {
+        return null
+      },
+      async write() {},
+      async adjust() {
+        throw new Error('counter unreachable')
+      },
+    })
+    record(await call('/api/assistant'))
+    configureConcurrency(budgetStoreFromEnv())
+
+    usageCost = { inputTokens: 2000, outputTokens: 0 }
+    await call('/api/assistant')
+    record(await call('/api/assistant'))
+    usageCost = undefined
+
+    configureBudget({
+      async read() {
+        throw new Error('counter unreachable')
+      },
+      async write() {},
+    })
+    record(await call('/api/assistant'))
+
+    return seen
+  }
+
+  it('names every refusal in a way the browser transport understands', async () => {
+    const seen = await refusals()
+    const codes = [...new Set(seen.map((body) => body.error))]
+    expect(codes.length).toBeGreaterThan(6)
+
+    // A code the client cannot place becomes a status number on screen.
+    const unknown = codes.filter((code) => !(code in GATE_REFUSALS))
+    expect(unknown).toEqual([])
+  })
+
+  it('carries a sentence, since it is the only place the reason exists', async () => {
+    for (const body of await refusals()) {
+      expect(typeof body.detail).toBe('string')
+      expect((body.detail as string).length).toBeGreaterThan(10)
+    }
   })
 })
 

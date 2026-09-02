@@ -197,3 +197,70 @@ it('bounds structured assistant response reads and reports a stalled body as TIM
   expect(cancel).toHaveBeenCalledOnce()
   expect(body.locked).toBe(false)
 })
+
+/**
+ * What the user is told when something refuses before the route runs.
+ *
+ * The edge proxy, the session check, the in-flight ceiling and the spend meter
+ * all answer `{ error, detail }` rather than the route's own envelope, and each
+ * writes the one sentence that says what to do. The transport understood only
+ * the route's shape, so the most actionable refusal in the system — a spent
+ * daily allowance, with the reset time in it — reached the user as a status
+ * number.
+ */
+describe('a refusal from in front of the route', () => {
+  const refuse = (status: number, body: unknown) => {
+    const handlers = { onDone: vi.fn(), onError: vi.fn(), onText: vi.fn(), onToolCall: vi.fn(), onTurn: vi.fn() }
+    const transport = createAssistantTransport({
+      fetchImpl: vi.fn(
+        async () =>
+          new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+      ),
+    })
+    return { handlers, transport }
+  }
+
+  it('shows the sentence the server wrote, not the status code', async () => {
+    const detail = 'This account has used its daily model allowance. It resets at 00:00 UTC.'
+    const h = refuse(429, { error: 'budget_exhausted', detail })
+    await h.transport.stream(request, h.handlers)
+    expect(h.handlers.onError).toHaveBeenCalledExactlyOnceWith({
+      code: 'RATE_LIMITED',
+      message: detail,
+      // Today's allowance is gone; trying again now cannot help.
+      retryable: false,
+    })
+  })
+
+  it('offers a retry for a ceiling that clears on its own', async () => {
+    const h = refuse(429, {
+      error: 'too_many_in_flight',
+      detail: 'This account already has 6 model requests in flight. Wait for one to finish.',
+    })
+    await h.transport.stream(request, h.handlers)
+    expect(h.handlers.onError.mock.calls[0][0]).toMatchObject({ code: 'RATE_LIMITED', retryable: true })
+  })
+
+  it('does not read a deployment fault as a problem with the account', async () => {
+    // `proxy_required` is a 403, and a 403 used to mean "complete your account
+    // checks" — advice for a fault the visitor cannot do anything about.
+    const h = refuse(403, { error: 'proxy_required', detail: 'Use the Brickwright application API origin.' })
+    await h.transport.stream(request, h.handlers)
+    expect(h.handlers.onError.mock.calls[0][0]).toMatchObject({ code: 'UPSTREAM_ERROR' })
+  })
+
+  it('still reads the route’s own envelope', async () => {
+    const h = refuse(409, {
+      ok: false,
+      error: { code: 'TOOL_TURN_LIMIT', message: 'This conversation has used its tool turns.', retryable: false },
+    })
+    await h.transport.stream(request, h.handlers)
+    expect(h.handlers.onError.mock.calls[0][0]).toMatchObject({ code: 'TOOL_TURN_LIMIT' })
+  })
+
+  it('falls back to the status when the code is one it has never seen', async () => {
+    const h = refuse(418, { error: 'brand_new_code', detail: 'Something nobody has mapped yet.' })
+    await h.transport.stream(request, h.handlers)
+    expect(h.handlers.onError.mock.calls[0][0].message).toContain('418')
+  })
+})

@@ -12,6 +12,7 @@ import {
 import {
   ASSISTANT_ENDPOINT,
   ASSISTANT_PROTOCOL,
+  GATE_REFUSALS,
   isAssistantEvent,
   type AssistantErrorCode,
   type AssistantEvent,
@@ -139,6 +140,20 @@ async function readErrorBody(
       detail?: string
     }
     if (body?.error && typeof body.error === 'object') return body.error
+    // A refusal from in front of the route: the edge, the session check, the
+    // in-flight ceiling or the spend meter. Its `detail` is the only place the
+    // reason exists, so it becomes the message rather than being discarded for
+    // a status code.
+    if (typeof body?.error === 'string') {
+      const known = GATE_REFUSALS[body.error]
+      if (known) {
+        return {
+          code: known.code,
+          message: body.detail ?? `The assistant API refused this request (${body.error}).`,
+          retryable: known.retryable,
+        }
+      }
+    }
     if (response.status === 401) {
       return { code: 'AUTH_REQUIRED', message: body.detail ?? 'Sign in to use model-backed tools.', retryable: false }
     }

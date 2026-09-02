@@ -126,6 +126,42 @@ export type AssistantEvent =
 
 export const ASSISTANT_EVENT_TYPES = ['start', 'text', 'tool_call', 'turn', 'usage', 'done', 'error'] as const
 
+/**
+ * Refusals raised before a route runs, as `{ error: <code>, detail }`.
+ *
+ * Everything in front of the assistant route answers in this shape rather than
+ * the route's own `{ ok: false, error: { … } }` — the edge proxy, the session
+ * check, the in-flight ceiling and the spend meter all refuse before any route
+ * is reached. Each writes a sentence saying what to do about it, and without
+ * this map the client threw all of them away and showed the status code.
+ *
+ * `retryable` is about whether trying again *now* could work. A daily allowance
+ * is the one refusal here where it cannot.
+ */
+export const GATE_REFUSALS: Readonly<
+  Record<string, { readonly code: AssistantErrorCode; readonly retryable: boolean }>
+> = {
+  // server/security/auth.ts
+  unauthorized: { code: 'AUTH_REQUIRED', retryable: false },
+  restricted: { code: 'ACCOUNT_RESTRICTED', retryable: false },
+  auth_unavailable: { code: 'UPSTREAM_ERROR', retryable: false },
+  // server/security/budget.ts
+  budget_exhausted: { code: 'RATE_LIMITED', retryable: false },
+  budget_unavailable: { code: 'RATE_LIMITED', retryable: true },
+  // server/security/concurrency.ts
+  too_many_in_flight: { code: 'RATE_LIMITED', retryable: true },
+  concurrency_unavailable: { code: 'RATE_LIMITED', retryable: true },
+  // functions/api/[[route]].ts
+  rate_limited: { code: 'RATE_LIMITED', retryable: true },
+  api_unavailable: { code: 'UPSTREAM_ERROR', retryable: false },
+  rate_limit_unavailable: { code: 'UPSTREAM_ERROR', retryable: false },
+  api_unreachable: { code: 'UPSTREAM_ERROR', retryable: true },
+  // api/[...route].ts and server/dispatch.ts
+  proxy_required: { code: 'UPSTREAM_ERROR', retryable: false },
+  not_found: { code: 'BAD_REQUEST', retryable: false },
+  internal_error: { code: 'INTERNAL_ERROR', retryable: false },
+}
+
 export interface StructuredResponseBody {
   ok: boolean
   value?: unknown
