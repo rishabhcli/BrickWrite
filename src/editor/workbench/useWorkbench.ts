@@ -261,8 +261,16 @@ export function useWorkbench() {
     }
     const document = cadEngine.getDocument()
     // Restored parts should be immediately editable, not silently deselected.
+    // Undoing a placement must also clear the now-dead id rather than leaving
+    // chrome that still talks about a brick the kernel no longer holds.
     const restored = result.value.affectedPartIds.filter((id) => document.parts[id])
-    if (restored.length) cadEngine.setSelection(restored)
+    cadEngine.setSelection(restored)
+    setPlacement(null)
+    setDropPoint(null)
+    if (!Object.keys(document.parts).length || !restored.length) {
+      setToolRaw('select')
+      setConnect(IDLE_CONNECT)
+    }
     setToast({ kind: 'success', title: result.value.label, detail: `Revision ${result.value.resultRevision}` })
     return true
   }, [])
@@ -612,7 +620,15 @@ export function useWorkbench() {
         return false
       }
       const definition = catalog.get(placement.definitionId)
-      if (!definition) return false
+      if (!definition) {
+        setToast({
+          kind: 'error',
+          title: 'Part cannot be placed',
+          detail: `${placement.definitionId} is armed, but this build has no compiled geometry for it.`,
+        })
+        setPlacement(null)
+        return false
+      }
       if (placement.movingPartId) {
         const original = cadEngine.getDocument().parts[placement.movingPartId]
         if (!original) {
@@ -696,7 +712,9 @@ export function useWorkbench() {
         setToast({
           kind: 'error',
           title: 'Part cannot be placed',
-          detail: `${record.name} is a real catalog identity, but this build has no compiled geometry for it.`,
+          detail: catalog.get(record.id)
+            ? `${record.name} could not be seated on the ground or the current selection.`
+            : `${record.name} is a real catalog identity, but this build has no compiled geometry for it.`,
         })
         return false
       }

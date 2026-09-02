@@ -1,5 +1,5 @@
 import { Check, Eye, X } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { catalog, searchCatalog } from '../../cad/catalog'
 import type { ResolvedPlacement } from '../../cad/placement'
 import { PlacementBar } from './PlacementBar'
@@ -65,6 +65,12 @@ export function ViewportStage({
   const [preview, setPreview] = useState<ResolvedPlacement | null>(null)
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  // The viewport stub (and a rotate that has not yet resampled) can leave the
+  // last landing on the bar. A new yaw, a new part, or a committed revision
+  // makes that preview a lie until the next sample.
+  useEffect(() => {
+    setPreview(null)
+  }, [placement?.definitionId, placement?.quarterTurns, placement?.movingPartId, state.document.revision])
   const closeContext = useCallback(
     (focusCanvas = true) => {
       setContextPoint(null)
@@ -193,7 +199,12 @@ export function ViewportStage({
       {!placement && state.selection.length ? (
         <SelectionHUD
           count={state.selection.length}
-          label={workbench.selectedDefinition?.name ?? `${state.selection.length} parts`}
+          label={
+            workbench.selectedDefinition?.name ??
+            (state.selection.length === 1
+              ? (state.document.parts[state.selection[0]]?.definitionId ?? 'Selected part')
+              : `${state.selection.length} selected`)
+          }
           position={workbench.selectionPosition}
           locks={workbench.transformPrefs.locks}
           tool={workbench.tool}

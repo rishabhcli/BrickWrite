@@ -426,4 +426,55 @@ describe('the beginner path through the shell', () => {
     expect(control('.inspector-tabs button.active').textContent).toMatch(/OBJECT/i)
     expect(document.querySelector('.inspector-panel .selection-identity')).not.toBeNull()
   })
+
+  it('inspects the kernel selection, not a leftover empty state', () => {
+    cadEngine.replaceDocument(twoBricks())
+    mount()
+    act(() => cadEngine.setSelection(['a', 'b']))
+    act(() => {
+      revealChrome('inspector')
+    })
+    expect(sectionOpen('inspector')).toBe('true')
+    expect(document.querySelector('.inspector-panel .selection-identity')).toBeNull()
+    expect(document.querySelector('.empty-inspector')?.getAttribute('data-selection-count')).toBe('2')
+    expect(document.querySelector('.empty-inspector')?.textContent).toMatch(/2 PARTS SELECTED/)
+    expect(document.querySelector('.empty-inspector')?.textContent).not.toMatch(/NO OBJECT SELECTED/)
+  })
+
+  it('places, inspects, then undoes chrome back to the empty viewport', () => {
+    cadEngine.replaceDocument(createEmptyDocument())
+    mount()
+    expect(document.querySelector('.viewport-empty')).not.toBeNull()
+
+    const search = control('[data-catalog-search]')
+    fireEvent.change(search, { target: { value: '3001' } })
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(document.querySelector('.placement-bar')?.getAttribute('data-legal')).toBe('pending')
+    fireEvent.click(control('button[aria-label="Cancel placement"]'))
+    expect(document.querySelector('.placement-bar')).toBeNull()
+    expect(document.querySelector('.viewport-empty')).not.toBeNull()
+
+    fireEvent.click(control('.viewport-empty button'))
+    const partId = Object.keys(cadEngine.getDocument().parts)[0]
+    expect(partId).toBeTruthy()
+    expect(document.querySelector('.viewport-empty')).toBeNull()
+    expect(document.querySelector('.selection-hud')).not.toBeNull()
+    expect(control(toolButton('Move'))).toHaveAttribute('aria-checked', 'true')
+
+    act(() => {
+      revealChrome('inspector')
+    })
+    expect(document.querySelector('.inspector-panel .selection-identity')?.textContent).toMatch(/3001/)
+    expect(cadEngine.getSnapshot().selection).toEqual([partId])
+
+    fireEvent.click(control('button[aria-label^="Undo"]'))
+
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+    expect(cadEngine.getSnapshot().selection).toEqual([])
+    expect(document.querySelector('.viewport-empty')).not.toBeNull()
+    expect(document.querySelector('.selection-hud')).toBeNull()
+    expect(document.querySelector('.placement-bar')).toBeNull()
+    expect(control(toolButton('Select'))).toHaveAttribute('aria-checked', 'true')
+    expect(document.querySelector('.empty-inspector')?.textContent).toMatch(/NO OBJECT SELECTED/)
+  })
 })

@@ -8,7 +8,7 @@ import { createEmptyDocument } from '../../cad/sample'
 import type { PartInstance } from '../../cad/types'
 import { createCommandHandlers } from './commands'
 import { PartContextMenu } from './PartContextMenu'
-import { PlacementBar, placementMessage } from './PlacementBar'
+import { PlacementBar, placementLegalAttr, placementMessage, placementStatusIcon } from './PlacementBar'
 import { resetPreferences } from './persistence'
 import { useWorkbench } from './useWorkbench'
 
@@ -148,6 +148,15 @@ describe('building at the cursor', () => {
     expect(hook.result.current.repeatPlacement).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel placement' }))
     expect(hook.result.current.placement).toBeNull()
+  })
+  it('does not show a legal check while the landing is still pending', () => {
+    const hook = renderHook(useWorkbench)
+    act(() => hook.result.current.pickUpSelection(true))
+    render(<PlacementBar workbench={hook.result.current} preview={null} />)
+    expect(placementLegalAttr(null)).toBe('pending')
+    expect(placementStatusIcon(null)).toBe('pending')
+    expect(document.querySelector('.placement-bar')?.getAttribute('data-legal')).toBe('pending')
+    expect(screen.getByLabelText(/Choose a spot/)).toBeTruthy()
   })
   it('picks up on drag start and puts an abandoned drag back without an edit', () => {
     const hook = renderHook(useWorkbench)

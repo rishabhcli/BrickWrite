@@ -1,14 +1,11 @@
+import { AlertTriangle, Check, CircleAlert, Crosshair, Eye, ScanSearch, ShieldCheck } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertTriangle,
-  Check,
-  CircleAlert,
-  Crosshair,
-  Eye,
-  ScanSearch,
-  ShieldCheck,
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { inspectModelHealth, type ModelHealthIssue, type ModelHealthSeverity } from '../../cad/modelHealth'
+  inspectModelHealth,
+  type ModelHealthIssue,
+  type ModelHealthSeverity,
+  type ModelHealthSummary,
+} from '../../cad/modelHealth'
 import type { EngineSnapshot } from '../../cad/types'
 
 type HealthFilter = 'all' | ModelHealthSeverity
@@ -16,6 +13,8 @@ type HealthFocusMode = 'select' | 'frame' | 'isolate'
 
 export interface ModelHealthPanelProps {
   state: EngineSnapshot
+  /** Precomputed summary from the inspector, so VALIDATE does not run statics twice. */
+  health?: ModelHealthSummary | null
   activeIssueId?: string | null
   onActiveIssue?: (issueId: string) => void
   onFocusIssue: (issue: ModelHealthIssue, mode: HealthFocusMode) => void
@@ -37,10 +36,7 @@ function HealthIssueCard({
 }) {
   const navigable = issue.partIds.length > 0
   return (
-    <article
-      className={`health-issue ${issue.severity} ${active ? 'active' : ''}`}
-      data-health-issue={issue.id}
-    >
+    <article className={`health-issue ${issue.severity} ${active ? 'active' : ''}`} data-health-issue={issue.id}>
       <button
         type="button"
         className="health-issue-main"
@@ -49,10 +45,18 @@ function HealthIssueCard({
         onClick={onOpen}
       >
         <span className="health-severity-mark">
-          {issue.severity === 'blocker' ? <CircleAlert size={13} /> : issue.severity === 'warning' ? <AlertTriangle size={13} /> : <ScanSearch size={13} />}
+          {issue.severity === 'blocker' ? (
+            <CircleAlert size={13} />
+          ) : issue.severity === 'warning' ? (
+            <AlertTriangle size={13} />
+          ) : (
+            <ScanSearch size={13} />
+          )}
         </span>
         <span>
-          <small>{severityLabel(issue.severity)} · {issue.kind.replace('-', ' ')}</small>
+          <small>
+            {severityLabel(issue.severity)} · {issue.kind.replace('-', ' ')}
+          </small>
           <strong>{issue.title}</strong>
           <em>{issue.evidence}</em>
         </span>
@@ -66,7 +70,11 @@ function HealthIssueCard({
             <strong>{issue.repair}</strong>
           </div>
           <footer>
-            <span>{navigable ? `${issue.partIds.length} exact part${issue.partIds.length === 1 ? '' : 's'}` : 'whole-model evidence'}</span>
+            <span>
+              {navigable
+                ? `${issue.partIds.length} exact part${issue.partIds.length === 1 ? '' : 's'}`
+                : 'whole-model evidence'}
+            </span>
             <div>
               <button
                 type="button"
@@ -107,37 +115,74 @@ function HealthIssueCard({
  */
 export function ModelHealthPanel({
   state,
+  health: healthProp,
   activeIssueId,
   onActiveIssue,
   onFocusIssue,
 }: ModelHealthPanelProps) {
   const [filter, setFilter] = useState<HealthFilter>('all')
-  const health = useMemo(
-    () => inspectModelHealth(state.document, state.validation),
-    [state.document, state.validation],
+  const measured = useMemo(
+    () => (healthProp ? healthProp : inspectModelHealth(state.document, state.validation)),
+    [healthProp, state.document, state.validation],
   )
+  const health = measured
   const visible = health.issues.filter((issue) => filter === 'all' || issue.severity === filter)
   const active = health.issues.find((issue) => issue.id === activeIssueId) ?? visible[0] ?? health.issues[0] ?? null
+
+  // A revision that repairs the highlighted issue must not keep a ghost id
+  // selected: the card would look active while the kernel no longer has it.
+  useEffect(() => {
+    if (!activeIssueId || !onActiveIssue) return
+    if (health.issues.some((issue) => issue.id === activeIssueId)) return
+    onActiveIssue(active?.id ?? '')
+  }, [active?.id, activeIssueId, health.revision, onActiveIssue])
 
   return (
     <section className="model-health" aria-label="Model health navigator">
       <header className={`health-hero ${health.ready ? 'ready' : 'blocked'}`}>
         <div className="health-radar" aria-hidden="true">
-          <span /><span /><span />
+          <span />
+          <span />
+          <span />
           {health.ready ? <ShieldCheck size={23} /> : <CircleAlert size={23} />}
         </div>
         <div>
           <span className="eyebrow">KERNEL + STATIC ANALYSIS · R{health.revision}</span>
-          <h3>{health.ready ? 'Build clears blockers' : `${health.blockers} blocker${health.blockers === 1 ? '' : 's'} found`}</h3>
-          <p>{health.issues.length ? `${health.warnings} watch · ${health.notices} notice` : 'No issues in the measured checks.'}</p>
+          <h3>
+            {health.ready
+              ? 'Build clears blockers'
+              : `${health.blockers} blocker${health.blockers === 1 ? '' : 's'} found`}
+          </h3>
+          <p>
+            {health.issues.length
+              ? `${health.warnings} watch · ${health.notices} notice`
+              : 'No issues in the measured checks.'}
+          </p>
         </div>
       </header>
 
       <div className="health-metrics" aria-label="Model health totals">
-        <div><span>BLOCK</span><strong>{String(health.blockers).padStart(2, '0')}</strong></div>
-        <div><span>WATCH</span><strong>{String(health.warnings).padStart(2, '0')}</strong></div>
-        <div><span>PARTS</span><strong>{health.metrics.parts.toLocaleString()}</strong></div>
-        <div><span>MASS</span><strong>{health.metrics.massGrams >= 1000 ? `${(health.metrics.massGrams / 1000).toFixed(1)}k` : Math.round(health.metrics.massGrams)}</strong><em>g</em></div>
+        <div>
+          <span>BLOCK</span>
+          <strong>{String(health.blockers).padStart(2, '0')}</strong>
+        </div>
+        <div>
+          <span>WATCH</span>
+          <strong>{String(health.warnings).padStart(2, '0')}</strong>
+        </div>
+        <div>
+          <span>PARTS</span>
+          <strong>{health.metrics.parts.toLocaleString()}</strong>
+        </div>
+        <div>
+          <span>MASS</span>
+          <strong>
+            {health.metrics.massGrams >= 1000
+              ? `${(health.metrics.massGrams / 1000).toFixed(1)}k`
+              : Math.round(health.metrics.massGrams)}
+          </strong>
+          <em>g</em>
+        </div>
       </div>
 
       <div
@@ -160,17 +205,17 @@ export function ModelHealthPanel({
                   ? ids[(current + 1) % ids.length]
                   : ids[(current - 1 + ids.length) % ids.length]
           setFilter(next)
-          requestAnimationFrame(() =>
-            document.getElementById(`health-filter-${next}`)?.focus(),
-          )
+          requestAnimationFrame(() => document.getElementById(`health-filter-${next}`)?.focus())
         }}
       >
-        {([
-          ['all', 'ALL', health.issues.length],
-          ['blocker', 'BLOCK', health.blockers],
-          ['warning', 'WATCH', health.warnings],
-          ['notice', 'NOTICE', health.notices],
-        ] as const).map(([id, label, count]) => (
+        {(
+          [
+            ['all', 'ALL', health.issues.length],
+            ['blocker', 'BLOCK', health.blockers],
+            ['warning', 'WATCH', health.warnings],
+            ['notice', 'NOTICE', health.notices],
+          ] as const
+        ).map(([id, label, count]) => (
           <button
             key={id}
             id={`health-filter-${id}`}
@@ -209,7 +254,10 @@ export function ModelHealthPanel({
       </section>
 
       <section className="health-checks" aria-label="Health check ledger">
-        <header><span>CHECK LEDGER</span><em>{health.checks.length} deterministic</em></header>
+        <header>
+          <span>CHECK LEDGER</span>
+          <em>{health.checks.length} deterministic</em>
+        </header>
         {health.checks.map((check) => (
           <div key={check.id} className={check.status}>
             <span>{check.status === 'pass' ? <Check size={10} /> : <CircleAlert size={10} />}</span>

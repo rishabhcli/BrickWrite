@@ -26,13 +26,15 @@ function healthSnapshot(): EngineSnapshot {
     wrong: part('wrong', [400, 0, 0], 15),
   }
   document.subassemblies.hull.partIds = ['allowed', 'wrong']
-  document.constraints = [{
-    id: 'palette_build',
-    kind: 'palette',
-    label: 'Build palette',
-    value: [4],
-    hard: true,
-  }]
+  document.constraints = [
+    {
+      id: 'palette_build',
+      kind: 'palette',
+      label: 'Build palette',
+      value: [4],
+      hard: true,
+    },
+  ]
   return {
     document,
     transactions: [],
@@ -64,11 +66,7 @@ describe('Model Health navigator', () => {
   it('hands the exact issue and requested navigation mode to the shared workspace', () => {
     const onFocus = vi.fn()
     render(
-      <ModelHealthPanel
-        state={healthSnapshot()}
-        activeIssueId="constraint:palette_build"
-        onFocusIssue={onFocus}
-      />,
+      <ModelHealthPanel state={healthSnapshot()} activeIssueId="constraint:palette_build" onFocusIssue={onFocus} />,
     )
 
     const issue = document.querySelector('[data-health-issue="constraint:palette_build"]') as HTMLElement
@@ -112,5 +110,20 @@ describe('Model Health navigator', () => {
     expect(screen.getByRole('tab', { name: /BLOCK/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Build palette')).toBeVisible()
     expect(screen.queryByText('Separate build islands')).not.toBeInTheDocument()
+  })
+
+  it('drops a repaired issue id instead of keeping a ghost highlight', () => {
+    const onActive = vi.fn()
+    const state = healthSnapshot()
+    render(
+      <ModelHealthPanel
+        state={state}
+        activeIssueId="collision:does-not-exist"
+        onActiveIssue={onActive}
+        onFocusIssue={() => undefined}
+      />,
+    )
+    expect(onActive).toHaveBeenCalled()
+    expect(onActive.mock.calls[0][0]).not.toBe('collision:does-not-exist')
   })
 })
