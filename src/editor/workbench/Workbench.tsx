@@ -32,6 +32,7 @@ import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
 import { TransformPanel } from './TransformPanel'
 import { ViewportStage } from './ViewportStage'
+import { watchCatalogSearch } from './catalogSearchFocus'
 import { watchGeneratePrompt } from './promptFocus'
 import { OfflineState } from './states'
 import {
@@ -192,6 +193,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const layoutRef = useRef(rawLayout)
   layoutRef.current = rawLayout
   const pendingReveal = useRef<string | null>(null)
+  const catalogSearchWatch = useRef<(() => void) | null>(null)
   const chromeViewRef = useRef({
     tool: workbench.tool,
     cameraView: workbench.cameraView,
@@ -515,9 +517,13 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const focusSearch = useCallback(() => {
     setActiveLeftSurface('palette')
-    if (rawLayout.left.collapsed) updateLayout({ ...rawLayout, left: { ...rawLayout.left, collapsed: false } })
-    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-catalog-search]')?.focus())
-  }, [rawLayout, updateLayout])
+    const current = layoutRef.current
+    if (current.left.collapsed) updateLayout({ ...current, left: { ...current.left, collapsed: false } })
+    catalogSearchWatch.current?.()
+    catalogSearchWatch.current = watchCatalogSearch()
+  }, [updateLayout])
+
+  useEffect(() => () => catalogSearchWatch.current?.(), [])
 
   const exportLdr = useCallback(() => {
     const name =

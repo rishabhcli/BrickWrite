@@ -37,6 +37,7 @@ const { resetPreferences } = await import('./persistence')
 const { useRegisterContribution } = await import('./ExtensionRegistry')
 const { Workbench } = await import('./Workbench')
 const { announceGenerationPromptReady } = await import('./promptFocus')
+const { revealChrome } = await import('../../webmcp/chrome')
 type PartInstance = import('../../cad/types').PartInstance
 
 /**
@@ -346,5 +347,65 @@ describe('the beginner path through the shell', () => {
 
     expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
     expect(cadEngine.getSnapshot().canUndo).toBe(false)
+  })
+
+  it('lands catalog search after the left dock has to remount', async () => {
+    cadEngine.replaceDocument(createEmptyDocument())
+    mount()
+    expect(document.querySelector('.viewport-empty')).not.toBeNull()
+
+    fireEvent.click(control('button[aria-label="Collapse the left panel"]'))
+    expect(document.querySelector('[data-catalog-search]')).toBeNull()
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(document.querySelector('[data-catalog-search]'))
+    })
+  })
+
+  it('walks catalog results from the search field and keeps PageUp/PageDown on that field', () => {
+    mount()
+    const search = control('[data-catalog-search]')
+    expect(document.querySelector('.part-card.cursor')).toBeNull()
+
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(document.querySelector('.part-card.cursor')).not.toBeNull()
+
+    fireEvent.keyDown(search, { key: 'PageDown' })
+    fireEvent.keyDown(search, { key: 'PageUp' })
+    expect(document.querySelector('[data-catalog-search]')).toBe(search)
+
+    fireEvent.click(control('button[aria-label="FILTERS"]'))
+    fireEvent.click(control('button[title="Every identity this build knows about, across all three tiers."]'))
+    const pager = document.querySelector('.parts-pager')
+    if (!pager) return
+    const first = document.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+    const label = pager.querySelector('span')?.textContent
+    fireEvent.keyDown(search, { key: 'PageDown' })
+    expect(pager.querySelector('span')?.textContent).not.toBe(label)
+    expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
+    fireEvent.keyDown(search, { key: 'PageUp' })
+    expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+  })
+
+  it('reveals inspector object and health validate through the assembled shell', () => {
+    mount()
+    act(() => cadEngine.setSelection(['brick']))
+    expect(sectionOpen('inspector')).not.toBe('true')
+
+    act(() => {
+      revealChrome('health')
+    })
+    expect(sectionOpen('inspector')).toBe('true')
+    expect(control('.inspector-tabs button.active').textContent).toMatch(/VALIDATE/i)
+    expect(document.querySelector('.inspector-panel .selection-identity')).toBeNull()
+
+    act(() => {
+      revealChrome('inspector')
+    })
+    expect(sectionOpen('inspector')).toBe('true')
+    expect(control('.inspector-tabs button.active').textContent).toMatch(/OBJECT/i)
+    expect(document.querySelector('.inspector-panel .selection-identity')).not.toBeNull()
   })
 })
