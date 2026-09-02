@@ -1409,6 +1409,58 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: this.db.branchRecord(branch) }
   }
 
+  /** Mirrors `convex/versions.ts:removeBranch`: creator or owner, nothing depending on it. */
+  async removeBranch(args: { projectId: string; branchId: string }): Promise<CloudResult<{ removed: boolean }>> {
+    const offline = this.guard<{ removed: boolean }>()
+    if (offline) return offline
+    const reader = this.authorise(args.projectId, 'project.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+    const branch = this.db.branch(project, args.branchId)
+    if (!branch.ok) return branch
+    const row = branch.value
+    if (row._id === project.defaultBranchId) {
+      return fail(
+        'FORBIDDEN',
+        'The default branch cannot be deleted.',
+        'Delete the project instead; every other branch forks from this one.',
+      )
+    }
+    if (row.proposal?.status === 'open') {
+      return fail(
+        'FORBIDDEN',
+        'That branch has an open merge proposal.',
+        'Withdraw or decide the proposal first, so the decision is recorded.',
+      )
+    }
+    if (this.db.branches.some((other) => other.forkedFromBranchId === row._id)) {
+      return fail(
+        'FORBIDDEN',
+        'Another branch was forked from this one.',
+        'Delete the branches that fork from it first; their history replays through this one.',
+      )
+    }
+    if (this.db.versions.some((version) => version.branchId === row._id)) {
+      return fail(
+        'FORBIDDEN',
+        'That branch holds saved versions.',
+        'Delete the versions saved on it first; a version is a point in history somebody named.',
+      )
+    }
+    if (row.createdBySubject !== identity.subject) {
+      const authorised = this.authorise(args.projectId, 'project.delete')
+      if (!authorised.ok) return authorised
+    }
+    this.db.branches.splice(this.db.branches.indexOf(row), 1)
+    for (const edit of this.db.transactions.filter((entry) => entry.branchId === row._id)) {
+      this.db.transactions.splice(this.db.transactions.indexOf(edit), 1)
+    }
+    for (const chunk of this.db.snapshots.filter((entry) => entry.branchId === row._id)) {
+      this.db.snapshots.splice(this.db.snapshots.indexOf(chunk), 1)
+    }
+    return { ok: true, value: { removed: true } }
+  }
+
   /** Mirrors `convex/versions.ts:remove`: creator, or an owner. */
   async removeVersion(args: { projectId: string; versionId: string }): Promise<CloudResult<{ removed: boolean }>> {
     const offline = this.guard<{ removed: boolean }>()

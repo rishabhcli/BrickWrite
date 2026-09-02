@@ -14,6 +14,7 @@ import {
 } from './model/protocol'
 import { branchRecord, versionRecord } from './model/records'
 import {
+  CHECKPOINT_PRUNE_CHUNKS,
   deleteSnapshotGroup,
   latestBranchCheckpoint,
   readSnapshot,
@@ -24,6 +25,9 @@ import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/che
 import { isRevision } from './model/history'
 import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
 import { collectionFull, COLLECTION_LIMITS } from './model/limits'
+
+/** Log rows removed per pass; a transaction is up to half a megabyte. */
+const BRANCH_PRUNE_TRANSACTIONS = 8
 import { snapshotUpload } from './model/validators'
 import { decodeSnapshotUpload } from './model/snapshotValidation'
 
@@ -401,6 +405,128 @@ export const createBranch = mutation({
     const row = await ctx.db.get(branchId)
     if (!row) throw new Error('The branch vanished during creation.')
     return { ok: true, value: branchRecord(row) }
+  },
+})
+
+/**
+ * Deletes a branch, its log and its checkpoints.
+ *
+ * The last ceiling with no way down from it: sixty-four branches refused a
+ * sixty-fifth and nothing could remove one.
+ *
+ * Four things are refused rather than worked around, because each would break
+ * something that is not this branch:
+ *
+ *   - The default branch. `resolveBranch` falls back to it, so a project
+ *     without one cannot be opened at all.
+ *   - A branch something forked from. `readBranchHistory` walks
+ *     `forkedFromBranchId` to replay a child through its fork revision, so
+ *     removing a parent makes its children unreplayable.
+ *   - An open proposal. Deleting the branch under one would withdraw it
+ *     silently; the decision belongs in the audit trail.
+ *   - Named versions. Those are somebody's points in history and are governed
+ *     by their own delete, which an owner or their creator can use first.
+ *
+ * Authorised as `versions.remove` is: the branch's creator, or an owner.
+ */
+export const removeBranch = mutation({
+  args: { projectId: v.string(), branchId: v.string() },
+  handler: async (ctx, args): Promise<CloudResult<{ removed: boolean }>> => {
+    const reader = await authoriseProject(ctx, args.projectId, 'project.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+
+    const resolved = await resolveBranch(ctx, project, args.branchId)
+    if (!resolved.ok) return resolved
+    const branch = resolved.value
+
+    if (branch._id === project.defaultBranchId) {
+      return cloudFailure(
+        'FORBIDDEN',
+        'The default branch cannot be deleted.',
+        'Delete the project instead; every other branch forks from this one.',
+      )
+    }
+    if (branch.proposal?.status === 'open') {
+      return cloudFailure(
+        'FORBIDDEN',
+        'That branch has an open merge proposal.',
+        'Withdraw or decide the proposal first, so the decision is recorded.',
+      )
+    }
+
+    // Bounded by the branches-per-project ceiling, so a scan of small rows
+    // rather than an index that exists only for this check.
+    const siblings = await ctx.db
+      .query('branches')
+      .withIndex('by_project', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.branchesPerProject + 1)
+    if (siblings.some((row) => row.forkedFromBranchId === branch._id)) {
+      return cloudFailure(
+        'FORBIDDEN',
+        'Another branch was forked from this one.',
+        'Delete the branches that fork from it first; their history replays through this one.',
+      )
+    }
+
+    const pinned = await ctx.db
+      .query('versions')
+      .withIndex('by_project_created', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.versionsPerProject)
+    if (pinned.some((row) => row.branchId === branch._id)) {
+      return cloudFailure(
+        'FORBIDDEN',
+        'That branch holds saved versions.',
+        'Delete the versions saved on it first; a version is a point in history somebody named.',
+      )
+    }
+
+    if (branch.createdBySubject !== identity.subject) {
+      const authorised = await authoriseProject(ctx, args.projectId, 'project.delete')
+      if (!authorised.ok) return authorised
+    }
+
+    // The row goes first, so nothing resolves a branch being emptied.
+    await ctx.db.delete(branch._id)
+    await writeAuditEvent(ctx, {
+      projectId: project._id,
+      actorSubject: identity.subject,
+      action: 'branch.delete',
+      detail: { branch: branch.name, headRevision: branch.headRevision },
+    })
+    await ctx.scheduler.runAfter(0, internal.versions.pruneDeletedBranch, { branchId: branch._id })
+    return { ok: true, value: { removed: true } }
+  },
+})
+
+/**
+ * Empties a deleted branch, a bounded pass at a time.
+ *
+ * A transaction is up to half a megabyte and a checkpoint is up to eight, and
+ * both have to be read to be deleted — so the work is spread across
+ * transactions rather than attempted in the one that removed the branch.
+ */
+export const pruneDeletedBranch = internalMutation({
+  args: { branchId: v.id('branches') },
+  handler: async (ctx, args): Promise<void> => {
+    const edits = await ctx.db
+      .query('transactions')
+      .withIndex('by_branch_revision', (q) => q.eq('branchId', args.branchId))
+      .take(BRANCH_PRUNE_TRANSACTIONS)
+    for (const edit of edits) await ctx.db.delete(edit._id)
+    if (edits.length === BRANCH_PRUNE_TRANSACTIONS) {
+      await ctx.scheduler.runAfter(0, internal.versions.pruneDeletedBranch, { branchId: args.branchId })
+      return
+    }
+
+    const chunks = await ctx.db
+      .query('snapshots')
+      .withIndex('by_branch_kind_revision', (q) => q.eq('branchId', args.branchId).eq('kind', 'checkpoint'))
+      .take(CHECKPOINT_PRUNE_CHUNKS)
+    for (const chunk of chunks) await ctx.db.delete(chunk._id)
+    if (chunks.length === CHECKPOINT_PRUNE_CHUNKS) {
+      await ctx.scheduler.runAfter(0, internal.versions.pruneDeletedBranch, { branchId: args.branchId })
+    }
   },
 })
 

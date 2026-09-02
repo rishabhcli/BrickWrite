@@ -615,3 +615,190 @@ describe('deleting a version', () => {
     expect(left).toBe(1)
   })
 })
+
+describe('deleting a branch', () => {
+  /** A fork copies the source branch's newest checkpoint, so one has to exist. */
+  const checkpoint = (t: Harness, projectId: string) =>
+    t.withIdentity(person('owner')).mutation(api.projects.saveCheckpoint, {
+      projectId,
+      snapshot: snapshotUpload({ localProjectId: 'local-owner', revision: 0 }),
+    })
+
+  const fork = (t: Harness, as: string, projectId: string, name: string, fromBranchId?: string) =>
+    t.withIdentity(person(as)).mutation(api.versions.createBranch, {
+      projectId,
+      name,
+      ...(fromBranchId ? { fromBranchId } : {}),
+    })
+
+  const branchCount = (t: Harness, projectId: Id<'projects'>): Promise<number> =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('branches')
+          .withIndex('by_project', (q) => q.eq('projectId', projectId))
+          .collect()
+      ).length,
+    )
+
+  test('lets a project at its ceiling open another branch', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    expectOk(await checkpoint(t, seeded.projectId))
+    const existing = await seededBranches(t, seeded.projectId)
+    const now = Date.now()
+    let last: Id<'branches'> | null = null
+    await t.run(async (ctx) => {
+      for (let index = 0; index < COLLECTION_LIMITS.branchesPerProject - existing; index += 1) {
+        last = await ctx.db.insert('branches', {
+          projectId: seeded.projectId,
+          name: `seeded-${index}`,
+          headRevision: 0,
+          baseRevision: 0,
+          kind: 'named',
+          createdBySubject: subjectOf('editor'),
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+    })
+    expect(codeOf(await fork(t, 'editor', seeded.projectId, 'one-too-many'))).toBe('COLLECTION_FULL')
+
+    expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: last! }),
+    )
+    expect(codeOf(await fork(t, 'editor', seeded.projectId, 'one-too-many'))).toBe('ok')
+  })
+
+  test('refuses the default branch, whose absence closes the project', async () => {
+    // A freshly claimed project has only `main`, so nothing forks from it and
+    // this is the only check standing between it and an unopenable project.
+    const t = harness()
+    const project = expectOk(
+      await t.withIdentity(person('owner')).mutation(api.projects.create, {
+        localProjectId: 'doc-1',
+        name: 'Only main',
+        schemaVersion: 2,
+        catalogVersion: 'fixture-1',
+      }),
+    )
+    const refused = await t
+      .withIdentity(person('owner'))
+      .mutation(api.versions.removeBranch, { projectId: project.projectId, branchId: project.defaultBranchId })
+    expect(codeOf(refused)).toBe('FORBIDDEN')
+    expect(await branchCount(t, project.projectId as Id<'projects'>)).toBe(1)
+    // Still openable, which is the thing the refusal protects.
+    expectOk(await t.withIdentity(person('owner')).query(api.projects.get, { projectId: project.projectId }))
+  })
+
+  test('refuses a branch something forked from, whose history replays through it', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner' })
+    expectOk(await checkpoint(t, seeded.projectId))
+    const parent = expectOk(await fork(t, 'owner', seeded.projectId, 'parent'))
+    expectOk(await fork(t, 'owner', seeded.projectId, 'child', parent.branchId))
+
+    const refused = await t
+      .withIdentity(person('owner'))
+      .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: parent.branchId })
+    expect(codeOf(refused)).toBe('FORBIDDEN')
+  })
+
+  test('refuses a branch under an open proposal, so the decision is recorded', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner' })
+    const refused = await t
+      .withIdentity(person('owner'))
+      .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: seeded.proposedBranchId })
+    expect(codeOf(refused)).toBe('FORBIDDEN')
+  })
+
+  test('refuses a branch holding a named version, and allows it once that goes', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner' })
+    expectOk(await checkpoint(t, seeded.projectId))
+    const side = expectOk(await fork(t, 'owner', seeded.projectId, 'with-versions'))
+    const version = expectOk(
+      await t.withIdentity(person('owner')).mutation(api.versions.create, {
+        projectId: seeded.projectId,
+        branchId: side.branchId,
+        label: 'pinned',
+        snapshot: snapshotUpload({ localProjectId: 'local-owner', revision: 0 }),
+      }),
+    )
+    expect(
+      codeOf(
+        await t
+          .withIdentity(person('owner'))
+          .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: side.branchId }),
+      ),
+    ).toBe('FORBIDDEN')
+
+    // The two deletes compose: named history goes by its own path first.
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.remove, { projectId: seeded.projectId, versionId: version.versionId }),
+    )
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: side.branchId }),
+    )
+  })
+
+  test('takes the branch’s log and checkpoints with it', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner' })
+    expectOk(await checkpoint(t, seeded.projectId))
+    const side = expectOk(await fork(t, 'owner', seeded.projectId, 'doomed'))
+    const branchId = side.branchId as Id<'branches'>
+    const rows = () =>
+      t.run(async (ctx) => ({
+        edits: (
+          await ctx.db
+            .query('transactions')
+            .withIndex('by_branch_revision', (q) => q.eq('branchId', branchId))
+            .collect()
+        ).length,
+        chunks: (
+          await ctx.db
+            .query('snapshots')
+            .withIndex('by_branch_kind_revision', (q) => q.eq('branchId', branchId).eq('kind', 'checkpoint'))
+            .collect()
+        ).length,
+      }))
+    expect((await rows()).chunks).toBeGreaterThan(0)
+
+    expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId }),
+    )
+    await t.finishAllScheduledFunctions(() => {})
+    expect(await rows()).toEqual({ edits: 0, chunks: 0 })
+  })
+
+  test('lets an editor remove their own but not somebody else’s', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    expectOk(await checkpoint(t, seeded.projectId))
+    const mine = expectOk(await fork(t, 'editor', seeded.projectId, 'mine'))
+    const theirs = expectOk(await fork(t, 'owner', seeded.projectId, 'theirs'))
+
+    expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: mine.branchId }),
+    )
+    expect(
+      codeOf(
+        await t
+          .withIdentity(person('editor'))
+          .mutation(api.versions.removeBranch, { projectId: seeded.projectId, branchId: theirs.branchId }),
+      ),
+    ).toBe('FORBIDDEN')
+  })
+})

@@ -102,6 +102,9 @@ export const refs = {
     remove: m<{ projectId: string; versionId: string }, CloudResult<{ removed: boolean }>>('versions:remove'),
     document: q<{ projectId: string; versionId: string }, CloudResult<CloudSnapshotRecord>>('versions:document'),
     createBranch: m<CreateBranchArgs, CloudResult<CloudBranchRecord>>('versions:createBranch'),
+    removeBranch: m<{ projectId: string; branchId: string }, CloudResult<{ removed: boolean }>>(
+      'versions:removeBranch',
+    ),
     proposeMerge: m<
       { projectId: string; branchId: string; intoBranchId?: string; summary: string },
       CloudResult<CloudBranchRecord>

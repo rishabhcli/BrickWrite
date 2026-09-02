@@ -181,6 +181,8 @@ export interface CloudBackend {
   removeComment(args: { projectId: string; commentId: string }): Promise<CloudResult<{ removed: number }>>
   /** Removes a named version and the document it pinned. The log is untouched. */
   removeVersion(args: { projectId: string; versionId: string }): Promise<CloudResult<{ removed: boolean }>>
+  /** Removes a branch, its log and its checkpoints. Refuses if anything depends on it. */
+  removeBranch(args: { projectId: string; branchId: string }): Promise<CloudResult<{ removed: boolean }>>
   setCommentStatus(args: {
     projectId: string
     commentId: string
