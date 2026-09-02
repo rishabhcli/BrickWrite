@@ -55,7 +55,14 @@ export interface CompletionRequest {
 export interface CompletionResult {
   readonly value: unknown
   readonly provenance: Provenance
-  readonly usage: { inputTokens: number; outputTokens: number }
+  readonly usage: {
+    readonly inputTokens: number
+    readonly outputTokens: number
+    /** `cache_creation_input_tokens`; excluded from `inputTokens` by the provider. */
+    readonly cacheWriteTokens: number
+    /** `cache_read_input_tokens`; excluded from `inputTokens` by the provider. */
+    readonly cacheReadTokens: number
+  }
   /** Model calls made. 2 means the first answer failed validation. */
   readonly attempts: number
 }
@@ -145,14 +152,21 @@ export class AnthropicGenerationProvider {
     const history: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: request.prompt }]
     let inputTokens = 0
     let outputTokens = 0
+    let cacheWriteTokens = 0
+    let cacheReadTokens = 0
     let problems: string[] = []
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       request.signal?.throwIfAborted()
       request.onProgress?.(attempt === 1 ? 'calling model' : 'retrying after a schema violation')
       const message = await this.call(request, history)
+      // All four classes. The system block carries a cache breakpoint, so the
+      // corrective second attempt reads its prefix back instead of re-sending
+      // it, and `input_tokens` alone would report that attempt as nearly free.
       inputTokens += message.usage?.input_tokens ?? 0
       outputTokens += message.usage?.output_tokens ?? 0
+      cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0
+      cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0
 
       if (message.stop_reason === 'refusal') {
         throw new SchemaViolationError([
@@ -176,7 +190,7 @@ export class AnthropicGenerationProvider {
             seed: 0,
             createdAt: new Date().toISOString(),
           },
-          usage: { inputTokens, outputTokens },
+          usage: { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens },
           attempts: attempt,
         }
       }
@@ -228,7 +242,12 @@ export class AnthropicGenerationProvider {
 /** The response fields this provider reads. */
 interface AnthropicMessageShape {
   readonly content?: ReadonlyArray<{ type: string; text?: string }>
-  readonly usage?: { input_tokens?: number; output_tokens?: number }
+  readonly usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
   readonly stop_reason?: string | null
   readonly stop_details?: { category?: string | null } | null
 }

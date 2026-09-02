@@ -40,6 +40,14 @@ tagged release.
   conflict recovery, recoverable invitation delivery. See `docs/cloud-*.md`.
 - Bounded AI request lifetimes, cancellation, and stream heartbeats. See
   [AI stream reliability](docs/ai-stream-reliability.md).
+- The assistant transcript is prompt-cached. The per-leg grounding block moved
+  out of `system`, where it sat ahead of the whole conversation and made it
+  uncacheable, into a trailing block with a rolling breakpoint before it. A
+  tool-using leg now reads the accumulated transcript back instead of re-sending
+  it.
+- The spend ceiling counts all four token classes. `input_tokens` excludes cache
+  reads and writes, so metering only it read a cached call as nearly free; a
+  cache write now counts ×1.25 and a read ×0.1 against an ordinary input token.
 
 ### Chrome
 

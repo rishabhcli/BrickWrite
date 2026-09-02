@@ -2,8 +2,9 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AnthropicModelProvider } from './provider.ts'
-import { createAssistantRoute, structuralCheck, toApiMessages, toolTurnsUsed } from './handler.ts'
+import { buildChatMessages, createAssistantRoute, structuralCheck, toApiMessages, toolTurnsUsed } from './handler.ts'
 import { ASSISTANT_PROTOCOL, type AssistantEvent, type WireMessage } from './protocol.ts'
+import type { RouteContext } from '../dispatch.ts'
 
 /**
  * The route is exercised over real HTTP, on a real socket.
@@ -13,6 +14,18 @@ import { ASSISTANT_PROTOCOL, type AssistantEvent, type WireMessage } from './pro
  * up mid-stream, and a timeout that has to cancel an upstream generation.
  */
 
+/** Just enough of the SDK's request to assert on prompt-cache layout. */
+interface Block {
+  type: string
+  text?: string
+  cache_control?: { type: string }
+}
+
+interface StreamParams {
+  system: Block[]
+  messages: Array<{ role: string; content: Block[] }>
+}
+
 interface StreamScript {
   deltas?: string[]
   final?: Record<string, unknown>
@@ -21,7 +34,7 @@ interface StreamScript {
 }
 
 function fakeAnthropic(script: StreamScript) {
-  const seen: { signal?: AbortSignal } = {}
+  const seen: { signal?: AbortSignal; params?: StreamParams } = {}
   return {
     seen,
     messages: {
@@ -35,8 +48,9 @@ function fakeAnthropic(script: StreamScript) {
         content: [{ type: 'text', text: JSON.stringify({ ok: true, subject: 'rover' }) }],
         usage: { input_tokens: 5, output_tokens: 3 },
       }),
-      stream: (_params: unknown, options: { signal?: AbortSignal }) => {
+      stream: (params: StreamParams, options: { signal?: AbortSignal }) => {
         seen.signal = options?.signal
+        seen.params = params
         const final = script.final ?? {
           content: script.deltas?.length ? [{ type: 'text', text: script.deltas.join('') }] : [],
           stop_reason: 'end_turn',
@@ -64,11 +78,14 @@ function fakeAnthropic(script: StreamScript) {
 
 let server: Server | null = null
 
-async function listen(route: { handle: (request: never, response: never, url: URL) => Promise<boolean> }) {
+async function listen(
+  route: { handle: (request: never, response: never, url: URL, context?: RouteContext) => Promise<boolean> },
+  context?: RouteContext,
+) {
   server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`)
     void (async () => {
-      const handled = await route.handle(request as never, response as never, url)
+      const handled = await route.handle(request as never, response as never, url, context)
       if (!handled) {
         response.writeHead(404)
         response.end('unclaimed')
@@ -322,7 +339,7 @@ describe('POST /api/assistant', () => {
     expect(body.ok).toBe(true)
     expect(body.value).toEqual({ ok: true, subject: 'rover' })
     expect(body.provenance).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5' })
-    expect(body.usage).toEqual({ inputTokens: 5, outputTokens: 3 })
+    expect(body.usage).toEqual({ inputTokens: 5, outputTokens: 3, cacheWriteTokens: 0, cacheReadTokens: 0 })
   })
 
   it('rejects a conversation that does not open with a user message', async () => {
@@ -375,6 +392,148 @@ describe('transcript translation', () => {
         { role: 'tool', results: [{ id: 'b', name: 'x', ok: true, content: '{}' }] },
       ]),
     ).toBe(2)
+  })
+})
+
+/**
+ * Prompt-cache layout.
+ *
+ * These assert the property caching actually depends on — that the bytes ahead
+ * of a breakpoint are identical on the next leg — rather than that a particular
+ * field is present. A test that only checked for `cache_control` would still
+ * pass with the marker in a position that never gets read back.
+ */
+describe('prompt cache layout', () => {
+  /**
+   * The prefix a breakpoint caches: every block up to and including the marked
+   * one, markers stripped. The marker moves forward each leg by design, so it is
+   * not part of what has to match.
+   */
+  const cachedPrefix = (messages: ReturnType<typeof buildChatMessages>) => {
+    const out: Array<{ role: string; block: unknown }> = []
+    for (const message of messages) {
+      const blocks = message.content as Block[]
+      for (const block of blocks) {
+        const { cache_control: marker, ...rest } = block
+        out.push({ role: message.role, block: rest })
+        if (marker) return out
+      }
+    }
+    return null
+  }
+
+  const grounding = (revision: number) => `Revision: ${revision}`
+
+  it('appends the grounding after the transcript, not ahead of it', () => {
+    const messages = buildChatMessages([{ role: 'user', text: 'What am I looking at?' }], grounding(1))
+    const blocks = messages.at(-1)!.content as Block[]
+    expect(blocks.at(-1)).toEqual({ type: 'text', text: 'Revision: 1' })
+  })
+
+  it('marks the block the grounding follows, so the transcript is the cached prefix', () => {
+    const messages = buildChatMessages([{ role: 'user', text: 'What am I looking at?' }], grounding(1))
+    const blocks = messages.at(-1)!.content as Block[]
+    // Second to last: the grounding itself must stay outside the prefix, or its
+    // per-leg churn would invalidate everything it is meant to sit behind.
+    expect(blocks.at(-2)?.cache_control).toEqual({ type: 'ephemeral' })
+    expect(blocks.at(-1)?.cache_control).toBeUndefined()
+    expect(blocks.filter((block) => block.cache_control)).toHaveLength(1)
+  })
+
+  it('marks the tool results when the leg is a continuation', () => {
+    const messages = buildChatMessages(
+      [
+        { role: 'user', text: 'Add a wall' },
+        { role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'scene_overview', input: {} }] },
+        { role: 'tool', results: [{ id: 't1', name: 'scene_overview', ok: true, content: '{"parts":33}' }] },
+      ],
+      grounding(2),
+    )
+    const blocks = messages.at(-1)!.content as Block[]
+    expect(blocks.at(-2)).toMatchObject({ type: 'tool_result', cache_control: { type: 'ephemeral' } })
+    expect(blocks.at(-1)).toEqual({ type: 'text', text: 'Revision: 2' })
+  })
+
+  it('keeps the cached prefix byte-identical as the conversation grows', () => {
+    // The whole point. A leg that cannot reproduce the previous leg's prefix
+    // exactly reads nothing back and re-pays for the entire transcript.
+    const first: WireMessage[] = [{ role: 'user', text: 'Add a wall' }]
+    const second: WireMessage[] = [
+      ...first,
+      { role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'scene_overview', input: {} }] },
+      { role: 'tool', results: [{ id: 't1', name: 'scene_overview', ok: true, content: '{"parts":33}' }] },
+    ]
+
+    const legOne = cachedPrefix(buildChatMessages(first, grounding(1)))!
+    const legTwo = cachedPrefix(buildChatMessages(second, grounding(2)))!
+    expect(legOne).not.toBeNull()
+    expect(legTwo.length).toBeGreaterThan(legOne.length)
+    expect(legTwo.slice(0, legOne.length)).toEqual(legOne)
+  })
+
+  it('still produces a valid request when there is no user turn to append to', () => {
+    // A last wire message carrying neither text nor an image is dropped by
+    // `toApiMessages`, which would otherwise leave an assistant turn last. The
+    // grounding gets its own user turn rather than the request being malformed.
+    const messages = buildChatMessages(
+      [
+        { role: 'user', text: 'Add a wall' },
+        { role: 'assistant', text: 'Proposed one.' },
+        { role: 'user', text: '   ' },
+      ],
+      grounding(3),
+    )
+    expect(messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'text', text: 'Revision: 3' }] })
+  })
+
+  it('sends one system block, so tools and the standing prompt cache together', async () => {
+    const client = fakeAnthropic({ deltas: ['ok'] })
+    const route = createAssistantRoute({
+      provider: new AnthropicModelProvider({ apiKey: 'k', client: client as never }),
+    })
+    const base = await listen(route)
+    await fetch(`${base}/api/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(chatBody()),
+    })
+
+    const params = client.seen.params!
+    expect(params.system).toHaveLength(1)
+    expect(params.system[0]?.cache_control).toEqual({ type: 'ephemeral' })
+    // The grounding used to be a second system block, ahead of every message.
+    expect(params.system[0]?.text).not.toContain('Revision:')
+    expect(JSON.stringify(params.messages.at(-1))).toContain('Revision: 1')
+  })
+
+  it('reports every token class to the meter, not just the uncached ones', async () => {
+    const reported: unknown[] = []
+    const client = fakeAnthropic({
+      final: {
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 11, output_tokens: 4, cache_creation_input_tokens: 900, cache_read_input_tokens: 7000 },
+      },
+    })
+    const route = createAssistantRoute({
+      provider: new AnthropicModelProvider({ apiKey: 'k', client: client as never }),
+    })
+    const base = await listen(route, { reportUsage: (usage) => reported.push(usage) })
+    const response = await fetch(`${base}/api/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(chatBody()),
+    })
+    const events = await readEvents(response)
+
+    expect(reported).toEqual([{ inputTokens: 11, outputTokens: 4, cacheWriteTokens: 900, cacheReadTokens: 7000 }])
+    expect(events.find((event) => event.type === 'usage')).toEqual({
+      type: 'usage',
+      inputTokens: 11,
+      outputTokens: 4,
+      cacheReadInputTokens: 7000,
+      cacheCreationInputTokens: 900,
+    })
   })
 })
 

@@ -53,10 +53,11 @@ Be concise and concrete. Name the parts, the counts and the revision. Do not nar
 /**
  * The per-leg grounding block.
  *
- * Sent as a second system segment rather than folded into the standing prompt
- * so the long, stable half stays byte-identical across turns and remains
- * cacheable, while the volatile half — revision, selection, validation — sits
- * after the cache breakpoint.
+ * Kept out of the standing prompt so the long, stable half stays byte-identical
+ * across turns and remains cacheable. It is not a second system segment either:
+ * `system` renders ahead of `messages`, so a block that changes every leg placed
+ * there makes the whole transcript uncacheable. `buildChatMessages` appends it
+ * after the history instead — see the reasoning there.
  */
 export function groundingBlock(grounding: Grounding, mode: string): string {
   const lines: string[] = [

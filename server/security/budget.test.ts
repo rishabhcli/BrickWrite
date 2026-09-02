@@ -4,6 +4,8 @@ import {
   checkBudget,
   configureBudget,
   dayKey,
+  CACHE_READ_TOKEN_WEIGHT,
+  CACHE_WRITE_TOKEN_WEIGHT,
   DEFAULT_DAILY_TOKEN_CEILING,
   OUTPUT_TOKEN_WEIGHT,
   recordUsage,
@@ -72,6 +74,56 @@ describe('a per-user spend ceiling', () => {
     expect(weightedTokens({ inputTokens: 0, outputTokens: 10 })).toBeGreaterThan(
       weightedTokens({ inputTokens: 10, outputTokens: 0 }),
     )
+  })
+
+  it('counts cached tokens, which the provider reports outside inputTokens', () => {
+    // `input_tokens` excludes both cache classes. Counting only it would meter a
+    // cached prefix as free — and the assistant route caches its whole
+    // transcript, so "free" would be most of every leg.
+    expect(weightedTokens({ inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1000 })).toBe(
+      1000 * CACHE_WRITE_TOKEN_WEIGHT,
+    )
+    expect(weightedTokens({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 1000 })).toBe(
+      1000 * CACHE_READ_TOKEN_WEIGHT,
+    )
+  })
+
+  it('prices a cache read below an ordinary input token and a write above one', () => {
+    // The direction is the assertion. A read that cost the same as a fresh
+    // token would make caching look like no saving at all; a write that cost
+    // the same would hide the premium the first leg actually pays.
+    const plain = weightedTokens({ inputTokens: 1000, outputTokens: 0 })
+    expect(weightedTokens({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 1000 })).toBeLessThan(plain)
+    expect(weightedTokens({ inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1000 })).toBeGreaterThan(plain)
+  })
+
+  it('rounds the weighted total once, so a small cache read is not lost to zero', () => {
+    // Rounding each term would floor every read under five tokens, and a meter
+    // that discards its smallest increments undercounts a long conversation.
+    expect(weightedTokens({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 4 })).toBe(0)
+    expect(weightedTokens({ inputTokens: 1, outputTokens: 0, cacheReadTokens: 4 })).toBe(1)
+    expect(weightedTokens({ inputTokens: 6, outputTokens: 0, cacheReadTokens: 4 })).toBe(6)
+  })
+
+  it('treats a token count that is not a number as zero rather than poisoning the counter', () => {
+    // A provider that answers with a missing or malformed count must not be able
+    // to write NaN into the durable meter: `checkBudget` would then read a value
+    // it cannot interpret and refuse the account entirely.
+    expect(weightedTokens({ inputTokens: Number.NaN, outputTokens: 10 })).toBe(10 * OUTPUT_TOKEN_WEIGHT)
+    expect(weightedTokens({ inputTokens: 10, outputTokens: -5 })).toBe(10)
+  })
+
+  it('meters all four token classes through the store', async () => {
+    const store = memory()
+    configureBudget(store, 1_000_000)
+    await recordUsage('user_cache', { inputTokens: 10, outputTokens: 2, cacheWriteTokens: 100, cacheReadTokens: 200 })
+    const verdict = await checkBudget('user_cache')
+    expect(verdict.ok).toBe(true)
+    if (verdict.ok) {
+      expect(verdict.spent).toBe(
+        10 + 2 * OUTPUT_TOKEN_WEIGHT + 100 * CACHE_WRITE_TOKEN_WEIGHT + 200 * CACHE_READ_TOKEN_WEIGHT,
+      )
+    }
   })
 
   it('refuses the call after the ceiling is crossed, not the one that crosses it', async () => {

@@ -225,7 +225,14 @@ An unparseable KV counter reads as over-limit, not as a fresh allowance.
 The edge bounds *frequency*. It does not bound *money*: one request can be an
 `xhigh` chat leg, and `/api/generate` fans out to a dozen model calls.
 `server/security/budget.ts` meters weighted tokens per Hexclave account per UTC
-day, defaulting to 2,000,000 (output weighted ×5).
+day, defaulting to 2,000,000.
+
+All four token classes count, each at its own price relative to one ordinary
+input token: output ×5, a cache write ×1.25, a cache read ×0.1. The cache
+classes are separate fields on the provider's response and are *not* included in
+`input_tokens`, so a meter that counted only that field would read a cached
+conversation as nearly free — which is the opposite of what caching does, since
+it moves spend into those two fields rather than removing it.
 
 It needs a counter with an atomic increment. `server/security/budgetStore.ts`
 speaks the Upstash REST protocol — no client library, and Redis `INCRBY` is the

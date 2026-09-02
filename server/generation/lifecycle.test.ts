@@ -412,7 +412,7 @@ describe('browser transports through the real Node HTTP handler', () => {
     expect(result.value).toEqual({
       features: [{ id: 'f1', role: 'window', query: '1x2 plate', atXStuds: 0, atZStuds: 0, quarterTurns: 0 }],
     })
-    expect(result.usage).toEqual({ inputTokens: 2, outputTokens: 3 })
+    expect(result.usage).toEqual({ inputTokens: 2, outputTokens: 3, cacheWriteTokens: 0, cacheReadTokens: 0 })
     expect(onProgress).toHaveBeenCalledWith('calling model')
     expect(create).toHaveBeenCalledOnce()
   })

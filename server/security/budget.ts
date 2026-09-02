@@ -51,6 +51,25 @@
 export const OUTPUT_TOKEN_WEIGHT = 5
 
 /**
+ * Cache writes and reads, weighted against one ordinary input token.
+ *
+ * The provider reports four classes of input token and `input_tokens` is only
+ * one of them: a cached prefix is billed as `cache_creation_input_tokens` the
+ * leg that writes it and `cache_read_input_tokens` on every leg that reads it,
+ * and neither is included in `input_tokens`. Counting only `input_tokens` would
+ * therefore meter a heavily cached conversation as almost free — which is the
+ * opposite of what the cache does, since it moves spend *into* those two fields
+ * rather than removing it.
+ *
+ * The multipliers are the published ones for the five-minute TTL this codebase
+ * asks for: a write is 1.25× an ordinary input token, a read is 0.1×. They are
+ * ratios rather than prices, so they hold across the model tiers this
+ * deployment can be pointed at.
+ */
+export const CACHE_WRITE_TOKEN_WEIGHT = 1.25
+export const CACHE_READ_TOKEN_WEIGHT = 0.1
+
+/**
  * Daily ceiling in weighted tokens.
  *
  * Deliberately generous: this is a runaway-cost backstop, not a product limit,
@@ -62,11 +81,31 @@ export const DEFAULT_DAILY_TOKEN_CEILING = 2_000_000
 export interface UsageAmount {
   readonly inputTokens: number
   readonly outputTokens: number
+  /** `cache_creation_input_tokens`: prefix written to the cache by this call. */
+  readonly cacheWriteTokens?: number
+  /** `cache_read_input_tokens`: prefix this call read back instead of re-sending. */
+  readonly cacheReadTokens?: number
 }
 
-/** Weighted total, the unit the ceiling is denominated in. */
+/** Non-negative integer, or zero for anything a provider reported nonsensically. */
+const tokens = (value: number | undefined): number =>
+  Number.isFinite(value) && (value as number) > 0 ? Math.round(value as number) : 0
+
+/**
+ * Weighted total, the unit the ceiling is denominated in.
+ *
+ * Summed as one expression and rounded once, rather than rounding each term:
+ * a fractional weight rounded per-call would bias every small cache read to
+ * zero, and a ceiling that ignores the cheapest class of token entirely is how
+ * a caching change quietly uncaps an account.
+ */
 export const weightedTokens = (usage: UsageAmount): number =>
-  Math.max(0, Math.round(usage.inputTokens)) + Math.max(0, Math.round(usage.outputTokens)) * OUTPUT_TOKEN_WEIGHT
+  Math.round(
+    tokens(usage.inputTokens) +
+      tokens(usage.outputTokens) * OUTPUT_TOKEN_WEIGHT +
+      tokens(usage.cacheWriteTokens) * CACHE_WRITE_TOKEN_WEIGHT +
+      tokens(usage.cacheReadTokens) * CACHE_READ_TOKEN_WEIGHT,
+  )
 
 /**
  * The durable counter this needs, as the smallest interface that will do.

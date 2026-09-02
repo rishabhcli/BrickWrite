@@ -55,7 +55,12 @@ export interface StreamHandlers {
   onText?: (text: string) => void
   onToolCall?: (call: Extract<AssistantEvent, { type: 'tool_call' }>['call']) => void
   onTurn?: (raw: unknown[]) => void
-  onUsage?: (usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }) => void
+  onUsage?: (usage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadInputTokens?: number
+    cacheCreationInputTokens?: number
+  }) => void
   onDone?: (stop: Extract<AssistantEvent, { type: 'done' }>['stop']) => void
   onError?: (error: { code: AssistantErrorCode; message: string; retryable: boolean }) => void
 }

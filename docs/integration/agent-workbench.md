@@ -34,6 +34,36 @@ AgentSession.send()
 WaveLedger.apply() ─► commandBus.dispatch (expectedRevision)
 ```
 
+### How a leg is laid out for the cache
+
+A leg is one model call and the browser posts the whole transcript back for the
+next one, so what the request costs is decided by which parts of it can be read
+from cache. Prompt caching is a prefix match over `tools → system → messages`,
+and a block that changes every leg makes everything after it uncacheable.
+
+```
+tools ─────────────────┐
+system: SYSTEM_PROMPT  ├─ [breakpoint] stable while the autonomy mode holds
+messages: transcript   ─── [breakpoint] stable for the life of the conversation
+messages: grounding    ──  changes every leg, so it goes last
+```
+
+Changing autonomy mid-conversation swaps the tool array, which sits at position
+zero, so it invalidates both breakpoints. That is inherent to the mode being
+structural rather than advisory, and it costs one uncached leg.
+
+The grounding block is the volatile half — revision, part count, selection,
+validation, `NEXT` — and it used to be a second `system` segment, which put it
+*ahead of the whole transcript*. `buildChatMessages` in
+`server/assistant/handler.ts` appends it after the history instead and marks the
+block it follows. Steady state per leg is then: read everything accumulated so
+far, write only the last turn's delta, pay full price for the grounding alone.
+
+It is a text block rather than a `role: "system"` message because
+mid-conversation system messages are not available on `claude-sonnet-5`, this
+route's default model. Assistant turns are never marked: they are replayed from
+the opaque `raw` list, and this process does not inspect it.
+
 **The model has no commit tool in any mode.** Its entire surface is reads and
 preflights. The only path to `commandBus` is `src/agent/modes.ts`, invoked when
 a person accepts a wave (or, in Build mode, by the session — through the same
@@ -141,9 +171,13 @@ Response: `200 application/x-ndjson`, one JSON object per line.
 | `text` | `text` — one delta |
 | `tool_call` | `call: { id, name, input }` |
 | `turn` | `raw` — the model's own content blocks, replayed verbatim next leg |
-| `usage` | `inputTokens`, `outputTokens`, `cacheReadInputTokens?` |
+| `usage` | `inputTokens`, `outputTokens`, `cacheReadInputTokens?`, `cacheCreationInputTokens?` |
 | `done` | `stop: end_turn \| tool_use \| max_tokens \| refusal \| aborted \| error` |
 | `error` | `code`, `message`, `retryable` |
+
+`inputTokens` is not a total. The provider reports four classes of input token
+and excludes both cache classes from it, so a reader adding up what a leg cost
+has to add all four. The spend meter does.
 
 There is deliberately **no `thinking` event**. The workbench's pending state is
 driven by the real stream lifecycle, so a stalled or failed request can never be

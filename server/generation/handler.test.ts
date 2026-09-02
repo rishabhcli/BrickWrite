@@ -132,7 +132,7 @@ describe('the provider validates, retries once, then refuses', () => {
     const provider = new AnthropicGenerationProvider({ client, model: 'claude-sonnet-5' })
     const result = await provider.complete({ system: 's', prompt: 'p', schema: MASSING_SCHEMA })
     expect(result.attempts).toBe(1)
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 })
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40, cacheWriteTokens: 0, cacheReadTokens: 0 })
     expect(result.provenance.model).toBe('claude-sonnet-5')
     expect((result.value as typeof goodBoxes).boxes).toHaveLength(1)
     // Sampling parameters are rejected by this model family; sending one would
@@ -231,7 +231,7 @@ describe('POST /api/generate', () => {
     expect(events[1].stage).toBe('calling model')
     const result = events.at(-1)!
     expect((result.value as typeof goodBoxes).boxes).toHaveLength(1)
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 })
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40, cacheWriteTokens: 0, cacheReadTokens: 0 })
     expect((result.provenance as { provider: string }).provider).toBe('anthropic')
   })
 

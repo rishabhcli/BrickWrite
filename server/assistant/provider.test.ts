@@ -67,7 +67,7 @@ describe('AnthropicModelProvider', () => {
     expect(result.provenance.provider).toBe('anthropic')
     expect(result.provenance.model).toBe('claude-sonnet-5')
     expect(result.provenance.promptHash).toMatch(/^fnv1a:/)
-    expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 7 })
+    expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 7, cacheWriteTokens: 0, cacheReadTokens: 0 })
     expect(client.calls[0].output_config).toMatchObject({ format: { type: 'json_schema' } })
   })
 

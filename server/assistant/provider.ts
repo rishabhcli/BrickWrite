@@ -176,7 +176,7 @@ export class AnthropicModelProvider implements ModelProvider {
   async complete<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
     const client = this.sdk()
     const promptHash = `fnv1a:${hash32(stableStringify({ system: request.system, prompt: request.prompt, schema: request.schema })).toString(16)}`
-    const usage = { inputTokens: 0, outputTokens: 0 }
+    const usage = { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 }
     let correction: string | null = null
     let lastViolation = ''
 
@@ -214,8 +214,14 @@ export class AnthropicModelProvider implements ModelProvider {
         throw classifyUpstream(cause, this.apiKey)
       }
 
+      // Four classes, all four accumulated. The system block carries a cache
+      // breakpoint, so a corrective second attempt reads the prefix back rather
+      // than re-sending it — and reporting only `input_tokens` would record
+      // that attempt as having cost almost nothing.
       usage.inputTokens += response.usage.input_tokens
       usage.outputTokens += response.usage.output_tokens
+      usage.cacheWriteTokens += response.usage.cache_creation_input_tokens ?? 0
+      usage.cacheReadTokens += response.usage.cache_read_input_tokens ?? 0
 
       if (response.stop_reason === 'refusal') {
         throw new ProviderRequestError(

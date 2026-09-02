@@ -125,6 +125,59 @@ export function toApiMessages(messages: readonly WireMessage[]): Anthropic.Messa
   return out
 }
 
+/**
+ * The transcript as the API sees it: history, one cache breakpoint, grounding.
+ *
+ * Prompt caching is a prefix match over `tools → system → messages`, so a block
+ * that changes every leg makes everything after it uncacheable. The grounding
+ * block changes every leg by construction — revision, part count, selection,
+ * validation — and while it lived in `system` it sat ahead of the entire
+ * transcript. That is the most expensive place it could be: a chat leg is one
+ * model call, the browser posts the whole conversation back for the next one,
+ * and a tool result is capped at 60 kB with sixteen per turn. Every leg re-paid
+ * full input price for a transcript that only grows.
+ *
+ * Appending it here puts it after the history instead, and the breakpoint on the
+ * block it follows makes that history the cached prefix. Steady state per leg is
+ * then: read everything accumulated so far, write only the last turn's delta,
+ * and pay full price for the grounding alone.
+ *
+ * A text block rather than a `role: "system"` message, which would be the more
+ * expressive channel: mid-conversation system messages are not available on
+ * `claude-sonnet-5`, this route's default model, and would be refused outright.
+ * A text block after the tool results lands in the same position on every model.
+ *
+ * It also lowers the authority of the strings involved rather than raising it.
+ * The grounding is assembled from document data the operator controls — project
+ * name, note text, constraint labels, subassembly names — and a user turn is a
+ * more honest home for that than the system prompt.
+ */
+export function buildChatMessages(messages: readonly WireMessage[], grounding: string): Anthropic.MessageParam[] {
+  const out = toApiMessages(messages)
+  const tail = out[out.length - 1]
+  const blocks = tail && tail.role === 'user' && Array.isArray(tail.content) ? [...tail.content] : null
+
+  if (!blocks?.length) {
+    // No user turn to append to — a transcript ending in an assistant turn, or
+    // one whose last user message carried neither text nor an image. Rare, and
+    // it costs only this leg's rolling breakpoint: the system prefix is still
+    // cached and the next leg places a marker again.
+    out.push({ role: 'user', content: [{ type: 'text', text: grounding }] })
+    return out
+  }
+
+  const anchor = blocks[blocks.length - 1]
+  // Narrowed to the three block types this route can produce in a user turn,
+  // all of which accept a breakpoint. Assistant turns are replayed from the
+  // opaque `raw` list and are deliberately never marked.
+  if (anchor && (anchor.type === 'text' || anchor.type === 'image' || anchor.type === 'tool_result')) {
+    blocks[blocks.length - 1] = { ...anchor, cache_control: { type: 'ephemeral' } }
+  }
+  blocks.push({ type: 'text', text: grounding })
+  out[out.length - 1] = { role: 'user', content: blocks }
+  return out
+}
+
 /** Tool turns already spent in this conversation. */
 export function toolTurnsUsed(messages: readonly WireMessage[]): number {
   return messages.filter((message) => message.role === 'tool').length
@@ -208,13 +261,10 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
     try {
       span.signal.throwIfAborted()
       const stream = provider.streamChat({
-        system: [
-          // The long half is byte-identical every turn, so it stays cacheable;
-          // the volatile grounding block sits after the breakpoint.
-          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-          { type: 'text', text: groundingBlock(body.grounding, body.mode) },
-        ],
-        messages: toApiMessages(body.messages),
+        // One block, byte-identical every turn, so tools and system cache
+        // together. Everything volatile is downstream of it, in `messages`.
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        messages: buildChatMessages(body.messages, groundingBlock(body.grounding, body.mode)),
         tools: anthropicTools(body.mode),
         maxTokens: maxOutputTokens,
         effort: body.effort,
@@ -251,19 +301,25 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
           call: { id: block.id, name: block.name, input: (block.input ?? {}) as Record<string, unknown> },
         })
       }
+      const cacheWriteTokens = message.usage.cache_creation_input_tokens ?? 0
+      const cacheReadTokens = message.usage.cache_read_input_tokens ?? 0
       emit({
         type: 'usage',
         inputTokens: message.usage.input_tokens,
         outputTokens: message.usage.output_tokens,
-        ...(message.usage.cache_read_input_tokens
-          ? { cacheReadInputTokens: message.usage.cache_read_input_tokens }
-          : {}),
+        ...(cacheReadTokens ? { cacheReadInputTokens: cacheReadTokens } : {}),
+        ...(cacheWriteTokens ? { cacheCreationInputTokens: cacheWriteTokens } : {}),
       })
       // Per turn, not per request: a tool-using conversation is several model
       // calls and metering only the last one would undercount most of them.
+      // All four token classes, because `input_tokens` excludes both cache
+      // classes and this route now caches the transcript as well as the system
+      // prompt — reporting two of four would meter most of a leg as free.
       context?.reportUsage?.({
         inputTokens: message.usage.input_tokens,
         outputTokens: message.usage.output_tokens,
+        cacheWriteTokens,
+        cacheReadTokens,
       })
 
       const stop =

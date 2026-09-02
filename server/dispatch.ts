@@ -22,8 +22,20 @@ import { logProcessEvent } from './log.js'
 export interface RouteContext {
   /** The verified caller's Hexclave user id, on routes that required one. */
   readonly userId?: string
-  /** Records what a completed model call cost. Never throws, never awaited. */
-  reportUsage?(usage: { readonly inputTokens: number; readonly outputTokens: number }): void
+  /**
+   * Records what a completed model call cost. Never throws, never awaited.
+   *
+   * The two cache counts are separate fields because the provider reports them
+   * separately: neither is included in `inputTokens`, and a route that omits
+   * them meters a cached prefix as free. They are optional so a provider that
+   * does not cache — or a test double — does not have to name them.
+   */
+  reportUsage?(usage: {
+    readonly inputTokens: number
+    readonly outputTokens: number
+    readonly cacheWriteTokens?: number
+    readonly cacheReadTokens?: number
+  }): void
 }
 
 export interface RouteModule {

@@ -112,7 +112,15 @@ export type AssistantEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'turn'; raw: unknown[] }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
+  | {
+      type: 'usage'
+      inputTokens: number
+      outputTokens: number
+      /** Prefix served from cache. Excluded from `inputTokens`, billed at a tenth. */
+      cacheReadInputTokens?: number
+      /** Prefix written to cache. Excluded from `inputTokens`, billed at 1.25x. */
+      cacheCreationInputTokens?: number
+    }
   | { type: 'done'; stop: AssistantStop }
   | { type: 'error'; code: AssistantErrorCode; message: string; retryable: boolean }
 
@@ -146,7 +154,8 @@ export function isAssistantEvent(value: unknown): value is AssistantEvent {
       return (
         count(value.inputTokens) &&
         count(value.outputTokens) &&
-        (value.cacheReadInputTokens === undefined || count(value.cacheReadInputTokens))
+        (value.cacheReadInputTokens === undefined || count(value.cacheReadInputTokens)) &&
+        (value.cacheCreationInputTokens === undefined || count(value.cacheCreationInputTokens))
       )
     case 'done':
       return (

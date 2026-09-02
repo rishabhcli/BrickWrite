@@ -147,7 +147,15 @@ export interface ModelRequest<T> {
 export interface ModelResult<T> {
   value: T
   provenance: Provenance
-  usage: { inputTokens: number; outputTokens: number }
+  /**
+   * What the call cost, by token class.
+   *
+   * `inputTokens` excludes both cache classes — that is the provider's
+   * convention, not a summary — so a caller that meters spend has to add all
+   * four. The cache fields are optional because a provider that does not cache
+   * has nothing to report, and a browser-side proxy may not be told.
+   */
+  usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number }
 }
 
 /** Raised when a provider is asked to run without credentials configured. */
