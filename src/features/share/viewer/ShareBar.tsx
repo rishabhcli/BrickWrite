@@ -21,11 +21,16 @@ export interface ShareBarProps {
   title: string
   /** When present, the embed snippet is offered alongside the link. */
   embedUrl?: string
+  /**
+   * False when copying `url` would not grant a new visitor access — an unlisted
+   * page after the token was exchanged for a cookie, or a private owner preview.
+   */
+  urlGrantsAccess?: boolean
 }
 
 type Status = { kind: 'idle' } | { kind: 'copied'; what: string } | { kind: 'failed'; what: string }
 
-export function ShareBar({ url, title, embedUrl }: ShareBarProps) {
+export function ShareBar({ url, title, embedUrl, urlGrantsAccess = true }: ShareBarProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [canShare, setCanShare] = useState(false)
 
@@ -69,19 +74,34 @@ export function ShareBar({ url, title, embedUrl }: ShareBarProps) {
 
   return (
     <section className="bw-share-bar" aria-label="Share this model">
-      <label className="bw-share-field">
-        <span>Link</span>
-        <input type="text" readOnly value={url} onFocus={(event) => event.currentTarget.select()} data-testid="share-url" />
-      </label>
+      {urlGrantsAccess ? (
+        <label className="bw-share-field">
+          <span>Link</span>
+          <input
+            type="text"
+            readOnly
+            value={url}
+            onFocus={(event) => event.currentTarget.select()}
+            data-testid="share-url"
+          />
+        </label>
+      ) : (
+        <p className="bw-share-status" role="note" data-testid="share-url-not-credential">
+          This address is not a shareable link. Recipients need the original URL that included the access token; after
+          this browser exchanged it for a cookie, copying the address will not grant them access.
+        </p>
+      )}
       <div className="bw-share-bar-actions">
-        {canShare ? (
+        {urlGrantsAccess && canShare ? (
           <button type="button" onClick={share} data-testid="share-native">
             Share…
           </button>
         ) : null}
-        <button type="button" onClick={() => copy(url, 'link')} data-testid="share-copy">
-          Copy link
-        </button>
+        {urlGrantsAccess ? (
+          <button type="button" onClick={() => copy(url, 'link')} data-testid="share-copy">
+            Copy link
+          </button>
+        ) : null}
         {embedSnippet ? (
           <button type="button" onClick={() => copy(embedSnippet, 'embed code')} data-testid="share-copy-embed">
             Copy embed code

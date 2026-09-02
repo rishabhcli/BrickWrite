@@ -51,7 +51,10 @@ export interface ShareStudioProps {
    * Persists the publication and its card bytes. The studio does not talk to
    * storage itself — the host owns the endpoint and the credentials.
    */
-  onPublish: (publication: Publication, cards: Record<string, Uint8Array>) => Promise<{ slug: string }>
+  onPublish: (
+    publication: Publication,
+    cards: Record<string, Uint8Array>,
+  ) => Promise<{ slug: string; token?: string; shareUrl?: string }>
   /** Offers a rendered card as a download. Defaults to an anchor click. */
   onDownload?: (filename: string, bytes: Uint8Array) => void
   origin?: string
@@ -61,7 +64,15 @@ type PublishPhase =
   | { kind: 'idle' }
   | { kind: 'rendering'; preset: string; done: number; total: number }
   | { kind: 'publishing' }
-  | { kind: 'published'; slug: string; revision: number; contentHash: string }
+  | {
+      kind: 'published'
+      slug: string
+      revision: number
+      contentHash: string
+      visibility: Visibility
+      token?: string
+      shareUrl?: string
+    }
   | { kind: 'error'; message: string }
 
 const PREVIEW_WIDTH = 520
@@ -120,11 +131,7 @@ export function ShareStudio({
       : input
     const frame = renderFrame(forced, PREVIEW_WIDTH, previewHeight)
     context.clearRect(0, 0, PREVIEW_WIDTH, previewHeight)
-    context.putImageData(
-      new ImageData(new Uint8ClampedArray(frame.image.rgba), PREVIEW_WIDTH, previewHeight),
-      0,
-      0,
-    )
+    context.putImageData(new ImageData(new Uint8ClampedArray(frame.image.rgba), PREVIEW_WIDTH, previewHeight), 0, 0)
   }, [input, settings, crop, previewHeight, geometryReady])
 
   const download = useCallback(
@@ -190,6 +197,9 @@ export function ShareStudio({
         slug: result.slug,
         revision: publication.revision,
         contentHash: publication.contentHash,
+        visibility: publication.visibility,
+        token: result.token,
+        shareUrl: result.shareUrl,
       })
     } catch (cause) {
       setPhase({ kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
@@ -217,7 +227,10 @@ export function ShareStudio({
           ))}
         </div>
 
-        <div className="bw-studio-canvas-frame" data-transparent={CARD_GEOMETRY[crop].forceTransparent ? '' : undefined}>
+        <div
+          className="bw-studio-canvas-frame"
+          data-transparent={CARD_GEOMETRY[crop].forceTransparent ? '' : undefined}
+        >
           {geometryReady ? (
             <canvas
               ref={canvasRef}
@@ -266,8 +279,8 @@ export function ShareStudio({
           </div>
           <p className="bw-studio-hint">
             {presetId}
-            {modified ? ' · modified' : ' · unmodified'}. Presets are deterministic: the same revision and preset
-            always produce the same bytes.
+            {modified ? ' · modified' : ' · unmodified'}. Presets are deterministic: the same revision and preset always
+            produce the same bytes.
           </p>
         </fieldset>
 
@@ -307,10 +320,42 @@ export function ShareStudio({
 
         <fieldset>
           <legend>Framing</legend>
-          <Slider id="zoom" label="Zoom" min={0.25} max={4} step={0.05} value={settings.framing.zoom} onChange={(zoom) => dispatch({ type: 'framing', zoom })} />
-          <Slider id="padding" label="Padding" min={0} max={0.4} step={0.01} value={settings.framing.padding} onChange={(padding) => dispatch({ type: 'framing', padding })} />
-          <Slider id="offsetX" label="Pan X" min={-0.5} max={0.5} step={0.01} value={settings.framing.offsetX} onChange={(offsetX) => dispatch({ type: 'framing', offsetX })} />
-          <Slider id="offsetY" label="Pan Y" min={-0.5} max={0.5} step={0.01} value={settings.framing.offsetY} onChange={(offsetY) => dispatch({ type: 'framing', offsetY })} />
+          <Slider
+            id="zoom"
+            label="Zoom"
+            min={0.25}
+            max={4}
+            step={0.05}
+            value={settings.framing.zoom}
+            onChange={(zoom) => dispatch({ type: 'framing', zoom })}
+          />
+          <Slider
+            id="padding"
+            label="Padding"
+            min={0}
+            max={0.4}
+            step={0.01}
+            value={settings.framing.padding}
+            onChange={(padding) => dispatch({ type: 'framing', padding })}
+          />
+          <Slider
+            id="offsetX"
+            label="Pan X"
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+            value={settings.framing.offsetX}
+            onChange={(offsetX) => dispatch({ type: 'framing', offsetX })}
+          />
+          <Slider
+            id="offsetY"
+            label="Pan Y"
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+            value={settings.framing.offsetY}
+            onChange={(offsetY) => dispatch({ type: 'framing', offsetY })}
+          />
         </fieldset>
 
         <fieldset>
@@ -359,12 +404,36 @@ export function ShareStudio({
           <legend>Tone</legend>
           <p className="bw-studio-hint">
             The rasteriser&rsquo;s key light is fixed in the model&rsquo;s own space — orbiting moves the model under
-            it, like a turntable in a lit studio. These are tone controls on the rendered image, not a relight, and
-            they are named for what they do.
+            it, like a turntable in a lit studio. These are tone controls on the rendered image, not a relight, and they
+            are named for what they do.
           </p>
-          <Slider id="exposure" label="Exposure" min={0.2} max={3} step={0.02} value={settings.tone.exposure} onChange={(exposure) => dispatch({ type: 'tone', exposure })} />
-          <Slider id="contrast" label="Contrast" min={0.2} max={3} step={0.02} value={settings.tone.contrast} onChange={(contrast) => dispatch({ type: 'tone', contrast })} />
-          <Slider id="shadowLift" label="Shadow lift" min={0} max={0.6} step={0.01} value={settings.tone.shadowLift} onChange={(shadowLift) => dispatch({ type: 'tone', shadowLift })} />
+          <Slider
+            id="exposure"
+            label="Exposure"
+            min={0.2}
+            max={3}
+            step={0.02}
+            value={settings.tone.exposure}
+            onChange={(exposure) => dispatch({ type: 'tone', exposure })}
+          />
+          <Slider
+            id="contrast"
+            label="Contrast"
+            min={0.2}
+            max={3}
+            step={0.02}
+            value={settings.tone.contrast}
+            onChange={(contrast) => dispatch({ type: 'tone', contrast })}
+          />
+          <Slider
+            id="shadowLift"
+            label="Shadow lift"
+            min={0}
+            max={0.6}
+            step={0.01}
+            value={settings.tone.shadowLift}
+            onChange={(shadowLift) => dispatch({ type: 'tone', shadowLift })}
+          />
         </fieldset>
 
         <fieldset>
@@ -390,8 +459,24 @@ export function ShareStudio({
                   onChange={(event) => dispatch({ type: 'watermark', text: event.target.value })}
                 />
               </label>
-              <Slider id="markOpacity" label="Opacity" min={0} max={1} step={0.05} value={settings.watermark.opacity} onChange={(opacity) => dispatch({ type: 'watermark', opacity })} />
-              <Slider id="markScale" label="Size" min={1} max={12} step={1} value={settings.watermark.scale} onChange={(scale) => dispatch({ type: 'watermark', scale })} />
+              <Slider
+                id="markOpacity"
+                label="Opacity"
+                min={0}
+                max={1}
+                step={0.05}
+                value={settings.watermark.opacity}
+                onChange={(opacity) => dispatch({ type: 'watermark', opacity })}
+              />
+              <Slider
+                id="markScale"
+                label="Size"
+                min={1}
+                max={12}
+                step={1}
+                value={settings.watermark.scale}
+                onChange={(scale) => dispatch({ type: 'watermark', scale })}
+              />
               <p className="bw-studio-hint">
                 {author
                   ? `Attribution reads “${author.displayName}”.`
@@ -405,15 +490,33 @@ export function ShareStudio({
           <legend>Publication</legend>
           <label className="bw-studio-text">
             Title
-            <input type="text" value={title} maxLength={120} data-testid="publish-title" onChange={(event) => setTitle(event.target.value)} />
+            <input
+              type="text"
+              value={title}
+              maxLength={120}
+              data-testid="publish-title"
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </label>
           <label className="bw-studio-text">
             Description
-            <textarea value={description} maxLength={600} rows={3} data-testid="publish-description" onChange={(event) => setDescription(event.target.value)} />
+            <textarea
+              value={description}
+              maxLength={600}
+              rows={3}
+              data-testid="publish-description"
+              onChange={(event) => setDescription(event.target.value)}
+            />
           </label>
           <label className="bw-studio-text">
             Tags
-            <input type="text" value={tagText} placeholder="rover technic" data-testid="publish-tags" onChange={(event) => setTagText(event.target.value)} />
+            <input
+              type="text"
+              value={tagText}
+              placeholder="rover technic"
+              data-testid="publish-tags"
+              onChange={(event) => setTagText(event.target.value)}
+            />
           </label>
 
           <div className="bw-studio-row" role="radiogroup" aria-label="Visibility">
@@ -457,8 +560,8 @@ export function ShareStudio({
 
         <div className="bw-studio-publish">
           <p className="bw-studio-commit">
-            Publishing captures <strong>revision {document.revision}</strong> exactly as it is now. Later edits will
-            not change what this link shows — publish again to share a newer revision.
+            Publishing captures <strong>revision {document.revision}</strong> exactly as it is now. Later edits will not
+            change what this link shows — publish again to share a newer revision.
           </p>
           <button
             type="button"
@@ -476,7 +579,7 @@ export function ShareStudio({
               : phase.kind === 'publishing'
                 ? 'Uploading the snapshot and its cards…'
                 : phase.kind === 'published'
-                  ? `Published at ${origin}/share/${phase.slug} — revision ${phase.revision}, content hash ${phase.contentHash.slice(0, 12)}…`
+                  ? publishedStatus(origin, phase)
                   : ''}
           </p>
           {phase.kind === 'error' ? (
@@ -484,16 +587,47 @@ export function ShareStudio({
               Publishing failed: {phase.message}
             </p>
           ) : null}
-          {phase.kind === 'published' ? (
-            <p className="bw-studio-published">
-              <a href={`${origin}/share/${phase.slug}`} data-testid="published-link">
-                Open the share page
-              </a>
-            </p>
-          ) : null}
+          {phase.kind === 'published' ? <PublishedLink origin={origin} phase={phase} /> : null}
         </div>
       </div>
     </section>
+  )
+}
+
+function publishedHref(origin: string, phase: Extract<PublishPhase, { kind: 'published' }>): string | null {
+  if (phase.shareUrl) return phase.shareUrl
+  if (phase.visibility === 'public') return `${origin}/share/${phase.slug}`
+  if (phase.visibility === 'unlisted' && phase.token) {
+    return `${origin}/share/${phase.slug}?t=${encodeURIComponent(phase.token)}`
+  }
+  return null
+}
+
+function publishedStatus(origin: string, phase: Extract<PublishPhase, { kind: 'published' }>): string {
+  const href = publishedHref(origin, phase)
+  const hash = `revision ${phase.revision}, content hash ${phase.contentHash.slice(0, 12)}…`
+  if (href) return `Published at ${href} — ${hash}`
+  if (phase.visibility === 'private') {
+    return `Published privately — ${hash} The address /share/${phase.slug} returns the same "not found" a stranger sees.`
+  }
+  return `Published as unlisted — ${hash} /share/${phase.slug} is not a working link without the access token, which this session did not receive.`
+}
+
+function PublishedLink({ origin, phase }: { origin: string; phase: Extract<PublishPhase, { kind: 'published' }> }) {
+  const href = publishedHref(origin, phase)
+  if (!href) {
+    return (
+      <p className="bw-studio-published" data-testid="published-link-unavailable">
+        No working share URL was returned. Mint a token for this publication before sending the address to anyone.
+      </p>
+    )
+  }
+  return (
+    <p className="bw-studio-published">
+      <a href={href} data-testid="published-link">
+        Open the share page
+      </a>
+    </p>
   )
 }
 

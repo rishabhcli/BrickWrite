@@ -105,9 +105,7 @@ export interface CloudKernelBridge {
     expectedRevision: number,
   ): { ok: true; revision: number } | { ok: false; code: string; message: string; repair?: string }
   /** Switches the editor to a stored project. */
-  openProject(
-    projectId: string,
-  ): Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  openProject(projectId: string): Promise<{ ok: true } | { ok: false; code: string; message: string }>
 }
 
 export interface CloudProjectRow extends StoredProjectSummary {
@@ -198,8 +196,7 @@ export class CloudRuntime {
     }
 
     this.sync = this.handle ? this.handle.state() : UNCONFIGURED_SYNC_STATE
-    this.online =
-      options.initialOnline ?? (typeof navigator === 'undefined' ? true : navigator.onLine)
+    this.online = options.initialOnline ?? (typeof navigator === 'undefined' ? true : navigator.onLine)
     this.snapshot = this.build()
   }
 
@@ -280,8 +277,7 @@ export class CloudRuntime {
    */
   private async recoverAfterSignal(signal: 'reconnect' | 'identity'): Promise<void> {
     if (!this.handle) return
-    const state =
-      signal === 'reconnect' ? await this.handle.reconnected() : await this.handle.retryHead()
+    const state = signal === 'reconnect' ? await this.handle.reconnected() : await this.handle.retryHead()
     if (state.status !== 'idle') return
     for (const link of await this.links.all()) {
       const result = await this.handle.store.backfill(link.localProjectId)
@@ -293,7 +289,9 @@ export class CloudRuntime {
   /** Every project this browser holds, tagged with its cloud replica. */
   async listLocalProjects(): Promise<CloudProjectRow[]> {
     const [listed, links] = await Promise.all([this.local.listProjects(), this.links.all()])
-    if (!listed.ok) return []
+    if (!listed.ok) {
+      throw new Error(`${listed.error.message} ${listed.error.repair}`.trim())
+    }
     const byLocalId = new Map(links.map((link) => [link.localProjectId, link]))
     const openId = this.options.kernel.document().id
     return listed.value.map((summary) => {

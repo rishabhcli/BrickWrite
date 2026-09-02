@@ -38,6 +38,8 @@ export interface SharedViewerProps {
   /** Absolute URL of this publication, for the share and embed affordances. */
   shareUrl: string
   embedUrl?: string
+  /** False when `shareUrl` would 404 for a recipient. */
+  urlGrantsAccess?: boolean
   /** Definition ids this build could not draw, reported by the loader. */
   unavailableDefinitionIds?: readonly string[]
   canvasWidth?: number
@@ -51,6 +53,7 @@ export function SharedViewer({
   onFork,
   shareUrl,
   embedUrl,
+  urlGrantsAccess = true,
   unavailableDefinitionIds = [],
   canvasWidth = 720,
   canvasHeight = 460,
@@ -288,7 +291,12 @@ export function SharedViewer({
           </p>
         ) : null}
 
-        <ShareBar url={shareUrl} title={publication.title} embedUrl={capabilities.embed ? embedUrl : undefined} />
+        <ShareBar
+          url={shareUrl}
+          title={publication.title}
+          embedUrl={capabilities.embed ? embedUrl : undefined}
+          urlGrantsAccess={urlGrantsAccess}
+        />
 
         <details className="bw-share-bom bw-share-disclosure">
           <summary>

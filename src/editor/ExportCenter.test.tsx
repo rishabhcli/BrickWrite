@@ -106,4 +106,48 @@ describe('export panel', () => {
     await waitFor(() => expect(notices[0]?.title).toBe('Archive not imported'))
     expect(notices[0]?.kind).toBe('error')
   })
+
+  it('reports a thrown archive download instead of resolving silently', async () => {
+    const notices: Array<{ kind: string; title: string; detail: string }> = []
+    vi.spyOn(session, 'exportArchive').mockResolvedValue('{"brickwrightArchive":1}')
+    downloadText.mockImplementationOnce(() => {
+      throw new Error('The browser blocked the download.')
+    })
+    render(
+      <ExportCenter
+        state={cadEngine.getSnapshot()}
+        onImport={async () => {}}
+        onNotice={(notice) => notices.push(notice)}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'More export options' }))
+    fireEvent.click(screen.getByRole('button', { name: /Project archive/ }))
+    await waitFor(() => expect(notices[0]?.title).toBe('Archive not exported'))
+    expect(notices[0]).toEqual({
+      kind: 'error',
+      title: 'Archive not exported',
+      detail: 'The browser blocked the download.',
+    })
+  })
+
+  it('announces a successful archive export', async () => {
+    const notices: Array<{ kind: string; title: string }> = []
+    vi.spyOn(session, 'exportArchive').mockResolvedValue('{"brickwrightArchive":1}')
+    render(
+      <ExportCenter
+        state={cadEngine.getSnapshot()}
+        onImport={async () => {}}
+        onNotice={(notice) => notices.push(notice)}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'More export options' }))
+    fireEvent.click(screen.getByRole('button', { name: /Project archive/ }))
+    await waitFor(() => expect(notices[0]?.title).toBe('Project archive exported'))
+    expect(notices[0]?.kind).toBe('success')
+    expect(downloadText).toHaveBeenCalledWith(
+      expect.stringMatching(/\.brickwright\.json$/),
+      expect.any(String),
+      'application/json',
+    )
+  })
 })

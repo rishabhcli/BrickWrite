@@ -12,12 +12,7 @@ import {
 import { createBlankDocument } from './sample'
 import { loadLocalDocument, clearLocalDocument } from './storage'
 import type { ModelDocument } from './types'
-import {
-  exportProjectArchive,
-  parseArchive,
-  persistArchive,
-  type ArchiveImportReport,
-} from './archive'
+import { exportProjectArchive, parseArchive, persistArchive, type ArchiveImportReport } from './archive'
 
 /**
  * Session wiring: ties the CAD kernel to durable local storage.
@@ -157,6 +152,9 @@ class Session {
   /** Forces a checkpoint, for an explicit save action. */
   async checkpoint(): Promise<void> {
     await this.autosave.checkpointNow(cadEngine.getSnapshot().document)
+    if (this.autosave.error) {
+      throw new Error(`The project could not be checkpointed (${this.autosave.error}). Nothing new was written.`)
+    }
   }
 
   async listProjects(): Promise<ProjectSummary[]> {
@@ -308,14 +306,14 @@ class Session {
     await this.autosave.checkpointNow(snapshot.document)
     await this.autosave.settled()
     if (this.autosave.error) {
-      throw new Error(
-        `The project could not be checkpointed (${this.autosave.error}), so the archive was not written.`,
-      )
+      throw new Error(`The project could not be checkpointed (${this.autosave.error}), so the archive was not written.`)
     }
     return exportProjectArchive(this.repository, snapshot.document, snapshot.validation)
   }
 
-  async importArchive(json: string): Promise<{ ok: true; report: ArchiveImportReport } | { ok: false; message: string }> {
+  async importArchive(
+    json: string,
+  ): Promise<{ ok: true; report: ArchiveImportReport } | { ok: false; message: string }> {
     const parsed = parseArchive(json)
     if (!parsed.ok) return parsed
     await this.partWithCurrent()
