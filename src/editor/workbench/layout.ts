@@ -234,3 +234,8 @@ export function workspaceColumns(layout: WorkbenchLayout): string {
 
 export const bottomHeight = (layout: WorkbenchLayout): number =>
   layout.bottom.collapsed ? COLLAPSED_BAR : layout.bottom.size
+
+/** Four tracks: topbar, unused toolrail, viewport, timeline. StatusBar is unmounted. Inline style must win over CSS — never lock the last track to 0 with !important. */
+export function workspaceRows(layout: WorkbenchLayout): string {
+  return `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`
+}

@@ -17,6 +17,7 @@ import {
   TOOLRAIL_HEIGHT,
   TOPBAR_HEIGHT,
   workspaceColumns,
+  workspaceRows,
 } from './layout'
 
 /**
@@ -161,6 +162,12 @@ describe('grid templates', () => {
 
   it('shrinks the bottom dock to a bar when collapsed', () => {
     expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBeLessThan(40)
+  })
+
+  it('lets the inline timeline row follow bottomHeight instead of a locked 0', () => {
+    const open = defaultLayout('desktop')
+    expect(workspaceRows({ ...open, bottom: { size: 152, collapsed: true } })).toBe('52px 0px minmax(0, 1fr) 0px')
+    expect(workspaceRows({ ...open, bottom: { size: 152, collapsed: false } })).toBe('52px 0px minmax(0, 1fr) 152px')
   })
 })
 

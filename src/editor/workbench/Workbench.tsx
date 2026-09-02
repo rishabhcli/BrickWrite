@@ -34,17 +34,15 @@ import { TransformPanel } from './TransformPanel'
 import { ViewportStage } from './ViewportStage'
 import { OfflineState } from './states'
 import {
-  bottomHeight,
   clampLayout,
   DOCK_LIMITS,
   LAYOUT_PRESETS,
-  TOOLRAIL_HEIGHT,
-  TOPBAR_HEIGHT,
   defaultLayout,
   loadLayout,
   recommendedPreset,
   saveLayout,
   workspaceColumns,
+  workspaceRows,
   type DockId,
   type LayoutPresetId,
   type WorkbenchLayout,
@@ -768,7 +766,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         className="app-shell"
         style={{
           gridTemplateColumns: workspaceColumns(layout),
-          gridTemplateRows: `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`,
+          gridTemplateRows: workspaceRows(layout),
         }}
         data-preset={layout.preset ?? 'custom'}
       >
