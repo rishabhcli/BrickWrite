@@ -72,7 +72,7 @@ describe('Model Health navigator', () => {
     )
 
     const issue = document.querySelector('[data-health-issue="constraint:palette_build"]') as HTMLElement
-    fireEvent.click(within(issue).getByRole('button', { name: /frame/i }))
+    fireEvent.click(within(issue).getByRole('button', { name: /frame parts for build palette/i }))
 
     expect(onFocus).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'constraint:palette_build', partIds: ['wrong'] }),
@@ -90,5 +90,27 @@ describe('Model Health navigator', () => {
     fireEvent.click(screen.getByRole('tab', { name: /notice/i }))
     expect(screen.getByText('Separate build islands')).toBeVisible()
     expect(screen.queryByText('Build palette')).not.toBeInTheDocument()
+  })
+
+  it('names issue navigation after the issue, not a generic SELECT', () => {
+    render(
+      <ModelHealthPanel
+        state={healthSnapshot()}
+        activeIssueId="constraint:palette_build"
+        onFocusIssue={() => undefined}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Select parts for Build palette' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Isolate parts for Build palette' })).toBeVisible()
+  })
+
+  it('walks severity filters with the arrow keys', () => {
+    render(<ModelHealthPanel state={healthSnapshot()} onFocusIssue={() => undefined} />)
+    const all = screen.getByRole('tab', { name: /ALL/ })
+    all.focus()
+    fireEvent.keyDown(all, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: /BLOCK/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Build palette')).toBeVisible()
+    expect(screen.queryByText('Separate build islands')).not.toBeInTheDocument()
   })
 })

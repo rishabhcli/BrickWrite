@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { describeSize, getColor } from '../../cad/catalog'
 import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../../cad/math'
 import type { ModelHealthIssue } from '../../cad/modelHealth'
-import type { EngineSnapshot, PartDefinition, PartInstance, Transform } from '../../cad/types'
+import type { EngineSnapshot, PartDefinition, PartInstance, Transform, ValidationReport } from '../../cad/types'
 import { Slot } from './ExtensionRegistry'
 import { ModelHealthPanel } from './ModelHealthPanel'
 import { NumberField } from './NumberField'
@@ -41,6 +41,30 @@ interface InspectorPanelProps {
 }
 
 export type InspectorView = 'object' | 'validate'
+
+const TABS: InspectorView[] = ['object', 'validate']
+
+/**
+ * Accessible name for the VALIDATE tab.
+ *
+ * The coloured dot is otherwise unnamed, and `inspectModelHealth` (statics)
+ * stays off this path — it runs when the VALIDATE panel itself opens.
+ * Kernel collisions and failed constraints are already on the snapshot.
+ */
+export function validateTabLabel(report: ValidationReport): string {
+  const confirmed = report.collisions.filter((item) => item.certainty !== 'unknown').length
+  const failed = report.constraints.filter((item) => item.status === 'fail').length
+  const blockers = confirmed + failed
+  if (blockers) {
+    return `Validate, ${blockers} blocker${blockers === 1 ? '' : 's'}`
+  }
+  const watches =
+    report.collisions.length - confirmed + report.constraints.filter((item) => item.status === 'warning').length
+  if (watches) {
+    return `Validate, ${watches} watch${watches === 1 ? '' : 'es'}`
+  }
+  return 'Validate, healthy'
+}
 
 export function InspectorPanel({
   state,
@@ -81,18 +105,58 @@ export function InspectorPanel({
   }, [allColors, definition, selectedPart])
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
-      <div className="inspector-tabs" role="tablist">
-        <button className={tab === 'object' ? 'active' : ''} onClick={() => setTab('object')}>
+      <div
+        className="inspector-tabs"
+        role="tablist"
+        aria-label="Inspector views"
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') {
+            return
+          }
+          event.preventDefault()
+          const current = TABS.indexOf(tab)
+          const next =
+            event.key === 'Home'
+              ? TABS[0]
+              : event.key === 'End'
+                ? TABS[TABS.length - 1]
+                : event.key === 'ArrowRight'
+                  ? TABS[(current + 1) % TABS.length]
+                  : TABS[(current - 1 + TABS.length) % TABS.length]
+          setTab(next)
+          requestAnimationFrame(() => document.getElementById(`inspector-tab-${next}`)?.focus())
+        }}
+      >
+        <button
+          id="inspector-tab-object"
+          type="button"
+          role="tab"
+          aria-selected={tab === 'object'}
+          aria-controls="inspector-object-panel"
+          tabIndex={tab === 'object' ? 0 : -1}
+          className={tab === 'object' ? 'active' : ''}
+          onClick={() => setTab('object')}
+        >
           OBJECT
         </button>
-        <button className={tab === 'validate' ? 'active' : ''} onClick={() => setTab('validate')}>
+        <button
+          id="inspector-tab-validate"
+          type="button"
+          role="tab"
+          aria-selected={tab === 'validate'}
+          aria-controls="inspector-validate-panel"
+          tabIndex={tab === 'validate' ? 0 : -1}
+          aria-label={validateTabLabel(report)}
+          className={tab === 'validate' ? 'active' : ''}
+          onClick={() => setTab('validate')}
+        >
           VALIDATE
-          <span className={report.healthy ? 'healthy-dot' : 'warning-dot'} />
+          <span className={report.healthy ? 'healthy-dot' : 'warning-dot'} aria-hidden="true" />
         </button>
       </div>
       {tab === 'object' ? (
         selectedPart && definition ? (
-          <div className="inspector-scroll">
+          <div className="inspector-scroll" role="tabpanel" id="inspector-object-panel" aria-labelledby="inspector-tab-object">
             <section className="selection-identity">
               <div className="selected-glyph">
                 <Box size={24} strokeWidth={1.4} />
@@ -353,7 +417,7 @@ export function InspectorPanel({
             />
           </div>
         ) : (
-          <div className="empty-inspector">
+          <div className="empty-inspector" role="tabpanel" id="inspector-object-panel" aria-labelledby="inspector-tab-object">
             <div className="scanner-mark">
               <span />
               <span />
@@ -380,12 +444,14 @@ export function InspectorPanel({
           </div>
         )
       ) : (
-        <ModelHealthPanel
-          state={state}
-          activeIssueId={activeHealthIssueId}
-          onActiveIssue={onActiveHealthIssue}
-          onFocusIssue={onFocusHealthIssue ?? ((issue) => onSelectIds([...issue.partIds]))}
-        />
+        <div role="tabpanel" id="inspector-validate-panel" aria-labelledby="inspector-tab-validate">
+          <ModelHealthPanel
+            state={state}
+            activeIssueId={activeHealthIssueId}
+            onActiveIssue={onActiveHealthIssue}
+            onFocusIssue={onFocusHealthIssue ?? ((issue) => onSelectIds([...issue.partIds]))}
+          />
+        </div>
       )}
     </aside>
   )

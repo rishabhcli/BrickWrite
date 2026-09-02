@@ -203,6 +203,7 @@ describe('palette', () => {
       fireEvent.click(screen.getByRole('tab', { name: /FAVOURITES/ }))
       const pager = container.querySelector('.parts-pager')
       expect(pager).not.toBeNull()
+      expect(pager?.getAttribute('aria-label')).toBe('Favourites pages')
       const indicator = pager?.querySelector('[role="status"]')
       expect(indicator?.getAttribute('aria-live')).toBe('polite')
       expect(container.querySelectorAll('.part-card').length).toBe(60)
