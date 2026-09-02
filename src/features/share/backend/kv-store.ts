@@ -102,7 +102,21 @@ export class KvPublicationStore implements PublicationStore {
     // given 60 bits of suffix, but "unlikely" is not "impossible", and the
     // failure it would cause — an existing link showing a different model — is
     // exactly the one this workstream exists to prevent.
-    if (await this.kv.get(SLUG_KEY(publication.slug), 'text')) {
+    /*
+     * Create-only, and a repeat of the same record is not a second create.
+     *
+     * The guard exists so an existing link can never start showing a different
+     * model, which an identical record cannot do. Accepting it re-asserts the
+     * pointers and the feed entry, so this doubles as the repair for a write
+     * that landed in pieces.
+     */
+    const stored = await this.readJson<Publication>(SLUG_KEY(publication.slug))
+    if (
+      stored &&
+      (stored.id !== publication.id ||
+        stored.contentHash !== publication.contentHash ||
+        stored.revision !== publication.revision)
+    ) {
       throw new ShareError('IMMUTABLE', `A publication already exists at /share/${publication.slug}.`, 409)
     }
     /*

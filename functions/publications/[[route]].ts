@@ -269,8 +269,33 @@ async function publish(
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(submitted.slug) || submitted.slug.length > 96) {
     throw new ShareError('INVALID_INPUT', 'That publication address is not a valid slug.')
   }
-  if (await store.getBySlug(submitted.slug)) {
-    throw new ShareError('IMMUTABLE', 'A publication already exists at that address.', 409)
+  /*
+   * A re-presented publish is the original one, not a conflict.
+   *
+   * The client mints the slug and posts the record, so a retry after a lost
+   * response resends exactly what it sent before — and this refused it, telling
+   * the publisher their address was taken by their own publication. A large
+   * model over a slow link is precisely when a response goes missing, and the
+   * only ways out were to reload and guess, or to publish a second copy at a
+   * second address.
+   *
+   * Answering a repeat with its original outcome is what `projects.create`,
+   * `transactions.append` and `invitations.accept` already do. Identity is
+   * checked strictly — same id, same content hash, same revision, same owner —
+   * so a different snapshot or a different account at that slug is still a
+   * genuine collision and still refuses.
+   */
+  const existing = await store.getBySlug(submitted.slug)
+  if (existing) {
+    const sameRecord =
+      existing.id === submitted.id &&
+      existing.contentHash === submitted.contentHash &&
+      existing.revision === submitted.revision
+    const sameOwner =
+      principal.kind === 'operator' || (existing.ownerSubject !== undefined && existing.ownerSubject === principal.subject)
+    if (!sameRecord || !sameOwner) {
+      throw new ShareError('IMMUTABLE', 'A publication already exists at that address.', 409)
+    }
   }
   if (!(await verifyPublicationIntegrity(submitted))) {
     throw new ShareError('INVALID_INPUT', 'The publication does not hash to the content it declares.')
@@ -311,7 +336,12 @@ async function publish(
   }
 
   await store.put(deepFreeze(publication))
-  return json({ slug: publication.slug, id: publication.id, contentHash: publication.contentHash }, 201)
+  // 200 rather than 201 on a repeat: nothing was created this time, and a
+  // client that distinguishes them should be told the truth.
+  return json(
+    { slug: publication.slug, id: publication.id, contentHash: publication.contentHash },
+    existing ? 200 : 201,
+  )
 }
 
 /**

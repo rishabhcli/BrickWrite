@@ -324,3 +324,51 @@ describe('what actually gets stored', () => {
     expect((await stored(publication.slug))?.visibility).toBe('private')
   })
 })
+
+/**
+ * A publish whose response went missing.
+ *
+ * The client mints the slug and posts the record, so a retry resends exactly
+ * what it sent before. This used to answer that with 409 "a publication already
+ * exists at that address" — telling the publisher their address was taken by
+ * their own publication. A large model over a slow link is precisely when a
+ * response goes missing, and the ways out were to reload and guess or to
+ * publish a second copy at a second address.
+ */
+describe('a repeated publish', () => {
+  it('answers with the original outcome rather than a conflict', async () => {
+    const credential = await session('user_a')
+    const publication = await record()
+
+    const first = await call('', { credential, body: { publication, cards: {} } })
+    expect(first.status).toBe(201)
+
+    const again = await call('', { credential, body: { publication, cards: {} } })
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual(await first.json())
+    // One publication, not two, and it is the one that was published.
+    expect((await stored(publication.slug))?.id).toBe(publication.id)
+  })
+
+  it('still refuses a different snapshot at the same address', async () => {
+    const credential = await session('user_a')
+    const publication = await record()
+    expect((await call('', { credential, body: { publication, cards: {} } })).status).toBe(201)
+
+    const different = { ...publication, contentHash: 'f'.repeat(64) }
+    const clash = await call('', { credential, body: { publication: different, cards: {} } })
+    expect(clash.status).toBe(409)
+    // The stored snapshot is untouched, which is what create-only is for.
+    expect((await stored(publication.slug))?.contentHash).toBe(publication.contentHash)
+  })
+
+  it('does not acknowledge another account’s publication as its own retry', async () => {
+    // Identity alone is not enough: the retry has to come from the publisher.
+    const publication = await record()
+    expect((await call('', { credential: await session('user_a'), body: { publication, cards: {} } })).status).toBe(201)
+
+    const other = await call('', { credential: await session('user_b'), body: { publication, cards: {} } })
+    expect(other.status).toBe(409)
+    expect((await stored(publication.slug))?.ownerSubject).toBe('user_a')
+  })
+})

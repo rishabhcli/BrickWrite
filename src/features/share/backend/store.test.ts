@@ -50,12 +50,35 @@ describe('publication store', () => {
     expect(await store.getById('pub_missing')).toBeNull()
   })
 
-  it('refuses a second write to the same slug', async () => {
+  it('refuses a *different* publication at a taken slug, and accepts the same one again', async () => {
+    /*
+     * What create-only is for: an existing link must never start showing a
+     * different model. An identical record cannot do that, and refusing it was
+     * how a retried publish — the client mints the slug, so a retry resends it
+     * — got told its address was taken by its own publication.
+     */
     const { store } = build()
     const publication = await publish(4)
     await store.put(publication)
-    await expect(store.put(publication)).rejects.toThrow(ShareError)
+
     await expect(store.put({ ...publication, id: 'pub_other' })).rejects.toThrow(/already exists/)
+    await expect(store.put({ ...publication, contentHash: 'f'.repeat(64) })).rejects.toThrow(ShareError)
+    await expect(store.put({ ...publication, revision: publication.revision + 1 })).rejects.toThrow(ShareError)
+
+    await expect(store.put(publication)).resolves.toBeUndefined()
+    expect((await store.getBySlug(publication.slug))?.id).toBe(publication.id)
+  })
+
+  it('repairs a half-written publication when the same write is repeated', async () => {
+    // The pointers and the feed entry are re-asserted, so a create that landed
+    // in pieces completes rather than needing a second slug.
+    const { kv, store } = build()
+    const publication = await publish(4)
+    await store.put(publication)
+    await kv.delete(`pub:id:${publication.id}`)
+
+    await store.put(publication)
+    expect((await store.getById(publication.id))?.slug).toBe(publication.slug)
   })
 
   it('refuses to replace a snapshot through the metadata path', async () => {
