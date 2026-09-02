@@ -17,6 +17,10 @@ import { createServer } from 'node:http'
 import { stat } from 'node:fs/promises'
 import { createRequestListener, type RouteModule } from './dispatch.js'
 import { logProcessEvent } from './log.js'
+import { configureBudget } from './security/budget.js'
+import { budgetStoreFromEnv } from './security/budgetStore.js'
+import { configureConcurrency } from './security/concurrency.js'
+import { gateStatus } from './security/gate.js'
 
 export type { RouteModule } from './dispatch.js'
 export { createRequestListener } from './dispatch.js'
@@ -47,15 +51,23 @@ const shouldListen =
   (process.env.BRICKWRIGHT_API_LISTEN !== '0' && !process.env.VITEST)
 
 if (shouldListen) {
+  // The same counter the Vercel entry uses, read from the same variables. Absent
+  // is a supported mode and the boot line says which one this process is in, so
+  // an unmetered deployment is a thing an operator can see rather than assume.
+  const counter = budgetStoreFromEnv()
+  configureBudget(counter)
+  configureConcurrency(counter)
+
   const server = createServer(createRequestListener(routes))
   const port = Number(process.env.BRICKWRIGHT_API_PORT ?? 8787)
   server.listen(port, '127.0.0.1', () => {
+    const status = gateStatus()
     logProcessEvent({
       level: 'info',
       service: 'api',
       message: `listening on http://127.0.0.1:${port} with ${routes.length} route module(s): ${
         routes.map((route) => route.prefix).join(', ') || 'none'
-      }`,
+      }; metering ${status.metering}, in-flight ceiling ${status.concurrency.status}`,
     })
   })
 }

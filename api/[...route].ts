@@ -7,14 +7,10 @@ import { createAssistantRoute } from '../server/assistant/handler.js'
 import type { RouteContext } from '../server/dispatch.js'
 import { createGenerationRoute } from '../server/generation/index.js'
 import { authorizePaidRoute } from '../server/security/auth.js'
-import { budgetStatus, checkBudget, configureBudget, recordUsage } from '../server/security/budget.js'
+import { configureBudget } from '../server/security/budget.js'
 import { budgetStoreFromEnv } from '../server/security/budgetStore.js'
-import {
-  acquireSlot,
-  concurrencyCeiling,
-  concurrencyStatus,
-  configureConcurrency,
-} from '../server/security/concurrency.js'
+import { configureConcurrency } from '../server/security/concurrency.js'
+import { gateStatus, isPaidRequest, openPaidGate } from '../server/security/gate.js'
 import { logProcessEvent } from '../server/log.js'
 
 const routes = [createAssistantRoute(), createGenerationRoute()]
@@ -57,9 +53,6 @@ function proxyAccepted(request: IncomingMessage): boolean {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
-const requiresIdentity = (pathname: string, method: string | undefined) =>
-  method === 'POST' && ['/api/assistant', '/api/generate', '/api/brief'].includes(pathname)
-
 /**
  * Vercel's Node entry for Brickwright's secret-bearing API process.
  *
@@ -78,75 +71,27 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   if (url.pathname === '/api/health') {
-    json(response, 200, {
-      ok: true,
-      routes: routes.map((route) => route.prefix),
-      metering: budgetStatus(),
-      concurrency: { status: concurrencyStatus(), ceiling: concurrencyCeiling() },
-    })
+    json(response, 200, { ok: true, routes: routes.map((route) => route.prefix), ...gateStatus() })
     return
   }
 
   let context: RouteContext | undefined
-  let metering: Array<Promise<void>> = []
-  let slot: { release(): Promise<void> } | null = null
-  if (requiresIdentity(url.pathname, request.method)) {
+  let release: (() => Promise<void>) | null = null
+  if (isPaidRequest(url.pathname, request.method)) {
+    // Identity first, and only here: a proxy is not an identity authority, and
+    // the gate meters against a subject rather than deciding who owns one.
     const authorization = await authorizePaidRoute(request)
     if (!authorization.ok) {
       json(response, authorization.status, { error: authorization.code, detail: authorization.detail })
       return
     }
-
-    const { userId } = authorization.identity
-
-    // Taken before the budget is read, because it is what makes that read mean
-    // anything: the spend ceiling sees only *recorded* tokens, so concurrent
-    // callers all read the same total and all pass. Capping how many can be in
-    // flight is what turns the overshoot into a stated number.
-    const admission = await acquireSlot(userId)
-    if (!admission.ok) {
-      json(
-        response,
-        429,
-        { error: admission.code, detail: admission.detail },
-        { 'retry-after': String(admission.retryAfterSeconds) },
-      )
+    const gate = await openPaidGate(authorization.identity.userId)
+    if (!gate.ok) {
+      json(response, gate.refusal.status, { error: gate.refusal.code, detail: gate.refusal.detail }, gate.refusal.headers)
       return
     }
-    slot = admission
-
-    // The edge caps requests; this caps tokens, which is what is actually
-    // bought. Checked before the call, because refusing after the tokens are
-    // spent would meter nothing.
-    const verdict = await checkBudget(userId)
-    if (!verdict.ok) {
-      await slot.release()
-      json(
-        response,
-        429,
-        { error: verdict.code, detail: verdict.detail },
-        verdict.retryAfterSeconds ? { 'retry-after': String(verdict.retryAfterSeconds) } : {},
-      )
-      return
-    }
-
-    /*
-     * Metering writes are started immediately and settled before this handler
-     * returns.
-     *
-     * Not awaited at the call site, because a route reports usage mid-stream and
-     * blocking there would stall the response. Not left floating either: a
-     * serverless invocation may be frozen the moment the handler resolves, and a
-     * promise that has not settled by then is a write that never happens — which
-     * is how a ceiling silently stops counting.
-     */
-    metering = []
-    context = {
-      userId,
-      reportUsage(usage) {
-        metering.push(recordUsage(userId, usage))
-      },
-    }
+    context = gate.admission.context
+    release = () => gate.admission.release()
   }
 
   try {
@@ -159,18 +104,13 @@ export default async function handler(request: IncomingMessage, response: Server
         if (!response.headersSent) json(response, 500, { error: 'internal_error' })
         else response.end()
         return
-      } finally {
-        // `recordUsage` never rejects, so this only waits; it cannot turn a
-        // metering failure into a request failure.
-        if (metering.length) await Promise.allSettled(metering)
       }
     }
     json(response, 404, { error: 'not_found', detail: `No route claimed ${url.pathname}` })
   } finally {
-    // Settled before the handler resolves, for the same reason the metering
-    // writes are: a serverless invocation may be frozen the moment it returns,
-    // and a slot released by a promise that never settles is a slot held until
-    // its lease expires. `release` never rejects.
-    await slot?.release()
+    // Settled before the handler resolves: a serverless invocation may be frozen
+    // the moment it does, and a metering write or a slot release that has not
+    // settled by then never happens.
+    await release?.()
   }
 }

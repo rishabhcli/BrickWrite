@@ -209,7 +209,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
   }, [])
 
   const compare = (version: CloudVersionRecord) =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const document = await store.versionDocument(documentId, version.versionId)
       if (!document.ok) {
         return {
@@ -231,7 +231,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     })
 
   const restore = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       if (!selected) return null
       // Planned against the revision on screen, and dispatched against the same
       // one. If anything landed while this dialog was open the kernel refuses
@@ -271,7 +271,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
       const unrestorable = plan.unrestorable.length
         ? ` ${formatCount(plan.unrestorable.length, 'difference')} could not be expressed as an operation and ${plan.unrestorable.length === 1 ? 'was' : 'were'} left alone.`
         : ''
-      const notice = pinned.ok
+      const notice: SurfaceNotice = pinned.ok
         ? {
             tone: plan.unrestorable.length ? 'warn' : 'neutral',
             title: `Restored as revision ${dispatched.revision}`,
@@ -291,7 +291,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     })
 
   const saveVersion = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const trimmed = label.trim()
       if (!trimmed) return null
       const created = await store.createVersion(documentId, trimmed, kernel.document())
@@ -310,7 +310,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     })
 
   const makeBranch = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const trimmed = branchName.trim()
       if (!trimmed) return null
       const created = await store.createBranch(documentId, trimmed, { kind: 'named' })
@@ -336,7 +336,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
   }, [documentId, snapshot.handle, store])
 
   const reconcile = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const resolved = await store.resolveDivergence(documentId)
       if (!resolved.ok) {
         return {
@@ -358,7 +358,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     })
 
   const retryAuthenticated = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const state = await snapshot.handle?.retryHead()
       if (!state || state.status === 'error' || state.status === 'conflict') {
         return {
@@ -382,7 +382,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     })
 
   const discard = () =>
-    run(async () => {
+    run(async (): Promise<SurfaceNotice | null> => {
       const discarded = await snapshot.handle?.outbox.discardHead()
       setConfirmDiscard(false)
       if (!discarded || !discarded.ok || !discarded.value) {
