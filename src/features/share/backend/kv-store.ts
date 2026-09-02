@@ -150,14 +150,32 @@ export class KvPublicationStore implements PublicationStore {
         409,
       )
     }
-    await this.writeJson(SLUG_KEY(publication.slug), publication)
-    // Visibility, revocation and moderation are exactly what this index means,
-    // and they are exactly what this method is allowed to change. Kept in step
-    // here so a revoked publication leaves the gallery rather than being read
-    // and discarded on every listing until somebody notices.
+    /*
+     * Visibility, revocation and moderation are exactly what the feed index
+     * means, and exactly what this method may change, so the two move together.
+     *
+     * The order is chosen for how a half-applied write fails, because two KV
+     * writes are not one. The listing repairs an index entry whose record turns
+     * out not to be listable — it reads the record to build the page anyway —
+     * and has no way to notice an entry that should exist and does not, because
+     * it only ever walks keys. So the index may be over-inclusive and must never
+     * be under-inclusive:
+     *
+     *   - revealing: the key goes in first, and a lost record write leaves an
+     *     entry the next listing reaps. The change did not happen; nothing is
+     *     stranded.
+     *   - hiding: the key goes out last, and a lost delete leaves an entry the
+     *     next listing reaps.
+     *
+     * The other order gives the reveal case a public record with no entry, which
+     * is a publication that is live, reachable by link, and absent from the
+     * gallery with nothing able to discover that.
+     */
     const key = feedKey(publication)
-    if (isPubliclyListable(publication)) await this.kv.put(key, publication.slug)
-    else await this.kv.delete(key)
+    const listable = isPubliclyListable(publication)
+    if (listable) await this.kv.put(key, publication.slug)
+    await this.writeJson(SLUG_KEY(publication.slug), publication)
+    if (!listable) await this.kv.delete(key)
   }
 
   async listPublic(options: { limit?: number; cursor?: string | null } = {}): Promise<{

@@ -416,3 +416,86 @@ describe('the moderation queue', () => {
     expect(await store.listReports({ status: 'dismissed' })).toHaveLength(1)
   })
 })
+
+/**
+ * Half of an access change, because two KV writes are not one.
+ *
+ * The listing walks feed keys and reads each record, so it can repair an entry
+ * whose record turns out not to be listable. It cannot notice an entry that
+ * should exist and does not. That asymmetry decides the write order: the index
+ * may be over-inclusive and must never be under-inclusive, or a publication
+ * ends up live, reachable by its link, and absent from the gallery with nothing
+ * able to discover that.
+ */
+describe('a partly applied access change', () => {
+  /** Fails the nth write of a kind, so one half of a pair can be lost. */
+  class FlakyKv extends MemoryKv {
+    failPutMatching: RegExp | null = null
+    failDeleteMatching: RegExp | null = null
+    override async put(key: string, value: string | ArrayBuffer | Uint8Array): Promise<void> {
+      if (this.failPutMatching?.test(key)) throw new Error(`put refused for ${key}`)
+      return super.put(key, value)
+    }
+    override async delete(key: string): Promise<void> {
+      if (this.failDeleteMatching?.test(key)) throw new Error(`delete refused for ${key}`)
+      return super.delete(key)
+    }
+  }
+
+  const flaky = () => {
+    const kv = new FlakyKv()
+    return { kv, store: new KvPublicationStore(kv) }
+  }
+
+  it('does not strand a publication outside the gallery when revealing it', async () => {
+    const { kv, store } = flaky()
+    const publication = await publish(4, { visibility: 'unlisted' })
+    await store.put(publication)
+
+    /*
+     * The index write fails, which is the half that has to be able to fail
+     * safely. Committing the record first and losing this one leaves a record
+     * that says `public` with nothing pointing at it: live, reachable by its
+     * link, and absent from the gallery, with no read able to discover it.
+     */
+    kv.failPutMatching = /^pub:feed:/
+    await expect(
+      store.updateMetadata(updatePublicationAccess(publication, { visibility: 'public' })),
+    ).rejects.toThrow()
+    kv.failPutMatching = null
+
+    // Nothing claims to be public, so nothing is missing from the gallery.
+    expect((await store.getBySlug(publication.slug))?.visibility).toBe('unlisted')
+    expect((await store.listPublic()).entries).toEqual([])
+  })
+
+  it('leaves a reapable entry rather than a hidden one still listed, when hiding', async () => {
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+    await store.put(publication)
+    expect((await store.listPublic()).entries).toHaveLength(1)
+
+    // The delete is the second half here, so losing it is the recoverable case.
+    kv.failDeleteMatching = /^pub:feed:/
+    await expect(store.updateMetadata(revokePublication(publication))).rejects.toThrow()
+    kv.failDeleteMatching = null
+
+    // The record is authoritative and the listing agrees with it.
+    expect((await store.getBySlug(publication.slug))?.revokedAt).toBeTruthy()
+    expect((await store.listPublic()).entries).toEqual([])
+  })
+
+  it('converges once the change is retried', async () => {
+    const { kv, store } = flaky()
+    const publication = await publish(4, { visibility: 'unlisted' })
+    await store.put(publication)
+    const revealed = updatePublicationAccess(publication, { visibility: 'public' })
+
+    kv.failPutMatching = /^pub:feed:/
+    await expect(store.updateMetadata(revealed)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    await store.updateMetadata(revealed)
+    expect((await store.listPublic()).entries.map((entry) => entry.slug)).toEqual([publication.slug])
+  })
+})

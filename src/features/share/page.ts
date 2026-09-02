@@ -1,7 +1,7 @@
 import { base64url, canonicalJson, randomBytes, sha256Hex } from './canonical'
 import { describeFork } from './fork'
 import { OG_CARD } from './render/presets'
-import { escapeAttribute, escapeHtml, escapeJsonLd, redactShareUrl } from './sanitize'
+import { escapeAttribute, escapeHtml, escapeJsonLd } from './sanitize'
 import type { AccessDecision } from './access'
 import type { CardPresetId, Publication, PublicationCard } from './types'
 
@@ -509,8 +509,6 @@ export function renderRefusalPage(input: {
 }
 
 /** Confirms the redaction helper is applied wherever a URL could be echoed. */
-export const safeRequestPath = (path: string) => redactShareUrl(path)
-
 // ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
