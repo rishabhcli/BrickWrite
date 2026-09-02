@@ -244,9 +244,14 @@ export function useWorkbench() {
     setPlaybackStepRaw(null)
   }, [])
   const setPlaybackStep = useCallback((index: number | null) => {
-    // A step click is a scrub. Only Play advances on a timer.
+    // A step click or overlay prev/next is a scrub. Only Play advances on a
+    // timer, and that path uses setPlaybackStepRaw so autoplay does not steal
+    // the operator's selection.
     setPlaybackPlaying(false)
     setPlaybackStepRaw(index)
+    if (index === null) return
+    const step = cadEngine.getDocument().steps[index]
+    if (step) cadEngine.setSelection([...step.partIds])
   }, [])
   const playBuild = useCallback(() => {
     const total = cadEngine.getDocument().steps.length

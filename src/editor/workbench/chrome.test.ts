@@ -176,6 +176,16 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).toMatch(/max-height:\s*28%/)
   })
 
+  it('keeps four timeline tabs on one row at the laptop 124px strip', () => {
+    expect(withoutComments).toMatch(/container-name:\s*timeline/)
+    expect(withoutComments).toMatch(/@container timeline \(max-height: 140px\)/)
+    expect(withoutComments).toMatch(/\.timeline-tab-copy/)
+    const hasProposals = withoutComments.indexOf('.timeline.has-proposals .timeline-switch')
+    expect(hasProposals).toBeGreaterThan(-1)
+    const slice = withoutComments.slice(hasProposals, hasProposals + 420)
+    expect(slice).not.toMatch(/grid-template-columns:\s*repeat\(2/)
+  })
+
   it('keeps HUD world units on a laptop instead of hiding the fields', () => {
     const [laptop] = mediaBlocks(withoutComments, '1160px')
     expect(laptop).toContain('.selection-hud-name')

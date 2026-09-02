@@ -1802,6 +1802,8 @@
   position: relative;
   z-index: 18;
   min-height: 0;
+  container-type: size;
+  container-name: timeline;
 }
 .timeline-label {
   padding: 14px 16px;
@@ -3894,6 +3896,32 @@
 }
 .timeline-switch button.active em {
   color: var(--muted);
+}
+@container timeline (max-height: 140px) {
+  .timeline-label {
+    padding: 8px 10px;
+  }
+  .timeline-label .eyebrow {
+    display: none;
+  }
+  .timeline-label h3 {
+    margin: 0 0 4px;
+    font-size: 12px;
+  }
+  .timeline-label > .timeline-switch {
+    margin-top: 6px;
+  }
+  .timeline-tab-copy {
+    display: none;
+  }
+  .timeline-switch button {
+    padding: 5px 3px;
+    gap: 3px;
+  }
+  .step-card,
+  .transaction-card {
+    height: 70px;
+  }
 }
 .timeline-label > .timeline-actions {
   display: flex;
@@ -6652,12 +6680,13 @@
   background: linear-gradient(90deg, rgba(131, 231, 238, 0.035), transparent 45%), rgba(8, 14, 16, 0.97);
 }
 .timeline.has-proposals .timeline-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Four tabs stay one row even at the laptop 124px strip. Wrapping to two
+     rows ate the track. Copy hides via the timeline container query. */
+  display: flex;
 }
 .timeline.has-proposals .timeline-switch button {
-  min-height: 26px;
-  padding-block: 5px;
+  min-width: 0;
+  padding-inline: 4px;
 }
 .timeline.review-open .timeline-track {
   align-items: stretch;
