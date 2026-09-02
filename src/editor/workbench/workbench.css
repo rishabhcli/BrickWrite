@@ -23,12 +23,16 @@
 .app-shell[data-timeline='open'] {
   --timeline-track: 152px;
 }
-/* Cheap: data-preset is already on the shell. Custom/dragged layouts keep 152px. */
+/* Cheap: data-preset is already on the shell. Preset sizes when data-bottom-size is absent. */
 .app-shell[data-preset='laptop'][data-timeline='open'] {
   --timeline-track: 124px;
 }
 .app-shell[data-preset='ultrawide'][data-timeline='open'] {
   --timeline-track: 168px;
+}
+
+.app-shell[data-timeline='open'][data-bottom-size] {
+  --timeline-track: attr(data-bottom-size px);
 }
 
 .app-shell::before {
@@ -8805,6 +8809,9 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   .topbar {
     grid-template-columns: 176px auto minmax(180px, 1fr) auto;
   }
+}
+/* Labels follow the named topbar container, not window width. */
+@container topbar (max-width: 1380px) {
   .topbar-nav-link span {
     display: none;
   }
@@ -8932,7 +8939,10 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   .tool-mode em {
     display: none;
   }
-  /* Was @media 1380px. ~760px is the island at that window with default docks. */
+}
+/* Icon-only island is already ~740px on a wide window. 760px was firing
+   history/selection crowding as soon as the shelf was compact, not cramped. */
+@container toolbar-island (max-width: 640px) {
   .toolbar-island .history-tools .icon-button:first-child {
     display: none;
   }

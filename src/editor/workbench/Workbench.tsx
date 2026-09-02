@@ -43,6 +43,7 @@ import {
   saveLayout,
   workspaceColumns,
   workspaceRows,
+  bottomHeight,
   type DockId,
   type LayoutPresetId,
   type WorkbenchLayout,
@@ -767,9 +768,11 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         style={{
           gridTemplateColumns: workspaceColumns(layout),
           gridTemplateRows: workspaceRows(layout),
+          ['--timeline-track' as string]: `${bottomHeight(layout)}px`,
         }}
         data-preset={layout.preset ?? 'custom'}
         data-timeline={layout.bottom.collapsed ? undefined : 'open'}
+        data-bottom-size={layout.bottom.size}
       >
         {/* The editor's outline began at h2, so assistive technology had no
          * top-level heading for the route and no way to hear which document
