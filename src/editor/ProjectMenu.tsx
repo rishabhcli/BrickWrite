@@ -64,7 +64,7 @@ interface ProjectMenuProps {
 export function ProjectMenu({ documentName, documentId, revision, sessionStatus, onNotice }: ProjectMenuProps) {
   const [open, setOpen] = useState<'none' | 'projects' | 'legal'>('none')
   const [projects, setProjects] = useState<ProjectSummary[]>([])
-  const [licences, setLicences] = useState<LicenceManifest | null>(null)
+  const [licences, setLicences] = useState<LicenceManifest | null | undefined>(undefined)
   const [forkName, setForkName] = useState('')
   const [renameValue, setRenameValue] = useState(documentName)
   const [busy, setBusy] = useState(false)
@@ -100,10 +100,10 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
 
   useEffect(() => {
     if (open === 'projects') void refresh()
-    if (open === 'legal' && !licences) {
+    if (open === 'legal' && licences === undefined) {
       void fetch(`${import.meta.env.BASE_URL}catalog/${catalog.version}/licenses.json`)
         .then((response) => (response.ok ? (response.json() as Promise<LicenceManifest>) : null))
-        .then(setLicences)
+        .then((manifest) => setLicences(manifest))
         .catch(() => setLicences(null))
     }
   }, [open, licences, refresh])
@@ -292,6 +292,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               aria-label="New or forked project name"
             />
             <button
+              type="button"
               disabled={busy}
               title="Copy this model into a new project"
               onClick={() =>
@@ -305,6 +306,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               <GitBranch size={12} /> Fork
             </button>
             <button
+              type="button"
               disabled={busy}
               title="Start an empty project with no parts"
               onClick={() =>
@@ -397,7 +399,11 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
             Brickwright compiles third-party datasets. Catalog revision <code>{catalog.version}</code>.
           </p>
 
-          {licences ? (
+          {licences === undefined ? (
+            <p className="legal-note" role="status">
+              Loading the licence manifest for catalog {catalog.version}…
+            </p>
+          ) : licences ? (
             <ul className="legal-list">
               {licences.datasets.map((dataset) => (
                 <li key={dataset.dataset}>
@@ -436,6 +442,7 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
             Brickwright. Brickwright is an unofficial tool for designing with LEGO-compatible parts.
           </p>
           <button
+            type="button"
             className="legal-copy"
             onClick={() => {
               const text = [

@@ -22,6 +22,8 @@ export function ProjectsPage() {
   const pointer = usePointerField<HTMLDivElement>()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
@@ -32,9 +34,11 @@ export function ProjectsPage() {
 
   const loadProjects = useCallback(async () => {
     try {
+      setListError(null)
       setProjects(await store.listProjects())
-    } catch {
+    } catch (cause) {
       setProjects([])
+      setListError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setLoading(false)
     }
@@ -47,11 +51,12 @@ export function ProjectsPage() {
   const handleDelete = useCallback(
     async (id: string) => {
       try {
+        setActionError(null)
         await store.deleteProject(id)
         setProjects((prev) => prev.filter((project) => project.projectId !== id))
         setDeleteConfirm(null)
-      } catch (err) {
-        console.error('Failed to delete project', err)
+      } catch (cause) {
+        setActionError(cause instanceof Error ? cause.message : String(cause))
       }
     },
     [store],
@@ -145,12 +150,25 @@ export function ProjectsPage() {
             </label>
           </div>
 
+          {listError ? (
+            <div className="bw-projects-empty" role="alert">
+              <h3 className="bw-display x3">Saved models could not be read</h3>
+              <p>{listError}</p>
+            </div>
+          ) : null}
+          {actionError ? (
+            <div className="bw-projects-empty" role="alert">
+              <h3 className="bw-display x3">That change did not complete</h3>
+              <p>{actionError}</p>
+            </div>
+          ) : null}
+
           <div className="bw-projects-grid">
             {loading ? (
               <div className="bw-projects-empty">
                 <p>Loading…</p>
               </div>
-            ) : filtered.length === 0 ? (
+            ) : listError ? null : filtered.length === 0 ? (
               <div className="bw-projects-empty">
                 <h3 className="bw-display x3">{search ? 'Nothing matches' : 'No models yet'}</h3>
                 <p>{search ? 'Clear the search to see every saved build.' : 'A blank plate, or any published demo.'}</p>

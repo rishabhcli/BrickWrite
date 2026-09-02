@@ -160,11 +160,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
   useEffect(() => {
     let live = true
     setError(null)
-    void Promise.all([
-      store.listBranches(documentId),
-      store.listVersions(documentId),
-      store.myRole(documentId),
-    ]).then(
+    void Promise.all([store.listBranches(documentId), store.listVersions(documentId), store.myRole(documentId)]).then(
       ([branchResult, versionResult, roleResult]) => {
         if (!live) return
         if (!branchResult.ok) {
@@ -192,10 +188,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
     }
   }, [store, documentId, nonce])
 
-  const conflict = useMemo(
-    () => (branches ?? []).find((branch) => branch.kind === 'conflict') ?? null,
-    [branches],
-  )
+  const conflict = useMemo(() => (branches ?? []).find((branch) => branch.kind === 'conflict') ?? null, [branches])
 
   const run = useCallback(async (work: () => Promise<SurfaceNotice | null>) => {
     setBusy(true)
@@ -225,7 +218,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
           detail: `${document.error.message} ${document.error.repair}`,
         }
       }
-      const comparison = compareToVersion(api.snapshot.document, document.value)
+      const live = kernel.document()
+      const comparison = compareToVersion(live, document.value)
       setSelected({
         version,
         document: document.value,
@@ -257,6 +251,11 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
         expectedRevision,
       )
       if (!dispatched.ok) {
+        api.notify({
+          kind: 'error',
+          title: 'Restore refused',
+          detail: `${dispatched.message}${dispatched.repair ? ` ${dispatched.repair}` : ''} The document is unchanged.`,
+        })
         return {
           tone: 'error',
           title: 'Restore refused',
@@ -266,16 +265,13 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
 
       // The restore is now ordinary history at the head. Pinning it as its own
       // version is what makes it reversible in the same way everything else is.
-      const pinned = await store.createVersion(
-        documentId,
-        `Restored “${selected.version.label}”`,
-        kernel.document(),
-        { notes: `Restored from revision ${selected.version.revision} as revision ${dispatched.revision}.` },
-      )
+      const pinned = await store.createVersion(documentId, `Restored “${selected.version.label}”`, kernel.document(), {
+        notes: `Restored from revision ${selected.version.revision} as revision ${dispatched.revision}.`,
+      })
       const unrestorable = plan.unrestorable.length
         ? ` ${formatCount(plan.unrestorable.length, 'difference')} could not be expressed as an operation and ${plan.unrestorable.length === 1 ? 'was' : 'were'} left alone.`
         : ''
-      return pinned.ok
+      const notice = pinned.ok
         ? {
             tone: plan.unrestorable.length ? 'warn' : 'neutral',
             title: `Restored as revision ${dispatched.revision}`,
@@ -286,6 +282,12 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
             title: `Restored as revision ${dispatched.revision}`,
             detail: `Applied ${formatCount(plan.operations.length, 'operation')} as one new transaction. The version marking it could not be created: ${pinned.error.message}${unrestorable}`,
           }
+      api.notify({
+        kind: notice.tone === 'warn' ? 'info' : 'success',
+        title: notice.title,
+        detail: notice.detail,
+      })
+      return notice
     })
 
   const saveVersion = () =>
@@ -347,10 +349,7 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
       if (resolved.value.document) await kernel.openProject(documentId)
       return {
         tone: 'neutral',
-        title:
-          resolved.value.kind === 'conflict-fork'
-            ? 'Both histories preserved'
-            : 'Divergence reconciled',
+        title: resolved.value.kind === 'conflict-fork' ? 'Both histories preserved' : 'Divergence reconciled',
         detail:
           resolved.value.kind === 'conflict-fork'
             ? 'Main now follows the cloud head and the local tail is preserved on a conflict branch.'
@@ -460,8 +459,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
             <CloudOff size={11} aria-hidden="true" /> This browser is offline
           </strong>
           <p>
-            What is listed here is whatever was read before the connection dropped. Creating,
-            comparing and restoring all need the deployment, so they will fail until it returns.
+            What is listed here is whatever was read before the connection dropped. Creating, comparing and restoring
+            all need the deployment, so they will fail until it returns.
           </p>
         </div>
       )}
@@ -472,9 +471,9 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
             <GitBranch size={11} aria-hidden="true" /> This project has a conflict fork
           </strong>
           <p>
-            Two histories advanced from revision {conflict.baseRevision}. Neither was discarded:
-            “{conflict.name}” holds the tail that lost the race, replayed unchanged — same ids, same
-            order — and main holds the one that landed. Both are below.
+            Two histories advanced from revision {conflict.baseRevision}. Neither was discarded: “{conflict.name}” holds
+            the tail that lost the race, replayed unchanged — same ids, same order — and main holds the one that landed.
+            Both are below.
           </p>
         </div>
       )}
@@ -485,11 +484,17 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
             <GitBranch size={11} aria-hidden="true" /> The queued local tail needs reconciliation
           </strong>
           <p>
-            The cloud moved past the revision this browser edited. Reconciliation rebases disjoint
-            work and creates a conflict branch when both histories touched the same entities.
+            The cloud moved past the revision this browser edited. Reconciliation rebases disjoint work and creates a
+            conflict branch when both histories touched the same entities.
           </p>
           <div className="bw-cloud-actions">
-            <button type="button" className="bw-cloud-btn" data-variant="primary" disabled={busy} onClick={() => void reconcile()}>
+            <button
+              type="button"
+              className="bw-cloud-btn"
+              data-variant="primary"
+              disabled={busy}
+              onClick={() => void reconcile()}
+            >
               Reconcile
             </button>
           </div>
@@ -501,14 +506,25 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
           <strong>Queued change refused{sync.lastError?.code ? ` · ${sync.lastError.code}` : ''}</strong>
           <p>{sync.lastError?.message ?? sync.reason}</p>
           {sync.lastError?.code === 'PAYLOAD_TOO_LARGE' && (
-            <p>Discarding only unblocks the queue. The same edit will return unless it is split into smaller commits.</p>
+            <p>
+              Discarding only unblocks the queue. The same edit will return unless it is split into smaller commits.
+            </p>
           )}
           {sync.lastError?.code === 'SCHEMA_MISMATCH' && (
-            <p>Reload the application so the client and stored project agree on a document schema. No queue entry will be removed.</p>
+            <p>
+              Reload the application so the client and stored project agree on a document schema. No queue entry will be
+              removed.
+            </p>
           )}
           <div className="bw-cloud-actions">
             {sync.lastError?.code === 'UNAUTHENTICATED' && (
-              <button type="button" className="bw-cloud-btn" data-variant="primary" disabled={busy} onClick={() => void retryAuthenticated()}>
+              <button
+                type="button"
+                className="bw-cloud-btn"
+                data-variant="primary"
+                disabled={busy}
+                onClick={() => void retryAuthenticated()}
+              >
                 Retry signed-in send
               </button>
             )}
@@ -518,7 +534,13 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               </button>
             )}
             {discardable && !confirmDiscard && (
-              <button type="button" className="bw-cloud-btn" data-variant="danger" disabled={busy} onClick={() => setConfirmDiscard(true)}>
+              <button
+                type="button"
+                className="bw-cloud-btn"
+                data-variant="danger"
+                disabled={busy}
+                onClick={() => setConfirmDiscard(true)}
+              >
                 Discard this queued change
               </button>
             )}
@@ -528,7 +550,13 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               <strong>Keep the edit only in this browser?</strong>
               <p>The local transaction log is not deleted. The cloud replica will omit this queued copy.</p>
               <div className="bw-cloud-actions">
-                <button type="button" className="bw-cloud-btn" data-variant="danger" disabled={busy} onClick={() => void discard()}>
+                <button
+                  type="button"
+                  className="bw-cloud-btn"
+                  data-variant="danger"
+                  disabled={busy}
+                  onClick={() => void discard()}
+                >
                   Confirm discard
                 </button>
                 <button type="button" className="bw-cloud-btn" disabled={busy} onClick={() => setConfirmDiscard(false)}>
@@ -594,8 +622,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
 
       {branches.length === 0 ? (
         <p className="bw-cloud-empty">
-          The deployment reports no branches for this project. The link recorded in this browser
-          points at branch <code>{link.branchId}</code>.
+          The deployment reports no branches for this project. The link recorded in this browser points at branch{' '}
+          <code>{link.branchId}</code>.
         </p>
       ) : (
         <div className="bw-cloud-branches">
@@ -626,8 +654,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               <div className="bw-cloud-scroll">
                 {(byBranch.get(branch.branchId) ?? []).length === 0 ? (
                   <p className="bw-cloud-empty">
-                    No versions have been pinned on this branch. Its transaction log is still
-                    complete on the deployment.
+                    No versions have been pinned on this branch. Its transaction log is still complete on the
+                    deployment.
                   </p>
                 ) : (
                   (byBranch.get(branch.branchId) ?? []).map((version) => (
@@ -680,8 +708,17 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
               type="button"
               className="bw-cloud-btn"
               data-variant="primary"
-              disabled={busy || selected.identical || Boolean(restoreRefusal)}
-              title={restoreRefusal ?? undefined}
+              disabled={
+                busy ||
+                restorePlan(kernel.document(), selected.document).operations.length === 0 ||
+                Boolean(restoreRefusal)
+              }
+              title={
+                restoreRefusal ??
+                (restorePlan(kernel.document(), selected.document).operations.length === 0
+                  ? 'The open document already matches this version in every field a restore can express.'
+                  : undefined)
+              }
               onClick={() => void restore()}
             >
               <RotateCcw size={11} aria-hidden="true" /> Restore as a new revision
@@ -691,8 +728,8 @@ function ClaimedHistory({ api, link }: { api: CloudWorkbenchApi; link: ProjectLi
             </button>
           </div>
           <span className="bw-cloud-project-meta">
-            Restoring never rewinds: it lands as one new transaction on revision {currentRevision},
-            and is undoable like any other edit.
+            Restoring never rewinds: it lands as one new transaction on revision {currentRevision}, and is undoable like
+            any other edit.
           </span>
         </section>
       )}

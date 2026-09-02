@@ -272,7 +272,15 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
                   const { xml, report } = exportBrickLinkXml(state.document)
                   downloadText(`${name}_wanted.xml`, xml, 'application/xml')
                   const copy = describeBrickLinkExport(report)
-                  if (copy) onNotice({ kind: 'info', title: copy.title, detail: copy.detail })
+                  onNotice(
+                    copy
+                      ? { kind: 'info', title: copy.title, detail: copy.detail }
+                      : {
+                          kind: 'success',
+                          title: 'BrickLink wanted list exported',
+                          detail: `${report.lines} line${report.lines === 1 ? '' : 's'} · ${report.totalPieces} piece${report.totalPieces === 1 ? '' : 's'}.`,
+                        },
+                  )
                 })
               }
             >
@@ -287,7 +295,20 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
               onClick={() => {
                 void session.exportArchive().then(
                   (json) => {
-                    downloadText(`${name}.brickwright.json`, json, 'application/json')
+                    try {
+                      downloadText(`${name}.brickwright.json`, json, 'application/json')
+                      onNotice({
+                        kind: 'success',
+                        title: 'Project archive exported',
+                        detail: `Saved ${name}.brickwright.json from revision ${state.document.revision}.`,
+                      })
+                    } catch (cause) {
+                      onNotice({
+                        kind: 'error',
+                        title: 'Archive not exported',
+                        detail: cause instanceof Error ? cause.message : String(cause),
+                      })
+                    }
                   },
                   (cause: unknown) => {
                     onNotice({

@@ -272,15 +272,16 @@ describe('the viewer is structurally incapable of mutating a project', () => {
   it('exposes no mutation action in the viewer reducer', () => {
     const state = sources.find((entry) => entry.name === 'state.ts')!.text
     const actions = [...state.matchAll(/\|\s*\{\s*type:\s*'([a-z-]+)'/g)].map((match) => match[1])
-    expect(actions.sort()).toEqual([
-      'drag',
-      'explode',
-      'orbit',
-      'reset',
-      'set-orbit',
-      'step',
-      'step-delta',
-      'zoom',
-    ])
+    expect(actions.sort()).toEqual(['drag', 'explode', 'orbit', 'reset', 'set-orbit', 'step', 'step-delta', 'zoom'])
+  })
+})
+
+describe('share bar credentials', () => {
+  it('does not offer Copy link when the URL would not grant a recipient access', async () => {
+    const publication = await publish()
+    renderViewer(publication, { urlGrantsAccess: false })
+    expect(screen.queryByTestId('share-copy')).toBeNull()
+    expect(screen.queryByTestId('share-url')).toBeNull()
+    expect(screen.getByTestId('share-url-not-credential')).toHaveTextContent(/not a shareable link/)
   })
 })

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { session } from '../cad/session'
 import { ProjectMenu } from './ProjectMenu'
 
 vi.mock('../cad/session', () => ({
@@ -81,5 +82,26 @@ describe('project menu', () => {
     expect(document.querySelector('.project-backdrop')).toBeNull()
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Outside' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('reports a failed checkpoint instead of claiming a save', async () => {
+    vi.mocked(session.checkpoint).mockRejectedValueOnce(
+      new Error('The project could not be checkpointed (QuotaExceededError). Nothing new was written.'),
+    )
+    const notices: Array<{ kind: string; title: string; detail: string }> = []
+    render(
+      <ProjectMenu
+        documentName="Survey rover"
+        documentId="open"
+        revision={4}
+        sessionStatus={status}
+        onNotice={(notice) => notices.push(notice)}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Survey rover/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Checkpoint now/ }))
+    await waitFor(() => expect(notices[0]?.kind).toBe('error'))
+    expect(notices[0]?.title).toBe('Checkpoint')
+    expect(notices[0]?.detail).toMatch(/QuotaExceededError/)
   })
 })

@@ -170,4 +170,16 @@ describe('share studio', () => {
     await waitFor(() => expect(screen.getByTestId('publish-error')).toHaveTextContent('409'), { timeout: 60_000 })
     expect(screen.queryByTestId('published-link')).toBeNull()
   }, 90_000)
+
+  it('does not present an unlisted slug as a working share URL', async () => {
+    renderStudio()
+    fireEvent.click(screen.getByTestId('visibility-unlisted'))
+    fireEvent.click(screen.getByTestId('publish-button'))
+    await waitFor(() => expect(screen.getByTestId('publish-status')).toHaveTextContent(/Published as unlisted/), {
+      timeout: 60_000,
+    })
+    expect(screen.queryByTestId('published-link')).toBeNull()
+    expect(screen.getByTestId('published-link-unavailable')).toHaveTextContent(/Mint a token/)
+    expect(screen.getByTestId('publish-status')).toHaveTextContent(/not a working link without the access token/)
+  }, 90_000)
 })

@@ -162,9 +162,7 @@ describe('project repository', () => {
     })
 
     const projects = await repository.listProjects()
-    expect(projects).toEqual([
-      expect.objectContaining({ projectId: document.id, name: document.name, partCount: 1 }),
-    ])
+    expect(projects).toEqual([expect.objectContaining({ projectId: document.id, name: document.name, partCount: 1 })])
   })
 
   it('returns null for a project that was never saved', async () => {
@@ -195,6 +193,16 @@ describe('autosave', () => {
     const loaded = await repository.loadProject(projectId)
     expect(loaded!.document.revision).toBe(4)
     expect(loaded!.checkpointRevision).toBe(3)
+  })
+
+  it('checkpointNow records the failure without throwing', async () => {
+    const failing = new MemoryDriver()
+    failing.put = async () => {
+      throw new Error('QuotaExceededError')
+    }
+    const autosave = new ProjectAutosave(new ProjectRepository(failing), 10)
+    await expect(autosave.checkpointNow(createEmptyDocument())).resolves.toBeUndefined()
+    expect(autosave.error).toBe('QuotaExceededError')
   })
 
   it('surfaces a storage failure instead of taking the editor down', async () => {

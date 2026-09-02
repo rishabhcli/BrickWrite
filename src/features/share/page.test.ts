@@ -3,13 +3,7 @@ import { resolveAccess } from './access'
 import { KvPublicationStore } from './backend/kv-store'
 import { MemoryKv } from './backend/memory-kv'
 import { hostileDocument, privateDocument, SECRETS } from './__fixtures__/model'
-import {
-  cardUrlFor,
-  metaDescription,
-  renderEmbedPage,
-  renderRefusalPage,
-  renderSharePage,
-} from './page'
+import { cardUrlFor, metaDescription, renderEmbedPage, renderRefusalPage, renderSharePage } from './page'
 import { createPublication } from './publish'
 import { mintShareToken } from './tokens'
 import type { Publication, PublicationCard } from './types'
@@ -177,6 +171,8 @@ describe('share page metadata', () => {
     expect(page.html).not.toContain(minted.token.split('.')[1])
     // Forking is off for this link, so the action is absent rather than broken.
     expect(page.html).not.toContain('Edit a copy')
+    expect(page.html).not.toContain('Copy link')
+    expect(page.html).toContain('This address is not a shareable link')
   })
 })
 
@@ -308,7 +304,7 @@ describe('embed page', () => {
       publication,
       decision,
       origin: ORIGIN,
-      embedAncestors: ['https://partner.example', "javascript:alert(1)", '*'],
+      embedAncestors: ['https://partner.example', 'javascript:alert(1)', '*'],
       nonce: 'E',
     })
     expect(page.headers['Content-Security-Policy']).toContain('frame-ancestors https://partner.example')

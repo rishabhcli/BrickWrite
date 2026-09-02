@@ -229,9 +229,10 @@ function shareBody(options: PageOptions, heroCard: PublicationCard | null): stri
       : `<span class="share-author">${escapeHtml(publication.author.displayName)}</span>`
     : '<span class="share-author share-author-absent">Author not stated</span>'
 
-  const badge = validation.componentCount > 0
-    ? validationBadge(publication)
-    : '<span class="share-badge share-badge-unknown">Not validated</span>'
+  const badge =
+    validation.componentCount > 0
+      ? validationBadge(publication)
+      : '<span class="share-badge share-badge-unknown">Not validated</span>'
 
   const stepRows = publication.document.steps.length
     ? publication.document.steps
@@ -271,9 +272,19 @@ function shareBody(options: PageOptions, heroCard: PublicationCard | null): stri
     )
   }
   if (decision.capabilities.embed) {
-    actions.push(`<button type="button" class="share-action" data-copy="${escapeAttribute(embedSnippet(options))}">Copy embed code</button>`)
+    actions.push(
+      `<button type="button" class="share-action" data-copy="${escapeAttribute(embedSnippet(options))}">Copy embed code</button>`,
+    )
   }
-  actions.push(`<button type="button" class="share-action" data-copy="${escapeAttribute(canonical)}" data-share-url="${escapeAttribute(canonical)}" data-share-title="${escapeAttribute(publication.title)}">Copy link</button>`)
+  if (publication.visibility === 'public') {
+    actions.push(
+      `<button type="button" class="share-action" data-copy="${escapeAttribute(canonical)}" data-share-url="${escapeAttribute(canonical)}" data-share-title="${escapeAttribute(publication.title)}">Copy link</button>`,
+    )
+  } else {
+    actions.push(
+      '<p class="share-warning">This address is not a shareable link. Recipients need the original URL that included the access token; after this browser exchanged it for a cookie, copying the address bar will not grant them access.</p>',
+    )
+  }
 
   const tags = publication.tags.length
     ? `<ul class="share-tags">${publication.tags.map((tag) => `<li><a href="${escapeAttribute(`${trimOrigin(origin)}/gallery?tag=${encodeURIComponent(tag)}`)}">#${escapeHtml(tag)}</a></li>`).join('')}</ul>`
@@ -330,7 +341,8 @@ function validationBadge(publication: Publication): string {
     return `<span class="share-badge share-badge-pass">Validated · ${validation.connectionCount} connections · no collisions</span>`
   }
   const problems: string[] = []
-  if (validation.collisionCount) problems.push(`${validation.collisionCount} collision${validation.collisionCount === 1 ? '' : 's'}`)
+  if (validation.collisionCount)
+    problems.push(`${validation.collisionCount} collision${validation.collisionCount === 1 ? '' : 's'}`)
   if (validation.componentCount > 1) problems.push(`${validation.componentCount} disconnected groups`)
   const failing = validation.constraintCounts.fail
   if (failing) problems.push(`${failing} failing constraint${failing === 1 ? '' : 's'}`)

@@ -9,14 +9,7 @@ import { CloudVersionHistory } from '../VersionHistory'
 import type { AppendTransactionArgs } from '../protocol'
 import { transactionChecksum } from '../serialize'
 import { part, placements } from './harness'
-import {
-  fakeWorkbenchApi,
-  makeUiHarness,
-  overrideBackend,
-  SIGNED_IN,
-  withRuntime,
-  type UiHarness,
-} from './uiHarness'
+import { fakeWorkbenchApi, makeUiHarness, overrideBackend, SIGNED_IN, withRuntime, type UiHarness } from './uiHarness'
 
 /**
  * Version history, against the deployment double.
@@ -83,9 +76,7 @@ describe('Version history — states with nothing to show', () => {
   it('says plainly that an unclaimed project has no cloud replica', async () => {
     const harness = makeUiHarness({ configured: true, identity: SIGNED_IN })
     await mount(harness)
-    await waitFor(() =>
-      expect(screen.getByRole('note')).toHaveTextContent('This project has no cloud replica'),
-    )
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('This project has no cloud replica'))
     expect(screen.getByRole('note')).toHaveTextContent('Save to cloud')
   })
 
@@ -116,9 +107,7 @@ describe('Version history — states with nothing to show', () => {
     })
     await claimOpenProject(harness)
     await mount(harness)
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('The deployment refused part of this read'),
-    )
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('The deployment refused part of this read'))
     expect(screen.getByRole('alert')).toHaveTextContent('The cloud is unreachable')
   })
 
@@ -143,7 +132,7 @@ describe('Version history — the happy path', () => {
     commit(harness, 'p2')
     expect(harness.engine.getSnapshot().document.revision).toBe(2)
 
-    await mount(harness)
+    const api = await mount(harness)
     await waitFor(() => expect(screen.getByText('Hull complete')).toBeInTheDocument())
     expect(screen.getByText('r1')).toBeInTheDocument()
 
@@ -172,9 +161,8 @@ describe('Version history — the happy path', () => {
     expect(harness.engine.getSnapshot().transactions).toHaveLength(3)
     // And the restore is itself pinned, so it is as recoverable as anything else.
     const versions = await store.listVersions(OPEN)
-    expect(versions.ok && versions.value.map((entry) => entry.label)).toContain(
-      'Restored “Hull complete”',
-    )
+    expect(versions.ok && versions.value.map((entry) => entry.label)).toContain('Restored “Hull complete”')
+    expect(api.calls.notices.some((entry) => entry.includes('Restored as revision'))).toBe(true)
   })
 
   it('refuses a restore planned against a revision that has moved', async () => {
@@ -194,11 +182,7 @@ describe('Version history — the happy path', () => {
     // The kernel is the authority on the revision, and the dispatch seam
     // carries the one the plan was made on. Moving the head under the dialog
     // has to be refused, not merged.
-    const stale = harness.kernel.dispatch(
-      'Restore version “Hull complete”',
-      [{ type: 'part.remove', partId: 'p2' }],
-      0,
-    )
+    const stale = harness.kernel.dispatch('Restore version “Hull complete”', [{ type: 'part.remove', partId: 'p2' }], 0)
     expect(stale.ok).toBe(false)
     if (!stale.ok) expect(stale.code).toBe('STALE_DOCUMENT')
     expect(comparison).toBeInTheDocument()
@@ -238,10 +222,7 @@ describe('Version history — the happy path', () => {
 
     await waitFor(() => expect(screen.getByText(/Branch “wider-chassis”/)).toBeInTheDocument())
     const branches = await store.listBranches(OPEN)
-    expect(branches.ok && branches.value.map((branch) => branch.name).sort()).toEqual([
-      'main',
-      'wider-chassis',
-    ])
+    expect(branches.ok && branches.value.map((branch) => branch.name).sort()).toEqual(['main', 'wider-chassis'])
   })
 })
 
@@ -263,15 +244,11 @@ describe('Version history — a conflict fork', () => {
     })
 
     await mount(harness)
-    await waitFor(() =>
-      expect(screen.getByRole('region', { name: 'Branch conflict-2026-08-28' })).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Branch conflict-2026-08-28' })).toBeInTheDocument())
 
     // Both histories, each under its own branch, with the fork explained.
     expect(screen.getByRole('region', { name: 'Branch main' })).toHaveTextContent('Main line')
-    expect(screen.getByRole('region', { name: 'Branch conflict-2026-08-28' })).toHaveTextContent(
-      'Diverged tail',
-    )
+    expect(screen.getByRole('region', { name: 'Branch conflict-2026-08-28' })).toHaveTextContent('Diverged tail')
     const notice = screen.getByText(/This project has a conflict fork/).closest('div')!
     expect(notice).toHaveTextContent('Neither was discarded')
     expect(notice).toHaveTextContent('same ids, same')
@@ -312,9 +289,7 @@ describe('Version history — accessibility', () => {
     const harness = makeUiHarness({ configured: true, identity: SIGNED_IN, online: false })
     await claimOpenProject(harness)
     await mount(harness, { online: false })
-    await waitFor(() =>
-      expect(screen.getByText(/This browser is offline/)).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText(/This browser is offline/)).toBeInTheDocument())
     expect(screen.getByText(/whatever was read before the connection dropped/)).toBeInTheDocument()
   })
 })
