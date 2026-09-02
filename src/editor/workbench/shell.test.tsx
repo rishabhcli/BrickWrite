@@ -31,6 +31,8 @@ vi.mock('../CadViewport', () => ({
 
 const { cadEngine } = await import('../../cad/engine')
 const { catalog } = await import('../../cad/catalog')
+const fixture = (await import('../../cad/__fixtures__/catalog.fixture.json')).default
+type CatalogPayload = import('../../cad/catalog').CatalogPayload
 const { IDENTITY_BASIS } = await import('../../cad/math')
 const { createEmptyDocument } = await import('../../cad/sample')
 const { resetPreferences } = await import('./persistence')
@@ -364,29 +366,39 @@ describe('the beginner path through the shell', () => {
     })
   })
 
-  it('walks catalog results from the search field and keeps PageUp/PageDown on that field', () => {
-    mount()
-    const search = control('[data-catalog-search]')
-    expect(document.querySelector('.part-card.cursor')).toBeNull()
+  it('walks catalog results from the search field and pages when the catalogue is large enough', () => {
+    catalog.installExternalIndex(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: `pageExtra${index}`,
+        n: `Catalogued filler ${index}`,
+        c: 'Test fillers',
+        f: 0,
+      })),
+    )
+    try {
+      mount()
+      const search = control('[data-catalog-search]')
+      expect(document.querySelector('.part-card.cursor')).toBeNull()
 
-    fireEvent.keyDown(search, { key: 'ArrowDown' })
-    expect(document.querySelector('.part-card.cursor')).not.toBeNull()
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      expect(document.querySelector('.part-card.cursor')).not.toBeNull()
+      expect(document.querySelector('[data-catalog-search]')).toBe(search)
 
-    fireEvent.keyDown(search, { key: 'PageDown' })
-    fireEvent.keyDown(search, { key: 'PageUp' })
-    expect(document.querySelector('[data-catalog-search]')).toBe(search)
-
-    fireEvent.click(control('button[aria-label="FILTERS"]'))
-    fireEvent.click(control('button[title="Every identity this build knows about, across all three tiers."]'))
-    const pager = document.querySelector('.parts-pager')
-    if (!pager) return
-    const first = document.querySelector('[data-part-id]')?.getAttribute('data-part-id')
-    const label = pager.querySelector('span')?.textContent
-    fireEvent.keyDown(search, { key: 'PageDown' })
-    expect(pager.querySelector('span')?.textContent).not.toBe(label)
-    expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
-    fireEvent.keyDown(search, { key: 'PageUp' })
-    expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+      fireEvent.click(control('button[aria-label="FILTERS"]'))
+      fireEvent.click(control('button[title="Every identity this build knows about, across all three tiers."]'))
+      const pager = document.querySelector('.parts-pager')
+      expect(pager).not.toBeNull()
+      const first = document.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+      const label = pager!.querySelector('span')?.textContent
+      fireEvent.keyDown(search, { key: 'PageDown' })
+      expect(pager!.querySelector('span')?.textContent).not.toBe(label)
+      expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
+      fireEvent.keyDown(search, { key: 'PageUp' })
+      expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+      expect(document.querySelector('[data-catalog-search]')).toBe(search)
+    } finally {
+      catalog.install(fixture as unknown as CatalogPayload)
+    }
   })
 
   it('reveals inspector object and health validate through the assembled shell', () => {
