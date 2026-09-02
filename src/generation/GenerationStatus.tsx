@@ -29,17 +29,19 @@ export function GenerationStatus({ session }: { session: GenerationSession }) {
     const percent = Math.round(phaseProgress(state) * 100)
     return (
       <span className="bw-gen-status" role="status">
-        <Sparkles size={11} aria-hidden="true" /> Generating {(tick?.candidateIndex ?? 0) + 1}/
-        {state.candidateCount} · {tick?.phase ?? PHASES[0]} · {percent}%
+        <Sparkles size={11} aria-hidden="true" /> Generating {(tick?.candidateIndex ?? 0) + 1}/{state.candidateCount} ·{' '}
+        {tick?.phase ?? PHASES[0]} · {percent}%
       </span>
     )
   }
 
   if (state.ghost) {
+    const blocked = state.ghost.collisions > 0 || !state.ghost.healthy
     return (
-      <span className="bw-gen-status" data-tone="ready" role="status">
+      <span className="bw-gen-status" data-tone={blocked ? 'bad' : 'ready'} role="status">
         <Eye size={11} aria-hidden="true" /> Ghost candidate · {state.ghost.partCount} parts · r
         {state.ghost.baseRevision}
+        {blocked ? ' · blocked' : ''}
       </span>
     )
   }

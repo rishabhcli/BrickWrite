@@ -23,6 +23,7 @@ import type { CameraView, EditorTool, RenderMode } from '../CadViewport'
 import { useCad } from '../useCad'
 import { webMcpAdapter } from '../../webmcp/adapter'
 import type { WorkbenchNotice } from './ExtensionRegistry'
+import { summariseProposal } from './proposalReview'
 import { usePersistentState } from './persistence'
 import { captureParts, planPaste, type PartClipboard } from './clipboard'
 import {
@@ -1072,6 +1073,21 @@ export function useWorkbench() {
 
   // -- proposals ------------------------------------------------------------
   const acceptProposal = useCallback((id: string) => {
+    const snapshot = cadEngine.getSnapshot()
+    const proposal = snapshot.proposals.find((entry) => entry.id === id)
+    if (!proposal) {
+      setToast({ kind: 'error', title: '[PROPOSAL_NOT_FOUND]', detail: `Proposal ${id} does not exist.` })
+      return
+    }
+    const summary = summariseProposal(proposal, snapshot)
+    if (!summary.ready) {
+      setToast({
+        kind: 'error',
+        title: 'Proposal is not ready to commit',
+        detail: summary.blockers[0] ?? 'The kernel marked this preview unhealthy.',
+      })
+      return
+    }
     const result = cadEngine.applyProposal(id, 'human')
     setToast(
       result.ok
@@ -1085,7 +1101,12 @@ export function useWorkbench() {
   }, [])
 
   const rejectProposal = useCallback((id: string) => {
-    cadEngine.rejectProposal(id)
+    const result = cadEngine.rejectProposal(id)
+    setToast(
+      result.ok
+        ? { kind: 'info', title: 'Proposal rejected', detail: result.value.label }
+        : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message },
+    )
   }, [])
 
   const importModel = useCallback(async (file: File) => {

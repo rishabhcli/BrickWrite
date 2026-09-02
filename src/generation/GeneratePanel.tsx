@@ -48,6 +48,10 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
     announceGenerationPromptReady()
   }, [])
 
+  useEffect(() => {
+    session.reconcile(api.snapshot)
+  }, [api.snapshot, session])
+
   const generate = useCallback(
     (useModel: boolean) => {
       void session.generate(document, { useModel })
@@ -305,7 +309,14 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
               <div className="bw-gen__actions">
                 <button
                   className="bw-gen__btn bw-gen__btn--primary"
-                  disabled={state.ghost.collisions > 0}
+                  disabled={state.ghost.collisions > 0 || !state.ghost.healthy}
+                  title={
+                    state.ghost.collisions > 0
+                      ? 'The kernel found collisions in the preview'
+                      : state.ghost.healthy
+                        ? 'Commit the ghost as one transaction'
+                        : 'The kernel marked this preview unhealthy'
+                  }
                   onClick={() => {
                     const outcome = session.accept()
                     api.notify({

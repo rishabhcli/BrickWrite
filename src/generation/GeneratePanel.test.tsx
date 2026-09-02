@@ -592,7 +592,7 @@ describe('candidates', () => {
           createdAt: '',
           operations: [],
           previewDocument: candidate.document,
-          validation: { collisions: [{}, {}] } as never,
+          validation: { collisions: [{}, {}], healthy: false } as never,
           status: 'pending' as const,
         },
       }),
@@ -609,6 +609,56 @@ describe('candidates', () => {
     expect(screen.getByRole('button', { name: /Add to model/ })).toBeDisabled()
     expect(screen.getByText(/found 2 collisions/)).toBeInTheDocument()
     expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('refuses to commit a collision-free ghost the kernel still marked unhealthy', async () => {
+    const dispatch = vi.fn()
+    const candidate = realRun.candidates[0]
+    const bus = {
+      preflight: () => ({
+        ok: true as const,
+        value: {
+          id: 'proposal_unhealthy',
+          label: 'ghost',
+          author: 'agent' as const,
+          baseRevision: 1,
+          createdAt: '',
+          operations: [],
+          previewDocument: candidate.document,
+          validation: { collisions: [], healthy: false } as never,
+          status: 'pending' as const,
+        },
+      }),
+      dispatch,
+      withdraw: () => {},
+    }
+    mount({ briefRunner: async () => localBrief(), bus })
+    await compile()
+    settleConflicts()
+    await generate()
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: /Preview candidate 1/ })[0])
+    })
+    expect(screen.getByRole('button', { name: /Add to model/ })).toBeDisabled()
+    expect(screen.getByText(/Ghost candidate/)).toHaveTextContent(/blocked/)
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('clears the ghost when another surface accepts the same proposal', async () => {
+    const { engine, session } = await ready()
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: /Preview candidate 1/ })[0])
+    })
+    const ghost = session.getState().ghost!
+    const applied = engine.applyProposal(ghost.proposalId, 'human')
+    expect(applied.ok).toBe(true)
+    await act(async () => {
+      session.reconcile(engine.getSnapshot())
+    })
+    expect(session.getState().ghost).toBeNull()
+    expect(session.getState().outcome?.kind).toBe('applied')
+    expect(screen.getByText('Candidate added')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add to model/ })).not.toBeInTheDocument()
   })
 })
 
@@ -641,6 +691,22 @@ describe('the comparison dialog', () => {
   it('says so plainly when there is nothing to compare', () => {
     render(<CompareDialog candidates={[]} selectedId={null} onSelect={() => {}} onClose={() => {}} />)
     expect(screen.getByText(/No candidate passed the hard gates, so there is nothing to compare/)).toBeInTheDocument()
+  })
+
+  it('does not rebuild a ghost that is already under review', () => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    render(
+      <CompareDialog
+        candidates={realRun.candidates}
+        selectedId={realRun.candidates[0].id}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Review candidate 1/ }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('traps focus, restores it on close, and closes on Escape', async () => {

@@ -1,12 +1,13 @@
 import { useEffect, useMemo } from 'react'
 import { Sparkles } from 'lucide-react'
-import { useRegisterContribution } from '../editor/workbench'
+import { useRegisterContribution, type WorkbenchApi } from '../editor/workbench'
 import { claimGeneratePrompt } from '../editor/workbench/promptFocus'
 import { CompareDialog } from './CompareDialog'
 import { COMPARE_MODAL_ID, GeneratePanel } from './GeneratePanel'
 import { GenerationStatus } from './GenerationStatus'
 import { disposeGenerationHost, getGenerationSession } from './host'
-import type { GenerationSessionOptions } from './session'
+import { useGenerateStateBinding } from './statusBinding'
+import type { GenerationSession, GenerationSessionOptions } from './session'
 
 /**
  * Focuses the prompt when the landing page sent somebody here to describe a
@@ -63,17 +64,34 @@ export function GeneratePanelContribution({ options }: { options?: GenerationSes
     slot: 'modal',
     priority: 125,
     title: 'Compare candidates',
-    render: (api) => (
-      <CompareDialog
-        candidates={session.getState().run?.candidates ?? []}
-        selectedId={session.getState().selectedCandidateId}
-        onSelect={(candidateId) => session.selectCandidate(candidateId)}
-        onClose={() => api.openModal(null)}
-      />
-    ),
+    render: (api) => <CompareCandidatesModal api={api} session={session} />,
   })
 
   return null
+}
+
+/**
+ * Live comparison, not a snapshot taken at contribution-register time.
+ *
+ * The modal slot re-renders when the workbench API changes, not when the
+ * generation session does. Reading `getState()` inline would freeze the table
+ * on whatever candidates existed the last time the engine emitted.
+ */
+function CompareCandidatesModal({ api, session }: { api: WorkbenchApi; session: GenerationSession }) {
+  const state = useGenerateStateBinding(session)
+  const candidates = state.run?.candidates ?? []
+  useEffect(() => {
+    if (!candidates.length) api.openModal(null)
+  }, [api, candidates.length])
+  if (!candidates.length) return null
+  return (
+    <CompareDialog
+      candidates={candidates}
+      selectedId={state.selectedCandidateId}
+      onSelect={(candidateId) => session.selectCandidate(candidateId)}
+      onClose={() => api.openModal(null)}
+    />
+  )
 }
 
 export default GeneratePanelContribution

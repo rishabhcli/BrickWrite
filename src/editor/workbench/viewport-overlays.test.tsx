@@ -194,8 +194,38 @@ function overlayWorkbench(overrides: Record<string, unknown> = {}): Workbench {
     state: {
       document,
       selection: ['a'],
-      proposals: [{ id: 'p1', label: 'Ghost brick', operations: [{ type: 'noop' }] }],
-      validation: { partCount: 1, collisions: [], constraints: [], healthy: true },
+      proposals: [
+        {
+          id: 'p1',
+          label: 'Ghost brick',
+          author: 'agent',
+          baseRevision: 0,
+          createdAt: '',
+          operations: [{ type: 'document.rename', name: 'Ghost brick' }],
+          previewDocument: document,
+          validation: {
+            partCount: 1,
+            collisions: [],
+            constraints: [],
+            healthy: true,
+            disconnectedPartIds: [],
+            virtualColors: [],
+            connectionCount: 0,
+            componentCount: 1,
+          },
+          status: 'pending',
+        },
+      ],
+      validation: {
+        partCount: 1,
+        collisions: [],
+        constraints: [],
+        healthy: true,
+        disconnectedPartIds: [],
+        virtualColors: [],
+        connectionCount: 0,
+        componentCount: 1,
+      },
     },
     renderMode: 'beauty',
     placement: { definitionId: '3001', quarterTurns: 0, movingPartId: null },
@@ -255,6 +285,34 @@ describe('viewport overlay stacking', () => {
       </OverlayHost>,
     )
     expect(document.querySelector('.proposal-overlay')).toBeNull()
+  })
+
+  it('does not offer Accept when the same review contract would block the timeline', () => {
+    const workbench = overlayWorkbench()
+    const proposal = workbench.state.proposals[0]
+    proposal.validation = {
+      ...proposal.validation,
+      healthy: false,
+      collisions: [
+        {
+          id: 'overlay_collision',
+          partA: 'a',
+          partB: 'a',
+          overlapLdu: [2, 2, 2],
+          message: 'Blocked in overlay',
+          certainty: 'exact',
+        },
+      ],
+    }
+    render(
+      <OverlayHost>
+        <ViewportStage workbench={workbench} />
+      </OverlayHost>,
+    )
+    expect(screen.getByText('COMMIT BLOCKED')).toBeVisible()
+    expect(screen.getByText('1 collision in the preview.')).toBeVisible()
+    expect((screen.getByRole('button', { name: /Accept/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: /Reject/ })).toBeVisible()
   })
 
   it('shows MIXED Euler on the HUD instead of the lead brick when orientations differ', () => {

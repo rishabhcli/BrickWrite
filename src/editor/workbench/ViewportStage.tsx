@@ -1,7 +1,9 @@
 import { Check, ChevronLeft, ChevronRight, Eye, Pause, Play, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { catalog, searchCatalog } from '../../cad/catalog'
+import type { Proposal } from '../../cad/types'
 import type { ResolvedPlacement } from '../../cad/placement'
+import { summariseProposal, type ProposalReviewSummary } from './proposalReview'
 import { PlacementBar } from './PlacementBar'
 import { PartContextMenu } from './PartContextMenu'
 import { cadEngine } from '../../cad/engine'
@@ -304,25 +306,13 @@ export function ViewportStage({
       <div className="viewport-bottom-stack" data-overlay-stack="bottom">
         {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
         {activeProposal && !reviewSurfaceOpen && (
-          <div className="proposal-overlay">
-            <span className="proposal-pulse" />
-            <div>
-              <small>GHOST PROPOSAL</small>
-              <strong>{activeProposal.label}</strong>
-            </div>
-            <em>{activeProposal.operations.length} edits</em>
-            {onReviewProposal && (
-              <button onClick={() => onReviewProposal(activeProposal.id)}>
-                <Eye size={13} /> Review
-              </button>
-            )}
-            <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
-              <Check size={13} /> Accept
-            </button>
-            <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
-              <X size={13} />
-            </button>
-          </div>
+          <ProposalOverlay
+            proposal={activeProposal}
+            summary={summariseProposal(activeProposal, state)}
+            onReview={onReviewProposal}
+            onAccept={workbench.acceptProposal}
+            onReject={workbench.rejectProposal}
+          />
         )}
       </div>
       {contextPoint && <PartContextMenu workbench={workbench} point={contextPoint} onClose={closeContext} />}
@@ -333,5 +323,47 @@ export function ViewportStage({
           here without this file knowing they exist. */}
       <Slot id="overlay" />
     </section>
+  )
+}
+
+function ProposalOverlay({
+  proposal,
+  summary,
+  onReview,
+  onAccept,
+  onReject,
+}: {
+  proposal: Proposal
+  summary: ProposalReviewSummary
+  onReview?: (proposalId: string) => void
+  onAccept: (proposalId: string) => void
+  onReject: (proposalId: string) => void
+}) {
+  const blocker = summary.blockers[0]
+  return (
+    <div className="proposal-overlay" data-ready={summary.ready ? 'true' : 'false'}>
+      <span className="proposal-pulse" />
+      <div>
+        <small>{summary.ready ? 'GHOST PROPOSAL' : 'COMMIT BLOCKED'}</small>
+        <strong>{proposal.label}</strong>
+      </div>
+      <em>{blocker ?? `${proposal.operations.length} edits`}</em>
+      {onReview && (
+        <button type="button" onClick={() => onReview(proposal.id)}>
+          <Eye size={13} /> Review
+        </button>
+      )}
+      <button
+        type="button"
+        disabled={!summary.ready}
+        title={summary.ready ? 'Commit this preflight as one shared transaction' : blocker}
+        onClick={() => onAccept(proposal.id)}
+      >
+        <Check size={13} /> Accept
+      </button>
+      <button type="button" className="proposal-overlay-reject" onClick={() => onReject(proposal.id)}>
+        <X size={13} /> Reject
+      </button>
+    </div>
   )
 }

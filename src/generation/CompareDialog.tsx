@@ -158,7 +158,7 @@ export function CompareDialog({
                       <button
                         className="bw-gen__btn"
                         onClick={() => {
-                          onSelect(candidate.id)
+                          if (candidate.id !== selectedId) onSelect(candidate.id)
                           onClose()
                         }}
                         aria-label={`Review candidate ${index + 1}, ${candidate.strategy}, as a ghost`}

@@ -1,10 +1,6 @@
 import { cadEngine, commandBus } from '../cad/engine'
 import type { Actor, CadOperation, CommandResult, ModelDocument, Proposal, Transaction } from '../cad/types'
-import {
-  ModelProviderUnavailableError,
-  type DesignBrief,
-  type Provenance,
-} from '../platform/contracts'
+import { ModelProviderUnavailableError, type DesignBrief, type Provenance } from '../platform/contracts'
 import { amendBrief, compileBriefDeterministically } from './brief'
 import { candidateOperations, GenerationEngine, type GenerationRun } from './engine'
 import { PHASES, type Candidate, type PhaseEvent, type PhaseName } from './phases'
@@ -65,6 +61,8 @@ export interface GhostReview {
   readonly baseRevision: number
   readonly collisions: number
   readonly partCount: number
+  /** Kernel `validation.healthy` on the preview — collisions plus hard constraints. */
+  readonly healthy: boolean
 }
 
 export interface GenerateOutcome {
@@ -106,12 +104,7 @@ export interface GenerateState {
  * on, and `dispatch` is the one door that writes.
  */
 export interface GenerationGhostBus {
-  preflight(
-    label: string,
-    operations: CadOperation[],
-    actor: Actor,
-    expectedRevision?: number,
-  ): CommandResult<Proposal>
+  preflight(label: string, operations: CadOperation[], actor: Actor, expectedRevision?: number): CommandResult<Proposal>
   dispatch(
     label: string,
     operations: CadOperation[],
@@ -354,7 +347,9 @@ export class GenerationSession {
       brief: compileBriefDeterministically(text),
       method: 'deterministic',
       provenance: null,
-      notes: ['Compiled from rules in this browser because the brief route was unavailable. No model read this request.'],
+      notes: [
+        'Compiled from rules in this browser because the brief route was unavailable. No model read this request.',
+      ],
     })
   }
 
@@ -536,10 +531,7 @@ export class GenerationSession {
         ghost: null,
         outcome: {
           kind: result.error.code === 'STALE_DOCUMENT' ? 'stale' : 'refused',
-          title:
-            result.error.code === 'STALE_DOCUMENT'
-              ? 'The document moved on'
-              : 'The kernel refused this candidate',
+          title: result.error.code === 'STALE_DOCUMENT' ? 'The document moved on' : 'The kernel refused this candidate',
           detail: result.error.message,
           repair: result.error.repair,
           code: result.error.code,
@@ -554,6 +546,7 @@ export class GenerationSession {
         baseRevision: result.value.baseRevision,
         collisions: result.value.validation.collisions.length,
         partCount: Object.keys(result.value.previewDocument.parts).length,
+        healthy: result.value.validation.healthy,
       },
     })
   }
@@ -586,6 +579,50 @@ export class GenerationSession {
   }
 
   /**
+   * Follow a ghost that another surface accepted or rejected.
+   *
+   * Overlay Accept, timeline Review, and Escape all talk to the kernel
+   * directly. Without this, Generate still shows Add to model after the
+   * proposal is already gone.
+   */
+  reconcile(snapshot: {
+    readonly document: { readonly revision: number }
+    readonly proposals: readonly { readonly id: string }[]
+  }): void {
+    const ghost = this.state.ghost
+    if (!ghost) return
+    if (snapshot.proposals.some((proposal) => proposal.id === ghost.proposalId)) return
+    if (snapshot.document.revision > ghost.baseRevision) {
+      this.set({
+        ghost: null,
+        selectedCandidateId: null,
+        run: null,
+        runPhase: 'idle',
+        ticks: [],
+        outcome: {
+          kind: 'applied',
+          title: 'Candidate added',
+          detail: `Accepted from another surface. The document is now revision ${snapshot.document.revision}.`,
+          repair: null,
+          code: null,
+        },
+      })
+      return
+    }
+    this.set({
+      ghost: null,
+      selectedCandidateId: null,
+      outcome: {
+        kind: 'discarded',
+        title: 'Ghost withdrawn',
+        detail: 'The preview was rejected or replaced from another surface. Nothing was written.',
+        repair: null,
+        code: null,
+      },
+    })
+  }
+
+  /**
    * Commits the reviewed candidate as one transaction.
    *
    * The panel defaults to `human`: the operator typed the request, edited the
@@ -608,13 +645,16 @@ export class GenerationSession {
       this.set({ outcome })
       return outcome
     }
-    if (ghost.collisions > 0) {
+    if (ghost.collisions > 0 || !ghost.healthy) {
       const outcome: GenerateOutcome = {
         kind: 'refused',
-        title: 'The ghost collides with the model',
-        detail: `The kernel found ${ghost.collisions} collision${ghost.collisions === 1 ? '' : 's'} in the preview. It was not committed.`,
-        repair: 'Choose another candidate, or move the existing build out of the way and generate again.',
-        code: 'COLLISION',
+        title: ghost.collisions > 0 ? 'The ghost collides with the model' : 'The ghost is not healthy to commit',
+        detail:
+          ghost.collisions > 0
+            ? `The kernel found ${ghost.collisions} collision${ghost.collisions === 1 ? '' : 's'} in the preview. It was not committed.`
+            : 'The kernel marked the preview unhealthy (a hard constraint fails). It was not committed.',
+        repair: 'Choose another candidate, or repair the existing build and generate again.',
+        code: ghost.collisions > 0 ? 'COLLISION' : 'CONSTRAINT_VIOLATION',
       }
       this.set({ outcome })
       return outcome
@@ -862,9 +902,7 @@ export const CANDIDATE_METRICS: readonly CandidateMetricRow[] = [
     label: 'Build order',
     group: 'build',
     value: (m) =>
-      m.buildOrderValid
-        ? `valid · ${m.buildStepCount} steps`
-        : `${m.buildOrderViolations} step(s) attach to nothing`,
+      m.buildOrderValid ? `valid · ${m.buildStepCount} steps` : `${m.buildOrderViolations} step(s) attach to nothing`,
     tone: (m) => (m.buildOrderValid ? 'good' : 'bad'),
   },
   {
