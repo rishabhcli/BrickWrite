@@ -19,6 +19,8 @@ import {
   TOPBAR_HEIGHT,
   workspaceColumns,
   workspaceRows,
+  objectDockDensity,
+  objectGrowId,
 } from './layout'
 
 /**
@@ -205,5 +207,17 @@ describe('chrome', () => {
       expect(preset.layout.bottom.collapsed).toBe(true)
       expect(preset.layout.rightTab).toBe('design')
     }
+  })
+})
+
+describe('object companion density', () => {
+  it('clamps a 300px column instead of growing every open companion', () => {
+    expect(objectDockDensity(0)).toBe('roomy')
+    expect(objectDockDensity(1)).toBe('roomy')
+    expect(objectDockDensity(2)).toBe('compact')
+    expect(objectDockDensity(5)).toBe('packed')
+    expect(objectGrowId(['inspector', 'transform', 'selection', 'model.explorer', 'connect'])).toBe('connect')
+    expect(objectGrowId(['inspector', 'selection'])).toBe('inspector')
+    expect(objectGrowId([])).toBeNull()
   })
 })

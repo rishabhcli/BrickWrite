@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { findSnapCandidates } from '../../cad/snapping'
 import { poseRefusal } from '../../cad/validation'
 import type { CadOperation, ModelDocument, PartInstance, Transform } from '../../cad/types'
-import { gizmoAxisVisible, manipulationPose, planGizmoTransforms, type ManipulationOptions } from '../workbench/transform'
+import { gizmoAxisVisible, gizmoSpace, manipulationPose, planGizmoTransforms, type ManipulationOptions } from '../workbench/transform'
 import { documentTransformOf, ROOT_MATRIX, ROOT_MATRIX_INVERSE, sceneMatrix } from './frame'
 import { pointerRouterFor } from './pointerRouter'
 
@@ -174,7 +174,7 @@ export function SelectionManipulator({
         ref={controls as never}
         object={proxy}
         mode={tool === 'rotate' ? 'rotate' : 'translate'}
-        space="local"
+        space={gizmoSpace(preferences.frame)}
         showX={gizmoAxisVisible(preferences.locks).showX}
         showY={gizmoAxisVisible(preferences.locks).showY}
         showZ={gizmoAxisVisible(preferences.locks).showZ}

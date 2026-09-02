@@ -300,6 +300,16 @@ describe('placement resolution', () => {
     if (listed.truncated) expect(listed.considered).toBeGreaterThan(2)
     else expect(listed.considered).toBe(listed.solutions.length)
   })
+
+  it('orders Connect seats spatially instead of by solver score', () => {
+    const source = part('moving', '3001', { position: [80, -24, 40] })
+    const target = part('base', '3001')
+    const listed = listConnectSolutions(source, target, withParts(target, source))
+    expect(listed.solutions.length).toBeGreaterThan(2)
+    const xs = listed.solutions.map((entry) => entry.transform.position[0])
+    const copy = [...xs].sort((a, b) => a - b)
+    expect(xs).toEqual(copy)
+  })
 })
 
 describe('nearby parts', () => {

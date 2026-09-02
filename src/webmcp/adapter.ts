@@ -33,7 +33,7 @@ import {
   toolProfileHash,
 } from './contract'
 import { json, resultOf, revisionProperty, schema } from './gateway'
-import { CHROME_SURFACES, focusModelHealth, focusProposalReview, focusWorkspace, readChrome, revealChrome } from './chrome'
+import { CHROME_SURFACES, focusModelHealth, focusProposalReview, focusWorkspace, readChrome, revealChrome, steerConnect } from './chrome'
 import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
 import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
 import { intelligenceReadTools } from './surfaces/intelligence'
@@ -49,6 +49,26 @@ const WorkspaceRevealSchema = z.object({
   /** Health issue id or proposal id, for the two surfaces that hold a queue. */
   focusId: z.string().min(1).max(240).optional(),
 })
+
+const WorkspaceConnectSchema = z
+  .object({
+    stage: z.enum(['source', 'target', 'review']).optional(),
+    sourcePartId: z.string().min(1).max(160).nullable().optional(),
+    targetPartId: z.string().min(1).max(160).nullable().optional(),
+    sourceFeatureId: z.string().min(1).max(240).nullable().optional(),
+    targetFeatureId: z.string().min(1).max(240).nullable().optional(),
+    candidateIndex: z.number().int().min(0).max(4096).optional(),
+  })
+  .refine(
+    (request) =>
+      request.stage !== undefined ||
+      request.sourcePartId !== undefined ||
+      request.targetPartId !== undefined ||
+      request.sourceFeatureId !== undefined ||
+      request.targetFeatureId !== undefined ||
+      request.candidateIndex !== undefined,
+    { message: 'Pass a stage, part, feature or candidateIndex to steer Connect.' },
+  )
 
 const WorkspaceFocusSchema = z
   .object({
@@ -195,6 +215,7 @@ const readTools: ToolDefinition[] = [
       'Open a workbench dock section so a human can see what the agent is working on. '
       + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, connect, timeline, review, feedback. '
       + 'For health and review, pass focusId to land on one issue or proposal; omit it for the most urgent. '
+      + 'Connect still needs workspace_connect to pick a stage or solution; this only opens the sheet. '
       + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
     annotations: { readOnlyHint: true },
@@ -212,6 +233,27 @@ const readTools: ToolDefinition[] = [
         }
         return json({
           ...revealChrome(request.surface),
+          chrome: readChrome(),
+        })
+      } catch (cause) {
+        return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
+      }
+    },
+  },
+  {
+    name: 'workspace_connect',
+    description:
+      'Arm the Connect mate flow and pick a stage, named pair, connector or listed solution. '
+      + 'Does not commit a pose or advance the CAD revision. Use workspace_reveal with surface=connect to only open the sheet, '
+      + 'and this tool to actually steer it. candidateIndex is the spatial-grid index the Connect sheet Tab-cycles.',
+    inputSchema: jsonSchemaOf(WorkspaceConnectSchema),
+    annotations: { readOnlyHint: true },
+    execute: (input) => {
+      try {
+        const request = WorkspaceConnectSchema.parse(input)
+        return json({
+          ...profileContext(),
+          ...steerConnect(request),
           chrome: readChrome(),
         })
       } catch (cause) {

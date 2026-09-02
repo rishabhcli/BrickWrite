@@ -2,7 +2,13 @@ import { catalog, originForSurface, STUD_LDU, surfaceAbove } from './catalog'
 import { partPoseCollides } from './collisionGate'
 import { getDocumentBounds, getPartBounds, snapLdu } from './geometry'
 import { multiplyMat3 } from './math'
-import { approachOccupancy, findSnapCandidates, type SnapCandidate, type SnapSolverOptions } from './snapping'
+import {
+  approachOccupancy,
+  compareSnapSpatially,
+  findSnapCandidates,
+  type SnapCandidate,
+  type SnapSolverOptions,
+} from './snapping'
 import type { Bounds, ModelDocument, PartInstance, Transform, Vec3 } from './types'
 import { poseRefusal } from './validation'
 
@@ -227,13 +233,13 @@ export function legalConnectCandidates(
 }
 
 /**
- * Ranked legal mates, with an honest truncated flag.
+ * Spatially ordered legal mates, with an honest truncated flag.
  *
- * The solver still ranks (best seat first) so Tab has an order. The cap is
- * applied *after* the pose gate, and callers must show when solutions were
- * dropped rather than pretending 48 is the whole set.
+ * Score ranking is for drag. Connect review walks the stud grid in document
+ * X then Z so a 48×48 plate is not truncated to its highest-scoring 256 seats.
+ * The cap is applied after the pose gate.
  */
-export const CONNECT_SOLUTION_CAP = 256
+export const CONNECT_SOLUTION_CAP = 1024
 
 export function listConnectSolutions(
   source: PartInstance,
@@ -247,14 +253,15 @@ export function listConnectSolutions(
   } = {},
 ): { solutions: SnapCandidate[]; truncated: boolean; considered: number } {
   const cap = options.maxCandidates ?? CONNECT_SOLUTION_CAP
-  const ranked = findSnapCandidates(source, document, source.transform, {
+  const gathered = findSnapCandidates(source, document, source.transform, {
     radiusLdu: options.radiusLdu ?? 400,
     targetPartIds: [target.id],
-    maxCandidates: Math.max(cap + 1, 512),
+    maxCandidates: Math.max(cap + 1, 2048),
+    order: 'spatial',
     ...(options.sourceFeatureId ? { movingFeatureId: options.sourceFeatureId } : {}),
     ...(options.targetFeatureId ? { targetFeatureId: options.targetFeatureId } : {}),
   })
-  const legal = ranked.filter((entry) => !poseRefusal(document, source.id, entry.transform))
+  const legal = gathered.filter((entry) => !poseRefusal(document, source.id, entry.transform)).sort(compareSnapSpatially)
   return {
     solutions: legal.slice(0, cap),
     truncated: legal.length > cap,

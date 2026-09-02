@@ -6,7 +6,9 @@ import {
   canonicalisePose,
   gizmoAxisVisible,
   gizmoPose,
+  gizmoSpace,
   numericPose,
+  readSelectionAttitude,
   planRotateSelection,
   planTranslateSelection,
   poseKey,
@@ -160,6 +162,12 @@ describe('axis locks', () => {
   it('hides rotate rings on the same axes as translate arrows', () => {
     expect(gizmoAxisVisible({ x: true, y: false, z: true })).toEqual({ showX: false, showY: true, showZ: false })
   })
+
+  it('uses world gizmo space for WORLD locks so hidden rings are document axes', () => {
+    expect(gizmoSpace('world')).toBe('world')
+    expect(gizmoSpace('local')).toBe('local')
+    expect(gizmoSpace('connector')).toBe('local')
+  })
 })
 
 describe('reference frames', () => {
@@ -243,5 +251,29 @@ describe('planTranslateSelection', () => {
     ) as Record<string, [number, number, number]>
     expect(after.a).toEqual([40, 0, 20])
     expect(after.b).toEqual([40, -24, 20])
+  })
+})
+
+describe('selection attitude', () => {
+  const brick = (id: string, basis: Transform['basis']) => ({
+    id,
+    definitionId: '3001',
+    color: 72,
+    transform: { position: [0, 0, 0] as [number, number, number], basis },
+    subassemblyId: 'hull',
+    stepId: 'step_1',
+    provenance: 'human' as const,
+    protected: false,
+  })
+
+  it('does not report the lead part Euler when orientations are mixed', () => {
+    const a = brick('a', IDENTITY_BASIS)
+    const b = brick('b', rotateLocal(identity, [0, 1, 0], degreesToRadians(90)).basis)
+    const mixed = readSelectionAttitude([a, b])
+    expect(mixed.mixed).toBe(true)
+    expect(mixed.rotationDegrees).toBeNull()
+    const shared = readSelectionAttitude([a, brick('c', IDENTITY_BASIS)])
+    expect(shared.mixed).toBe(false)
+    expect(shared.rotationDegrees?.[1]).toBeCloseTo(0, 6)
   })
 })

@@ -170,6 +170,12 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).toMatch(/\.connect-pending-banner/)
   })
 
+  it('clamps Object companions when several are open in the 300px column', () => {
+    expect(withoutComments).toMatch(/\.right-dock-object\[data-object-density='packed'\]/)
+    expect(withoutComments).toMatch(/\.right-dock-object \.dock-section\.open:not\(\.grow\)/)
+    expect(withoutComments).toMatch(/max-height:\s*28%/)
+  })
+
   it('keeps HUD world units on a laptop instead of hiding the fields', () => {
     const [laptop] = mediaBlocks(withoutComments, '1160px')
     expect(laptop).toContain('.selection-hud-name')
