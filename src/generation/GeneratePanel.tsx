@@ -1,7 +1,8 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { GlassPanel } from '../ui/liquid'
 import { Ban, Bird, Building2, CarFront, Check, CircleAlert, Columns3, Eye, Play, Wand2, X } from 'lucide-react'
 import type { WorkbenchApi } from '../editor/workbench'
+import { announceGenerationPromptReady } from '../editor/workbench/promptFocus'
 import { maskedContentProps } from '../platform/analytics'
 import { BriefEditor } from './BriefEditor'
 import { PHASES, type Candidate } from './phases'
@@ -42,6 +43,10 @@ export function GeneratePanel({ api, session }: { api: WorkbenchApi; session: Ge
   const unresolved = unresolvedConflicts(state)
   const candidates = state.run?.candidates ?? []
   const selected = selectedCandidate(state)
+
+  useEffect(() => {
+    announceGenerationPromptReady()
+  }, [])
 
   const generate = useCallback(
     (useModel: boolean) => {
