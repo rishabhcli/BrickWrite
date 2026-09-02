@@ -141,6 +141,10 @@
   background: rgba(245, 163, 63, 0.08);
   transform: translateY(-1px);
 }
+.pf-nav__link:focus-visible {
+  outline: 2px solid var(--cyan, #83e7ee);
+  outline-offset: 2px;
+}
 .pf-nav__link--active {
   color: var(--ink, #f0f5f6);
   border-color: rgba(245, 163, 63, 0.35);

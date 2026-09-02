@@ -23,6 +23,13 @@
 .app-shell[data-timeline='open'] {
   --timeline-track: 152px;
 }
+/* Cheap: data-preset is already on the shell. Custom/dragged layouts keep 152px. */
+.app-shell[data-preset='laptop'][data-timeline='open'] {
+  --timeline-track: 124px;
+}
+.app-shell[data-preset='ultrawide'][data-timeline='open'] {
+  --timeline-track: 168px;
+}
 
 .app-shell::before {
   content: '';
@@ -8123,11 +8130,10 @@
 
 @media (max-width: 1300px) {
   .topbar { grid-template-columns: 198px auto minmax(180px, 1fr) auto; }
+}
+@container topbar (max-width: 1300px) {
   .brand-lockup { padding-inline: 12px; }
   .brand-lockup small { display: none; }
-  .toolbar-island .tool-button { min-width: 48px; padding-inline: 7px; }
-  .toolbar-island .tool-button span,
-  .toolbar-island .tool-button kbd { display: none; }
 }
 .placement-turns output { min-width: 32px; text-align: center; font: 10px var(--display); }
 .placement-bar button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-height: 28px; min-width: 28px; background: transparent; border: 0; color: var(--ink); cursor: pointer; }
@@ -8810,25 +8816,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   .save-state span {
     display: none;
   }
-  .toolbar-island .history-tools .icon-button:first-child {
-    display: none;
-  }
-  .toolbar-island .primary-tools + .rail-divider {
-    display: none;
-  }
-  .toolbar-island .selection-tools {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 9px);
-    z-index: 3;
-    height: 44px;
-    padding: 4px 6px;
-    border-color: rgba(131, 231, 238, 0.22);
-    border-radius: var(--r-island);
-    background: rgba(10, 16, 18, 0.96);
-    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.07);
-    transform: translateX(-50%);
-  }
 }
 
 /* Topbar width still tracks the window (it spans the shell). Keep the column
@@ -8855,6 +8842,17 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   .render-direct {
     width: 33px;
     min-width: 33px;
+  }
+  /* Was @media 1300px. Later quiet-chrome already pins these to 38px; when the
+     island itself is this tight, match the 33px icon row and keep labels off. */
+  .toolbar-island .tool-button {
+    width: 33px;
+    min-width: 33px;
+    padding-inline: 0;
+  }
+  .toolbar-island .tool-button span,
+  .toolbar-island .tool-button kbd {
+    display: none;
   }
 }
 
@@ -8933,6 +8931,26 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 @container toolbar-island (max-width: 760px) {
   .tool-mode em {
     display: none;
+  }
+  /* Was @media 1380px. ~760px is the island at that window with default docks. */
+  .toolbar-island .history-tools .icon-button:first-child {
+    display: none;
+  }
+  .toolbar-island .primary-tools + .rail-divider {
+    display: none;
+  }
+  .toolbar-island .selection-tools {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 9px);
+    z-index: 3;
+    height: 44px;
+    padding: 4px 6px;
+    border-color: rgba(131, 231, 238, 0.22);
+    border-radius: var(--r-island);
+    background: rgba(10, 16, 18, 0.96);
+    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.07);
+    transform: translateX(-50%);
   }
 }
 @container toolbar-island (max-width: 560px) {
