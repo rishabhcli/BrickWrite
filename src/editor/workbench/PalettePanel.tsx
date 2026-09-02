@@ -867,7 +867,16 @@ export const PalettePanel = memo(function PalettePanel({
       </div>
 
       {resultTotal > PAGE_SIZE && (
-        <nav className="parts-pager" aria-label="Catalogue pages">
+        <nav
+          className="parts-pager"
+          aria-label={
+            activeSet === 'favourites'
+              ? 'Favourites pages'
+              : activeSet === 'recents'
+                ? 'Recent pages'
+                : 'Catalogue pages'
+          }
+        >
           <button
             type="button"
             className="parts-more"

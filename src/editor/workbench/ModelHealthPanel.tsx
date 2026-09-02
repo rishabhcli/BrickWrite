@@ -41,7 +41,13 @@ function HealthIssueCard({
       className={`health-issue ${issue.severity} ${active ? 'active' : ''}`}
       data-health-issue={issue.id}
     >
-      <button type="button" className="health-issue-main" aria-expanded={active} onClick={onOpen}>
+      <button
+        type="button"
+        className="health-issue-main"
+        aria-expanded={active}
+        aria-controls={`health-issue-detail-${issue.id}`}
+        onClick={onOpen}
+      >
         <span className="health-severity-mark">
           {issue.severity === 'blocker' ? <CircleAlert size={13} /> : issue.severity === 'warning' ? <AlertTriangle size={13} /> : <ScanSearch size={13} />}
         </span>
@@ -53,7 +59,7 @@ function HealthIssueCard({
         <i>{issue.partIds.length || '—'}</i>
       </button>
       {active && (
-        <div className="health-issue-detail">
+        <div className="health-issue-detail" id={`health-issue-detail-${issue.id}`}>
           <p>{issue.detail}</p>
           <div className="health-repair">
             <span>REPAIR PATH</span>
@@ -62,13 +68,28 @@ function HealthIssueCard({
           <footer>
             <span>{navigable ? `${issue.partIds.length} exact part${issue.partIds.length === 1 ? '' : 's'}` : 'whole-model evidence'}</span>
             <div>
-              <button type="button" disabled={!navigable} onClick={() => onFocus('select')}>
-                <Eye size={10} /> SELECT
+              <button
+                type="button"
+                disabled={!navigable}
+                aria-label={`Select parts for ${issue.title}`}
+                onClick={() => onFocus('select')}
+              >
+                <Eye size={10} aria-hidden="true" /> SELECT
               </button>
-              <button type="button" disabled={!navigable} onClick={() => onFocus('frame')}>
-                <Crosshair size={10} /> FRAME
+              <button
+                type="button"
+                disabled={!navigable}
+                aria-label={`Frame parts for ${issue.title}`}
+                onClick={() => onFocus('frame')}
+              >
+                <Crosshair size={10} aria-hidden="true" /> FRAME
               </button>
-              <button type="button" disabled={!navigable} onClick={() => onFocus('isolate')}>
+              <button
+                type="button"
+                disabled={!navigable}
+                aria-label={`Isolate parts for ${issue.title}`}
+                onClick={() => onFocus('isolate')}
+              >
                 ISOLATE
               </button>
             </div>
@@ -99,7 +120,7 @@ export function ModelHealthPanel({
   const active = health.issues.find((issue) => issue.id === activeIssueId) ?? visible[0] ?? health.issues[0] ?? null
 
   return (
-    <aside className="model-health" aria-label="Model health navigator">
+    <section className="model-health" aria-label="Model health navigator">
       <header className={`health-hero ${health.ready ? 'ready' : 'blocked'}`}>
         <div className="health-radar" aria-hidden="true">
           <span /><span /><span />
@@ -119,7 +140,31 @@ export function ModelHealthPanel({
         <div><span>MASS</span><strong>{health.metrics.massGrams >= 1000 ? `${(health.metrics.massGrams / 1000).toFixed(1)}k` : Math.round(health.metrics.massGrams)}</strong><em>g</em></div>
       </div>
 
-      <div className="health-filters" role="tablist" aria-label="Health issue severity">
+      <div
+        className="health-filters"
+        role="tablist"
+        aria-label="Health issue severity"
+        onKeyDown={(event) => {
+          const ids = ['all', 'blocker', 'warning', 'notice'] as const
+          const current = ids.indexOf(filter)
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') {
+            return
+          }
+          event.preventDefault()
+          const next =
+            event.key === 'Home'
+              ? ids[0]
+              : event.key === 'End'
+                ? ids[ids.length - 1]
+                : event.key === 'ArrowRight'
+                  ? ids[(current + 1) % ids.length]
+                  : ids[(current - 1 + ids.length) % ids.length]
+          setFilter(next)
+          requestAnimationFrame(() =>
+            document.getElementById(`health-filter-${next}`)?.focus(),
+          )
+        }}
+      >
         {([
           ['all', 'ALL', health.issues.length],
           ['blocker', 'BLOCK', health.blockers],
@@ -128,9 +173,11 @@ export function ModelHealthPanel({
         ] as const).map(([id, label, count]) => (
           <button
             key={id}
+            id={`health-filter-${id}`}
             type="button"
             role="tab"
             aria-selected={filter === id}
+            tabIndex={filter === id ? 0 : -1}
             className={filter === id ? 'active' : ''}
             onClick={() => setFilter(id)}
           >
@@ -171,6 +218,6 @@ export function ModelHealthPanel({
           </div>
         ))}
       </section>
-    </aside>
+    </section>
   )
 }
