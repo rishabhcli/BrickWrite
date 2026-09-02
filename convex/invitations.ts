@@ -6,6 +6,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import { writeAuditEvent } from './model/audit'
 import { authoriseProject, readIdentity, UNAUTHENTICATED } from './model/auth'
 import { cloudFailure, type CloudInvitationRecord, type CloudResult } from './model/protocol'
+import { collectionFull, COLLECTION_LIMITS } from './model/limits'
 import { invitationRecord } from './model/records'
 import { assignableRole } from './model/validators'
 import { sendInvitationEmail } from './model/invitationDelivery'
@@ -101,6 +102,18 @@ export const create = mutation({
         { invitationId: duplicate._id },
       )
     }
+
+    const onProject = await ctx.db
+      .query('invitations')
+      .withIndex('by_project', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.invitationsPerProject)
+    const invitationsFull = collectionFull(
+      onProject.length,
+      COLLECTION_LIMITS.invitationsPerProject,
+      'invitations',
+      'Revoke an invitation that was never accepted before sending another.',
+    )
+    if (invitationsFull) return invitationsFull
 
     const invitationId = await ctx.db.insert('invitations', {
       projectId: project._id,
@@ -270,6 +283,33 @@ export const accept = mutation({
       })
       return { ok: true, value: { projectId: project._id, role: existing.role } }
     }
+    // Both sides of the new membership have a window: the project's roster and
+    // the accepter's own project list. Neither may be pushed past what it can
+    // return by someone accepting a link.
+    const roster = await ctx.db
+      .query('members')
+      .withIndex('by_project', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.membersPerProject)
+    const rosterFull = collectionFull(
+      roster.length,
+      COLLECTION_LIMITS.membersPerProject,
+      'members',
+      'Ask an owner to remove a member before accepting.',
+    )
+    if (rosterFull) return rosterFull
+
+    const memberships = await ctx.db
+      .query('members')
+      .withIndex('by_subject', (q) => q.eq('subject', identity.subject))
+      .take(COLLECTION_LIMITS.membershipsPerAccount)
+    const membershipsFull = collectionFull(
+      memberships.length,
+      COLLECTION_LIMITS.membershipsPerAccount,
+      'cloud projects',
+      'Leave or delete a cloud project before joining another.',
+    )
+    if (membershipsFull) return membershipsFull
+
     await ctx.db.insert('members', {
       projectId: project._id,
       subject: identity.subject,

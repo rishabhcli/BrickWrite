@@ -17,6 +17,7 @@ import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/sna
 import { decodeSnapshotUpload } from './model/snapshotValidation'
 import { canonicalJson } from './model/checksum'
 import { isRevision } from './model/history'
+import { collectionFull, COLLECTION_LIMITS } from './model/limits'
 import { snapshotUpload, visibility } from './model/validators'
 
 /**
@@ -174,6 +175,21 @@ export const create = mutation({
         { projectId: existing._id },
       )
     }
+
+    // `projects.list` is driven off membership rows and refuses past its window,
+    // so an account that keeps claiming projects would lock itself out of its own
+    // project list. Refused here instead, where it is still recoverable.
+    const memberships = await ctx.db
+      .query('members')
+      .withIndex('by_subject', (q) => q.eq('subject', identity.subject))
+      .take(COLLECTION_LIMITS.membershipsPerAccount)
+    const atLimit = collectionFull(
+      memberships.length,
+      COLLECTION_LIMITS.membershipsPerAccount,
+      'cloud projects',
+      'Delete a cloud project you no longer need, or leave one you were added to.',
+    )
+    if (atLimit) return atLimit
 
     const now = Date.now()
     const head = args.snapshot?.revision ?? 0

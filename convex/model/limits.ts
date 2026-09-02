@@ -16,6 +16,48 @@ import {
  * ceiling only the client enforces is not a ceiling at all.
  */
 
+/**
+ * How large each collection may get, matching what its list query can return.
+ *
+ * The list endpoints bound their reads with `.take(n)` and refuse the whole
+ * list past `n` (`listOverflow`). Bounding only the read turns an expensive
+ * query into a permanently broken one: nothing a client can do shrinks the
+ * collection back, and the roles that can grow these are editor and commenter,
+ * not owner. So the write side refuses first.
+ *
+ * Each number is the read ceiling, and the guard refuses at it rather than past
+ * it, so a collection can reach the limit but never exceed it.
+ */
+export const COLLECTION_LIMITS = {
+  /** `projects.list` reads the caller's membership rows. */
+  membershipsPerAccount: 200,
+  /** `projects.branches`. */
+  branchesPerProject: 64,
+  /** `members.list`. */
+  membersPerProject: 200,
+  /** `versions.list`. */
+  versionsPerProject: 200,
+  /** `comments.list`. */
+  commentsPerProject: 500,
+  /** `comments.forPart`, which is indexed by anchor part. */
+  commentsPerPart: 200,
+  /** `invitations.list`. */
+  invitationsPerProject: 100,
+} as const
+
+/**
+ * Refuses a write that would make a list unreadable, or null to proceed.
+ *
+ * `count` comes from a `.take(limit)` on the same index the list query uses, so
+ * it costs the collection's actual size and only approaches the limit on the
+ * write that is about to be refused.
+ */
+export function collectionFull(count: number, limit: number, what: string, repair: string) {
+  return count >= limit
+    ? cloudFailure('COLLECTION_FULL', `This project is at its limit of ${limit} ${what}.`, repair, { limit })
+    : null
+}
+
 /** Chunk rows stay well inside Convex's per-document limit even for wide characters. */
 export const MAX_CHUNK_BYTES = SNAPSHOT_CHUNK_BYTES * 2
 /** Bounds row writes even when a caller sends thousands of tiny/empty chunks. */

@@ -16,6 +16,7 @@ import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/sna
 import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/checksum'
 import { isRevision } from './model/history'
 import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
+import { collectionFull, COLLECTION_LIMITS } from './model/limits'
 import { snapshotUpload } from './model/validators'
 import { decodeSnapshotUpload } from './model/snapshotValidation'
 
@@ -52,6 +53,18 @@ export const create = mutation({
     const branchResult = await resolveBranch(ctx, project, args.branchId)
     if (!branchResult.ok) return branchResult
     const branch = branchResult.value
+
+    const saved = await ctx.db
+      .query('versions')
+      .withIndex('by_project_created', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.versionsPerProject)
+    const versionsFull = collectionFull(
+      saved.length,
+      COLLECTION_LIMITS.versionsPerProject,
+      'saved versions',
+      'Delete a version you no longer need before saving another.',
+    )
+    if (versionsFull) return versionsFull
 
     // Labels are how a human refers to a version, so two versions may not share
     // one: "restore v2" has to be unambiguous.
@@ -152,6 +165,18 @@ export const createBranch = mutation({
     if (!name) {
       return cloudFailure('INVALID_ARGUMENT', 'A branch needs a name.', 'Name the branch and retry.')
     }
+    const siblings = await ctx.db
+      .query('branches')
+      .withIndex('by_project', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.branchesPerProject)
+    const branchesFull = collectionFull(
+      siblings.length,
+      COLLECTION_LIMITS.branchesPerProject,
+      'branches',
+      'Merge or delete a branch before opening another.',
+    )
+    if (branchesFull) return branchesFull
+
     const parentResult = await resolveBranch(ctx, project, args.fromBranchId)
     if (!parentResult.ok) return parentResult
     const parent = parentResult.value

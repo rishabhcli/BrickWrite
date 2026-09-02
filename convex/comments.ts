@@ -11,6 +11,7 @@ import {
   type CloudCommentRecord,
   type CloudResult,
 } from './model/protocol'
+import { collectionFull, COLLECTION_LIMITS } from './model/limits'
 import { commentRecord } from './model/records'
 import { commentAnchor } from './model/validators'
 
@@ -98,6 +99,32 @@ export const add = mutation({
         { limit: MAX_COMMENT_BYTES },
       )
     }
+    // Both windows, because they break independently: `list` reads the project
+    // and `forPart` reads one anchor, and a commenter can fill either.
+    const inProject = await ctx.db
+      .query('comments')
+      .withIndex('by_project_created', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.commentsPerProject)
+    const projectFull = collectionFull(
+      inProject.length,
+      COLLECTION_LIMITS.commentsPerProject,
+      'comments',
+      'Resolve and delete some comments before adding another.',
+    )
+    if (projectFull) return projectFull
+
+    const onPart = await ctx.db
+      .query('comments')
+      .withIndex('by_project_anchor', (q) => q.eq('projectId', project._id).eq('anchor.partId', args.anchor.partId))
+      .take(COLLECTION_LIMITS.commentsPerPart)
+    const partFull = collectionFull(
+      onPart.length,
+      COLLECTION_LIMITS.commentsPerPart,
+      'comments on one part',
+      'Resolve this thread, or anchor the next comment to a different part.',
+    )
+    if (partFull) return partFull
+
     const branchResult = await resolveBranch(ctx, project, args.branchId)
     if (!branchResult.ok) return branchResult
 

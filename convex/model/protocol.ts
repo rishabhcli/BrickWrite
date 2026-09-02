@@ -40,6 +40,8 @@ export type CloudErrorCode =
   | 'INCOMPLETE_HISTORY'
   /** A list could not be read completely; never contains a successful partial value. */
   | 'INCOMPLETE_LIST'
+  /** The write would push a collection past the size its list endpoint can return. */
+  | 'COLLECTION_FULL'
   | 'CHECKSUM_MISMATCH'
   | 'NAME_TAKEN'
   // The remaining codes are produced by the client transport only. The server
