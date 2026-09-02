@@ -1,4 +1,4 @@
-import { Check, Eye, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Eye, Pause, Play, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { catalog, searchCatalog } from '../../cad/catalog'
 import type { ResolvedPlacement } from '../../cad/placement'
@@ -207,19 +207,46 @@ export function ViewportStage({
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
       <div className="viewport-top-stack" data-overlay-stack="top">
         {workbench.playbackStep !== null && (
-          <div className="instruction-overlay">
-            <span>BUILD PLAYBACK</span>
+          <div className="instruction-overlay" role="status" aria-label="Build playback">
+            <span>{workbench.playbackPlaying ? 'PLAYING' : 'SCRUB'}</span>
             <strong>
               STEP {String(workbench.playbackStep + 1).padStart(2, '0')} /{' '}
               {String(state.document.steps.length).padStart(2, '0')}
             </strong>
             <em>{state.document.steps[workbench.playbackStep]?.name}</em>
-            <button onClick={() => workbench.setPlaybackStep(null)} aria-label="Stop build playback">
-              <X size={12} />
-            </button>
+            <div className="instruction-overlay-transport">
+              <button
+                type="button"
+                aria-label="Previous build step"
+                disabled={workbench.playbackStep === 0}
+                onClick={() => workbench.setPlaybackStep(Math.max(0, workbench.playbackStep - 1))}
+              >
+                <ChevronLeft size={12} />
+              </button>
+              <button
+                type="button"
+                aria-label={workbench.playbackPlaying ? 'Pause build playback' : 'Play build sequence'}
+                onClick={() => (workbench.playbackPlaying ? workbench.pausePlayback() : workbench.playBuild())}
+              >
+                {workbench.playbackPlaying ? <Pause size={12} /> : <Play size={12} />}
+              </button>
+              <button
+                type="button"
+                aria-label="Next build step"
+                disabled={workbench.playbackStep >= state.document.steps.length - 1}
+                onClick={() =>
+                  workbench.setPlaybackStep(Math.min(state.document.steps.length - 1, workbench.playbackStep + 1))
+                }
+              >
+                <ChevronRight size={12} />
+              </button>
+              <button type="button" onClick={workbench.stopPlayback} aria-label="Stop build playback">
+                <Square size={11} />
+              </button>
+            </div>
           </div>
         )}
-        {!placement && state.selection.length ? (
+        {!placement && workbench.playbackStep === null && state.selection.length ? (
           <SelectionHUD
             count={state.selection.length}
             label={describeConnectHudLabel(

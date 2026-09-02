@@ -10,11 +10,13 @@ import {
   ListOrdered,
   MessageSquareText,
   PenLine,
+  Pause,
   Play,
   Send,
   ShieldCheck,
   Sparkles,
   Square,
+  Undo2,
   X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -37,12 +39,21 @@ interface TimelineProps {
   onSelectIds: (ids: string[]) => void
   onSequence: () => void
   onPlayStep: (index: number | null) => void
+  playbackPlaying?: boolean
+  onPlayBuild?: () => void
+  onPausePlayback?: () => void
   onAddNote?: (text: string) => boolean
   onRespondNote?: (noteId: string, response: string, resolved: boolean) => boolean
 }
 
 const transactionIcon = (transaction: Transaction) =>
-  transaction.author === 'agent' ? <Sparkles size={13} /> : <Box size={13} />
+  transaction.kind === 'undo' || transaction.kind === 'redo' ? (
+    <Undo2 size={13} />
+  ) : transaction.author === 'agent' ? (
+    <Sparkles size={13} />
+  ) : (
+    <Box size={13} />
+  )
 
 function NoteCard({ note, active, onOpen }: { note: BuilderNote; active: boolean; onOpen: () => void }) {
   return (
@@ -205,7 +216,9 @@ function ProposalQueueCard({
       <div>
         <span>{proposal.operations.length} ops</span>
         <span>{signed(summary.partDelta)} parts</span>
-        <span className={summary.ready ? 'pass' : 'fail'}>{summary.ready ? 'READY' : `${summary.blockers.length} BLOCKED`}</span>
+        <span className={summary.ready ? 'pass' : 'fail'}>
+          {summary.ready ? 'READY' : `${summary.blockers.length} BLOCKED`}
+        </span>
       </div>
       <footer>
         <i>{active ? 'VIEWING GHOST' : 'OPEN REVIEW'}</i>
@@ -250,14 +263,29 @@ function ProposalReviewInspector({
         <em>{proposal.id.slice(-6)}</em>
       </header>
       <div className="review-metrics" aria-label="Proposal metric changes">
-        <div><span>PARTS</span><strong>{signed(summary.partDelta)}</strong></div>
-        <div><span>CONN</span><strong>{signed(summary.connectionDelta)}</strong></div>
-        <div><span>ISLANDS</span><strong>{signed(summary.componentDelta)}</strong></div>
-        <div className={summary.collisionDelta > 0 ? 'bad' : ''}><span>HITS</span><strong>{signed(summary.collisionDelta)}</strong></div>
+        <div>
+          <span>PARTS</span>
+          <strong>{signed(summary.partDelta)}</strong>
+        </div>
+        <div>
+          <span>CONN</span>
+          <strong>{signed(summary.connectionDelta)}</strong>
+        </div>
+        <div>
+          <span>ISLANDS</span>
+          <strong>{signed(summary.componentDelta)}</strong>
+        </div>
+        <div className={summary.collisionDelta > 0 ? 'bad' : ''}>
+          <span>HITS</span>
+          <strong>{signed(summary.collisionDelta)}</strong>
+        </div>
       </div>
       <div className="review-operation-groups">
-        {summary.groups.slice(0, 4).map((group) => (
-          <span key={group.id}>{group.label}<em>{group.count}</em></span>
+        {summary.groups.map((group) => (
+          <span key={group.id}>
+            {group.label}
+            <em>{group.count}</em>
+          </span>
         ))}
       </div>
       <p className="review-verdict">{primaryIssue}</p>
@@ -267,9 +295,16 @@ function ProposalReviewInspector({
           className="review-inspect"
           disabled={!summary.selectablePartIds.length}
           onClick={() => onInspect([...summary.selectablePartIds])}
-          title={summary.selectablePartIds.length ? 'Select existing parts touched by this proposal' : 'This proposal only adds new ghost parts'}
+          title={
+            summary.selectablePartIds.length
+              ? 'Select existing parts touched by this proposal'
+              : summary.addedPartIds.length
+                ? 'New parts exist only as ghosts until this preflight is accepted'
+                : 'This preflight does not touch existing parts'
+          }
         >
-          <Eye size={11} /> INSPECT {summary.selectablePartIds.length || summary.addedPartIds.length}
+          <Eye size={11} />{' '}
+          {summary.selectablePartIds.length ? `INSPECT ${summary.selectablePartIds.length}` : 'GHOSTS ONLY'}
         </button>
         <button type="button" className="review-reject" onClick={() => onReject(proposal.id)}>
           <X size={11} /> REJECT
@@ -308,6 +343,9 @@ export function TimelinePanel({
   onSelectIds,
   onSequence,
   onPlayStep,
+  playbackPlaying = false,
+  onPlayBuild,
+  onPausePlayback,
   onAddNote,
   onRespondNote,
 }: TimelineProps) {
@@ -323,7 +361,7 @@ export function TimelinePanel({
     if (next === 'feedback') setComposing(false)
   }
 
-  const latestTransactions = state.transactions.slice(-8).reverse()
+  const latestTransactions = [...state.transactions].reverse()
   const openNotes = state.document.notes.filter((note) => note.status === 'open')
   const visibleNotes = useMemo(
     () => [...state.document.notes].filter((note) => noteScope === 'all' || note.status === 'open').reverse(),
@@ -333,7 +371,8 @@ export function TimelinePanel({
     ? null
     : (visibleNotes.find((note) => note.id === selectedNoteId) ?? visibleNotes[0] ?? null)
 
-  const activeProposal = state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
+  const activeProposal =
+    state.proposals.find((proposal) => proposal.id === activeProposalId) ?? state.proposals[0] ?? null
   const proposalSummaries = useMemo(
     () => new Map(state.proposals.map((proposal) => [proposal.id, summariseProposal(proposal, state)])),
     [state],
@@ -353,7 +392,9 @@ export function TimelinePanel({
       ? `${openNotes.length} open · ${state.document.notes.length} total`
       : showing === 'review'
         ? `${state.proposals.length} pending · document r${state.document.revision}`
-      : `${state.document.steps.length} steps · ${state.validation.partCount} pcs`
+        : showing === 'history'
+          ? `${state.transactions.length} edits · document r${state.document.revision}`
+          : `${state.document.steps.length} steps · ${state.validation.partCount} pcs`
 
   return (
     <section
@@ -410,14 +451,6 @@ export function TimelinePanel({
               title="Derive a build sequence in which every part attaches to earlier structure"
             >
               <ListOrdered size={11} /> RESEQUENCE
-            </button>
-            <button
-              className={`sequence-button ${playbackStep === null ? '' : 'active'}`}
-              onClick={() => onPlayStep(playbackStep === null ? 0 : null)}
-              title={playbackStep === null ? 'Play the build one step at a time' : 'Show the whole model again'}
-            >
-              {playbackStep === null ? <Play size={11} /> : <Square size={11} />}{' '}
-              {playbackStep === null ? 'PLAY' : 'SHOW ALL'}
             </button>
           </div>
         )}
@@ -476,25 +509,38 @@ export function TimelinePanel({
                 transaction.
               </div>
             )}
-            {latestTransactions.map((transaction, index) => (
-              <button
-                className={`transaction-card ${transaction.author}`}
-                key={transaction.id}
-                title={`Select the ${transaction.affectedPartIds.length} part(s) this transaction touched`}
-                onClick={() => onSelectIds(transaction.affectedPartIds)}
-              >
-                <span className="transaction-index">{String(state.transactions.length - index).padStart(2, '0')}</span>
-                <div className="transaction-icon">{transactionIcon(transaction)}</div>
-                <div>
-                  <strong>{transaction.label}</strong>
-                  <small>
-                    {transaction.operations.length} operation{transaction.operations.length === 1 ? '' : 's'} ·{' '}
-                    {transaction.author}
-                  </small>
-                </div>
-                <em>r{transaction.resultRevision}</em>
-              </button>
-            ))}
+            {latestTransactions.map((transaction, index) => {
+              const liveIds = transaction.affectedPartIds.filter((id) => Boolean(state.document.parts[id]))
+              const head = index === 0
+              const kind = transaction.kind === 'undo' || transaction.kind === 'redo' ? transaction.kind : 'edit'
+              return (
+                <button
+                  className={`transaction-card ${transaction.author} ${kind} ${head ? 'current' : ''}`}
+                  key={transaction.id}
+                  type="button"
+                  disabled={!liveIds.length}
+                  title={
+                    liveIds.length
+                      ? `Select the ${liveIds.length} live part${liveIds.length === 1 ? '' : 's'} this ${kind} still holds`
+                      : 'Those parts are no longer in the document. This card is history, not an undo target.'
+                  }
+                  onClick={() => onSelectIds(liveIds)}
+                >
+                  <span className="transaction-index">
+                    {String(state.transactions.length - index).padStart(2, '0')}
+                  </span>
+                  <div className="transaction-icon">{transactionIcon(transaction)}</div>
+                  <div>
+                    <strong>{transaction.label}</strong>
+                    <small>
+                      {transaction.operations.length} operation{transaction.operations.length === 1 ? '' : 's'} · {kind}
+                      {head ? ' · HEAD' : ''}
+                    </small>
+                  </div>
+                  <em>r{transaction.resultRevision}</em>
+                </button>
+              )
+            })}
           </>
         ) : showing === 'feedback' ? (
           <>
@@ -533,7 +579,7 @@ export function TimelinePanel({
                   className={`step-card ${built ? 'complete' : ''} ${current ? 'current' : ''}`}
                   key={step.id}
                   aria-current={current}
-                  title={`Show the build through step ${step.index}: ${step.name}`}
+                  title={`Hold the build at step ${step.index}: ${step.name}`}
                   onClick={() => {
                     onPlayStep(index)
                     onSelectIds(step.partIds)
@@ -569,22 +615,52 @@ export function TimelinePanel({
           onAdd={onAddNote}
           onRespond={onRespondNote}
         />
+      ) : showing === 'steps' ? (
+        <aside className="timeline-transport" aria-label="Build playback controls">
+          <header>
+            <span>{playbackPlaying ? 'PLAYING' : playbackStep === null ? 'SEQUENCE' : 'SCRUB'}</span>
+            <strong>
+              {playbackStep === null ? 'Whole model' : `Step ${playbackStep + 1} / ${state.document.steps.length}`}
+            </strong>
+          </header>
+          <p>
+            {playbackStep === null
+              ? 'Play advances automatically. Click a step to hold there without running the rest.'
+              : (state.document.steps[playbackStep]?.name ?? 'Build step')}
+          </p>
+          <footer>
+            <button
+              type="button"
+              className="sequence-button"
+              disabled={!state.document.steps.length}
+              onClick={() => {
+                if (playbackPlaying) onPausePlayback?.()
+                else if (onPlayBuild) onPlayBuild()
+                else onPlayStep(playbackStep ?? 0)
+              }}
+            >
+              {playbackPlaying ? <Pause size={11} /> : <Play size={11} />} {playbackPlaying ? 'PAUSE' : 'PLAY'}
+            </button>
+            <button
+              type="button"
+              className="sequence-button"
+              disabled={playbackStep === null}
+              onClick={() => onPlayStep(null)}
+            >
+              <Square size={11} /> SHOW ALL
+            </button>
+          </footer>
+        </aside>
       ) : (
-        <button
-          type="button"
-          className="timeline-note"
-          onClick={() => {
-            setView('feedback')
-            setSelectedNoteId(openNotes[0]?.id ?? null)
-            setComposing(!openNotes.length)
-          }}
-        >
-          <MessageSquareText size={14} />
+        <aside className="timeline-history-legend" aria-label="Edit history">
+          <Undo2 size={14} />
           <div>
-            <span>HANDOFF INBOX{openNotes.length ? ` · ${openNotes.length} OPEN` : ''}</span>
-            <strong>{openNotes[0]?.text ?? 'Leave anchored context for the next human or agent.'}</strong>
+            <span>SHARED HISTORY</span>
+            <strong>
+              Cards select live parts this edit still holds. Undo appends a new card; it does not jump the playhead.
+            </strong>
           </div>
-        </button>
+        </aside>
       )}
     </section>
   )

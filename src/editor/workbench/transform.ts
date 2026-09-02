@@ -62,11 +62,14 @@ export const DEFAULT_MANIPULATION: ManipulationOptions = {
 /** One proxy frame for the entire selection; never rotate each member independently. */
 export function manipulationPose(parts: readonly PartInstance[], options: ManipulationOptions): Transform {
   const first = parts[0]
+  // WORLD freezes an identity proxy so document XYZ rings stay document XYZ.
+  // A mixed WORLD set used to inherit the lead brick's basis and orbit as if
+  // the clutch were that one part.
   return {
     position: resolvePivot(parts, options.pivot),
     basis:
       !first || options.frame === 'world'
-        ? [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        ? IDENTITY_BASIS
         : options.frame === 'connector'
           ? (connectorFrame(first) ?? first.transform.basis)
           : first.transform.basis,
@@ -462,6 +465,49 @@ export function planDistribute(parts: readonly PartInstance[], axis: 'x' | 'y' |
  * stack stays clutched instead of each brick spinning in place and walking off
  * its studs.
  */
+/**
+ * Named-axis stepper turn for a selection.
+ *
+ * Mixed orientations have no shared local frame. Using the lead brick's basis
+ * would rotate the clutch as if it were that one part. WORLD axes about the
+ * selection pivot are the honest group turn; LOCAL/MATE only apply when every
+ * member shares an attitude, or there is only one part.
+ */
+export function planTurnSelection(
+  parts: readonly PartInstance[],
+  axis: 0 | 1 | 2,
+  degrees: number,
+  options: { frame: ReferenceFrame; pivot: PivotMode; locks: AxisLocks },
+): CadOperation[] {
+  if (!parts.length) return []
+  if (options.locks[(['x', 'y', 'z'] as const)[axis]]) return []
+  const mixed = readSelectionAttitude(parts).mixed
+  const frame: ReferenceFrame = mixed ? 'world' : options.frame
+  const vector: Vec3 = [0, 0, 0]
+  vector[axis] = 1
+  const pivot = resolvePivot(parts, options.pivot)
+  const lead = parts[0]
+  const reference =
+    frame === 'world' || !lead
+      ? undefined
+      : frame === 'connector'
+        ? (connectorFrame(lead) ?? undefined)
+        : (lead.transform.basis as Mat3)
+  return parts.flatMap((part) => {
+    const transform = rotatePose(
+      part.transform,
+      vector,
+      degrees,
+      frame,
+      options.pivot === 'origin' && parts.length === 1 ? undefined : pivot,
+      reference,
+    )
+    return posesEqual(part.transform, transform)
+      ? []
+      : [{ type: 'part.transform' as const, partId: part.id, transform }]
+  })
+}
+
 export function planRotateSelection(parts: readonly PartInstance[], degrees: number): CadOperation[] {
   if (!parts.length) return []
   if (parts.length === 1) {

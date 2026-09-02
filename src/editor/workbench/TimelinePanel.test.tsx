@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cadEngine } from '../../cad/engine'
 import { createShowcaseDocument } from '../../cad/sample'
 import { TimelinePanel } from './TimelinePanel'
@@ -13,16 +13,25 @@ beforeEach(() => {
   cadEngine.replaceDocument(createShowcaseDocument())
 })
 
-function FeedbackHarness({ initialView = 'feedback' }: { initialView?: 'steps' | 'feedback' }) {
+function FeedbackHarness({ initialView = 'feedback' }: { initialView?: 'steps' | 'feedback' | 'history' }) {
   const workbench = useWorkbench()
   return <ConnectedTimeline workbench={workbench} initialView={initialView} />
 }
 
-function ConnectedTimeline({ workbench, initialView }: { workbench: Workbench; initialView: 'steps' | 'feedback' }) {
+function ConnectedTimeline({
+  workbench,
+  initialView,
+}: {
+  workbench: Workbench
+  initialView: 'steps' | 'feedback' | 'history'
+}) {
   return (
     <TimelinePanel
       state={workbench.state}
       playbackStep={workbench.playbackStep}
+      playbackPlaying={workbench.playbackPlaying}
+      onPlayBuild={workbench.playBuild}
+      onPausePlayback={workbench.pausePlayback}
       view={initialView}
       onPlayStep={workbench.setPlaybackStep}
       onSequence={workbench.regenerateBuildOrder}
@@ -80,7 +89,7 @@ describe('shared feedback inbox', () => {
   })
 
   it('adds a human handoff through the shared planner and command bus', () => {
-    const partId = Object.keys(cadEngine.getDocument().parts)[0]
+    const partId = Object.values(cadEngine.getDocument().parts).find((part) => !part.protected)!.id
     act(() => cadEngine.setSelection([partId]))
     const before = cadEngine.getDocument().revision
     render(<FeedbackHarness />)
@@ -163,19 +172,86 @@ describe('shared proposal review', () => {
     proposal.validation = {
       ...proposal.validation,
       healthy: false,
-      collisions: [{
-        id: 'review_collision',
-        partA: ids[0],
-        partB: ids[1],
-        overlapLdu: [2, 2, 2],
-        message: 'Blocked in review',
-        certainty: 'exact',
-      }],
+      collisions: [
+        {
+          id: 'review_collision',
+          partA: ids[0],
+          partB: ids[1],
+          overlapLdu: [2, 2, 2],
+          message: 'Blocked in review',
+          certainty: 'exact',
+        },
+      ],
     }
     render(<ReviewHarness activeProposalId={proposal.id} />)
 
     expect(screen.getByText('COMMIT BLOCKED')).toBeVisible()
     expect(screen.getByText('1 collision in the preview.')).toBeVisible()
     expect((screen.getByRole('button', { name: /ACCEPT/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('build playback and edit history chrome', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('holds a clicked step instead of auto-playing the rest of the sequence', () => {
+    vi.useFakeTimers()
+    render(<FeedbackHarness initialView="steps" />)
+    fireEvent.click(screen.getByTitle(/Hold the build at step 2:/i))
+    expect(screen.getByText(/Step 2 \//)).toBeVisible()
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.getByText(/Step 2 \//)).toBeVisible()
+    expect(screen.queryByText(/Step 6 \//)).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('only auto-advances after Play, and can pause on the held step', () => {
+    vi.useFakeTimers()
+    render(<FeedbackHarness initialView="steps" />)
+    fireEvent.click(screen.getByRole('button', { name: /PLAY/ }))
+    expect(screen.getByText(/Step 1 \//)).toBeVisible()
+    act(() => {
+      vi.advanceTimersByTime(800)
+    })
+    expect(screen.getByText(/Step 2 \//)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /PAUSE/ }))
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.getByText(/Step 2 \//)).toBeVisible()
+    vi.useRealTimers()
+  })
+
+  it('lists every shared transaction instead of silently dropping the oldest eight', () => {
+    const partId = Object.values(cadEngine.getDocument().parts).find((part) => !part.protected)!.id
+    const part = cadEngine.getDocument().parts[partId]
+    for (let index = 0; index < 10; index += 1) {
+      const result = cadEngine.execute(
+        `History polish ${index}`,
+        [{ type: 'part.recolor', partId, color: part.color }],
+        'human',
+        cadEngine.getDocument().revision,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+    }
+    render(<FeedbackHarness initialView="history" />)
+    expect(document.querySelectorAll('.transaction-card').length).toBeGreaterThanOrEqual(10)
+    expect(screen.getByText(/\d+ edits · document r/)).toBeVisible()
+  })
+
+  it('disables a history card whose parts no longer exist', () => {
+    const partId = Object.values(cadEngine.getDocument().parts).find((part) => !part.protected)!.id
+    const result = cadEngine.execute(
+      'Remove rover brick',
+      [{ type: 'part.remove', partId }],
+      'human',
+      cadEngine.getDocument().revision,
+    )
+    if (!result.ok) throw new Error(result.error.message)
+    render(<FeedbackHarness initialView="history" />)
+    const card = screen.getByText('Remove rover brick').closest('button')
+    expect(card).toBeDisabled()
   })
 })

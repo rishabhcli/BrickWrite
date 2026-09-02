@@ -1,15 +1,7 @@
 import type { CadOperation, EngineSnapshot, Proposal } from '../../cad/types'
 
 export type ProposalOperationGroup =
-  | 'add'
-  | 'remove'
-  | 'move'
-  | 'appearance'
-  | 'structure'
-  | 'collaboration'
-  | 'constraints'
-  | 'sequence'
-  | 'project'
+  'add' | 'remove' | 'move' | 'appearance' | 'structure' | 'collaboration' | 'constraints' | 'sequence' | 'project'
 
 export interface ProposalOperationSummary {
   readonly id: ProposalOperationGroup
@@ -64,12 +56,13 @@ function operationGroup(operation: CadOperation): ProposalOperationGroup {
 function operationPartIds(operation: CadOperation): string[] {
   if (operation.type === 'part.add') return [operation.part.id]
   if (
-    operation.type === 'part.remove'
-    || operation.type === 'part.transform'
-    || operation.type === 'part.recolor'
-    || operation.type === 'part.protect'
-    || operation.type === 'part.assign-subassembly'
-  ) return [operation.partId]
+    operation.type === 'part.remove' ||
+    operation.type === 'part.transform' ||
+    operation.type === 'part.recolor' ||
+    operation.type === 'part.protect' ||
+    operation.type === 'part.assign-subassembly'
+  )
+    return [operation.partId]
   if (operation.type === 'subassembly.add') return operation.subassembly.partIds
   if (operation.type === 'note.add') return operation.note.anchorPartIds
   if (operation.type === 'steps.replace') return operation.steps.flatMap((step) => step.partIds)
@@ -100,7 +93,9 @@ export function summariseProposal(proposal: Proposal, current: EngineSnapshot): 
     .filter((operation): operation is Extract<CadOperation, { type: 'part.add' }> => operation.type === 'part.add')
     .map((operation) => operation.part.id)
   const removedPartIds = proposal.operations
-    .filter((operation): operation is Extract<CadOperation, { type: 'part.remove' }> => operation.type === 'part.remove')
+    .filter(
+      (operation): operation is Extract<CadOperation, { type: 'part.remove' }> => operation.type === 'part.remove',
+    )
     .map((operation) => operation.partId)
   const currentDisconnected = new Set(current.validation.disconnectedPartIds)
   const currentVirtual = new Set(current.validation.virtualColors.map((item) => item.partId))
@@ -116,7 +111,9 @@ export function summariseProposal(proposal: Proposal, current: EngineSnapshot): 
   const blockers = [
     ...(stale ? [`Based on r${proposal.baseRevision}; the document is now r${current.document.revision}.`] : []),
     ...(proposal.validation.collisions.length
-      ? [`${proposal.validation.collisions.length} collision${proposal.validation.collisions.length === 1 ? '' : 's'} in the preview.`]
+      ? [
+          `${proposal.validation.collisions.length} collision${proposal.validation.collisions.length === 1 ? '' : 's'} in the preview.`,
+        ]
       : []),
     ...(newDisconnectedPartIds.length
       ? [`${newDisconnectedPartIds.length} newly disconnected part${newDisconnectedPartIds.length === 1 ? '' : 's'}.`]
@@ -125,7 +122,9 @@ export function summariseProposal(proposal: Proposal, current: EngineSnapshot): 
   ]
   const warnings = [
     ...(proposal.validation.unverifiedCollisions
-      ? [`${proposal.validation.unverifiedCollisions} collision verdict${proposal.validation.unverifiedCollisions === 1 ? '' : 's'} use bounds-only evidence.`]
+      ? [
+          `${proposal.validation.unverifiedCollisions} collision verdict${proposal.validation.unverifiedCollisions === 1 ? '' : 's'} use bounds-only evidence.`,
+        ]
       : []),
     ...(newVirtualColorPartIds.length
       ? [`${newVirtualColorPartIds.length} new virtual colour${newVirtualColorPartIds.length === 1 ? '' : 's'}.`]
@@ -153,6 +152,6 @@ export function summariseProposal(proposal: Proposal, current: EngineSnapshot): 
     stale,
     blockers,
     warnings,
-    ready: blockers.length === 0,
+    ready: blockers.length === 0 && proposal.validation.healthy,
   }
 }

@@ -28,11 +28,11 @@ import {
   connectorFrame,
   planAlign,
   planDistribute,
+  planTurnSelection,
   readNumericPose,
   readSelectionAttitude,
   referenceBasis,
   resolvePivot,
-  rotatePose,
   selectionExtent,
   posesEqual,
   translatePose,
@@ -129,7 +129,12 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       commit(
         'Position selection',
         parts.flatMap((part) => {
-          const transform = applyLocks(part.transform, translatePose(part.transform, delta, 'world'), transformPrefs.locks, frame)
+          const transform = applyLocks(
+            part.transform,
+            translatePose(part.transform, delta, 'world'),
+            transformPrefs.locks,
+            frame,
+          )
           return posesEqual(part.transform, transform)
             ? []
             : [{ type: 'part.transform' as const, partId: part.id, transform }]
@@ -167,28 +172,14 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
 
   const turn = useCallback(
     (axis: 0 | 1 | 2, direction: 1 | -1) => {
-      if (!parts.length) return
-      if (transformPrefs.locks[(['x', 'y', 'z'] as const)[axis]]) return
-      const vector = [0, 0, 0] as [number, number, number]
-      vector[axis] = 1
-      const pivot = resolvePivot(parts, transformPrefs.pivot)
+      const operations = planTurnSelection(parts, axis, transformPrefs.rotationStep * direction, transformPrefs)
+      if (!operations.length) return
       commit(
         `Turn ${parts.length} part${parts.length === 1 ? '' : 's'} ${transformPrefs.rotationStep * direction}°`,
-        parts.map((part) => ({
-          type: 'part.transform',
-          partId: part.id,
-          transform: rotatePose(
-            part.transform,
-            vector,
-            transformPrefs.rotationStep * direction,
-            parts.length > 1 && transformPrefs.frame === 'local' ? 'connector' : transformPrefs.frame,
-            transformPrefs.pivot === 'origin' && parts.length === 1 ? undefined : pivot,
-            transformPrefs.frame === 'local' ? parts[0].transform.basis : (connectorFrame(parts[0]) ?? undefined),
-          ),
-        })),
+        operations,
       )
     },
-    [commit, parts, transformPrefs.frame, transformPrefs.locks, transformPrefs.pivot, transformPrefs.rotationStep],
+    [commit, parts, transformPrefs],
   )
 
   const runArray = useCallback(() => {
@@ -323,7 +314,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {!single && (
             <p className="transform-multi-note">
               {attitude.mixed
-                ? 'Mixed orientations — Euler fields stay blank rather than showing the lead brick. Use Turn to rotate the set as one.'
+                ? 'Mixed orientations — Euler fields stay blank rather than showing the lead brick. Turn rotates the set as one about document WORLD axes, not the lead brick local frame.'
                 : 'Position the selection’s centre and turn it as one. Shared Euler is the group attitude.'}
             </p>
           )}
@@ -345,7 +336,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
                 label={axis}
                 value={position[index]}
                 suffix="LDU"
-                disabled={transformPrefs.frame === 'world' && transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
+                disabled={
+                  transformPrefs.frame === 'world' && transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']
+                }
                 onCommit={(value) => setPosition(index as 0 | 1 | 2, value)}
               />
             ))}
@@ -368,12 +361,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             </div>
           )}
           {attitude.mixed && (
-            <div
-              className="fields-grid rotation-fields"
-              data-mixed="true"
-              role="group"
-              aria-label="Mixed orientations"
-            >
+            <div className="fields-grid rotation-fields" data-mixed="true" role="group" aria-label="Mixed orientations">
               {(['RX', 'RY', 'RZ'] as const).map((axis) => (
                 <label key={axis} className="number-field disabled mixed-euler">
                   <span>{axis}</span>

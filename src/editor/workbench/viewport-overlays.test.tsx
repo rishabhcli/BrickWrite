@@ -202,7 +202,11 @@ function overlayWorkbench(overrides: Record<string, unknown> = {}): Workbench {
     placementDefinition: { name: 'Brick 2 x 4' },
     connect: IDLE_CONNECT,
     playbackStep: 0,
+    playbackPlaying: false,
     setPlaybackStep: vi.fn(),
+    playBuild: vi.fn(),
+    pausePlayback: vi.fn(),
+    stopPlayback: vi.fn(),
     transformPrefs: { locks: { x: false, y: false, z: false }, frame: 'world' },
     selectionPosition: [0, -24, 0],
     selectionAttitude: { mixed: false, rotationDegrees: [0, 0, 0] },
@@ -276,5 +280,17 @@ describe('viewport overlay stacking', () => {
     expect(screen.getByLabelText('Mixed orientations')).toBeInTheDocument()
     expect(screen.queryByLabelText('Rotation 0, 90, 0 degrees')).toBeNull()
     expect(screen.getByLabelText('RX mixed orientations')).toBeDisabled()
+  })
+
+  it('hides the selection HUD while a build step is held, so playback chrome is the only HUD', () => {
+    render(
+      <OverlayHost>
+        <ViewportStage workbench={overlayWorkbench({ placement: null, playbackStep: 0, playbackPlaying: false })} />
+      </OverlayHost>,
+    )
+    expect(document.querySelector('.instruction-overlay')).not.toBeNull()
+    expect(document.querySelector('.selection-hud')).toBeNull()
+    expect(screen.getByRole('status', { name: 'Build playback' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Play build sequence' })).toBeVisible()
   })
 })

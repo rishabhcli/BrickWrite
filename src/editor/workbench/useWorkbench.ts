@@ -16,7 +16,6 @@ import type {
   ModelDocument,
   PartDefinition,
   PartInstance,
-  Proposal,
   Transform,
   Vec3,
 } from '../../cad/types'
@@ -143,7 +142,8 @@ export function useWorkbench() {
   const [renderMode, setRenderMode] = useState<RenderMode>('beauty')
   const [cameraResetKey, setCameraResetKey] = useState(0)
   const [captureRequestId, setCaptureRequestId] = useState<string | null>(null)
-  const [playbackStep, setPlaybackStep] = useState<number | null>(null)
+  const [playbackStep, setPlaybackStepRaw] = useState<number | null>(null)
+  const [playbackPlaying, setPlaybackPlaying] = useState(false)
   const [toast, setToast] = useState<WorkbenchNotice | null>(null)
   const [placement, setPlacement] = useState<PlacementRequest | null>(null)
   const [repeatPlacement, setRepeatPlacement] = usePersistentState('placement.repeat.v2', false)
@@ -238,10 +238,44 @@ export function useWorkbench() {
   }, [cameraView, captureRequestId, renderMode])
 
   // -- build playback -------------------------------------------------------
+  const stopPlayback = useCallback(() => {
+    setPlaybackPlaying(false)
+    setPlaybackStepRaw(null)
+  }, [])
+  const setPlaybackStep = useCallback((index: number | null) => {
+    // A step click is a scrub. Only Play advances on a timer.
+    setPlaybackPlaying(false)
+    setPlaybackStepRaw(index)
+  }, [])
+  const playBuild = useCallback(() => {
+    const total = cadEngine.getDocument().steps.length
+    if (!total) return
+    setPlaybackPlaying(true)
+    setPlaybackStepRaw((current) => (current === null || current >= total - 1 ? 0 : current))
+  }, [])
+  const pausePlayback = useCallback(() => setPlaybackPlaying(false), [])
+
   useEffect(() => {
-    if (playbackStep === null || playbackStep >= state.document.steps.length - 1) return
-    const timeout = window.setTimeout(() => setPlaybackStep((step) => (step === null ? null : step + 1)), 720)
+    if (!playbackPlaying || playbackStep === null) return
+    if (playbackStep >= state.document.steps.length - 1) {
+      setPlaybackPlaying(false)
+      return
+    }
+    const timeout = window.setTimeout(() => setPlaybackStepRaw((step) => (step === null ? null : step + 1)), 720)
     return () => window.clearTimeout(timeout)
+  }, [playbackPlaying, playbackStep, state.document.steps.length])
+
+  useEffect(() => {
+    if (playbackStep === null) return
+    if (!state.document.steps.length) {
+      setPlaybackPlaying(false)
+      setPlaybackStepRaw(null)
+      return
+    }
+    if (playbackStep >= state.document.steps.length) {
+      setPlaybackPlaying(false)
+      setPlaybackStepRaw(state.document.steps.length - 1)
+    }
   }, [playbackStep, state.document.steps.length])
 
   // -- the command bus ------------------------------------------------------
@@ -277,6 +311,8 @@ export function useWorkbench() {
     cadEngine.setSelection(restored)
     setPlacement(null)
     setDropPoint(null)
+    setPlaybackPlaying(false)
+    setPlaybackStepRaw(null)
     if (!Object.keys(document.parts).length || !restored.length) {
       setToolRaw('select')
       setConnect(IDLE_CONNECT)
@@ -1201,35 +1237,11 @@ export function useWorkbench() {
   }, [hidden, playbackFiltered, visibility.ghosted])
 
   /**
-   * Ghosted parts, handed to the viewport through its ghost-preview channel.
-   *
-   * Nothing here is invented: the operations list is genuinely empty, and the
-   * validation attached is the document's own current report. It never enters
-   * the engine's proposal set, so the review overlay and shared history are
-   * unaffected — this is a view of parts the operator asked to see through.
+   * Kernel preflights only. Operator-ghosted parts already draw through the
+   * visibility ghost channel; stuffing them into this array as a pending
+   * proposal made GhostProposal treat see-through bricks as an agent preview.
    */
-  const viewportProposals = useMemo<Proposal[]>(() => {
-    if (!visibility.ghosted.size) return state.proposals
-    const ghost: Proposal = {
-      id: 'view:ghosted',
-      label: 'Ghosted parts',
-      author: 'human',
-      baseRevision: state.document.revision,
-      createdAt: state.document.updatedAt,
-      operations: [],
-      previewDocument: playbackFiltered,
-      validation: state.validation,
-      status: 'pending',
-    }
-    return [...state.proposals, ghost]
-  }, [
-    playbackFiltered,
-    state.document.revision,
-    state.document.updatedAt,
-    state.proposals,
-    state.validation,
-    visibility.ghosted.size,
-  ])
+  const viewportProposals = state.proposals
 
   const selectionLabel = useMemo(() => {
     if (!state.selection.length) return 'No selection'
@@ -1297,7 +1309,11 @@ export function useWorkbench() {
     cameraResetKey,
     fitView,
     playbackStep,
+    playbackPlaying,
     setPlaybackStep,
+    playBuild,
+    pausePlayback,
+    stopPlayback,
     toast,
     setToast,
     notify,
