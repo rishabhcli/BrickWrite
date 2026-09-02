@@ -22,6 +22,10 @@ import type { CommandOutcome } from './commands'
  * the moment they can fix it.
  */
 
+function optionDomId(commandId: string) {
+  return `command-palette-option-${commandId}`
+}
+
 export interface CommandPaletteProps {
   open: boolean
   shortcuts: ShortcutMap
@@ -161,6 +165,7 @@ export function CommandPalette({
     else grouped.set(command.group, [command])
   }
   let rowIndex = -1
+  const activeOptionId = matches[cursor] ? optionDomId(matches[cursor].id) : undefined
 
   return (
     <div
@@ -207,7 +212,9 @@ export function CommandPalette({
                 aria-controls="command-palette-results"
                 role="combobox"
                 aria-expanded="true"
+                aria-haspopup="listbox"
                 aria-autocomplete="list"
+                aria-activedescendant={activeOptionId}
               />
               <kbd>↑↓ ↵</kbd>
             </label>
@@ -229,6 +236,7 @@ export function CommandPalette({
                     return (
                       <button
                         key={command.id}
+                        id={optionDomId(command.id)}
                         type="button"
                         role="option"
                         aria-selected={cursor === index}

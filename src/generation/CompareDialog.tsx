@@ -82,6 +82,7 @@ export function CompareDialog({
   return (
     <div
       className="bw-gen-dialog"
+      role="presentation"
       onKeyDown={onKeyDown}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
