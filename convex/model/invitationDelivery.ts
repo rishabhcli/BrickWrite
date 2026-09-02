@@ -56,6 +56,8 @@ export async function sendInvitationEmail(args: {
   token: string
   role: string
   projectName: string
+  /** When the link stops working, so the message says so rather than guessing. */
+  expiresAt: number
 }): Promise<DeliveryResult> {
   const origin = trustedUrl(args.origin, true)
   if (!origin) {
@@ -65,6 +67,21 @@ export async function sendInvitationEmail(args: {
     }
   }
   const invitationUrl = `${origin.origin}/invite/${encodeURIComponent(args.token)}`
+  /*
+   * The actual expiry, in UTC, rather than a duration.
+   *
+   * This said "14 days" against a seventy-two hour lifetime — a restated
+   * constant that drifted from the one it restated, so a recipient reading it
+   * on day five found a dead link and no explanation. A duration is also the
+   * wrong shape for something read later; a wall clock still means what it said
+   * a week after it was sent, and UTC means it in every inbox.
+   *
+   * An unusable timestamp drops the claim rather than the send: the message is
+   * still worth delivering without a date in it, and `new Date(NaN)` throws.
+   */
+  const expires = Number.isFinite(args.expiresAt)
+    ? new Date(args.expiresAt).toISOString().replace('T', ' ').slice(0, 16)
+    : null
   const subject = 'You have been invited to a Brickwright project'
   const customEndpoint = Boolean(args.endpoint || args.credential)
   const headers: Record<string, string> = {
@@ -81,7 +98,14 @@ export async function sendInvitationEmail(args: {
         reason: 'The custom email adapter needs a valid INVITATION_EMAIL_ENDPOINT and INVITATION_EMAIL_TOKEN.',
       }
     headers.authorization = `Bearer ${args.credential}`
-    body = { to: args.email, subject, projectName: args.projectName, role: args.role, invitationUrl }
+    body = {
+      to: args.email,
+      subject,
+      projectName: args.projectName,
+      role: args.role,
+      invitationUrl,
+      ...(Number.isFinite(args.expiresAt) ? { expiresAt: new Date(args.expiresAt).toISOString() } : {}),
+    }
   } else {
     const apiOrigin = trustedUrl(args.hexclaveApiOrigin ?? 'https://api.hexclave.com', true)
     if (!apiOrigin || !args.hexclaveProjectId?.trim() || !args.hexclaveSecretServerKey?.trim())
@@ -102,7 +126,11 @@ export async function sendInvitationEmail(args: {
       emails: [args.email],
       subject,
       theme_id: false,
-      html: `<h1>You are invited to collaborate</h1><p>You have been invited to <strong>${escapeHtml(args.projectName)}</strong> with the ${escapeHtml(args.role)} role.</p><p><a href="${escapeHtml(invitationUrl)}">Accept your Brickwright invitation</a></p><p>Sign in to accept. This private link expires 14 days after the invitation was created. If you were not expecting this invitation, you can ignore this email.</p>`,
+      html: `<h1>You are invited to collaborate</h1><p>You have been invited to <strong>${escapeHtml(args.projectName)}</strong> with the ${escapeHtml(args.role)} role.</p><p><a href="${escapeHtml(invitationUrl)}">Accept your Brickwright invitation</a></p><p>Sign in to accept. ${
+        expires
+          ? `This private link stops working at ${escapeHtml(expires)} UTC.`
+          : 'This private link expires; accept it soon.'
+      } If you were not expecting this invitation, you can ignore this email.</p>`,
     }
   }
   const provider = customEndpoint ? 'The email endpoint' : 'Hexclave'

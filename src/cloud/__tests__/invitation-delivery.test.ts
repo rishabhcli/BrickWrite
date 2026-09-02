@@ -12,6 +12,7 @@ const args = () => ({
   token: 'private-invitation-token',
   role: 'editor',
   projectName: 'Private project',
+  expiresAt: Date.UTC(2026, 8, 5, 14, 32, 0),
 })
 
 describe('native Hexclave invitation delivery', () => {
@@ -188,5 +189,60 @@ describe('invitation email submission', () => {
     expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('when the link stops working', () => {
+  /**
+   * The message used to say "expires 14 days after the invitation was created"
+   * against a seventy-two hour lifetime. A recipient reading it on day five
+   * found a dead link and no explanation, and the owner found out by being
+   * asked to send another.
+   */
+  const bodyOf = (fetcher: ReturnType<typeof vi.fn>) =>
+    JSON.parse(String((fetcher.mock.calls[0][1] as { body: string }).body)) as { html?: string; expiresAt?: string }
+
+  it('states the invitation’s own expiry, in UTC', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(
+      await sendInvitationEmail({
+        ...args(),
+        endpoint: undefined,
+        credential: undefined,
+        hexclaveProjectId: 'p',
+        hexclaveSecretServerKey: 's',
+      }),
+    ).toMatchObject({ status: 'queued' })
+
+    const { html } = bodyOf(fetcher)
+    expect(html).toContain('2026-09-05 14:32 UTC')
+    // The duration it used to restate, and got wrong.
+    expect(html).not.toContain('14 days')
+  })
+
+  it('hands a custom adapter the same fact rather than making it guess', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(await sendInvitationEmail(args())).toMatchObject({ status: 'queued' })
+    expect(bodyOf(fetcher).expiresAt).toBe(new Date(Date.UTC(2026, 8, 5, 14, 32, 0)).toISOString())
+  })
+
+  it('still sends when the expiry is unusable, without claiming a date', async () => {
+    // `new Date(NaN).toISOString()` throws, and a malformed row is not a reason
+    // to drop an invitation somebody asked to send.
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(
+      await sendInvitationEmail({
+        ...args(),
+        endpoint: undefined,
+        credential: undefined,
+        hexclaveProjectId: 'p',
+        hexclaveSecretServerKey: 's',
+        expiresAt: Number.NaN,
+      }),
+    ).toMatchObject({ status: 'queued' })
+    expect(bodyOf(fetcher).html).toContain('This private link expires')
   })
 })

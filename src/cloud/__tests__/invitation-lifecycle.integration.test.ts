@@ -120,6 +120,17 @@ describe('leased invitation delivery', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(fetcher.mock.calls[0][0]).toBe('https://api.hexclave.com/api/v1/emails/send-email')
     expect(JSON.parse(fetcher.mock.calls[0][1].body).emails).toEqual(['builder@example.test'])
+    /*
+     * The expiry the row actually carries, not a duration the message restated.
+     * It said "14 days" against a seventy-two hour lifetime, so a recipient
+     * reading it on day five found a dead link and no explanation. Asserted
+     * here, through the real `deliver` action, because the delivery module can
+     * be correct while the context handed to it is not.
+     */
+    const row = (await h.row(invitation.invitationId))!
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).html).toContain(
+      new Date(row.expiresAt).toISOString().replace('T', ' ').slice(0, 16),
+    )
     const listed = value(await h.backend.listInvitations({ projectId: h.project.projectId }))[0]
     expect(listed).toMatchObject({
       invitationId: invitation.invitationId,

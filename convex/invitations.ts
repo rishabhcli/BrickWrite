@@ -45,7 +45,7 @@ import { invitationRetryAt } from './model/invitationLifecycle'
  * inbox, a shared mailbox or a mail archive for its whole lifetime, and the
  * window in which a leaked one is useful is exactly this number.
  */
-const INVITATION_TTL_MS = 72 * 60 * 60 * 1000
+export const INVITATION_TTL_MS = 72 * 60 * 60 * 1000
 
 /**
  * How long an expired invitation is kept before it is removed.
@@ -423,7 +423,7 @@ export const retryDelivery = mutation({
   },
 })
 
-type DeliveryContext = { email: string; token: string; role: string; projectName: string }
+type DeliveryContext = { email: string; token: string; role: string; projectName: string; expiresAt: number }
 
 /** Retired unleased read. Keep the old function signature during rollout, but
  * do not release any more tokens to workers that cannot claim atomically.
@@ -463,7 +463,17 @@ export const claimDelivery = internalMutation({
       deliveryAttempts: (row.deliveryAttempts ?? 0) + 1,
       deliveryReason: 'Submitting the invitation to the email endpoint.',
     })
-    return { generation, email: row.email, token: row.token, role: row.role, projectName: project.name }
+    return {
+      generation,
+      email: row.email,
+      token: row.token,
+      role: row.role,
+      projectName: project.name,
+      // Passed rather than restated: the message tells the recipient when the
+      // link stops working, and a second copy of that fact is a second copy to
+      // get wrong.
+      expiresAt: row.expiresAt,
+    }
   },
 })
 
