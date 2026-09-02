@@ -237,3 +237,128 @@ describe('invitations', () => {
     expectOk(await t.withIdentity(person('owner')).query(api.invitations.list, { projectId: seeded.projectId }))
   })
 })
+
+describe('deleting a comment', () => {
+  const anchor = { partId: 'part_1', revision: 0, poseChecksum: 'x' }
+
+  test('lets a project at its ceiling add another comment', async () => {
+    // The ceiling's repair hint told the caller to delete a comment, and there
+    // was no way to. A ceiling whose only escape does not exist is permanent.
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    const now = Date.now()
+    const existing = await seededComments(t, seeded.projectId)
+    let last: Id<'comments'> | null = null
+    await t.run(async (ctx) => {
+      for (let index = 0; index < COLLECTION_LIMITS.commentsPerProject - existing; index += 1) {
+        last = await ctx.db.insert('comments', {
+          projectId: seeded.projectId,
+          branchId: seeded.branchId,
+          authorSubject: subjectOf('editor'),
+          body: `seeded ${index}`,
+          anchor: { ...anchor, partId: `part_${index}` },
+          status: 'open',
+          createdAt: now + index,
+          updatedAt: now + index,
+        })
+      }
+    })
+
+    const add = () =>
+      t.withIdentity(person('editor')).mutation(api.comments.add, {
+        projectId: seeded.projectId,
+        body: 'one more',
+        anchor: { ...anchor, partId: 'part_new' },
+      })
+    expect(codeOf(await add())).toBe('COLLECTION_FULL')
+
+    expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.comments.remove, { projectId: seeded.projectId, commentId: last! }),
+    )
+    expect(codeOf(await add())).toBe('ok')
+  })
+
+  test('takes the replies with it', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    const parent = expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.comments.add, { projectId: seeded.projectId, body: 'Is this right?', anchor }),
+    )
+    expectOk(
+      await t.withIdentity(person('editor')).mutation(api.comments.add, {
+        projectId: seeded.projectId,
+        body: 'No.',
+        anchor,
+        replyToId: parent.commentId,
+      }),
+    )
+
+    // A thread is the unit a person means; answers to a deleted question are
+    // answers nobody can read.
+    const removed = expectOk(
+      await t
+        .withIdentity(person('editor'))
+        .mutation(api.comments.remove, { projectId: seeded.projectId, commentId: parent.commentId }),
+    )
+    expect(removed.removed).toBe(2)
+    const left = expectOk(
+      await t.withIdentity(person('owner')).query(api.comments.forPart, {
+        projectId: seeded.projectId,
+        partId: anchor.partId,
+      }),
+    )
+    expect(left).toEqual([])
+  })
+
+  test('lets a commenter remove their own but not somebody else’s', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { talker: 'commenter' } })
+    const mine = expectOk(
+      await t
+        .withIdentity(person('talker'))
+        .mutation(api.comments.add, { projectId: seeded.projectId, body: 'Mine.', anchor }),
+    )
+    const theirs = expectOk(
+      await t
+        .withIdentity(person('owner'))
+        .mutation(api.comments.add, { projectId: seeded.projectId, body: 'Theirs.', anchor }),
+    )
+
+    expectOk(
+      await t
+        .withIdentity(person('talker'))
+        .mutation(api.comments.remove, { projectId: seeded.projectId, commentId: mine.commentId }),
+    )
+    // `comment.resolve` is what governs acting on another person's thread, and a
+    // commenter does not hold it.
+    expect(
+      codeOf(
+        await t
+          .withIdentity(person('talker'))
+          .mutation(api.comments.remove, { projectId: seeded.projectId, commentId: theirs.commentId }),
+      ),
+    ).toBe('FORBIDDEN')
+  })
+
+  test('refuses a comment from another project', async () => {
+    const t = harness()
+    const mine = await seedProject(t, { owner: 'owner' })
+    const other = await seedProject(t, { owner: 'stranger' })
+    const theirs = expectOk(
+      await t
+        .withIdentity(person('stranger'))
+        .mutation(api.comments.add, { projectId: other.projectId, body: 'Elsewhere.', anchor }),
+    )
+    expect(
+      codeOf(
+        await t
+          .withIdentity(person('owner'))
+          .mutation(api.comments.remove, { projectId: mine.projectId, commentId: theirs.commentId }),
+      ),
+    ).toBe('NOT_FOUND')
+  })
+})

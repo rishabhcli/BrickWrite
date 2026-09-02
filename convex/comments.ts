@@ -109,7 +109,7 @@ export const add = mutation({
       inProject.length,
       COLLECTION_LIMITS.commentsPerProject,
       'comments',
-      'Resolve and delete some comments before adding another.',
+      'Delete a comment thread that is finished with before adding another.',
     )
     if (projectFull) return projectFull
 
@@ -121,7 +121,7 @@ export const add = mutation({
       onPart.length,
       COLLECTION_LIMITS.commentsPerPart,
       'comments on one part',
-      'Resolve this thread, or anchor the next comment to a different part.',
+      'Delete a finished thread on this part, or anchor the next comment elsewhere.',
     )
     if (partFull) return partFull
 
@@ -214,5 +214,54 @@ export const setStatus = mutation({
     const row = await ctx.db.get(comment._id)
     if (!row) return cloudFailure('NOT_FOUND', 'That comment is gone.', 'Reload the comment list.')
     return { ok: true, value: commentRecord(row) }
+  },
+})
+
+/**
+ * Deletes a comment, and the replies hanging off it.
+ *
+ * There was no way to remove one. That is a gap on its own — a comment posted
+ * on the wrong brick stayed there — and the per-project ceiling made it
+ * load-bearing: a project that reached the ceiling could never add another
+ * comment, and the refusal told the caller to delete one.
+ *
+ * Authorised exactly as `setStatus` is: an author may remove their own, and
+ * removing somebody else's needs `comment.resolve`, which is the capability
+ * that already governs closing another person's thread.
+ *
+ * A thread is the unit a person means. Deleting a parent and leaving its
+ * replies would leave answers to a question nobody can read, so the direct
+ * replies go too — one indexed read, not a scan of the project.
+ */
+export const remove = mutation({
+  args: { projectId: v.string(), commentId: v.string() },
+  handler: async (ctx, args): Promise<CloudResult<{ removed: number }>> => {
+    const reader = await authoriseProject(ctx, args.projectId, 'comment.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+
+    const comment = await ctx.db.get(args.commentId as Id<'comments'>)
+    if (!comment || comment.projectId !== project._id) {
+      return cloudFailure('NOT_FOUND', 'That comment is not in this project.', 'Reload the comment list.')
+    }
+    if (comment.authorSubject !== identity.subject) {
+      const authorised = await authoriseProject(ctx, args.projectId, 'comment.resolve')
+      if (!authorised.ok) return authorised
+    }
+
+    const replies = await ctx.db
+      .query('comments')
+      .withIndex('by_project_reply', (q) => q.eq('projectId', project._id).eq('replyToId', comment._id))
+      .take(COLLECTION_LIMITS.commentsPerPart)
+    for (const reply of replies) await ctx.db.delete(reply._id)
+    await ctx.db.delete(comment._id)
+
+    await writeAuditEvent(ctx, {
+      projectId: project._id,
+      actorSubject: identity.subject,
+      action: 'comment.delete',
+      detail: { partId: comment.anchor.partId, replies: replies.length },
+    })
+    return { ok: true, value: { removed: replies.length + 1 } }
   },
 })

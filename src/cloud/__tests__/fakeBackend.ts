@@ -1748,6 +1748,28 @@ class FakeConvexBackend implements CloudBackend {
     return { ok: true, value: rows.map((row) => this.db.commentRecord(row)) }
   }
 
+  /** Mirrors `convex/comments.ts:remove`: author, or `comment.resolve`. */
+  async removeComment(args: { projectId: string; commentId: string }): Promise<CloudResult<{ removed: number }>> {
+    const offline = this.guard<{ removed: number }>()
+    if (offline) return offline
+    const reader = this.authorise(args.projectId, 'comment.read')
+    if (!reader.ok) return reader
+    const { project, identity } = reader.value
+    const comment = this.db.comments.find((row) => row._id === args.commentId)
+    if (!comment || comment.projectId !== project._id) {
+      return fail('NOT_FOUND', 'That comment is not in this project.', 'Reload the comment list.')
+    }
+    if (comment.authorSubject !== identity.subject) {
+      const authorised = this.authorise(args.projectId, 'comment.resolve')
+      if (!authorised.ok) return authorised
+    }
+    const doomed = this.db.comments.filter(
+      (row) => row._id === comment._id || (row.projectId === project._id && row.replyToId === comment._id),
+    )
+    for (const row of doomed) this.db.comments.splice(this.db.comments.indexOf(row), 1)
+    return { ok: true, value: { removed: doomed.length } }
+  }
+
   async addComment(args: AddCommentArgs): Promise<CloudResult<CloudCommentRecord>> {
     const offline = this.guard<CloudCommentRecord>()
     if (offline) return offline

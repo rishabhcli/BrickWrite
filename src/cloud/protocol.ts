@@ -177,6 +177,8 @@ export interface CloudBackend {
   listComments(args: { projectId: string; status?: 'open' | 'resolved' }): Promise<CloudResult<CloudCommentRecord[]>>
   commentsForPart(args: { projectId: string; partId: string }): Promise<CloudResult<CloudCommentRecord[]>>
   addComment(args: AddCommentArgs): Promise<CloudResult<CloudCommentRecord>>
+  /** Removes a comment and its replies. Returns how many rows went. */
+  removeComment(args: { projectId: string; commentId: string }): Promise<CloudResult<{ removed: number }>>
   setCommentStatus(args: {
     projectId: string
     commentId: string

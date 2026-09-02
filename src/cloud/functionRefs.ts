@@ -135,6 +135,7 @@ export const refs = {
     list: q<{ projectId: string; status?: 'open' | 'resolved' }, CloudResult<CloudCommentRecord[]>>('comments:list'),
     forPart: q<{ projectId: string; partId: string }, CloudResult<CloudCommentRecord[]>>('comments:forPart'),
     add: m<AddCommentArgs, CloudResult<CloudCommentRecord>>('comments:add'),
+    remove: m<{ projectId: string; commentId: string }, CloudResult<{ removed: number }>>('comments:remove'),
     setStatus: m<
       { projectId: string; commentId: string; status: 'open' | 'resolved' },
       CloudResult<CloudCommentRecord>

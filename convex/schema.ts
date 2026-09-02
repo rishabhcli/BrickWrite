@@ -296,7 +296,10 @@ export default defineSchema({
   })
     .index('by_project_created', ['projectId', 'createdAt'])
     .index('by_project_status', ['projectId', 'status'])
-    .index('by_project_anchor', ['projectId', 'anchor.partId']),
+    .index('by_project_anchor', ['projectId', 'anchor.partId'])
+    // Deleting a comment takes its replies with it, and finding them by scan
+    // would read the project's whole thread to remove one entry from it.
+    .index('by_project_reply', ['projectId', 'replyToId']),
 
   /**
    * Append-only audit trail.
