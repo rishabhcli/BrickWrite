@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { privateDocument } from '../__fixtures__/model'
 import { createPublication, revokePublication, updatePublicationAccess } from '../publish'
 import { mintShareToken, revokeToken } from '../tokens'
-import { ShareError } from '../types'
+import { reporterPseudonym, reportIdFor, resolveReport } from '../../gallery/moderation'
+import { ShareError, type Report } from '../types'
 import { KvPublicationStore } from './kv-store'
 import { MemoryKv } from './memory-kv'
 import {
@@ -323,5 +324,95 @@ describe('the gallery index', () => {
     kv.reads = 0
     expect((await store.listPublic()).entries).toEqual([])
     expect(kv.reads).toBe(0)
+  })
+})
+
+/**
+ * Reports, and the two things the schema said this endpoint did.
+ *
+ * `submitReport` was documented as "rate-limited per reporterRef" and
+ * `listReports` as "by_status". Neither held: the reference came off the
+ * request body, so one account could file unlimited reports by sending a
+ * different one each time, and the listing scanned every report ever filed and
+ * filtered what came back — so once resolved reports outnumbered the window, a
+ * moderation queue stopped showing new work without saying so.
+ */
+describe('the moderation queue', () => {
+  const report = (overrides: Partial<Report> = {}): Report => ({
+    id: 'rep_one',
+    publicationId: 'pub_1',
+    slug: 'rover-abc',
+    reason: 'other',
+    detail: 'This model reproduces a copyrighted set verbatim.',
+    createdAt: '2026-09-01T12:00:00.000Z',
+    status: 'open',
+    reporterRef: 'a'.repeat(64),
+    resolvedAt: null,
+    ...overrides,
+  })
+
+  it('gives one reporter one report per publication', async () => {
+    const first = await reporterPseudonym('pub_1', 'user_a')
+    const again = await reporterPseudonym('pub_1', 'user_a')
+    expect(reportIdFor(again)).toBe(reportIdFor(first))
+
+    const { store } = build()
+    await store.putReport(report({ id: reportIdFor(first), detail: 'First telling of it.' }))
+    await store.putReport(report({ id: reportIdFor(again), detail: 'Second telling of it.' }))
+    const open = await store.listReports({ status: 'open' })
+    expect(open).toHaveLength(1)
+    expect(open[0].detail).toBe('Second telling of it.')
+  })
+
+  it('keeps the same account’s reports on two publications apart', async () => {
+    // Scoped per publication, so the table cannot be read as one person's
+    // activity across the gallery.
+    const here = await reporterPseudonym('pub_1', 'user_a')
+    const there = await reporterPseudonym('pub_2', 'user_a')
+    expect(there).not.toBe(here)
+    expect(reportIdFor(there)).not.toBe(reportIdFor(here))
+  })
+
+  it('gives two reporters two reports', async () => {
+    const { store } = build()
+    for (const subject of ['user_a', 'user_b']) {
+      const ref = await reporterPseudonym('pub_1', subject)
+      await store.putReport(report({ id: reportIdFor(ref), reporterRef: ref }))
+    }
+    expect(await store.listReports({ status: 'open' })).toHaveLength(2)
+  })
+
+  it('still surfaces an open report behind a backlog past the scan window', async () => {
+    // Deliberately more resolved reports than a `rep:` scan can return, and
+    // named so they sort ahead of the open one. That is the shape the old
+    // scan-and-filter listing could not see past, and the reason it had to
+    // become an index rather than a wider window.
+    const { store } = build()
+    for (let index = 0; index < 520; index += 1) {
+      await store.putReport(
+        report({
+          id: `rep_done_${String(index).padStart(4, '0')}`,
+          status: 'dismissed',
+          resolvedAt: '2026-09-01T13:00:00.000Z',
+          createdAt: `2026-08-${String((index % 28) + 1).padStart(2, '0')}T12:00:00.000Z`,
+        }),
+      )
+    }
+    await store.putReport(report({ id: 'rep_live', createdAt: '2026-09-02T12:00:00.000Z' }))
+
+    const open = await store.listReports({ status: 'open' })
+    expect(open.map((entry) => entry.id)).toEqual(['rep_live'])
+  })
+
+  it('drops a report from the queue when it is resolved', async () => {
+    const { store } = build()
+    const filed = report()
+    await store.putReport(filed)
+    expect(await store.listReports({ status: 'open' })).toHaveLength(1)
+
+    await store.putReport(resolveReport(filed, 'dismissed'))
+    expect(await store.listReports({ status: 'open' })).toEqual([])
+    // Resolved reports are kept; a moderator's decision is a record.
+    expect(await store.listReports({ status: 'dismissed' })).toHaveLength(1)
   })
 })

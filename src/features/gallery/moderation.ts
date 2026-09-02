@@ -15,6 +15,12 @@ import { deepFreeze } from '../share/publish'
  * The reporter is stored as an opaque reference the caller supplies, never as
  * an identity. Whoever calls this owns the salting; this module refuses to
  * store anything that looks like an email address or a raw user id.
+ *
+ * `id` is accepted rather than always minted because one report per reporter
+ * per publication is the intended rate limit, and a deterministic id is what
+ * enforces it: the second submission overwrites the first instead of adding a
+ * row. A queue full of the same complaint is how a real one gets missed, which
+ * is the same reason `other` needs a sentence.
  */
 
 export interface SubmitReportInput {
@@ -24,6 +30,8 @@ export interface SubmitReportInput {
   detail: unknown
   /** Salted, opaque reference to the reporter. `null` for anonymous. */
   reporterRef?: string | null
+  /** Deterministic id, so a reporter's second report replaces their first. */
+  id?: string
   now?: Date
 }
 
@@ -46,7 +54,7 @@ export function submitReport(input: SubmitReportInput): Report {
   }
 
   return deepFreeze({
-    id: createId('rep'),
+    id: input.id ?? createId('rep'),
     publicationId: input.publicationId,
     slug: input.slug,
     reason: input.reason,
@@ -72,6 +80,26 @@ function normaliseReporterRef(value: string | null): string | null {
   }
   return /^[A-Za-z0-9_-]{8,128}$/.test(value) ? value : null
 }
+
+/**
+ * A reporter's pseudonym for one publication.
+ *
+ * Derived from the verified subject rather than read off the request, which is
+ * where it used to come from: a reference the caller chooses is a reference the
+ * caller can change per request, and one that can change is worth nothing to
+ * the rate limit it exists for.
+ *
+ * Scoped to the publication, so the same account reporting two models produces
+ * two unrelated references and the moderation table cannot be read as one
+ * person's activity across the gallery.
+ */
+export async function reporterPseudonym(publicationId: string, subject: string): Promise<string> {
+  const { sha256Hex } = await import('../share/canonical')
+  return sha256Hex(`report-ref:${publicationId}:${subject}`)
+}
+
+/** One report per reporter per publication, addressed by their pseudonym. */
+export const reportIdFor = (reporterRef: string): string => `rep_${reporterRef.slice(0, 32)}`
 
 export function resolveReport(report: Report, status: 'upheld' | 'dismissed', now = new Date()): Report {
   if (report.status !== 'open') return report

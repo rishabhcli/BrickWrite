@@ -146,13 +146,21 @@ export const onRequest = async (context: {
 
     if (route.length === 2 && route[1] === 'report') {
       const publication = await mustFind(store, slug)
-      const { submitReport } = await import('../../src/features/gallery/moderation')
+      const { reportIdFor, reporterPseudonym, submitReport } = await import(
+        '../../src/features/gallery/moderation'
+      )
+      // The principal is already verified, so the reporter reference is derived
+      // rather than accepted. Taking it from the body let one account file
+      // unlimited reports by sending a different reference each time — which is
+      // the rate limit this endpoint was documented as having.
+      const reporterRef = await reporterPseudonym(publication.id, principal.subject)
       const report = submitReport({
         publicationId: publication.id,
         slug: publication.slug,
         reason: body.reason,
         detail: sanitizeComment(body.detail),
-        reporterRef: typeof body.reporterRef === 'string' ? body.reporterRef : null,
+        reporterRef,
+        id: reportIdFor(reporterRef),
       })
       await store.putReport(report)
       return json({ reportId: report.id, status: report.status }, 201)

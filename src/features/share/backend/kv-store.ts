@@ -25,6 +25,9 @@ import type { KvNamespace, PublicationStore, StoredCard } from './adapter'
  *   `tok:<id>`             token record — the *hash* only, never a secret
  *   `tokidx:<pubId>:<id>`  a publication's tokens, for the revocation list
  *   `rep:<id>`             moderation reports
+ *   `repopen:<at>:<id>`    open reports only, oldest first, so a moderator
+ *                          pages the backlog instead of scanning every report
+ *                          ever filed and filtering what came back
  *   `col:<id>`             curated collections
  *
  * Tokens are stored under their public id, so verification is one point lookup
@@ -38,6 +41,11 @@ const CARD_KEY = (sha256: string) => `card:${sha256}`
 const TOKEN_KEY = (id: string) => `tok:${id}`
 const TOKEN_INDEX_KEY = (publicationId: string, tokenId: string) => `tokidx:${publicationId}:${tokenId}`
 const REPORT_KEY = (id: string) => `rep:${id}`
+/** ISO timestamps sort lexically, and KV lists ascending, so this is oldest-first. */
+const OPEN_REPORT_KEY = (report: Report) => `repopen:${report.createdAt}:${report.id}`
+const OPEN_REPORT_PREFIX = 'repopen:'
+/** Records one report listing may read, matching the gallery's ceiling. */
+const MAX_REPORTS_EXAMINED = 200
 const COLLECTION_KEY = (id: string) => `col:${id}`
 const FEED_PREFIX = 'pub:feed:'
 
@@ -244,9 +252,34 @@ export class KvPublicationStore implements PublicationStore {
 
   async putReport(report: Report): Promise<void> {
     await this.writeJson(REPORT_KEY(report.id), report)
+    // The single write path, so the open index cannot drift from the records.
+    const key = OPEN_REPORT_KEY(report)
+    if (report.status === 'open') await this.kv.put(key, report.id)
+    else await this.kv.delete(key)
   }
 
+  /**
+   * Reports, newest first.
+   *
+   * `open` reads its own index. Scanning `rep:` and filtering could not work:
+   * resolved reports accumulate and never leave, so a bounded scan of every
+   * report ever filed eventually returns none of the open ones — a moderation
+   * queue that silently stops showing new work is worse than one that is slow.
+   */
   async listReports(options: { status?: Report['status'] } = {}): Promise<Report[]> {
+    if (options.status === 'open') {
+      const page = await this.kv.list({ prefix: OPEN_REPORT_PREFIX, limit: MAX_REPORTS_EXAMINED })
+      const open: Report[] = []
+      for (const key of page.keys) {
+        const report = await this.readJson<Report>(REPORT_KEY(key.name.slice(key.name.lastIndexOf(':') + 1)))
+        if (report?.status === 'open') open.push(report)
+        // The index outlived the record's status. Drop it rather than pay to
+        // rediscover it on every listing.
+        else await this.kv.delete(key.name)
+      }
+      return open.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    }
+
     const page = await this.kv.list({ prefix: 'rep:', limit: 500 })
     const reports: Report[] = []
     for (const key of page.keys) {
