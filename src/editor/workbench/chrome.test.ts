@@ -156,6 +156,13 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).not.toMatch(/@media \(max-width:\s*1180px\)/)
   })
 
+  it('lets proposal and instruction overlays shrink with the bottom stack', () => {
+    expect(withoutComments).not.toMatch(/\.proposal-overlay\s*\{[^}]*min-width:\s*420px/)
+    expect(withoutComments).not.toMatch(/\.instruction-overlay\s*\{[^}]*min-width:\s*390px/)
+    expect(withoutComments).toMatch(/\.viewport-bottom-stack > \*\s*\{[^}]*min-width:\s*0/)
+    expect(withoutComments).toMatch(/\.proposal-overlay\s*\{[^}]*min-width:\s*0/)
+  })
+
   it('keeps HUD world units on a laptop instead of hiding the fields', () => {
     const [laptop] = mediaBlocks(withoutComments, '1160px')
     expect(laptop).toContain('.selection-hud-name')

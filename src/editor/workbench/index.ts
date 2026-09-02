@@ -31,6 +31,7 @@ export {
 } from './ExtensionRegistry'
 
 export {
+  applyLocks,
   canonicalisePose,
   connectorFrame,
   gizmoPose,
@@ -42,6 +43,7 @@ export {
   poseKey,
   posesEqual,
   readNumericPose,
+  referenceBasis,
   resolvePivot,
   rotatePose,
   selectionExtent,

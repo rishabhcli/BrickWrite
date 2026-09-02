@@ -326,7 +326,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const toggleSection = useCallback(
     (id: string) => {
-      if (workbench.tool === 'connect' && id !== 'connect') workbench.setTool('select')
       const open = rawLayout.sections[id] !== false
       updateLayout(applyWorkbenchSectionFocus(rawLayout, id, !open))
     },
@@ -718,7 +717,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const { state } = workbench
   const connectActive = workbench.tool === 'connect'
   const rightTab = connectActive ? 'object' : layout.rightTab
-  const rightSectionOpen = (id: string) => rightTab === 'object' && !connectActive && sections[id] === true
+  const rightSectionOpen = (id: string) =>
+    rightTab === 'object' && (id === 'connect' ? connectActive || sections.connect === true : sections[id] === true)
   const activeObjectSurface = connectActive
     ? 'connect'
     : (OBJECT_SECTION_IDS.find((id) => sections[id] === true) ?? 'selection')
@@ -953,8 +953,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       <button
                         key={id}
                         type="button"
-                        className={activeObjectSurface === id ? 'active' : ''}
-                        aria-pressed={activeObjectSurface === id}
+                        className={
+                          (id === 'connect' ? connectActive : rightSectionOpen(id) || (!connectActive && activeObjectSurface === id))
+                            ? 'active'
+                            : ''
+                        }
+                        aria-pressed={id === 'connect' ? connectActive : rightSectionOpen(id)}
                         title={
                           id === 'model.explorer'
                             ? 'Browse the model map'
@@ -968,10 +972,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         }
                         onClick={() => {
                           if (id === 'connect') {
-                            workbench.setTool('connect')
+                            workbench.setTool(connectActive ? 'select' : 'connect')
                             return
                           }
-                          if (workbench.tool === 'connect') workbench.setTool('select')
                           updateLayout(
                             applyWorkbenchSectionFocus(
                               {
@@ -995,7 +998,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     title="Connect"
                     icon={<CircleDot size={11} />}
                     open={connectActive}
-                    grow={connectActive}
+                    grow={connectActive && !rightSectionOpen('inspector') && !rightSectionOpen('transform')}
                     onToggle={() => workbench.setTool(connectActive ? 'select' : 'connect')}
                   >
                     <ConnectPanel workbench={workbench} />
@@ -1063,6 +1066,8 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       onProtect={workbench.protectSelection}
                       onSelectIds={(ids) => cadEngine.setSelection(ids)}
                       connect={workbench.connect}
+                      locks={workbench.transformPrefs.locks}
+                      frame={workbench.transformPrefs.frame}
                     />
                   </DockSection>
                 </>

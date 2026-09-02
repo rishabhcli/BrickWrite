@@ -135,6 +135,18 @@ describe('axis locks', () => {
     const pose = gizmoPose(identity, dragged, { gridLdu: 20, locks: { x: false, y: true, z: false } })
     expect(pose.position).toEqual([60, 0, 20])
   })
+
+  it('locks the local X of a yawed part instead of world X', () => {
+    const turned = canonicalisePose(rotateLocal(identity, [0, 1, 0], degreesToRadians(90)))
+    const next: Transform = { position: [20, 0, 20], basis: turned.basis }
+    const worldLocked = applyLocks(turned, next, { x: true, y: false, z: false })
+    const localLocked = applyLocks(turned, next, { x: true, y: false, z: false }, turned.basis)
+    expect(worldLocked.position[0]).toBe(0)
+    expect(worldLocked.position[2]).toBe(20)
+    // 90° yaw sends local +X down document -Z, so a local X lock must freeze Z.
+    expect(localLocked.position[0]).toBeCloseTo(20, 6)
+    expect(localLocked.position[2]).toBeCloseTo(0, 6)
+  })
 })
 
 describe('reference frames', () => {

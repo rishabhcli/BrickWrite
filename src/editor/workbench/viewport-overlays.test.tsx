@@ -81,6 +81,7 @@ describe('selection HUD', () => {
     const onGround = vi.fn()
     const onDuplicate = vi.fn()
     const onPosition = vi.fn()
+    const onRotate = vi.fn()
     const onMore = vi.fn()
     render(
       <SelectionHUD
@@ -88,17 +89,21 @@ describe('selection HUD', () => {
         label="Brick 2 x 4"
         position={[20, -24, 0]}
         locks={{ x: false, y: false, z: false }}
+        frame="world"
+        rotation={[0, 90, 0]}
         tool="move"
         onTool={onTool}
         onFocus={onFocus}
         onGround={onGround}
         onDuplicate={onDuplicate}
         onPosition={onPosition}
+        onRotate={onRotate}
         onMore={onMore}
       />,
     )
 
     expect(screen.getByLabelText('World position 20, -24, 0 LDU')).toBeInTheDocument()
+    expect(screen.getByLabelText('Rotation 0, 90, 0 degrees')).toBeInTheDocument()
     expect(screen.getByLabelText('Brick 2 x 4')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More actions for Brick 2 x 4' })).toBeInTheDocument()
     expect(screen.getByLabelText('World position 20, -24, 0 LDU').textContent).toMatch(/LDU/)
@@ -129,6 +134,7 @@ describe('selection HUD', () => {
         label="Brick 2 x 4 → Plate 2 x 4"
         position={[0, 0, 0]}
         locks={{ x: true, y: false, z: false }}
+        frame="world"
         tool="connect"
         onTool={vi.fn()}
         onFocus={vi.fn()}

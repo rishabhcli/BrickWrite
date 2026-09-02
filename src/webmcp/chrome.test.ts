@@ -202,4 +202,15 @@ describe('chrome reveal', () => {
     expect(receipt.candidateCount).toBe(1)
     expect(readChrome()?.sections['generation.panel']).toBe(true)
   })
+
+  it('keeps Connect open beside inspector instead of exclusive-closing the mate', () => {
+    const crowded: WorkbenchLayout = {
+      ...defaultLayout(),
+      sections: { ...defaultLayout().sections, connect: true, inspector: false, transform: true },
+    }
+    const next = applyDockFocus(crowded, 'inspector', true)
+    expect(next.sections.inspector).toBe(true)
+    expect(next.sections.connect).toBe(true)
+    expect(next.sections.transform).toBe(false)
+  })
 })

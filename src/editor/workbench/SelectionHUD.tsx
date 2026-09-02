@@ -3,7 +3,7 @@ import type { EditorTool } from '../CadViewport'
 import { GlassIsland } from '../../ui/liquid'
 import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcons'
 import { NumberField } from './NumberField'
-import type { AxisLocks } from './transform'
+import type { AxisLocks, ReferenceFrame } from './transform'
 
 type Position = readonly [number, number, number]
 
@@ -11,13 +11,16 @@ type SelectionHUDProps = {
   count: number
   label: string
   position: Position
+  rotation?: Position | null
   locks: AxisLocks
+  frame: ReferenceFrame
   tool: EditorTool
   onTool: (tool: EditorTool) => void
   onFocus: () => void
   onGround: () => void
   onDuplicate: () => void
   onPosition: (axis: 0 | 1 | 2, value: number) => unknown
+  onRotate?: (axis: 0 | 1 | 2, value: number) => unknown
   onMore: (anchor: HTMLElement) => void
 }
 
@@ -26,13 +29,16 @@ export function SelectionHUD({
   count,
   label,
   position,
+  rotation,
   locks,
+  frame,
   tool,
   onTool,
   onFocus,
   onGround,
   onDuplicate,
   onPosition,
+  onRotate,
   onMore,
 }: SelectionHUDProps) {
   const action = (labelText: string, icon: WorkbenchIconName, onClick: () => void, pressed?: boolean) => (
@@ -78,11 +84,25 @@ export function SelectionHUD({
             label={axis}
             value={position[index]}
             suffix="LDU"
-            disabled={locks[axis.toLowerCase() as keyof AxisLocks]}
+            disabled={frame === 'world' && locks[axis.toLowerCase() as keyof AxisLocks]}
             onCommit={(value) => onPosition(index as 0 | 1 | 2, value)}
           />
         ))}
       </div>
+      {rotation && onRotate ? (
+        <div className="selection-hud-rotation" aria-label={`Rotation ${rotation.join(', ')} degrees`}>
+          {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
+            <NumberField
+              key={axis}
+              compact
+              label={axis}
+              value={rotation[index]}
+              suffix="°"
+              onCommit={(value) => onRotate(index as 0 | 1 | 2, value)}
+            />
+          ))}
+        </div>
+      ) : null}
       <span className="selection-hud-divider" />
       <div className="selection-hud-tools" role="toolbar" aria-label="Selection tools">
         {action('Move selection', 'move', () => onTool('move'), tool === 'move')}

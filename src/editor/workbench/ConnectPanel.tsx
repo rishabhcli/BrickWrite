@@ -2,7 +2,7 @@ import { ArrowLeft, Check, CircleDot, Link2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { cadEngine } from '../../cad/engine'
 import { catalog } from '../../cad/catalog'
-import { getWorldConnectors } from '../../cad/snapping'
+import { getWorldConnectors, type WorldConnector } from '../../cad/snapping'
 import { legalConnectCandidates } from '../../cad/placement'
 import { canonicalisePose } from './transform'
 import { IDLE_CONNECT, type ConnectFlow, type Workbench } from './useWorkbench'
@@ -40,6 +40,48 @@ export function describeConnectHudLabel(
  * which of its connectors are live, names what it mates onto, and reviews the
  * ranked results before anything commits. Every stage can be backed out of.
  */
+
+function ConnectorChips({
+  connectors,
+  selectedId,
+  onSelect,
+  label,
+}: {
+  connectors: readonly WorldConnector[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  label: string
+}) {
+  return (
+    <div className="connector-chips" role="radiogroup" aria-label={label} data-connector-count={connectors.length}>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={!selectedId}
+        className={!selectedId ? 'active' : ''}
+        onClick={() => onSelect(null)}
+        title="Let the solver choose whichever connector seats best"
+      >
+        ANY
+      </button>
+      {connectors.map((connector) => (
+        <button
+          key={connector.id}
+          type="button"
+          role="radio"
+          aria-checked={selectedId === connector.id}
+          className={selectedId === connector.id ? 'active' : ''}
+          onClick={() => onSelect(connector.id)}
+          title={`${connector.family} · ${connector.gender}`}
+        >
+          <CircleDot size={8} className={connector.gender === 'male' ? 'male' : 'female'} />
+          {connector.family}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function ConnectPanel({ workbench }: { workbench: Workbench }) {
   const { state, connect, setConnect } = workbench
   const source = connect.sourcePartId ? state.document.parts[connect.sourcePartId] : undefined
@@ -56,7 +98,7 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
     if (!source || !target) return []
     return legalConnectCandidates(source, target, state.document, {
       radiusLdu: 400,
-      maxCandidates: 12,
+      maxCandidates: 48,
       sourceFeatureId: connect.sourceFeatureId,
       targetFeatureId: connect.targetFeatureId,
     })
@@ -156,30 +198,12 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
             <strong>{catalog.get(source.definitionId)?.name ?? source.definitionId}</strong>
             <em>{sourceConnectors.length} connectors</em>
           </header>
-          <div className="connector-chips" role="radiogroup" aria-label="Source connector">
-            <button
-              role="radio"
-              aria-checked={!connect.sourceFeatureId}
-              className={!connect.sourceFeatureId ? 'active' : ''}
-              onClick={() => setConnect({ ...connect, sourceFeatureId: null, candidateIndex: 0 })}
-              title="Let the solver choose whichever connector seats best"
-            >
-              ANY
-            </button>
-            {sourceConnectors.slice(0, 12).map((connector) => (
-              <button
-                key={connector.id}
-                role="radio"
-                aria-checked={connect.sourceFeatureId === connector.id}
-                className={connect.sourceFeatureId === connector.id ? 'active' : ''}
-                onClick={() => setConnect({ ...connect, sourceFeatureId: connector.id, candidateIndex: 0 })}
-                title={`${connector.family} · ${connector.gender}`}
-              >
-                <CircleDot size={8} className={connector.gender === 'male' ? 'male' : 'female'} />
-                {connector.family}
-              </button>
-            ))}
-          </div>
+          <ConnectorChips
+            label="Source connector"
+            connectors={sourceConnectors}
+            selectedId={connect.sourceFeatureId}
+            onSelect={(id) => setConnect({ ...connect, sourceFeatureId: id, candidateIndex: 0 })}
+          />
         </section>
       )}
 
@@ -196,29 +220,12 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
             <strong>{catalog.get(target.definitionId)?.name ?? target.definitionId}</strong>
             <em>{targetConnectors.length} connectors</em>
           </header>
-          <div className="connector-chips" role="radiogroup" aria-label="Target connector">
-            <button
-              role="radio"
-              aria-checked={!connect.targetFeatureId}
-              className={!connect.targetFeatureId ? 'active' : ''}
-              onClick={() => setConnect({ ...connect, targetFeatureId: null, candidateIndex: 0 })}
-            >
-              ANY
-            </button>
-            {targetConnectors.slice(0, 12).map((connector) => (
-              <button
-                key={connector.id}
-                role="radio"
-                aria-checked={connect.targetFeatureId === connector.id}
-                className={connect.targetFeatureId === connector.id ? 'active' : ''}
-                onClick={() => setConnect({ ...connect, targetFeatureId: connector.id, candidateIndex: 0 })}
-                title={`${connector.family} · ${connector.gender}`}
-              >
-                <CircleDot size={8} className={connector.gender === 'male' ? 'male' : 'female'} />
-                {connector.family}
-              </button>
-            ))}
-          </div>
+          <ConnectorChips
+            label="Target connector"
+            connectors={targetConnectors}
+            selectedId={connect.targetFeatureId}
+            onSelect={(id) => setConnect({ ...connect, targetFeatureId: id, candidateIndex: 0 })}
+          />
         </section>
       )}
 

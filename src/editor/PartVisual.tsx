@@ -5,7 +5,7 @@ import { MAIN_COLOUR } from '../cad/mesh'
 import { usePartGeometry } from './render/usePartGeometry'
 import type { PartDefinition } from '../cad/types'
 
-export type PartAppearance = 'solid' | 'selected' | 'ghost' | 'removed' | 'silhouette' | 'invalid'
+export type PartAppearance = 'solid' | 'selected' | 'target' | 'ghost' | 'removed' | 'silhouette' | 'invalid'
 
 interface PartVisualProps {
   definition: PartDefinition
@@ -171,11 +171,11 @@ export function surfaceMaterialFor(
       envMapIntensity: chrome ? 1.6 : metallic ? 1.35 : 1,
       transparent: transparent || fade < 1,
       opacity: (transparent ? Math.max(0.72, color.alpha) : 1) * fade,
-      polygonOffset: appearance === 'selected',
+      polygonOffset: appearance === 'selected' || appearance === 'target',
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
-      emissive: appearance === 'selected' ? '#3a2606' : '#000000',
-      emissiveIntensity: appearance === 'selected' ? 0.55 : 0,
+      emissive: appearance === 'selected' ? '#3a2606' : appearance === 'target' ? '#053b3a' : '#000000',
+      emissiveIntensity: appearance === 'selected' || appearance === 'target' ? 0.55 : 0,
     })
     if (transparent && transmissionEnabled && fade >= 1) {
       // True transmission: opacity returns to 1 and the transparency comes from
@@ -206,9 +206,9 @@ function edgeMaterial(colorCode: number, appearance: PartAppearance): THREE.Line
   if (cached) return cached
   const base = getColor(colorCode)
   const material = new THREE.LineBasicMaterial({
-    color: appearance === 'selected' ? '#f7b04a' : appearance === 'ghost' ? '#bafff5' : base.edge,
+    color: appearance === 'selected' ? '#f7b04a' : appearance === 'target' ? '#7cefe7' : appearance === 'ghost' ? '#bafff5' : base.edge,
     transparent: true,
-    opacity: appearance === 'selected' ? 0.95 : appearance === 'ghost' ? 0.4 : 0.26,
+    opacity: appearance === 'selected' || appearance === 'target' ? 0.95 : appearance === 'ghost' ? 0.4 : 0.26,
     depthWrite: false,
   })
   edgeMaterialCache.set(key, material)
@@ -252,7 +252,7 @@ export const PartVisual = memo(function PartVisual({ definition, colorCode, appe
     )
   }
 
-  const castShadow = appearance === 'solid' || appearance === 'selected' || appearance === 'silhouette'
+  const castShadow = appearance === 'solid' || appearance === 'selected' || appearance === 'target' || appearance === 'silhouette'
 
   return (
     <group>

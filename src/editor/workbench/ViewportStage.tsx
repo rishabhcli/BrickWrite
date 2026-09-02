@@ -148,6 +148,11 @@ export function ViewportStage({
       <CadViewport
         document={workbench.renderedDocument}
         selection={state.selection}
+        highlightIds={
+          workbench.connect.targetPartId && workbench.connect.stage !== 'source'
+            ? [workbench.connect.targetPartId]
+            : undefined
+        }
         proposals={visibleProposals}
         tool={workbench.tool}
         gridLdu={workbench.gridLdu}
@@ -223,13 +228,16 @@ export function ViewportStage({
                   : `${state.selection.length} selected`),
             )}
             position={workbench.selectionPosition}
+            rotation={workbench.selectionRotation}
             locks={workbench.transformPrefs.locks}
+            frame={workbench.transformPrefs.frame}
             tool={workbench.tool}
             onTool={workbench.setTool}
             onFocus={workbench.focusSelection}
             onGround={workbench.groundSelection}
             onDuplicate={workbench.duplicateSelection}
             onPosition={workbench.positionSelection}
+            onRotate={workbench.orientSelection}
             onMore={(anchor) => {
               const rect = anchor.getBoundingClientRect()
               setContextPoint({ x: rect.left, y: rect.bottom + 6 })
