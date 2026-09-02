@@ -177,7 +177,16 @@ export interface PalettePanelProps {
  * re-rendering` in panels.test.tsx asserts both halves — that the shell really
  * does re-render on a selection-only commit, and that the props survive it.
  */
-export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, onColorChange, onAdd, onArm, onDragPart, onDropPart, onDragEnd }: PalettePanelProps) {
+export const PalettePanel = memo(function PalettePanel({
+  activeColor,
+  armedId,
+  onColorChange,
+  onAdd,
+  onArm,
+  onDragPart,
+  onDropPart,
+  onDragEnd,
+}: PalettePanelProps) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All parts')
   const [tier, setTier] = useState<CatalogTier | 'all'>('placeable')
@@ -231,9 +240,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
       }
       if (!drag.active) return
       event.preventDefault()
-      window.dispatchEvent(new CustomEvent('brickwright:part-drag', {
-        detail: { clientX: event.clientX, clientY: event.clientY },
-      }))
+      window.dispatchEvent(
+        new CustomEvent('brickwright:part-drag', {
+          detail: { clientX: event.clientX, clientY: event.clientY },
+        }),
+      )
     }
     const end = (event: PointerEvent) => {
       const drag = pointerDrag.current
@@ -317,13 +328,13 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
     [activeColor, category, colourFacet, connectorFacet, offset, query, sizeRange, tier, catalogueState],
   )
 
-  // A new query starts at the top of its own result set.
+  // A new query or set starts at the top of its own result list.
   useEffect(() => {
     setOffset(0)
     setCursor(-1)
-  }, [query, category, tier, connectorFacet, sizeFacet, colourFacet])
+  }, [query, category, tier, connectorFacet, sizeFacet, colourFacet, activeSet])
 
-  const shownRecords = useMemo<CatalogSearchRecord[]>(() => {
+  const setRecords = useMemo<CatalogSearchRecord[] | null>(() => {
     if (activeSet === 'favourites') {
       return favourites
         .map((id) => catalog.describe(id))
@@ -338,8 +349,25 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         .map((id) => catalog.describe(id))
         .filter((entry): entry is CatalogSearchRecord => Boolean(entry))
     }
+    return null
+  }, [activeSet, customPalettes, favourites, recents])
+
+  const resultTotal = setRecords ? setRecords.length : page.total
+
+  const shownRecords = useMemo<CatalogSearchRecord[]>(() => {
+    if (setRecords) return setRecords.slice(offset, offset + PAGE_SIZE)
     return page.records
-  }, [activeSet, customPalettes, favourites, page.records, recents])
+  }, [offset, page.records, setRecords])
+
+  // A set that shrinks under the cursor (unstarring the last card of page two)
+  // must not leave the pager pointing past the end.
+  useEffect(() => {
+    setOffset((value) => {
+      if (value === 0 || value < resultTotal) return value
+      if (resultTotal <= 0) return 0
+      return Math.floor((resultTotal - 1) / PAGE_SIZE) * PAGE_SIZE
+    })
+  }, [resultTotal])
 
   // PageDown can land on a short last page while the arrow cursor still
   // indexes a card that is no longer in the DOM. Clamp rather than leave
@@ -364,20 +392,21 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
   // before pickup, including on a cold page and when scrolling to another row.
   useEffect(() => {
     if (!gridRef.current || typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue
-        const id = (entry.target as HTMLElement).dataset.partId
-        const definition = id ? catalog.get(id) : undefined
-        if (definition) void geometryCache.load(definition)
-        observer.unobserve(entry.target)
-      }
-    }, { root: gridRef.current, rootMargin: '100px' })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const id = (entry.target as HTMLElement).dataset.partId
+          const definition = id ? catalog.get(id) : undefined
+          if (definition) void geometryCache.load(definition)
+          observer.unobserve(entry.target)
+        }
+      },
+      { root: gridRef.current, rootMargin: '100px' },
+    )
     gridRef.current.querySelectorAll('[data-part-id]').forEach((card) => observer.observe(card))
     return () => observer.disconnect()
   }, [shownRecords])
-
-
 
   const arm = useCallback(
     (record: CatalogSearchRecord) => {
@@ -401,8 +430,8 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
   }, [])
 
   const goNextPage = useCallback(() => {
-    setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
-  }, [page.total])
+    setOffset((value) => (value + PAGE_SIZE < resultTotal ? value + PAGE_SIZE : value))
+  }, [resultTotal])
 
   const goPrevPage = useCallback(() => {
     setOffset((value) => Math.max(0, value - PAGE_SIZE))
@@ -448,15 +477,15 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
       } else if (event.key === 'Escape' && query) {
         event.preventDefault()
         clearSearch()
-      } else if (event.key === 'PageDown' && !activeSet) {
+      } else if (event.key === 'PageDown') {
         event.preventDefault()
         goNextPage()
-      } else if (event.key === 'PageUp' && !activeSet) {
+      } else if (event.key === 'PageUp') {
         event.preventDefault()
         goPrevPage()
       }
     },
-    [activeSet, add, arm, clearSearch, cursor, goNextPage, goPrevPage, query, shownRecords],
+    [add, arm, clearSearch, cursor, goNextPage, goPrevPage, query, shownRecords],
   )
 
   useEffect(() => {
@@ -557,7 +586,8 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           title="Filter by category, size, connector family and colour availability"
           aria-label="FILTERS"
         >
-          <SlidersHorizontal size={13} />{advancedCount ? ` ${advancedCount}` : ''}
+          <SlidersHorizontal size={13} />
+          {advancedCount ? ` ${advancedCount}` : ''}
         </button>
       </div>
 
@@ -836,7 +866,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         )}
       </div>
 
-      {!activeSet && page.total > PAGE_SIZE && (
+      {resultTotal > PAGE_SIZE && (
         <nav className="parts-pager" aria-label="Catalogue pages">
           <button
             type="button"
@@ -847,15 +877,15 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           >
             <ChevronLeft size={12} />
           </button>
-          <span>
-            {(offset + 1).toLocaleString()}–{Math.min(offset + page.records.length, page.total).toLocaleString()}
+          <span role="status" aria-live="polite" aria-atomic="true">
+            {(offset + 1).toLocaleString()}–{Math.min(offset + shownRecords.length, resultTotal).toLocaleString()}
             {' of '}
-            {page.total.toLocaleString()}
+            {resultTotal.toLocaleString()}
           </span>
           <button
             type="button"
             className="parts-more"
-            disabled={offset + PAGE_SIZE >= page.total}
+            disabled={offset + PAGE_SIZE >= resultTotal}
             onClick={goNextPage}
             aria-label="Next page of results"
           >

@@ -1,8 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import fixture from '../../cad/__fixtures__/catalog.fixture.json'
-import { catalog, type CatalogPayload } from '../../cad/catalog'
+import { catalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { IDENTITY_BASIS } from '../../cad/math'
@@ -13,7 +12,8 @@ import * as catalogLoader from '../../cad/catalog-loader'
 import { SelectionPanel } from './SelectionPanel'
 import { TransformPanel } from './TransformPanel'
 import { defaultShortcutMap, formatChord } from './shortcuts'
-import { resetPreferences } from './persistence'
+import { resetPreferences, writePreference } from './persistence'
+import { overflowBuildableSearch, restoreCatalogFixture } from './paletteTestCatalog'
 import { useWorkbench, type Workbench } from './useWorkbench'
 
 /**
@@ -64,27 +64,6 @@ function Harness({ children }: { children: (workbench: Workbench) => ReactNode }
 const showcasePartIds = () => Object.keys(cadEngine.getDocument().parts)
 const select = (ids: string[]) => act(() => cadEngine.setSelection(ids))
 const revision = () => cadEngine.getSnapshot().document.revision
-
-/** Extra placeable search rows so BUILDABLE actually overflows PAGE_SIZE (60). */
-function overflowBuildableSearch() {
-  const payload = fixture as unknown as CatalogPayload
-  catalog.install({
-    ...payload,
-    search: [
-      ...(payload.search ?? []),
-      ...Array.from({ length: 12 }, (_, index) => ({
-        id: `placeExtra${index}`,
-        n: `Placeable filler ${index}`,
-        c: 'Test fillers',
-        d: null,
-        f: 0,
-        k: [],
-        g: 1,
-        s: 0,
-      })),
-    ],
-  } as CatalogPayload)
-}
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -159,6 +138,9 @@ describe('palette', () => {
       const { container } = renderPalette()
       const pager = container.querySelector('.parts-pager')
       expect(pager).not.toBeNull()
+      const indicator = pager?.querySelector('[role="status"]')
+      expect(indicator?.getAttribute('aria-live')).toBe('polite')
+      expect(container.querySelectorAll('.part-card.unplaceable')).toHaveLength(0)
       expect(screen.queryByRole('tab', { name: /EVERYTHING/ })).toBeNull()
 
       const next = screen.getByRole('button', { name: 'Next page of results' })
@@ -174,9 +156,9 @@ describe('palette', () => {
       const first = container.querySelector('[data-part-id]')?.getAttribute('data-part-id')
       expect(beforeHighlight).not.toBe(first)
 
-      const label = pager?.querySelector('span')?.textContent
+      const label = indicator?.textContent
       fireEvent.click(next)
-      expect(pager?.querySelector('span')?.textContent).not.toBe(label)
+      expect(indicator?.textContent).not.toBe(label)
       const pageFirst = container.querySelector('[data-part-id]')
       expect(pageFirst?.getAttribute('data-part-id')).not.toBe(first)
       expect(container.querySelector('.part-card.cursor')).toBe(pageFirst)
@@ -193,7 +175,7 @@ describe('palette', () => {
       fireEvent.keyDown(search, { key: 'PageUp' })
       expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
     } finally {
-      catalog.install(fixture as unknown as CatalogPayload)
+      restoreCatalogFixture()
     }
   })
 
@@ -205,7 +187,36 @@ describe('palette', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Next page of results' }))
       expect(container.querySelector('.part-card.cursor')).toBeNull()
     } finally {
-      catalog.install(fixture as unknown as CatalogPayload)
+      restoreCatalogFixture()
+    }
+  })
+
+  it('pages a favourites set that overflows one page', () => {
+    overflowBuildableSearch()
+    writePreference(
+      'palette.favourites.v1',
+      catalog.placeable().map((part) => part.canonicalId),
+    )
+    try {
+      const { container } = renderPalette()
+      fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /FAVOURITES/ }))
+      const pager = container.querySelector('.parts-pager')
+      expect(pager).not.toBeNull()
+      const indicator = pager?.querySelector('[role="status"]')
+      expect(indicator?.getAttribute('aria-live')).toBe('polite')
+      expect(container.querySelectorAll('.part-card').length).toBe(60)
+      expect(container.querySelectorAll('.part-card.unplaceable')).toHaveLength(0)
+      const first = container.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+      const label = indicator?.textContent
+      fireEvent.click(screen.getByRole('button', { name: 'Next page of results' }))
+      expect(indicator?.textContent).not.toBe(label)
+      expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
+      const search = screen.getByLabelText('Search parts')
+      fireEvent.keyDown(search, { key: 'PageUp' })
+      expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+    } finally {
+      restoreCatalogFixture()
     }
   })
 

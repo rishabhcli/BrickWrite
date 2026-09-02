@@ -31,8 +31,7 @@ vi.mock('../CadViewport', () => ({
 
 const { cadEngine } = await import('../../cad/engine')
 const { catalog } = await import('../../cad/catalog')
-const fixture = (await import('../../cad/__fixtures__/catalog.fixture.json')).default
-type CatalogPayload = import('../../cad/catalog').CatalogPayload
+const { overflowBuildableSearch, restoreCatalogFixture } = await import('./paletteTestCatalog')
 const { IDENTITY_BASIS } = await import('../../cad/math')
 const { createEmptyDocument } = await import('../../cad/sample')
 const { resetPreferences } = await import('./persistence')
@@ -41,27 +40,6 @@ const { Workbench } = await import('./Workbench')
 const { announceGenerationPromptReady } = await import('./promptFocus')
 const { revealChrome } = await import('../../webmcp/chrome')
 type PartInstance = import('../../cad/types').PartInstance
-
-/** Extra placeable search rows so BUILDABLE actually overflows PAGE_SIZE (60). */
-function overflowBuildableSearch() {
-  const payload = fixture as unknown as CatalogPayload
-  catalog.install({
-    ...payload,
-    search: [
-      ...(payload.search ?? []),
-      ...Array.from({ length: 12 }, (_, index) => ({
-        id: `placeExtra${index}`,
-        n: `Placeable filler ${index}`,
-        c: 'Test fillers',
-        d: null,
-        f: 0,
-        k: [],
-        g: 1,
-        s: 0,
-      })),
-    ],
-  } as CatalogPayload)
-}
 
 /**
  * A stand-in for the Generate contribution.
@@ -402,6 +380,9 @@ describe('the beginner path through the shell', () => {
       fireEvent.keyDown(search, { key: 'ArrowDown' })
       const pager = document.querySelector('.parts-pager')
       expect(pager).not.toBeNull()
+      const indicator = pager!.querySelector('[role="status"]')
+      expect(indicator?.getAttribute('aria-live')).toBe('polite')
+      expect(document.querySelectorAll('.part-card.unplaceable')).toHaveLength(0)
       const first = document.querySelector('[data-part-id]')?.getAttribute('data-part-id')
       const beforeHighlight = document.querySelector('.part-card.cursor')?.getAttribute('data-part-id')
       expect(beforeHighlight).not.toBe(first)
@@ -409,9 +390,9 @@ describe('the beginner path through the shell', () => {
       const next = control('button[aria-label="Next page of results"]')
       const prev = control('button[aria-label="Previous page of results"]')
       expect((prev as HTMLButtonElement).disabled).toBe(true)
-      const label = pager!.querySelector('span')?.textContent
+      const label = indicator?.textContent
       fireEvent.click(next)
-      expect(pager!.querySelector('span')?.textContent).not.toBe(label)
+      expect(indicator?.textContent).not.toBe(label)
       const pageFirst = document.querySelector('[data-part-id]')
       expect(pageFirst?.getAttribute('data-part-id')).not.toBe(first)
       expect(document.querySelector('.part-card.cursor')).toBe(pageFirst)
@@ -422,7 +403,7 @@ describe('the beginner path through the shell', () => {
       expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
       expect(document.querySelector('[data-catalog-search]')).toBe(search)
     } finally {
-      catalog.install(fixture as unknown as CatalogPayload)
+      restoreCatalogFixture()
     }
   })
 
