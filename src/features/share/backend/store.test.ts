@@ -485,6 +485,120 @@ describe('a partly applied access change', () => {
     expect((await store.listPublic()).entries).toEqual([])
   })
 
+  it('does not leave an unlisted link its owner cannot revoke', async () => {
+    /*
+     * The worst half to lose. Verification reads the token record; `listTokens`
+     * walks the index, and it is the only way an owner sees a link or withdraws
+     * one. Record-first would leave a link that grants access, cannot be seen,
+     * and cannot be revoked.
+     */
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+    await store.put(publication)
+    const minted = await mintShareToken({
+      publicationId: publication.id,
+      slug: publication.slug,
+      scope: publication.capabilities,
+      label: 'Link',
+      expiresAt: null,
+    })
+
+    // The *index* write is the one to lose: record-first would already have
+    // committed a verifiable token by the time this failed.
+    kv.failPutMatching = /^tokidx:/
+    await expect(store.putToken(minted.record)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    // No record, so nothing verifies and nothing was granted out of reach.
+    expect(await store.getToken(minted.record.id)).toBeNull()
+    expect(await store.listTokens(publication.id)).toEqual([])
+  })
+
+  it('drops a token index entry whose record never landed', async () => {
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+    await store.put(publication)
+    await kv.put('tokidx:' + publication.id + ':orphan', 'orphan')
+
+    expect(await store.listTokens(publication.id)).toEqual([])
+    expect(await kv.get('tokidx:' + publication.id + ':orphan', 'text')).toBeNull()
+  })
+
+  it('does not leave a publication its own tokens cannot resolve', async () => {
+    // `getById` is how a token finds its publication. A record with no pointer
+    // is live and reachable by slug while every token minted against it fails.
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+
+    // The pointer write is the one to lose. Record-first would already have
+    // committed a publication its own tokens can never resolve.
+    kv.failPutMatching = /^pub:id:/
+    await expect(store.put(publication)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    expect(await store.getBySlug(publication.slug)).toBeNull()
+    expect(await store.getById(publication.id)).toBeNull()
+  })
+
+  it('does not leave a public publication missing from the gallery', async () => {
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+
+    kv.failPutMatching = /^pub:feed:/
+    await expect(store.put(publication)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    // Either it is in the gallery or it is not published at all.
+    expect(await store.getBySlug(publication.slug)).toBeNull()
+    expect((await store.listPublic()).entries).toEqual([])
+  })
+
+  it('does not leave a report the moderation queue will never surface', async () => {
+    const { kv, store } = flaky()
+    const filed = {
+      id: 'rep_partial',
+      publicationId: 'pub_1',
+      slug: 'rover-abc',
+      reason: 'other' as const,
+      detail: 'This model reproduces a copyrighted set verbatim.',
+      createdAt: '2026-09-01T12:00:00.000Z',
+      status: 'open' as const,
+      reporterRef: 'b'.repeat(64),
+      resolvedAt: null,
+    }
+
+    kv.failPutMatching = /^repopen:/
+    await expect(store.putReport(filed)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    // A report that exists and is invisible is worse than one that was refused.
+    expect(await store.listReports({ status: 'open' })).toEqual([])
+    expect(await store.listReports()).toEqual([])
+  })
+
+  it('lets a publish retry finish what its own half-write started', async () => {
+    // The id pointer lands before the record, so a retry meets its own pointer.
+    // Refusing that would make one transient failure block the id forever.
+    const { kv, store } = flaky()
+    const publication = await publish(4)
+
+    kv.failPutMatching = /^pub:slug:/
+    await expect(store.put(publication)).rejects.toThrow()
+    kv.failPutMatching = null
+
+    await store.put(publication)
+    expect((await store.getById(publication.id))?.slug).toBe(publication.slug)
+    expect((await store.listPublic()).entries.map((entry) => entry.slug)).toEqual([publication.slug])
+  })
+
+  it('still refuses an id already pointing at a different publication', async () => {
+    const { store } = flaky()
+    const first = await publish(4)
+    await store.put(first)
+    const clash = { ...(await publish(5, { title: 'Different' })), id: first.id }
+    await expect(store.put(clash)).rejects.toThrow(ShareError)
+  })
+
   it('converges once the change is retried', async () => {
     const { kv, store } = flaky()
     const publication = await publish(4, { visibility: 'unlisted' })

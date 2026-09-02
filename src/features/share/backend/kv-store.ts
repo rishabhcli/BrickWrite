@@ -105,16 +105,38 @@ export class KvPublicationStore implements PublicationStore {
     if (await this.kv.get(SLUG_KEY(publication.slug), 'text')) {
       throw new ShareError('IMMUTABLE', `A publication already exists at /share/${publication.slug}.`, 409)
     }
-    if (await this.kv.get(ID_KEY(publication.id), 'text')) {
+    /*
+     * An id pointer with no record is this call's own half-finished attempt, not
+     * somebody else's publication. Writing the pointers before the record — see
+     * below for why — means a retry after a lost write finds its own pointer,
+     * and refusing it would make one transient failure block that id forever.
+     * A pointer at a *different* slug is a real collision and still refuses.
+     */
+    const claimedSlug = await this.kv.get(ID_KEY(publication.id), 'text')
+    if (claimedSlug !== null && claimedSlug !== publication.slug) {
       throw new ShareError('IMMUTABLE', `Publication ${publication.id} already exists.`, 409)
     }
-    await this.writeJson(SLUG_KEY(publication.slug), publication)
+
+    /*
+     * Pointers first, record last, for the same reason `updateMetadata` reveals
+     * before it writes: a lost write must leave something a read can repair.
+     *
+     * A pointer or a feed entry with no record behind it resolves to nothing —
+     * `getById` returns null and `listPublic` reaps the key. A *record* with no
+     * pointer is the unrepairable one: the publication is live and reachable by
+     * its slug, `getById` cannot find it, so a token minted against it never
+     * resolves and nothing can discover why. Same for a record with no feed
+     * entry, which is a publication missing from the gallery for good.
+     *
+     * The feed entry is written only if the gallery would show it. Indexing
+     * everything meant `listPublic` read one record per *hidden* publication
+     * before it could return a visible one, so a namespace whose publications
+     * are mostly unlisted — the ordinary case — cost a KV read per one of them
+     * on every gallery load.
+     */
     await this.kv.put(ID_KEY(publication.id), publication.slug)
-    // Only if the gallery would show it. Indexing everything meant `listPublic`
-    // read one record per *hidden* publication before it could return a visible
-    // one, so a namespace whose publications are mostly unlisted — the ordinary
-    // case — cost a KV read per one of them on every gallery load.
     if (isPubliclyListable(publication)) await this.kv.put(feedKey(publication), publication.slug)
+    await this.writeJson(SLUG_KEY(publication.slug), publication)
   }
 
   async getBySlug(slug: string): Promise<Publication | null> {
@@ -247,8 +269,18 @@ export class KvPublicationStore implements PublicationStore {
     if (!/^[0-9a-f]{64}$/.test(token.secretHash)) {
       throw new ShareError('INVALID_INPUT', 'A token record must carry a SHA-256 hash, not a secret.')
     }
-    await this.writeJson(TOKEN_KEY(token.id), token)
+    /*
+     * Index first, and this is the worst of the pair to get wrong.
+     *
+     * Verification reads the record; `listTokens` walks the index, and it is the
+     * only way an owner sees a link or revokes one. Writing the record first and
+     * losing the index would leave an unlisted link that grants access, cannot
+     * be seen, and cannot be withdrawn — a credential outside its owner's
+     * reach. The other way round leaves an index entry pointing at nothing,
+     * which grants nothing and `listTokens` drops.
+     */
     await this.kv.put(TOKEN_INDEX_KEY(token.publicationId, token.id), token.id)
+    await this.writeJson(TOKEN_KEY(token.id), token)
   }
 
   async getToken(id: string): Promise<ShareTokenRecord | null> {
@@ -263,17 +295,26 @@ export class KvPublicationStore implements PublicationStore {
     const tokens: ShareTokenRecord[] = []
     for (const key of page.keys) {
       const token = await this.getToken(key.name.slice(key.name.lastIndexOf(':') + 1))
-      if (token) tokens.push(token)
+      if (token) {
+        tokens.push(token)
+        continue
+      }
+      // An entry with no record behind it: a mint that lost its second write.
+      // It grants nothing, so drop it rather than pay to rediscover it.
+      await this.kv.delete(key.name)
     }
     return tokens.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
   async putReport(report: Report): Promise<void> {
-    await this.writeJson(REPORT_KEY(report.id), report)
-    // The single write path, so the open index cannot drift from the records.
+    // The single write path, so the open index cannot drift from the records —
+    // and ordered like the feed, so a lost half leaves an entry the queue reaps
+    // rather than a report nothing will ever surface.
     const key = OPEN_REPORT_KEY(report)
-    if (report.status === 'open') await this.kv.put(key, report.id)
-    else await this.kv.delete(key)
+    const open = report.status === 'open'
+    if (open) await this.kv.put(key, report.id)
+    await this.writeJson(REPORT_KEY(report.id), report)
+    if (!open) await this.kv.delete(key)
   }
 
   /**
