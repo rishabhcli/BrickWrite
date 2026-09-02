@@ -48,11 +48,11 @@ export function SelectionHUD({
   )
 
   return (
-    <GlassIsland className="selection-hud" radius="section" blur="control">
+    <GlassIsland className="selection-hud" radius="section" blur="control" role="toolbar" aria-label="Selection HUD">
       <button
         type="button"
         className="selection-hud-identity"
-        aria-label="Selection actions"
+        aria-label={`More actions for ${label}`}
         title="More selection actions"
         onClick={(event) => onMore(event.currentTarget)}
       >

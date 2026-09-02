@@ -21,6 +21,7 @@ import { geometryCache } from '../../cad/mesh'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../../cad/catalog-loader'
 import type { CatalogSearchPage, CatalogSearchRecord, CatalogTier, ConnectionFamily } from '../../cad/types'
 import { usePersistentState } from './persistence'
+import { UnavailablePartState } from './states'
 
 /**
  * The parts palette.
@@ -203,6 +204,7 @@ export const PalettePanel = memo(function PalettePanel({
   const [customPalettes, setCustomPalettes] = usePersistentState<CustomPalette[]>('palette.sets.v1', [])
   const [activeSet, setActiveSet] = useState<string | null>(null)
   const [cursor, setCursor] = useState(-1)
+  const [blocked, setBlocked] = useState<CatalogSearchRecord | null>(null)
   const [catalogueState, setCatalogueState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(() =>
     catalog.catalogueLoaded ? 'ready' : 'idle',
   )
@@ -332,6 +334,7 @@ export const PalettePanel = memo(function PalettePanel({
   useEffect(() => {
     setOffset(0)
     setCursor(-1)
+    setBlocked(null)
   }, [query, category, tier, connectorFacet, sizeFacet, colourFacet, activeSet])
 
   const setRecords = useMemo<CatalogSearchRecord[] | null>(() => {
@@ -462,16 +465,28 @@ export const PalettePanel = memo(function PalettePanel({
    */
   const onSearchKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'ArrowDown') {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
-        setCursor((value) => Math.min(shownRecords.length - 1, value + 1))
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setCursor((value) => Math.max(-1, value - 1))
+        const dir = event.key === 'ArrowDown' ? 1 : -1
+        setCursor((value) => {
+          let next = value
+          for (let step = 0; step < shownRecords.length + 1; step += 1) {
+            next += dir
+            if (next < -1) return -1
+            if (next >= shownRecords.length) return value < 0 ? -1 : value
+            if (shownRecords[next]?.geometryAvailable) return next
+          }
+          return value
+        })
       } else if (event.key === 'Enter') {
-        const record = shownRecords[cursor] ?? shownRecords[0]
+        const record = shownRecords[cursor] ?? shownRecords.find((entry) => entry.geometryAvailable) ?? shownRecords[0]
         if (!record) return
         event.preventDefault()
+        if (!record.geometryAvailable) {
+          setBlocked(record)
+          return
+        }
+        setBlocked(null)
         if (event.shiftKey) add(record)
         else arm(record)
       } else if (event.key === 'Escape' && query) {
@@ -764,6 +779,16 @@ export const PalettePanel = memo(function PalettePanel({
       </div>
 
       <div className={`parts-grid view-${view}`} data-testid="parts-grid" ref={gridRef}>
+        {blocked && (
+          <UnavailablePartState
+            name={blocked.name}
+            tier={blocked.tier === 'catalogued' ? 'catalogued' : 'modelled'}
+            onWidenSearch={() => {
+              setBlocked(null)
+              setTier('placeable')
+            }}
+          />
+        )}
         {shownRecords.map((record, index) => (
           <article
             className={`part-card tier-${record.tier} ${record.geometryAvailable ? '' : 'unplaceable'} ${armedId === record.id ? 'armed' : ''} ${draggingId === record.id ? 'dragging' : ''} ${cursor === index ? 'cursor' : ''}`}

@@ -1652,6 +1652,9 @@
   padding: 56px 24px 20px;
   text-align: center;
 }
+.empty-inspector.has-selection .scanner-mark {
+  border-color: color-mix(in srgb, var(--cyan) 40%, #2a3b3f);
+}
 .scanner-mark {
   margin: 0 auto 22px;
   width: 76px;
@@ -8155,6 +8158,7 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 }
 .placement-bar-heading, .placement-bar-actions, .placement-coordinates { display: contents; }
 .placement-feedback { display: grid; place-items: center; width: 30px; height: 30px; margin: 0; color: var(--green); }
+.placement-bar[data-legal='pending'] .placement-feedback { color: var(--muted); }
 .placement-bar[data-legal='false'] .placement-feedback { color: #ff806b; }
 .placement-bar button { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; }
 .placement-bar button[aria-pressed='true'] { background: var(--cyan); color: #07100f; }
@@ -8182,8 +8186,10 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   top: 12px;
   left: 50%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  max-width: min(680px, calc(100% - 260px));
+  min-width: 0;
+  max-width: min(680px, calc(100% - 112px));
   padding: 4px;
   transform: translateX(-50%);
   color: var(--ink);

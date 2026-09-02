@@ -1,8 +1,8 @@
 import { Box, Check, ChevronsLeft, ChevronsRight, Lock, RotateCcw, RotateCw, ShieldCheck, Unlock } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { describeSize, getColor } from '../../cad/catalog'
+import { catalog, describeSize, getColor } from '../../cad/catalog'
 import { basisFromEulerDegrees, eulerDegreesFromBasis } from '../../cad/math'
-import type { ModelHealthIssue } from '../../cad/modelHealth'
+import { inspectModelHealth, type ModelHealthIssue, type ModelHealthSummary } from '../../cad/modelHealth'
 import type { EngineSnapshot, PartDefinition, PartInstance, Transform, ValidationReport } from '../../cad/types'
 import { Slot } from './ExtensionRegistry'
 import { ModelHealthPanel } from './ModelHealthPanel'
@@ -66,6 +66,29 @@ export function validateTabLabel(report: ValidationReport): string {
   return 'Validate, healthy'
 }
 
+/** Tab name once VALIDATE is open — matches the health panel, including statics. */
+export function validateTabLabelFromHealth(health: ModelHealthSummary): string {
+  if (health.blockers) return `Validate, ${health.blockers} blocker${health.blockers === 1 ? '' : 's'}`
+  if (health.warnings) return `Validate, ${health.warnings} watch${health.warnings === 1 ? '' : 'es'}`
+  if (health.notices) return `Validate, ${health.notices} notice${health.notices === 1 ? '' : 's'}`
+  return 'Validate, healthy'
+}
+
+/**
+ * What the OBJECT tab should describe, from the kernel snapshot.
+ *
+ * The `selectedPart` prop is a convenience for single-part tests; it must not
+ * win over a live selection, and it must not invent "nothing selected" when
+ * the document still has part ids in `state.selection`.
+ */
+export function inspectorKernelParts(state: EngineSnapshot, selectedPart?: PartInstance): PartInstance[] {
+  const fromKernel = state.selection
+    .map((id) => state.document.parts[id])
+    .filter((part): part is PartInstance => Boolean(part))
+  if (fromKernel.length) return fromKernel
+  return selectedPart ? [selectedPart] : []
+}
+
 export function InspectorPanel({
   state,
   selectedPart,
@@ -90,19 +113,32 @@ export function InspectorPanel({
     onViewChange?.(next)
   }
   const report = state.validation
+  const kernelParts = inspectorKernelParts(state, selectedPart)
+  const inspectPart = kernelParts.length === 1 ? kernelParts[0] : undefined
+  const inspectDefinition = inspectPart
+    ? definition && definition.canonicalId === inspectPart.definitionId
+      ? definition
+      : catalog.get(inspectPart.definitionId)
+    : definition
+  const health = useMemo(
+    () => (tab === 'validate' ? inspectModelHealth(state.document, report) : null),
+    [report, state.document, tab],
+  )
+  const validateName = health ? validateTabLabelFromHealth(health) : validateTabLabel(report)
+  const validateReady = health ? health.ready : report.healthy
   const displayRotation = useMemo(
-    () => (selectedPart ? eulerDegreesFromBasis(selectedPart.transform.basis) : ([0, 0, 0] as const)),
-    [selectedPart],
+    () => (inspectPart ? eulerDegreesFromBasis(inspectPart.transform.basis) : ([0, 0, 0] as const)),
+    [inspectPart],
   )
   const shownColors = useMemo(() => {
-    const observed = definition?.availableColors ?? []
+    const observed = inspectDefinition?.availableColors ?? []
     if (allColors || observed.length <= INSPECTOR_SWATCH_LIMIT) return observed
     const head = observed.slice(0, INSPECTOR_SWATCH_LIMIT)
     // The applied colour must stay visible even when the evidence order buries it.
-    return selectedPart && observed.includes(selectedPart.color) && !head.includes(selectedPart.color)
-      ? [...head.slice(0, INSPECTOR_SWATCH_LIMIT - 1), selectedPart.color]
+    return inspectPart && observed.includes(inspectPart.color) && !head.includes(inspectPart.color)
+      ? [...head.slice(0, INSPECTOR_SWATCH_LIMIT - 1), inspectPart.color]
       : head
-  }, [allColors, definition, selectedPart])
+  }, [allColors, inspectDefinition, inspectPart])
   return (
     <aside className="panel inspector-panel" aria-label="Selection inspector">
       <div
@@ -146,28 +182,33 @@ export function InspectorPanel({
           aria-selected={tab === 'validate'}
           aria-controls="inspector-validate-panel"
           tabIndex={tab === 'validate' ? 0 : -1}
-          aria-label={validateTabLabel(report)}
+          aria-label={validateName}
           className={tab === 'validate' ? 'active' : ''}
           onClick={() => setTab('validate')}
         >
           VALIDATE
-          <span className={report.healthy ? 'healthy-dot' : 'warning-dot'} aria-hidden="true" />
+          <span className={validateReady ? 'healthy-dot' : 'warning-dot'} aria-hidden="true" />
         </button>
       </div>
       {tab === 'object' ? (
-        selectedPart && definition ? (
-          <div className="inspector-scroll" role="tabpanel" id="inspector-object-panel" aria-labelledby="inspector-tab-object">
+        inspectPart && inspectDefinition ? (
+          <div
+            className="inspector-scroll"
+            role="tabpanel"
+            id="inspector-object-panel"
+            aria-labelledby="inspector-tab-object"
+          >
             <section className="selection-identity">
               <div className="selected-glyph">
                 <Box size={24} strokeWidth={1.4} />
               </div>
               <div>
                 <span className="eyebrow">
-                  {definition.category} / {definition.canonicalId}
+                  {inspectDefinition.category} / {inspectDefinition.canonicalId}
                 </span>
-                <h3>{definition.name}</h3>
+                <h3>{inspectDefinition.name}</h3>
                 <p>
-                  {selectedPart.id} · {describeSize(definition)}
+                  {inspectPart.id} · {describeSize(inspectDefinition)}
                 </p>
               </div>
             </section>
@@ -179,14 +220,14 @@ export function InspectorPanel({
               <div className="fields-grid">
                 {(['X', 'Y', 'Z'] as const).map((axis, index) => (
                   <NumberField
-                    key={`p_${axis}_${selectedPart.id}`}
+                    key={`p_${axis}_${inspectPart.id}`}
                     label={axis}
-                    value={selectedPart.transform.position[index]}
+                    value={inspectPart.transform.position[index]}
                     suffix="LDU"
                     onCommit={(value) => {
-                      const position = [...selectedPart.transform.position] as [number, number, number]
+                      const position = [...inspectPart.transform.position] as [number, number, number]
                       position[index] = value
-                      onTransform(selectedPart.id, { ...selectedPart.transform, position })
+                      onTransform(inspectPart.id, { ...inspectPart.transform, position })
                     }}
                   />
                 ))}
@@ -197,15 +238,15 @@ export function InspectorPanel({
               <div className="fields-grid rotation-fields">
                 {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
                   <NumberField
-                    key={`r_${axis}_${selectedPart.id}`}
+                    key={`r_${axis}_${inspectPart.id}`}
                     label={axis}
                     value={displayRotation[index]}
                     suffix="°"
                     onCommit={(value) => {
                       const rotation = [...displayRotation] as [number, number, number]
                       rotation[index] = value
-                      onTransform(selectedPart.id, {
-                        position: selectedPart.transform.position,
+                      onTransform(inspectPart.id, {
+                        position: inspectPart.transform.position,
                         basis: basisFromEulerDegrees(rotation),
                       })
                     }}
@@ -216,7 +257,7 @@ export function InspectorPanel({
             <section className="property-section">
               <header>
                 <span>COLOR</span>
-                <em>{getColor(selectedPart.color).name}</em>
+                <em>{getColor(inspectPart.color).name}</em>
               </header>
               {/* A part observed in 61 official colours produced a wall of
                   unlabelled circles. The evidence order puts the common ones
@@ -228,30 +269,30 @@ export function InspectorPanel({
                   return (
                     <button
                       key={code}
-                      className={selectedPart.color === code ? 'selected' : ''}
+                      className={inspectPart.color === code ? 'selected' : ''}
                       style={{ '--swatch': color.hex } as React.CSSProperties}
                       onClick={() => onRecolor(code)}
                       aria-label={`${color.name}, LDraw colour ${code}`}
-                      aria-pressed={selectedPart.color === code}
+                      aria-pressed={inspectPart.color === code}
                       title={`${color.name} · LDraw ${code}`}
                     />
                   )
                 })}
               </div>
-              {definition.availableColors.length > INSPECTOR_SWATCH_LIMIT && (
+              {inspectDefinition.availableColors.length > INSPECTOR_SWATCH_LIMIT && (
                 <button className="swatch-more" type="button" onClick={() => setAllColors((value) => !value)}>
                   {allColors
                     ? 'Show the common colours'
-                    : `Show all ${definition.availableColors.length} observed colours`}
+                    : `Show all ${inspectDefinition.availableColors.length} observed colours`}
                 </button>
               )}
               <div
-                className={`legality-row ${definition.availableColors.includes(selectedPart.color) ? '' : 'virtual'}`}
+                className={`legality-row ${inspectDefinition.availableColors.includes(inspectPart.color) ? '' : 'virtual'}`}
               >
                 <Check size={12} />
-                {definition.availableColors.includes(selectedPart.color)
-                  ? `Observed in official sets · ${definition.availableColors.length} known colours`
-                  : definition.availableColors.length
+                {inspectDefinition.availableColors.includes(inspectPart.color)
+                  ? `Observed in official sets · ${inspectDefinition.availableColors.length} known colours`
+                  : inspectDefinition.availableColors.length
                     ? 'Virtual colour — no observed official-set appearance'
                     : 'No colour production evidence for this part'}
               </div>
@@ -259,22 +300,22 @@ export function InspectorPanel({
             <section className="property-section">
               <header>
                 <span>CONNECTIONS</span>
-                <em>{definition.connectors.length} features</em>
+                <em>{inspectDefinition.connectors.length} features</em>
               </header>
               <div className="connector-summary">
                 <div>
                   <span className="connector-icon male" />{' '}
-                  <strong>{definition.connectors.filter((item) => item.gender === 'male').length}</strong>
+                  <strong>{inspectDefinition.connectors.filter((item) => item.gender === 'male').length}</strong>
                   <small>male</small>
                 </div>
                 <div>
                   <span className="connector-icon female" />{' '}
-                  <strong>{definition.connectors.filter((item) => item.gender === 'female').length}</strong>
+                  <strong>{inspectDefinition.connectors.filter((item) => item.gender === 'female').length}</strong>
                   <small>female</small>
                 </div>
                 <div>
                   <ShieldCheck size={18} />{' '}
-                  <strong>{definition.connectionStatus === 'ldcad-authoritative' ? 'LDCad' : 'none'}</strong>
+                  <strong>{inspectDefinition.connectionStatus === 'ldcad-authoritative' ? 'LDCad' : 'none'}</strong>
                   <small>source</small>
                 </div>
               </div>
@@ -282,15 +323,15 @@ export function InspectorPanel({
             <section className="property-section">
               <header>
                 <span>OWNERSHIP</span>
-                <em>{selectedPart.provenance}</em>
+                <em>{inspectPart.provenance}</em>
               </header>
               <button
-                className={`lock-control ${selectedPart.protected ? 'locked' : ''}`}
-                onClick={() => onProtect(!selectedPart.protected)}
+                className={`lock-control ${inspectPart.protected ? 'locked' : ''}`}
+                onClick={() => onProtect(!inspectPart.protected)}
               >
-                {selectedPart.protected ? <Lock size={15} /> : <Unlock size={15} />}
-                <span>{selectedPart.protected ? 'Protected from agent edits' : 'Unlocked for collaboration'}</span>
-                <i>{selectedPart.protected ? 'LOCKED' : 'OPEN'}</i>
+                {inspectPart.protected ? <Lock size={15} /> : <Unlock size={15} />}
+                <span>{inspectPart.protected ? 'Protected from agent edits' : 'Unlocked for collaboration'}</span>
+                <i>{inspectPart.protected ? 'LOCKED' : 'OPEN'}</i>
               </button>
             </section>
             {articulation.length > 0 && (
@@ -353,45 +394,46 @@ export function InspectorPanel({
             <section className="property-section">
               <header>
                 <span>DATA PROVENANCE</span>
-                <em>{definition.license}</em>
+                <em>{inspectDefinition.license}</em>
               </header>
               <dl className="provenance-list">
                 <div>
                   <dt>Geometry</dt>
                   <dd>
-                    {definition.ldrawId} · {definition.geometryAsset?.triangles.toLocaleString() ?? '—'} triangles
+                    {inspectDefinition.ldrawId} · {inspectDefinition.geometryAsset?.triangles.toLocaleString() ?? '—'}{' '}
+                    triangles
                   </dd>
                 </div>
                 <div>
                   <dt>Connections</dt>
                   <dd>
-                    {definition.connectionStatus === 'ldcad-authoritative'
-                      ? `LDCad Shadow Library · ${definition.connectors.length} features`
+                    {inspectDefinition.connectionStatus === 'ldcad-authoritative'
+                      ? `LDCad Shadow Library · ${inspectDefinition.connectors.length} features`
                       : 'no snap metadata'}
                   </dd>
                 </div>
                 <div>
                   <dt>Identity</dt>
                   <dd>
-                    {definition.identity.rebrickableId
-                      ? `${definition.identity.rebrickableId} · exact match`
-                      : definition.identity.baseRebrickableId
-                        ? `${definition.identity.baseRebrickableId} · base-design match`
+                    {inspectDefinition.identity.rebrickableId
+                      ? `${inspectDefinition.identity.rebrickableId} · exact match`
+                      : inspectDefinition.identity.baseRebrickableId
+                        ? `${inspectDefinition.identity.baseRebrickableId} · base-design match`
                         : 'no external identity'}
                   </dd>
                 </div>
                 <div>
                   <dt>Colours</dt>
                   <dd>
-                    {definition.availableColors.length
-                      ? `${definition.availableColors.length} observed in official sets`
+                    {inspectDefinition.availableColors.length
+                      ? `${inspectDefinition.availableColors.length} observed in official sets`
                       : 'no production evidence'}
                   </dd>
                 </div>
-                {definition.frequency > 0 && (
+                {inspectDefinition.frequency > 0 && (
                   <div>
                     <dt>Usage</dt>
-                    <dd>{definition.frequency.toLocaleString()} set appearances</dd>
+                    <dd>{inspectDefinition.frequency.toLocaleString()} set appearances</dd>
                   </div>
                 )}
               </dl>
@@ -417,24 +459,53 @@ export function InspectorPanel({
             />
           </div>
         ) : (
-          <div className="empty-inspector" role="tabpanel" id="inspector-object-panel" aria-labelledby="inspector-tab-object">
+          <div
+            className={`empty-inspector${kernelParts.length ? ' has-selection' : ''}`}
+            role="tabpanel"
+            id="inspector-object-panel"
+            aria-labelledby="inspector-tab-object"
+            data-selection-count={kernelParts.length}
+          >
             <div className="scanner-mark">
               <span />
               <span />
               <span />
               <span />
             </div>
-            <span className="eyebrow">NO OBJECT SELECTED</span>
-            <h3>Inspect the build</h3>
-            <p>Select any physical part to inspect its exact transform, connectors, identity and ownership.</p>
+            {kernelParts.length > 1 ? (
+              <>
+                <span className="eyebrow">{kernelParts.length} PARTS SELECTED</span>
+                <h3>Inspect one part at a time</h3>
+                <p>
+                  The kernel has {kernelParts.length} parts in the selection
+                  {inspectIdentities(kernelParts)}. Click a single brick to see its transform, connectors and ownership,
+                  or recolour the set from the palette.
+                </p>
+              </>
+            ) : kernelParts.length === 1 ? (
+              <>
+                <span className="eyebrow">IDENTITY MISSING</span>
+                <h3>{kernelParts[0].definitionId} is selected</h3>
+                <p>
+                  The kernel still holds this part, but this build has no compiled catalog identity for it, so there is
+                  nothing honest to show for transform evidence or colour.
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="eyebrow">NO OBJECT SELECTED</span>
+                <h3>Inspect the build</h3>
+                <p>Select any physical part to inspect its exact transform, connectors, identity and ownership.</p>
+              </>
+            )}
             <div className="overview-metrics">
               <div>
                 <strong>{report.partCount}</strong>
                 <span>parts</span>
               </div>
               <div>
-                <strong>{Object.keys(state.document.subassemblies).length}</strong>
-                <span>modules</span>
+                <strong>{kernelParts.length || Object.keys(state.document.subassemblies).length}</strong>
+                <span>{kernelParts.length ? 'selected' : 'modules'}</span>
               </div>
               <div>
                 <strong>r{state.document.revision}</strong>
@@ -447,6 +518,7 @@ export function InspectorPanel({
         <div role="tabpanel" id="inspector-validate-panel" aria-labelledby="inspector-tab-validate">
           <ModelHealthPanel
             state={state}
+            health={health ?? undefined}
             activeIssueId={activeHealthIssueId}
             onActiveIssue={onActiveHealthIssue}
             onFocusIssue={onFocusHealthIssue ?? ((issue) => onSelectIds([...issue.partIds]))}
@@ -455,4 +527,11 @@ export function InspectorPanel({
       )}
     </aside>
   )
+}
+
+function inspectIdentities(parts: PartInstance[]): string {
+  const ids = [...new Set(parts.map((part) => part.definitionId))]
+  if (ids.length === 1) return ` · ${ids[0]}`
+  if (ids.length <= 3) return ` · ${ids.join(', ')}`
+  return ` · ${ids.length} identities`
 }

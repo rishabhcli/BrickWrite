@@ -4,7 +4,7 @@ import { IDENTITY_BASIS } from '../../cad/math'
 import { createEmptyDocument } from '../../cad/sample'
 import type { EngineSnapshot, PartInstance } from '../../cad/types'
 import { validateDocument } from '../../cad/validation'
-import { InspectorPanel } from './InspectorPanel'
+import { InspectorPanel, inspectorKernelParts } from './InspectorPanel'
 
 afterEach(cleanup)
 
@@ -92,5 +92,34 @@ describe('inspector OBJECT / VALIDATE chrome', () => {
     const host = document.querySelector('.inspector-panel .model-health')
     expect(host?.tagName).toBe('SECTION')
     expect(screen.getByRole('region', { name: 'Model health navigator' })).toBeVisible()
+  })
+
+  it('does not claim nothing is selected when the kernel holds two parts', () => {
+    const state = blockedSnapshot()
+    state.selection = ['allowed', 'wrong']
+    expect(inspectorKernelParts(state)).toHaveLength(2)
+
+    render(<InspectorPanel state={state} selectedPart={state.document.parts.allowed} {...handlers} />)
+
+    expect(screen.queryByText('NO OBJECT SELECTED')).toBeNull()
+    expect(screen.getByText('2 PARTS SELECTED')).toBeVisible()
+    expect(screen.getByText(/kernel has 2 parts/i)).toBeVisible()
+    expect(document.querySelector('.empty-inspector')?.getAttribute('data-selection-count')).toBe('2')
+  })
+
+  it('admits a selected part the catalog cannot describe', () => {
+    const state = blockedSnapshot()
+    state.document.parts.ghost = {
+      ...state.document.parts.allowed,
+      id: 'ghost',
+      definitionId: 'not-a-compiled-part',
+    }
+    state.selection = ['ghost']
+
+    render(<InspectorPanel state={state} {...handlers} />)
+
+    expect(screen.queryByText('NO OBJECT SELECTED')).toBeNull()
+    expect(screen.getByText('IDENTITY MISSING')).toBeVisible()
+    expect(screen.getByText(/not-a-compiled-part is selected/)).toBeVisible()
   })
 })
