@@ -41,7 +41,8 @@ export interface GateAdmission {
   release(): Promise<void>
 }
 
-export type GateResult = { readonly ok: true; readonly admission: GateAdmission } | { readonly ok: false; readonly refusal: GateRefusal }
+export type GateResult =
+  { readonly ok: true; readonly admission: GateAdmission } | { readonly ok: false; readonly refusal: GateRefusal }
 
 export interface GateStatus {
   readonly metering: BudgetStatus
