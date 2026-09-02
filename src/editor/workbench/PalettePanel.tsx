@@ -341,6 +341,17 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
     return page.records
   }, [activeSet, customPalettes, favourites, page.records, recents])
 
+  // PageDown can land on a short last page while the arrow cursor still
+  // indexes a card that is no longer in the DOM. Clamp rather than leave
+  // Enter targeting nothing (it would fall through to the first result).
+  useEffect(() => {
+    setCursor((value) => {
+      if (value < 0) return value
+      if (!shownRecords.length) return -1
+      return Math.min(value, shownRecords.length - 1)
+    })
+  }, [shownRecords])
+
   // Warm only visible cards, not the whole catalogue. The actual shape is ready
   // before pickup, including on a cold page and when scrolling to another row.
   useEffect(() => {

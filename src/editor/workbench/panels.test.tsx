@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { catalog } from '../../cad/catalog'
+import fixture from '../../cad/__fixtures__/catalog.fixture.json'
+import { catalog, type CatalogPayload } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { IDENTITY_BASIS } from '../../cad/math'
@@ -129,6 +130,38 @@ describe('palette', () => {
     fireEvent.keyDown(search, { key: 'Enter', shiftKey: true })
     expect(onAdd).toHaveBeenCalledTimes(1)
     expect(onArm).not.toHaveBeenCalled()
+  })
+
+  it('pages the catalogue from the search field when results spill past one page', () => {
+    // The compiled fixture is 59 placeable identities; PAGE_SIZE is 60, so the
+    // pager never mounts on BUILDABLE. A dozen catalogued fillers make
+    // EVERYTHING large enough to actually change page, which is the path
+    // PageDown/PageUp are for.
+    catalog.installExternalIndex(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: `pageExtra${index}`,
+        n: `Catalogued filler ${index}`,
+        c: 'Test fillers',
+        f: 0,
+      })),
+    )
+    try {
+      const { container } = renderPalette()
+      fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /EVERYTHING/ }))
+      const pager = container.querySelector('.parts-pager')
+      expect(pager).not.toBeNull()
+      const search = screen.getByLabelText('Search parts')
+      const first = container.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+      const label = pager?.querySelector('span')?.textContent
+      fireEvent.keyDown(search, { key: 'PageDown' })
+      expect(pager?.querySelector('span')?.textContent).not.toBe(label)
+      expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
+      fireEvent.keyDown(search, { key: 'PageUp' })
+      expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+    } finally {
+      catalog.install(fixture as unknown as CatalogPayload)
+    }
   })
 
   it('collects favourites into their own set', () => {
