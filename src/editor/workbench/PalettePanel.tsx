@@ -352,6 +352,14 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
     })
   }, [shownRecords])
 
+  // Paging is a new list, not a continuation of the previous one. Keeping
+  // the slot would highlight an unrelated card; land on the first result
+  // of the new page instead. An unset cursor stays unset so a mouse click
+  // on Next does not invent a keyboard highlight.
+  useEffect(() => {
+    setCursor((value) => (value < 0 ? value : 0))
+  }, [offset])
+
   // Warm only visible cards, not the whole catalogue. The actual shape is ready
   // before pickup, including on a cold page and when scrolling to another row.
   useEffect(() => {
@@ -390,6 +398,14 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
   const clearSearch = useCallback(() => {
     setQuery('')
     searchRef.current?.focus()
+  }, [])
+
+  const goNextPage = useCallback(() => {
+    setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
+  }, [page.total])
+
+  const goPrevPage = useCallback(() => {
+    setOffset((value) => Math.max(0, value - PAGE_SIZE))
   }, [])
 
   const toggleFavourite = useCallback(
@@ -434,13 +450,13 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         clearSearch()
       } else if (event.key === 'PageDown' && !activeSet) {
         event.preventDefault()
-        setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
+        goNextPage()
       } else if (event.key === 'PageUp' && !activeSet) {
         event.preventDefault()
-        setOffset((value) => Math.max(0, value - PAGE_SIZE))
+        goPrevPage()
       }
     },
-    [activeSet, add, arm, clearSearch, cursor, page.total, query, shownRecords],
+    [activeSet, add, arm, clearSearch, cursor, goNextPage, goPrevPage, query, shownRecords],
   )
 
   useEffect(() => {
@@ -826,7 +842,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             type="button"
             className="parts-more"
             disabled={offset === 0}
-            onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
+            onClick={goPrevPage}
             aria-label="Previous page of results"
           >
             <ChevronLeft size={12} />
@@ -840,7 +856,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             type="button"
             className="parts-more"
             disabled={offset + PAGE_SIZE >= page.total}
-            onClick={() => setOffset((value) => value + PAGE_SIZE)}
+            onClick={goNextPage}
             aria-label="Next page of results"
           >
             <ChevronRight size={12} />

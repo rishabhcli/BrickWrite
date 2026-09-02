@@ -42,6 +42,27 @@ const { announceGenerationPromptReady } = await import('./promptFocus')
 const { revealChrome } = await import('../../webmcp/chrome')
 type PartInstance = import('../../cad/types').PartInstance
 
+/** Extra placeable search rows so BUILDABLE actually overflows PAGE_SIZE (60). */
+function overflowBuildableSearch() {
+  const payload = fixture as unknown as CatalogPayload
+  catalog.install({
+    ...payload,
+    search: [
+      ...(payload.search ?? []),
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `placeExtra${index}`,
+        n: `Placeable filler ${index}`,
+        c: 'Test fillers',
+        d: null,
+        f: 0,
+        k: [],
+        g: 1,
+        s: 0,
+      })),
+    ],
+  } as CatalogPayload)
+}
+
 /**
  * A stand-in for the Generate contribution.
  *
@@ -366,15 +387,8 @@ describe('the beginner path through the shell', () => {
     })
   })
 
-  it('walks catalog results from the search field and pages when the catalogue is large enough', () => {
-    catalog.installExternalIndex(
-      Array.from({ length: 12 }, (_, index) => ({
-        id: `pageExtra${index}`,
-        n: `Catalogued filler ${index}`,
-        c: 'Test fillers',
-        f: 0,
-      })),
-    )
+  it('walks catalog results from the search field and pages BUILDABLE with the next/prev buttons', () => {
+    overflowBuildableSearch()
     try {
       mount()
       const search = control('[data-catalog-search]')
@@ -384,16 +398,27 @@ describe('the beginner path through the shell', () => {
       expect(document.querySelector('.part-card.cursor')).not.toBeNull()
       expect(document.querySelector('[data-catalog-search]')).toBe(search)
 
-      fireEvent.click(control('button[aria-label="FILTERS"]'))
-      fireEvent.click(control('button[title="Every identity this build knows about, across all three tiers."]'))
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
       const pager = document.querySelector('.parts-pager')
       expect(pager).not.toBeNull()
       const first = document.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+      const beforeHighlight = document.querySelector('.part-card.cursor')?.getAttribute('data-part-id')
+      expect(beforeHighlight).not.toBe(first)
+
+      const next = control('button[aria-label="Next page of results"]')
+      const prev = control('button[aria-label="Previous page of results"]')
+      expect((prev as HTMLButtonElement).disabled).toBe(true)
       const label = pager!.querySelector('span')?.textContent
-      fireEvent.keyDown(search, { key: 'PageDown' })
+      fireEvent.click(next)
       expect(pager!.querySelector('span')?.textContent).not.toBe(label)
-      expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
-      fireEvent.keyDown(search, { key: 'PageUp' })
+      const pageFirst = document.querySelector('[data-part-id]')
+      expect(pageFirst?.getAttribute('data-part-id')).not.toBe(first)
+      expect(document.querySelector('.part-card.cursor')).toBe(pageFirst)
+      expect((prev as HTMLButtonElement).disabled).toBe(false)
+      expect((next as HTMLButtonElement).disabled).toBe(true)
+
+      fireEvent.click(prev)
       expect(document.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
       expect(document.querySelector('[data-catalog-search]')).toBe(search)
     } finally {
