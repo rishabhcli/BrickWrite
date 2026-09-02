@@ -1,5 +1,17 @@
-import { AlertTriangle, Check, ChevronDown, Copy, FilePlus2, GitBranch, PencilLine, Save, Scale, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Copy,
+  FilePlus2,
+  GitBranch,
+  PencilLine,
+  Save,
+  Scale,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { planSharedMutation, SharedCapabilityError } from '../cad/capabilities'
 import { catalog } from '../cad/catalog'
 import { cadEngine } from '../cad/engine'
@@ -58,6 +70,11 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const root = useRef<HTMLDivElement>(null)
+  const projectsTitleId = useId()
+  const legalTitleId = useId()
+  const projectsDialogId = useId()
+  const legalDialogId = useId()
   const close = useCallback(() => {
     setOpen('none')
     setConfirmDelete(null)
@@ -67,6 +84,15 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
   // The field tracks the document, so an agent rename or an undo is reflected
   // rather than leaving a stale value the operator might re-commit.
   useEffect(() => setRenameValue(documentName), [documentName])
+
+  useEffect(() => {
+    if (open === 'none') return
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) close()
+    }
+    window.addEventListener('pointerdown', dismiss)
+    return () => window.removeEventListener('pointerdown', dismiss)
+  }, [open, close])
 
   const refresh = useCallback(async () => {
     setProjects(await session.listProjects())
@@ -110,15 +136,30 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
     const name = renameValue.trim()
     if (!name || name === documentName) return
     try {
-      const plan = planSharedMutation('rename_document', { name }, {
-        document: cadEngine.getSnapshot().document,
-        selection: cadEngine.getSnapshot().selection,
-        actor: 'human',
-      })
-      const result = cadEngine.execute(plan.label, [...plan.operations], 'human', cadEngine.getSnapshot().document.revision)
-      onNotice(result.ok
-        ? { kind: 'success', title: 'Project renamed', detail: `The document is now “${name}” at revision ${result.value.resultRevision}.` }
-        : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message })
+      const plan = planSharedMutation(
+        'rename_document',
+        { name },
+        {
+          document: cadEngine.getSnapshot().document,
+          selection: cadEngine.getSnapshot().selection,
+          actor: 'human',
+        },
+      )
+      const result = cadEngine.execute(
+        plan.label,
+        [...plan.operations],
+        'human',
+        cadEngine.getSnapshot().document.revision,
+      )
+      onNotice(
+        result.ok
+          ? {
+              kind: 'success',
+              title: 'Project renamed',
+              detail: `The document is now “${name}” at revision ${result.value.resultRevision}.`,
+            }
+          : { kind: 'error', title: `[${result.error.code}]`, detail: result.error.message },
+      )
     } catch (cause) {
       const known = cause instanceof SharedCapabilityError
       onNotice({
@@ -140,12 +181,15 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
         : 'Started from the opening showcase'
 
   return (
-    <div className="project-menu">
+    <div className="project-menu" ref={root}>
       <button
         ref={trigger}
+        type="button"
         className="project-identity"
         onClick={() => setOpen(open === 'none' ? 'projects' : 'none')}
+        aria-haspopup="dialog"
         aria-expanded={open !== 'none'}
+        aria-controls={open === 'projects' ? projectsDialogId : open === 'legal' ? legalDialogId : undefined}
       >
         <span className={`project-dot ${sessionStatus.error ? 'failing' : sessionStatus.durable ? '' : 'volatile'}`} />
         <div>
@@ -159,10 +203,21 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
       </button>
 
       {open === 'projects' && (
-        <div ref={panel as RefObject<HTMLDivElement>} className="project-panel" role="dialog" aria-modal="true" aria-label="Projects">
+        <div
+          id={projectsDialogId}
+          ref={panel as RefObject<HTMLDivElement>}
+          className="project-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={projectsTitleId}
+        >
           <header>
-            <span className="eyebrow">PROJECTS</span>
-            <button onClick={() => setOpen('none')} aria-label="Close projects"><X size={12} /></button>
+            <span className="eyebrow" id={projectsTitleId}>
+              PROJECTS
+            </span>
+            <button type="button" onClick={() => setOpen('none')} aria-label="Close projects">
+              <X size={12} />
+            </button>
           </header>
 
           {/* Shown rather than assumed: an operator should be able to see
@@ -170,21 +225,39 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               migration, or a fresh showcase. */}
           <div className="restore-report">
             <strong>{restoreHeadline}</strong>
-            <small>revision {revision} · catalog {catalog.version}</small>
-            {restore?.warning && <p className="restore-warning"><AlertTriangle size={11} /> {restore.warning}</p>}
+            <small>
+              revision {revision} · catalog {catalog.version}
+            </small>
+            {restore?.warning && (
+              <p className="restore-warning">
+                <AlertTriangle size={11} /> {restore.warning}
+              </p>
+            )}
             {sessionStatus.error && (
-              <p className="restore-warning"><AlertTriangle size={11} /> Autosave failed: {sessionStatus.error}</p>
+              <p className="restore-warning">
+                <AlertTriangle size={11} /> Autosave failed: {sessionStatus.error}
+              </p>
             )}
           </div>
 
           <div className="project-actions">
             <button
+              type="button"
               disabled={busy}
-              onClick={() => void run('Checkpoint', async () => { await session.checkpoint(); return { ok: true } }, `Saved at revision ${revision}.`)}
+              onClick={() =>
+                void run(
+                  'Checkpoint',
+                  async () => {
+                    await session.checkpoint()
+                    return { ok: true }
+                  },
+                  `Saved at revision ${revision}.`,
+                )
+              }
             >
               <Save size={12} /> Checkpoint now
             </button>
-            <button disabled={busy} onClick={() => setOpen('legal')}>
+            <button type="button" disabled={busy} onClick={() => setOpen('legal')}>
               <Scale size={12} /> Data &amp; licences
             </button>
           </div>
@@ -197,10 +270,16 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               value={renameValue}
               placeholder={documentName}
               onChange={(event) => setRenameValue(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter') commitRename() }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitRename()
+              }}
               aria-label="Project name"
             />
-            <button disabled={busy || !renameValue.trim() || renameValue.trim() === documentName} onClick={commitRename}>
+            <button
+              type="button"
+              disabled={busy || !renameValue.trim() || renameValue.trim() === documentName}
+              onClick={commitRename}
+            >
               <PencilLine size={12} /> Rename
             </button>
           </div>
@@ -216,9 +295,11 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               disabled={busy}
               title="Copy this model into a new project"
               onClick={() =>
-                void run('Fork', () => session.forkProject(forkName), 'The fork is now the open project; the original is untouched.').then(
-                  () => setForkName(''),
-                )
+                void run(
+                  'Fork',
+                  () => session.forkProject(forkName),
+                  'The fork is now the open project; the original is untouched.',
+                ).then(() => setForkName(''))
               }
             >
               <GitBranch size={12} /> Fork
@@ -227,9 +308,11 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               disabled={busy}
               title="Start an empty project with no parts"
               onClick={() =>
-                void run('New project', () => session.createProject(forkName), 'An empty document is open. The previous project is checkpointed.').then(
-                  () => setForkName(''),
-                )
+                void run(
+                  'New project',
+                  () => session.createProject(forkName),
+                  'An empty document is open. The previous project is checkpointed.',
+                ).then(() => setForkName(''))
               }
             >
               <FilePlus2 size={12} /> New
@@ -244,7 +327,13 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
                   <button
                     className="project-open"
                     disabled={busy || current}
-                    onClick={() => void run('Open project', () => session.openProject(project.projectId), `Now editing "${project.name}".`)}
+                    onClick={() =>
+                      void run(
+                        'Open project',
+                        () => session.openProject(project.projectId),
+                        `Now editing "${project.name}".`,
+                      )
+                    }
                   >
                     {current ? <Check size={12} /> : <span className="project-bullet" />}
                     <div>
@@ -259,14 +348,20 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
                     className="project-delete"
                     disabled={busy || current}
                     title={current ? 'Switch away before deleting this project' : `Delete ${project.name}`}
-                    aria-label={confirmDelete === project.projectId ? `Confirm delete ${project.name}` : `Delete ${project.name}`}
+                    aria-label={
+                      confirmDelete === project.projectId ? `Confirm delete ${project.name}` : `Delete ${project.name}`
+                    }
                     onClick={() => {
                       if (confirmDelete !== project.projectId) {
                         setConfirmDelete(project.projectId)
                         return
                       }
                       setConfirmDelete(null)
-                      void run('Delete project', () => session.deleteProject(project.projectId), `"${project.name}" and its log are gone.`)
+                      void run(
+                        'Delete project',
+                        () => session.deleteProject(project.projectId),
+                        `"${project.name}" and its log are gone.`,
+                      )
                     }}
                   >
                     <Trash2 size={12} />
@@ -281,10 +376,21 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
       )}
 
       {open === 'legal' && (
-        <div ref={panel as RefObject<HTMLDivElement>} className="project-panel legal" role="dialog" aria-modal="true" aria-label="Data and licences">
+        <div
+          id={legalDialogId}
+          ref={panel as RefObject<HTMLDivElement>}
+          className="project-panel legal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={legalTitleId}
+        >
           <header>
-            <span className="eyebrow">DATA &amp; LICENCES</span>
-            <button onClick={() => setOpen('projects')} aria-label="Back to projects"><X size={12} /></button>
+            <span className="eyebrow" id={legalTitleId}>
+              DATA &amp; LICENCES
+            </span>
+            <button type="button" onClick={() => setOpen('projects')} aria-label="Back to projects">
+              <X size={12} />
+            </button>
           </header>
 
           <p className="legal-lede">
@@ -326,9 +432,8 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
           )}
 
           <p className="legal-trademark">
-            LEGO® is a registered trademark of the LEGO Group, which does not sponsor, endorse or
-            authorise LDraw or Brickwright. Brickwright is an unofficial tool for designing with
-            LEGO-compatible parts.
+            LEGO® is a registered trademark of the LEGO Group, which does not sponsor, endorse or authorise LDraw or
+            Brickwright. Brickwright is an unofficial tool for designing with LEGO-compatible parts.
           </p>
           <button
             className="legal-copy"
@@ -341,8 +446,20 @@ export function ProjectMenu({ documentName, documentId, revision, sessionStatus,
               ].join('\n')
               void navigator.clipboard
                 ?.writeText(text)
-                .then(() => onNotice({ kind: 'success', title: 'Attribution copied', detail: 'Paste it wherever the compiled assets are redistributed.' }))
-                .catch(() => onNotice({ kind: 'error', title: 'Clipboard unavailable', detail: 'This context does not allow clipboard writes.' }))
+                .then(() =>
+                  onNotice({
+                    kind: 'success',
+                    title: 'Attribution copied',
+                    detail: 'Paste it wherever the compiled assets are redistributed.',
+                  }),
+                )
+                .catch(() =>
+                  onNotice({
+                    kind: 'error',
+                    title: 'Clipboard unavailable',
+                    detail: 'This context does not allow clipboard writes.',
+                  }),
+                )
             }}
           >
             <Copy size={12} /> Copy attribution text
