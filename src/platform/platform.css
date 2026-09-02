@@ -346,7 +346,9 @@
   scroll-behavior: smooth;
 }
 .pf-frame__body:focus-visible {
-  outline: none;
+  /* Skip-to-content and route changes focus this landmark (tabIndex=-1). */
+  outline: 2px solid var(--cyan, #83e7ee);
+  outline-offset: -2px;
 }
 
 /* States ------------------------------------------------------------------- */

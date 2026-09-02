@@ -34,18 +34,17 @@ import { TransformPanel } from './TransformPanel'
 import { ViewportStage } from './ViewportStage'
 import { OfflineState } from './states'
 import {
-  bottomHeight,
   clampLayout,
   DOCK_LIMITS,
   LAYOUT_PRESETS,
-  TOOLRAIL_HEIGHT,
-  TOPBAR_HEIGHT,
   defaultLayout,
   loadLayout,
   recommendedPreset,
   saveLayout,
   workspaceColumns,
+  workspaceRows,
   type DockId,
+  type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
 import {
@@ -310,6 +309,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       })
     },
     [rawLayout, updateLayout],
+  )
+
+  const applyPreset = useCallback(
+    (id: LayoutPresetId) => {
+      updateLayout({
+        ...LAYOUT_PRESETS[id].layout,
+        sections: rawLayout.sections,
+      })
+    },
+    [rawLayout.sections, updateLayout],
   )
 
   const toggleSection = useCallback(
@@ -757,16 +766,17 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         className="app-shell"
         style={{
           gridTemplateColumns: workspaceColumns(layout),
-          gridTemplateRows: `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`,
+          gridTemplateRows: workspaceRows(layout),
         }}
         data-preset={layout.preset ?? 'custom'}
+        data-timeline={layout.bottom.collapsed ? undefined : 'open'}
       >
         {/* The editor's outline began at h2, so assistive technology had no
          * top-level heading for the route and no way to hear which document
          * was open without reading the chrome. It is hidden because the
          * document name is already on screen in the title bar. */}
         <h1 className="visually-hidden">{workbench.state.document.name} — Brickwright editor</h1>
-        <TopBar workbench={workbench} />
+        <TopBar workbench={workbench} preset={layout.preset} onPreset={applyPreset} />
         <Toolbar
           workbench={workbench}
           shortcuts={shortcuts}

@@ -130,6 +130,19 @@ describe('numeric drafts', () => {
     fireEvent.blur(field)
     expect(onCommit).not.toHaveBeenCalled()
   })
+  it('keeps a nonsense draft and says so instead of restoring in silence', () => {
+    const onCommit = vi.fn()
+    render(<NumberField label="X" value={12} suffix="LDU" onCommit={onCommit} />)
+    const field = screen.getByRole('spinbutton') as HTMLInputElement
+    Object.defineProperty(field, 'validity', { configurable: true, value: { badInput: true } })
+    fireEvent.change(field, { target: { value: '' } })
+    fireEvent.blur(field)
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(field).toHaveValue(12)
+    expect(field).not.toHaveAttribute('aria-invalid')
+  })
 })
 
 describe('editor transactions', () => {

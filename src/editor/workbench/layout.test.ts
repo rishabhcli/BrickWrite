@@ -3,6 +3,7 @@ import { resetPreferences } from './persistence'
 import {
   bottomHeight,
   clampLayout,
+  COLLAPSED_BAR,
   COLLAPSED_RAIL,
   defaultLayout,
   DEFAULT_SECTIONS,
@@ -17,6 +18,7 @@ import {
   TOOLRAIL_HEIGHT,
   TOPBAR_HEIGHT,
   workspaceColumns,
+  workspaceRows,
 } from './layout'
 
 /**
@@ -160,12 +162,22 @@ describe('grid templates', () => {
   })
 
   it('shrinks the bottom dock to a bar when collapsed', () => {
-    expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBeLessThan(40)
+    expect(COLLAPSED_BAR).toBe(0)
+    expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBe(0)
+  })
+
+  it('lets the inline timeline row follow bottomHeight instead of a locked 0', () => {
+    const open = defaultLayout('desktop')
+    expect(workspaceRows({ ...open, bottom: { size: 152, collapsed: true } })).toBe('52px 0px minmax(0, 1fr) 0px')
+    expect(workspaceRows({ ...open, bottom: { size: 152, collapsed: false } })).toBe('52px 0px minmax(0, 1fr) 152px')
   })
 })
 
 describe('chrome', () => {
   it('matches the quieter shell strip heights', () => {
+    // Status and tool-rail heights stay zero: those surfaces overlay the
+    // viewport instead of occupying grid rows. Pinning this stops a drive-by
+    // remount from shrinking the model without a product decision.
     expect(TOPBAR_HEIGHT).toBe(52)
     expect(TOOLRAIL_HEIGHT).toBe(0)
     expect(STATUSBAR_HEIGHT).toBe(0)

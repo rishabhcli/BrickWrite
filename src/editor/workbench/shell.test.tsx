@@ -254,6 +254,18 @@ describe('the beginner path through the shell', () => {
     expect(document.activeElement).toBe(document.querySelector('.bw-gen textarea'))
   })
 
+
+  it('keeps mode, Esc and layout-preset affordances in the existing chrome', () => {
+    mount()
+    const mode = control('[data-testid="tool-mode"]')
+    expect(mode.textContent).toMatch(/SELECT/i)
+    expect(mode.textContent).toMatch(/Esc returns to Select/)
+    expect(control('select[aria-label="Layout preset"]')).not.toBeNull()
+    expect(document.querySelector('.statusbar')).toBeNull()
+    fireEvent.change(control('select[aria-label="Layout preset"]'), { target: { value: 'laptop' } })
+    expect(document.querySelector('.app-shell')?.getAttribute('data-preset')).toBe('laptop')
+  })
+
   it('puts a brick down from the empty viewport in one press', () => {
     cadEngine.replaceDocument(createEmptyDocument())
     mount()

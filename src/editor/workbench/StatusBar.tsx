@@ -5,13 +5,31 @@ import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
 import type { Workbench } from './useWorkbench'
 
+type ModeSource = Pick<Workbench, 'tool' | 'placement' | 'connect'>
+type EscapeSource = Pick<Workbench, 'tool' | 'placement' | 'connect' | 'state'>
+
+/** What the next click means, in the same words the chrome used to keep on a dedicated strip. */
+export function describeWorkbenchMode({ tool, placement, connect }: ModeSource): string {
+  if (placement) return 'PLACING'
+  if (tool === 'connect') return `CONNECT · ${connect.stage.toUpperCase()}`
+  return tool.toUpperCase()
+}
+
+/** How to leave the current mode. Always a sentence that names Esc. */
+export function describeWorkbenchEscape({ tool, placement, connect, state }: EscapeSource): string {
+  if (placement) return 'Esc puts the part back'
+  if (tool === 'connect' && connect.stage !== 'source') return 'Esc backs out one stage'
+  if (state.proposals.length) return 'Esc rejects the ghost proposal'
+  return 'Esc returns to Select'
+}
+
 /**
  * The status bar.
  *
- * One line that always answers four questions: what mode am I in, what is it
- * scoped to, what will the next click do, and how do I get out of it. A tool
- * that changes what a click means without saying so is the single most common
- * way a CAD interface loses somebody.
+ * The quieter shell hid this footer (`STATUSBAR_HEIGHT = 0`, `.statusbar { display:
+ * none }`) so the model keeps the pixels. Mode, escape and layout-preset now live
+ * on the toolbar island and the top bar. This full readout is kept for a future
+ * density option; it is not mounted today.
  */
 export function StatusBar({
   workbench,
@@ -26,22 +44,10 @@ export function StatusBar({
   preset: LayoutPresetId | null
   onPreset: (preset: LayoutPresetId) => void
 }) {
-  const { state, tool, placement, connect, visibility } = workbench
+  const { state, tool, visibility } = workbench
   const visibilityNote = describeVisibility(visibility, state.validation.partCount)
-
-  const mode = placement
-    ? 'PLACING'
-    : tool === 'connect'
-      ? `CONNECT · ${connect.stage.toUpperCase()}`
-      : tool.toUpperCase()
-
-  const cancel = placement
-    ? 'Esc puts the part back'
-    : tool === 'connect' && connect.stage !== 'source'
-      ? 'Esc backs out one stage'
-      : state.proposals.length
-        ? 'Esc rejects the ghost proposal'
-        : 'Esc returns to Select'
+  const mode = describeWorkbenchMode(workbench)
+  const cancel = describeWorkbenchEscape(workbench)
 
   return (
     <footer className="statusbar" role="status" aria-live="polite">

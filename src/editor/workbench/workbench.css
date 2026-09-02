@@ -5,14 +5,23 @@
      showing and the status bar row gets pushed off the bottom. */
   height: 100dvh;
   display: grid;
-  /* Four horizontal strips sat above and below the model and took 286px of a
-     1000px viewport before anything was drawn. Trimmed to the smallest height
-     each one can carry its content at, which hands ~28px back to the model. */
-  grid-template-rows: 52px 44px minmax(0, 1fr) 146px 24px;
+  /* Four tracks matching Workbench.workspaceRows(): topbar, unused toolrail (0),
+     viewport, timeline. StatusBar is unmounted. This CSS is the pre-paint
+     fallback only; later chrome layers must not re-declare grid-template-rows.
+     The inline style owns the live timeline height, so this must never use
+     !important or an open timeline collapses to 0.
+     Default presets collapse the timeline, so the fallback track is 0. When
+     the shell is marked open (persisted layout after first paint, or a class
+     that survived a missing inline style), do not stay pinned at 0. */
+  --timeline-track: 0px;
+  grid-template-rows: 52px 0 minmax(0, 1fr) var(--timeline-track);
   grid-template-columns: 268px 4px minmax(0, 1fr) 4px 300px;
   background: var(--void);
   position: relative;
   isolation: isolate;
+}
+.app-shell[data-timeline='open'] {
+  --timeline-track: 152px;
 }
 
 .app-shell::before {
@@ -47,6 +56,8 @@
   /* Material comes from the liquid primitive; see .dock above. */
   position: relative;
   z-index: 20;
+  container-type: inline-size;
+  container-name: topbar;
 }
 
 .brand-lockup {
@@ -846,6 +857,10 @@
   border-color: var(--cyan);
   box-shadow: 0 0 14px rgba(131, 231, 238, 0.12);
 }
+.search-field:has(:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
 .search-field input {
   flex: 1;
   min-width: 0;
@@ -853,6 +868,8 @@
   border: 0;
   color: var(--ink);
   font-size: 12px;
+  /* Keyboard focus lives on .search-field:has(:focus-visible) so the inner
+     field does not draw a second ring inside the 32px bar. */
   outline: none;
 }
 .search-field input::placeholder {
@@ -886,7 +903,8 @@
   background: var(--panel-2);
   color: var(--muted);
   border-radius: 4px;
-  padding: 5px 9px;
+  min-height: 32px;
+  padding: 6px 10px;
   font-family: var(--display);
   font-size: 9px;
   font-weight: 700;
@@ -894,6 +912,10 @@
   letter-spacing: 0.08em;
   cursor: pointer;
   transition: var(--t-control);
+}
+.category-row button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
 }
 .category-row button:hover {
   color: var(--ink);
@@ -1477,6 +1499,13 @@
 .number-field > div:focus-within {
   border-color: var(--cyan);
   box-shadow: 0 0 8px rgba(131, 231, 238, 0.15);
+}
+.number-field:has(:focus-visible) > div {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.number-field.invalid:has(:focus-visible) > div {
+  outline-color: var(--orange);
 }
 .number-field input {
   min-width: 0;
@@ -3461,9 +3490,6 @@
 }
 
 @media (max-height: 760px) {
-  .app-shell {
-    grid-template-rows: 54px 44px minmax(0, 1fr) 140px;
-  }
   .part-card {
     height: 96px;
   }
@@ -4197,9 +4223,19 @@
   cursor: pointer;
   display: grid;
   place-items: center;
-  padding: 2px;
+  width: 32px;
+  height: 32px;
+  margin-block: -1px;
+  padding: 0;
+  flex: none;
+  border-radius: 4px;
 }
 .search-clear:hover {
+  color: var(--ink);
+}
+.search-clear:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 0;
   color: var(--ink);
 }
 
@@ -4217,6 +4253,24 @@
 }
 .catalog-failed {
   color: var(--orange);
+}
+.catalog-retry {
+  margin-left: 8px;
+  border: 1px solid var(--line-hi);
+  background: var(--panel-2);
+  color: var(--cyan);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  min-height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.catalog-retry:hover,
+.catalog-retry:focus-visible {
+  border-color: var(--cyan);
 }
 
 .parts-more {
@@ -4665,11 +4719,12 @@
   gap: 1px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  overflow: hidden;
+  /* Visible so the 2px :focus-visible ring on 32px buttons is not clipped. */
+  overflow: visible;
 }
 .palette-views button {
-  width: 24px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border: 0;
@@ -4677,6 +4732,12 @@
   color: var(--faint);
   cursor: pointer;
   transition: var(--t-control);
+}
+.palette-views button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.palette-views button:last-child {
+  border-radius: 0 3px 3px 0;
 }
 .palette-views button:hover {
   color: var(--ink);
@@ -4850,8 +4911,8 @@
   z-index: 3;
   right: 6px;
   top: 6px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -5041,6 +5102,17 @@
 .number-field.disabled input {
   opacity: 0.4;
 }
+.number-field.invalid input {
+  color: var(--orange);
+}
+.number-field.invalid > div {
+  border-color: var(--orange);
+}
+.number-field.invalid > div:focus-within {
+  border-color: var(--orange);
+  box-shadow: 0 0 8px rgba(245, 163, 63, 0.2);
+}
+
 .transform-multi-note {
   margin: 0;
   color: var(--muted);
@@ -5922,8 +5994,8 @@
   box-shadow: 0 0 10px rgba(131, 231, 238, 0.3);
 }
 .keymap-clear {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border: 1px solid transparent;
@@ -5931,6 +6003,10 @@
   color: var(--faint);
   cursor: pointer;
   border-radius: 4px;
+}
+.keymap-clear:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 0;
 }
 .keymap-clear:hover:not(:disabled) {
   color: var(--red);
@@ -7795,7 +7871,6 @@
 .app-shell {
   --display: var(--font-chrome);
   font-family: var(--font-chrome);
-  grid-template-rows: 44px 0 minmax(0, 1fr) 30px 24px;
 }
 .app-shell::before {
   display: none;
@@ -7973,6 +8048,8 @@
   margin-bottom: 14px;
   overflow: visible;
   border-radius: var(--r-island);
+  container-type: inline-size;
+  container-name: toolbar-island;
 }
 .toolbar-island .toolrail {
   width: max-content;
@@ -8059,8 +8136,10 @@
 /* Minimal building surface ------------------------------------------------- */
 body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-select: none !important; }
 .part-card.dragging { opacity: .42; transform: scale(.96); }
+/* StatusBar and the old dock-bar stay unmounted: they would occupy a grid row
+   the quieter shell already gave to the model. Mode/Esc/preset live in TopBar
+   and the toolbar island instead. */
 .dock-bar, .statusbar { display: none !important; }
-.app-shell { grid-template-rows: 44px 0 minmax(0, 1fr) 0 !important; }
 .toolbar-island { margin-bottom: 12px; }
 .toolbar-island .tool-button,
 .toolbar-island .workspace-trigger { width: 38px; min-width: 38px; padding: 0; }
@@ -8095,7 +8174,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .category-row .facet-toggle { display: inline-flex; align-items: center; gap: 9px; font-size: 0; }
 .category-row .facet-toggle:not(:has(svg:only-child)) { font-size: 10px; }
 .palette-label span { text-transform: none; letter-spacing: 0; }
-.viewport-empty p { display: none; }
 .part-card.armed::before { display: none; }
 .placement-repeat { display: flex; gap: 9px; align-items: center; font-size: 10px; cursor: pointer; }
 .placement-repeat input { accent-color: var(--cyan); margin: 0; }
@@ -8300,7 +8378,8 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .part-context-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; width: 230px; max-height: calc(100dvh - 16px); overflow: auto; padding: 6px; background: #111b1ff7; border: 1px solid #4b5c60; border-radius: var(--r-panel); box-shadow: 0 14px 44px #0009; backdrop-filter: blur(var(--glass-blur-control)); }
 .part-context-heading { color: var(--faint); font: 700 10px var(--display); padding: 9px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .part-context-menu button { padding: 9px 10px; min-height: 29px; text-align: left; background: none; border: 0; border-radius: 9px; color: var(--ink); font-size: 12px; cursor: pointer; }
-.part-context-menu button:focus-visible, .part-context-menu button:hover:not(:disabled) { outline: none; background: #2c4549; color: #cefcf4; }
+.part-context-menu button:hover:not(:disabled) { background: #2c4549; color: #cefcf4; }
+.part-context-menu button:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; background: #2c4549; color: #cefcf4; }
 .part-context-menu button:disabled { opacity: .35; cursor: default; }
 .part-context-menu button.danger { color: #ff9b86; }
 .part-context-menu [role='separator'] { border-top: 1px solid var(--line); margin: 4px 5px; }
@@ -8350,6 +8429,14 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   opacity: 0.5;
   cursor: default;
 }
+.viewport-empty-error {
+  pointer-events: auto;
+  max-width: 42ch;
+  margin-top: 4px;
+  color: var(--orange);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .viewport-empty-starter small {
   color: var(--faint);
   font: 500 10px var(--display);
@@ -8363,9 +8450,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
  * This layer keeps the same bounded liquid material while making the software's
  * actual powers part of its silhouette.
  * ------------------------------------------------------------------------- */
-.app-shell {
-  grid-template-rows: 52px 0 minmax(0, 1fr) 0 !important;
-}
 
 .topbar.glass-bar {
   min-height: 52px;
@@ -8747,13 +8831,23 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   }
 }
 
+/* Topbar width still tracks the window (it spans the shell). Keep the column
+   compacting on a viewport query; brand type follows the topbar container. */
 @media (max-width: 1080px) {
-  .brand-lockup strong {
-    font-size: 13px;
-  }
   .topbar {
     grid-template-columns: 164px auto minmax(130px, 1fr) auto;
   }
+}
+@container topbar (max-width: 1080px) {
+  .brand-lockup strong {
+    font-size: 13px;
+  }
+}
+
+/* Island icons follow the island, not the window. Docks already steal columns,
+   so a wide window can still host a tight island. 720px is about the island
+   width of a 1080px window with both default docks open. */
+@container toolbar-island (max-width: 720px) {
   .toolbar-island .rail-divider {
     margin-inline: 1px;
   }
@@ -8763,3 +8857,100 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
     min-width: 33px;
   }
 }
+
+.layout-preset {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px 0 0;
+  border-left: 1px solid var(--line);
+}
+.layout-preset select {
+  min-height: 32px;
+  max-width: 132px;
+  margin-left: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.layout-preset select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.tool-mode {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  flex: 0 1 168px;
+  min-width: 0;
+  max-width: 168px;
+  padding: 0 8px 0 4px;
+  color: var(--orange);
+  font-family: var(--display);
+  overflow: hidden;
+}
+.tool-mode[data-mode='connect'] {
+  color: var(--cyan);
+}
+.tool-mode b {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+}
+.tool-mode em {
+  color: var(--faint);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toolbar-island .tool-button:focus-visible,
+.toolbar-island .icon-button:focus-visible,
+.placement-bar button:focus-visible,
+.palette-views button:focus-visible,
+.palette-sets button:focus-visible,
+.tier-row button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+
+/* Collapse the mode readout before it crowds a narrow viewport island.
+   Window-width media is a poor proxy: docks already steal columns, so the
+   island is tighter than the window. Container queries follow the island. */
+@container toolbar-island (max-width: 760px) {
+  .tool-mode em {
+    display: none;
+  }
+}
+@container toolbar-island (max-width: 560px) {
+  .tool-mode {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+.toolbar-island .toolrail {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+

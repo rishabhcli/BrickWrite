@@ -272,24 +272,32 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
    * Reaching past the modelled library pulls the wider catalogue in once.
    *
    * It is seven megabytes, so it is not fetched on boot; asking for a tier that
-   * needs it is the signal that the session actually wants it.
+   * needs it is the signal that the session actually wants it. A failed fetch
+   * must be retryable from the panel: the loader already drops a poisoned
+   * promise, but without a control the operator has to leave the tier and come
+   * back, which reads as the index being gone rather than briefly unreachable.
    */
-  useEffect(() => {
-    if (tier !== 'catalogued' && tier !== 'all') return
-    if (catalog.catalogueLoaded || !externalCatalogueAvailable()) return
-    let cancelled = false
+  const catalogueRequest = useRef(0)
+  const reloadCatalogue = useCallback(() => {
+    if (catalog.catalogueLoaded || !externalCatalogueAvailable()) {
+      setCatalogueState(catalog.catalogueLoaded ? 'ready' : 'idle')
+      return
+    }
+    const request = ++catalogueRequest.current
     setCatalogueState('loading')
     loadExternalCatalogue()
       .then(() => {
-        if (!cancelled) setCatalogueState('ready')
+        if (catalogueRequest.current === request) setCatalogueState('ready')
       })
       .catch(() => {
-        if (!cancelled) setCatalogueState('failed')
+        if (catalogueRequest.current === request) setCatalogueState('failed')
       })
-    return () => {
-      cancelled = true
-    }
-  }, [tier])
+  }, [])
+
+  useEffect(() => {
+    if (tier !== 'catalogued' && tier !== 'all') return
+    reloadCatalogue()
+  }, [reloadCatalogue, tier])
 
   const sizeRange = SIZE_FACETS.find((entry) => entry.id === sizeFacet)
 
@@ -496,6 +504,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         {['All parts', ...categories].map((item) => (
           <button
             key={item}
+            type="button"
             className={category === item ? 'active' : ''}
             onClick={() => {
               setCategory(item)
@@ -508,6 +517,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           </button>
         ))}
         <button
+          type="button"
           className={`facet-toggle ${facetsOpen ? 'active' : ''}`}
           onClick={() => setFacetsOpen((value) => !value)}
           aria-expanded={facetsOpen}
@@ -525,6 +535,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             {TIERS.map((entry) => (
               <button
                 key={entry.id}
+                type="button"
                 role="tab"
                 aria-selected={tier === entry.id}
                 className={tier === entry.id ? 'active' : ''}
@@ -607,6 +618,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           )}
           <div className="palette-sets" role="tablist" aria-label="Saved part sets">
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === null}
               className={activeSet === null ? 'active' : ''}
@@ -615,6 +627,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               <Search size={10} /> RESULTS
             </button>
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === 'favourites'}
               className={activeSet === 'favourites' ? 'active' : ''}
@@ -625,6 +638,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               <Star size={10} /> FAVOURITES <em>{favourites.length}</em>
             </button>
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === 'recents'}
               className={activeSet === 'recents' ? 'active' : ''}
@@ -637,6 +651,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             {customPalettes.map((set) => (
               <button
                 key={set.id}
+                type="button"
                 role="tab"
                 aria-selected={activeSet === set.id}
                 className={activeSet === set.id ? 'active' : ''}
@@ -646,6 +661,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               </button>
             ))}
             <button
+              type="button"
               className="palette-set-new"
               title="Save the current results as a named palette"
               aria-label="Save the current results as a named palette"
@@ -676,8 +692,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           </span>
         )}
         {catalogueState === 'failed' && (
-          <span className="catalog-failed">
+          <span className="catalog-failed" role="alert">
             <CircleAlert size={10} /> catalogue index unavailable
+            <button type="button" className="catalog-retry" onClick={reloadCatalogue}>
+              Retry
+            </button>
           </span>
         )}
       </div>
@@ -766,6 +785,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
                 Search every identity
               </button>
             )}
+            {!activeSet && catalogueState === 'failed' && (
+              <button type="button" onClick={reloadCatalogue}>
+                Retry the catalogue
+              </button>
+            )}
             {!activeSet && !!query && (
               <button type="button" onClick={() => setQuery('')}>
                 Clear search
@@ -827,6 +851,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             .map((color) => (
               <button
                 key={color.code}
+                type="button"
                 className={`${activeColor === color.code ? 'selected' : ''} ${colourFavourites.includes(color.code) ? 'favourite' : ''}`}
                 style={{ '--swatch': color.hex } as React.CSSProperties}
                 onClick={() => onColorChange(color.code)}

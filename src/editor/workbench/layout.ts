@@ -182,12 +182,21 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
 
 /** Width of a collapsed side dock: the reopen rail stays clickable. */
 export const COLLAPSED_RAIL = 34
-/** Height of a collapsed bottom dock. */
+/**
+ * Height of a collapsed bottom dock. Zero on purpose: there is no reopen
+ * strip. Reopen the timeline from the toolbar island ("Build timeline").
+ */
 export const COLLAPSED_BAR = 0
 /** Must match `.app-shell` in `workbench.css` and the Workbench inline grid. */
 export const TOPBAR_HEIGHT = 52
 /** The tools float inside the viewport now; no permanent grid strip is reserved. */
 export const TOOLRAIL_HEIGHT = 0
+/**
+ * Zero on purpose. The tools float as a viewport island, and remounting a
+ * dedicated status strip would steal model pixels the quieter shell already
+ * gave back. Mode, Esc and layout-preset live on that island and the top bar.
+ * StatusBar.tsx is the full readout if a density option ever wants it back.
+ */
 export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
@@ -228,3 +237,8 @@ export function workspaceColumns(layout: WorkbenchLayout): string {
 
 export const bottomHeight = (layout: WorkbenchLayout): number =>
   layout.bottom.collapsed ? COLLAPSED_BAR : layout.bottom.size
+
+/** Four tracks: topbar, unused toolrail, viewport, timeline. StatusBar is unmounted. Inline style must win over CSS — never lock the last track to 0 with !important. */
+export function workspaceRows(layout: WorkbenchLayout): string {
+  return `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`
+}
