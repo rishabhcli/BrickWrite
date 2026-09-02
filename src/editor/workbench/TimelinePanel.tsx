@@ -410,37 +410,41 @@ export function TimelinePanel({
         <div className="timeline-switch" role="tablist" aria-label="Timeline view">
           <button
             role="tab"
+            aria-label="Steps"
             aria-selected={showing === 'steps'}
             className={showing === 'steps' ? 'active' : ''}
             onClick={() => setView('steps')}
           >
-            <ListOrdered size={11} /> STEPS
+            <ListOrdered size={11} /> <span className="timeline-tab-copy">STEPS</span>
           </button>
           <button
             role="tab"
+            aria-label={`History, ${state.transactions.length} edits`}
             aria-selected={showing === 'history'}
             className={showing === 'history' ? 'active' : ''}
             onClick={() => setView('history')}
           >
-            <Clock3 size={11} /> HISTORY <em>{state.transactions.length}</em>
+            <Clock3 size={11} /> <span className="timeline-tab-copy">HISTORY</span> <em>{state.transactions.length}</em>
           </button>
           {state.proposals.length > 0 && (
             <button
               role="tab"
+              aria-label={`Review, ${state.proposals.length} pending`}
               aria-selected={showing === 'review'}
               className={showing === 'review' ? 'active' : ''}
               onClick={() => setView('review')}
             >
-              <Sparkles size={11} /> REVIEW <em>{state.proposals.length}</em>
+              <Sparkles size={11} /> <span className="timeline-tab-copy">REVIEW</span> <em>{state.proposals.length}</em>
             </button>
           )}
           <button
             role="tab"
+            aria-label={`Notes, ${openNotes.length} open`}
             aria-selected={showing === 'feedback'}
             className={showing === 'feedback' ? 'active' : ''}
             onClick={() => setView('feedback')}
           >
-            <MessageSquareText size={11} /> NOTES <em>{openNotes.length}</em>
+            <MessageSquareText size={11} /> <span className="timeline-tab-copy">NOTES</span> <em>{openNotes.length}</em>
           </button>
         </div>
         {showing === 'steps' && (
@@ -518,13 +522,19 @@ export function TimelinePanel({
                   className={`transaction-card ${transaction.author} ${kind} ${head ? 'current' : ''}`}
                   key={transaction.id}
                   type="button"
+                  aria-current={head ? 'true' : undefined}
                   disabled={!liveIds.length}
                   title={
                     liveIds.length
-                      ? `Select the ${liveIds.length} live part${liveIds.length === 1 ? '' : 's'} this ${kind} still holds`
+                      ? `Select the ${liveIds.length} live part${liveIds.length === 1 ? '' : 's'} this ${kind} still holds. Undo appends a new card.`
                       : 'Those parts are no longer in the document. This card is history, not an undo target.'
                   }
-                  onClick={() => onSelectIds(liveIds)}
+                  onClick={() => {
+                    // History is not a playhead. Show the live model so the
+                    // selected parts are actually on screen, then select them.
+                    if (playbackStep !== null) onPlayStep(null)
+                    onSelectIds(liveIds)
+                  }}
                 >
                   <span className="transaction-index">
                     {String(state.transactions.length - index).padStart(2, '0')}

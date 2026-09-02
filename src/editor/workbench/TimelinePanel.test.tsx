@@ -254,4 +254,97 @@ describe('build playback and edit history chrome', () => {
     const card = screen.getByText('Remove rover brick').closest('button')
     expect(card).toBeDisabled()
   })
+
+  it('appends undo as a new HEAD card instead of moving a playhead', () => {
+    const partId = Object.values(cadEngine.getDocument().parts).find((part) => !part.protected)!.id
+    const part = cadEngine.getDocument().parts[partId]
+    const painted = cadEngine.execute(
+      'Paint a history brick',
+      [{ type: 'part.recolor', partId, color: part.color }],
+      'human',
+      cadEngine.getDocument().revision,
+    )
+    if (!painted.ok) throw new Error(painted.error.message)
+    const before = cadEngine.getSnapshot().transactions.length
+    const undo = cadEngine.undo('human')
+    if (!undo.ok) throw new Error(undo.error.message)
+    expect(cadEngine.getSnapshot().transactions).toHaveLength(before + 1)
+    expect(cadEngine.getSnapshot().transactions.at(-1)).toMatchObject({
+      kind: 'undo',
+      label: 'Undo: Paint a history brick',
+    })
+    render(<FeedbackHarness initialView="history" />)
+    const undoCard = screen.getByText('Undo: Paint a history brick').closest('button')
+    const origin = screen.getByText('Paint a history brick').closest('button')
+    expect(undoCard).toHaveClass('current')
+    expect(undoCard).toHaveAttribute('aria-current', 'true')
+    expect(origin).not.toHaveClass('current')
+    expect(origin).not.toHaveAttribute('aria-current')
+    const revision = cadEngine.getDocument().revision
+    fireEvent.click(origin!)
+    expect(cadEngine.getDocument().revision).toBe(revision)
+  })
+
+  it('selects a scrubbed step, then leaves that selection alone while autoplay runs', () => {
+    vi.useFakeTimers()
+    render(<FeedbackHarness initialView="steps" />)
+    fireEvent.click(screen.getByTitle(/Hold the build at step 2:/i))
+    const held = cadEngine.getDocument().steps[1]!.partIds
+    expect(cadEngine.getSnapshot().selection).toEqual(held)
+    fireEvent.click(screen.getByRole('button', { name: /PLAY/ }))
+    act(() => {
+      vi.advanceTimersByTime(800)
+    })
+    expect(screen.getByText(/Step 3 \//)).toBeVisible()
+    act(() => {
+      vi.advanceTimersByTime(800)
+    })
+    expect(screen.getByText(/Step 4 \//)).toBeVisible()
+    expect(cadEngine.getSnapshot().selection).toEqual(held)
+    vi.useRealTimers()
+  })
+
+  it('shows the whole model before a history card selects live parts', () => {
+    const partId = Object.values(cadEngine.getDocument().parts).find((part) => !part.protected)!.id
+    const part = cadEngine.getDocument().parts[partId]
+    const painted = cadEngine.execute(
+      'Mark a live brick',
+      [{ type: 'part.recolor', partId, color: part.color }],
+      'human',
+      cadEngine.getDocument().revision,
+    )
+    if (!painted.ok) throw new Error(painted.error.message)
+    function Driver() {
+      const workbench = useWorkbench()
+      return (
+        <>
+          <button type="button" onClick={workbench.playBuild}>
+            start-play
+          </button>
+          <output aria-label="Held step">
+            {workbench.playbackStep === null ? 'all' : String(workbench.playbackStep)}
+          </output>
+          <TimelinePanel
+            state={workbench.state}
+            playbackStep={workbench.playbackStep}
+            playbackPlaying={workbench.playbackPlaying}
+            onPlayBuild={workbench.playBuild}
+            onPausePlayback={workbench.pausePlayback}
+            view="history"
+            onPlayStep={workbench.setPlaybackStep}
+            onSequence={workbench.regenerateBuildOrder}
+            onAccept={workbench.acceptProposal}
+            onReject={workbench.rejectProposal}
+            onSelectIds={(ids) => cadEngine.setSelection(ids)}
+          />
+        </>
+      )
+    }
+    render(<Driver />)
+    fireEvent.click(screen.getByText('start-play'))
+    expect(screen.getByLabelText('Held step')).toHaveTextContent('0')
+    fireEvent.click(screen.getByText('Mark a live brick'))
+    expect(cadEngine.getSnapshot().selection).toEqual([partId])
+    expect(screen.getByLabelText('Held step')).toHaveTextContent('all')
+  })
 })
