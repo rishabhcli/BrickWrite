@@ -109,6 +109,95 @@ export interface DesignBrief {
   conflicts: { field: string; detail: string }[]
 }
 
+/**
+ * How a brief is compiled: the instructions, and the shape of the answer.
+ *
+ * Both here rather than beside either caller, because there are two callers and
+ * they have to mean the same thing. `POST /api/brief` compiles a brief in the
+ * API process; `src/generation/brief.ts` compiles one in the browser through
+ * whatever `ModelProvider` it was given. Each held its own copy, and both had a
+ * comment saying they must not drift with nothing checking that they had not.
+ *
+ * The schema is worse than the prompt to duplicate: `src/generation/brief.ts`
+ * hashes it into a brief's provenance, so two copies that disagree do not merely
+ * ask for different things, they change what a brief is identified as.
+ *
+ * This file is the dependency-free contract module — the API process can load it
+ * without pulling the catalogue or the kernel into Node, which is what stopped
+ * the definition living next to the browser compiler.
+ */
+/**
+ *
+ * Deliberately the same instructions the browser-side compiler sends, so the two
+ * routes cannot drift into disagreeing about what a brief means.
+ */
+export const BRIEF_SYSTEM = [
+  'You compile a natural-language LEGO build request into a structured design brief.',
+  'Report only what the request supports. Leave a field null or empty when the request does not state it;',
+  'do not fill a gap with a plausible default.',
+  'For every field you populate, add an `evidence` entry naming the field and quoting the exact phrase',
+  'from the request that produced it.',
+  'If the request contradicts itself, record both readings in `conflicts` and do not choose between them.',
+  'Colours are named in plain English; they are resolved against the LDraw colour table afterwards.',
+  'The envelope is measured in studs, one stud being the horizontal brick pitch; leave all three axes null',
+  'when the request states no size.',
+].join(' ')
+
+/**
+ * Constrained to the subset the structured-output endpoint accepts: no array
+ * length bounds, no numeric ranges, no open-ended `additionalProperties` map.
+ * The value constraints live in `designBriefSchema` and are enforced after the
+ * answer arrives.
+ */
+export const BRIEF_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'subject',
+    'envelopeWidthStuds',
+    'envelopeHeightStuds',
+    'envelopeDepthStuds',
+    'scale',
+    'functions',
+    'paletteColourNames',
+    'symmetry',
+    'partBudget',
+    'style',
+    'evidence',
+    'conflicts',
+  ],
+  properties: {
+    subject: { type: 'string', minLength: 1, maxLength: 120 },
+    envelopeWidthStuds: { type: ['integer', 'null'] },
+    envelopeHeightStuds: { type: ['integer', 'null'] },
+    envelopeDepthStuds: { type: ['integer', 'null'] },
+    scale: { type: 'string', enum: ['micro', 'minifig', 'midi', 'large', 'unspecified'] },
+    functions: { type: 'array', items: { type: 'string', maxLength: 120 } },
+    paletteColourNames: { type: 'array', items: { type: 'string', maxLength: 40 } },
+    symmetry: { type: 'string', enum: ['none', 'mirror-x', 'mirror-z', 'radial'] },
+    partBudget: { type: ['integer', 'null'] },
+    style: { type: 'array', items: { type: 'string', maxLength: 40 } },
+    evidence: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['field', 'phrase'],
+        properties: { field: { type: 'string', maxLength: 60 }, phrase: { type: 'string', maxLength: 200 } },
+      },
+    },
+    conflicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['field', 'detail'],
+        properties: { field: { type: 'string', maxLength: 40 }, detail: { type: 'string', maxLength: 240 } },
+      },
+    },
+  },
+} as const
+
 /** Deterministic provenance for anything a model produced. */
 export interface Provenance {
   /** Provider identifier, e.g. 'anthropic'. 'deterministic' when no model ran. */

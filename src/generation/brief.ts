@@ -1,4 +1,6 @@
 import {
+  BRIEF_SCHEMA,
+  BRIEF_SYSTEM,
   hash32,
   stableStringify,
   type DesignBrief,
@@ -328,66 +330,16 @@ export const BRIEF_COMPILER_VERSION = 'brief/1'
  * object cannot be typed at all. Both are folded back into the `DesignBrief`
  * contract on arrival.
  */
-export const DESIGN_BRIEF_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'subject',
-    'envelopeWidthStuds',
-    'envelopeHeightStuds',
-    'envelopeDepthStuds',
-    'scale',
-    'functions',
-    'paletteColourNames',
-    'symmetry',
-    'partBudget',
-    'style',
-    'evidence',
-    'conflicts',
-  ],
-  properties: {
-    subject: { type: 'string', minLength: 1, maxLength: 120 },
-    envelopeWidthStuds: { type: ['integer', 'null'] },
-    envelopeHeightStuds: { type: ['integer', 'null'] },
-    envelopeDepthStuds: { type: ['integer', 'null'] },
-    scale: { type: 'string', enum: ['micro', 'minifig', 'midi', 'large', 'unspecified'] },
-    functions: { type: 'array', items: { type: 'string', maxLength: 120 } },
-    paletteColourNames: { type: 'array', items: { type: 'string', maxLength: 40 } },
-    symmetry: { type: 'string', enum: ['none', 'mirror-x', 'mirror-z', 'radial'] },
-    partBudget: { type: ['integer', 'null'] },
-    style: { type: 'array', items: { type: 'string', maxLength: 40 } },
-    evidence: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['field', 'phrase'],
-        properties: { field: { type: 'string', maxLength: 60 }, phrase: { type: 'string', maxLength: 200 } },
-      },
-    },
-    conflicts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['field', 'detail'],
-        properties: { field: { type: 'string', maxLength: 40 }, detail: { type: 'string', maxLength: 240 } },
-      },
-    },
-  },
-} as const
+/**
+ * Re-exported rather than redefined.
+ *
+ * `src/platform/contracts.ts` holds it because `POST /api/brief` compiles a
+ * brief too, and the two have to ask for the same shape — this one is hashed
+ * into a brief's provenance, so a second copy that disagreed would change what
+ * a brief is identified as, not just what it contains.
+ */
+export const DESIGN_BRIEF_SCHEMA = BRIEF_SCHEMA
 
-const BRIEF_SYSTEM = [
-  'You compile a natural-language LEGO build request into a structured design brief.',
-  'Report only what the request supports. Leave a field null or empty when the request does not state it;',
-  'do not fill a gap with a plausible default.',
-  'For every field you populate, add an `evidence` entry naming the field and quoting the exact phrase',
-  'from the request that produced it.',
-  'If the request contradicts itself, record both readings in `conflicts` and do not choose between them.',
-  'Colours are named in plain English; they are resolved against the LDraw colour table afterwards.',
-  'The envelope is measured in studs, one stud being the horizontal brick pitch; leave all three axes null',
-  'when the request states no size.',
-].join(' ')
 
 interface RawBrief {
   subject: string

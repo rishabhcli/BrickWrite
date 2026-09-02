@@ -5,7 +5,11 @@
 // default environment, looks exactly like one. The server module is Node-only,
 // so it is tested in a Node environment rather than by disabling that guard.
 import { afterEach, describe, expect, it } from 'vitest'
-import { ModelProviderUnavailableError } from '../../src/platform/contracts.ts'
+import {
+  BRIEF_SCHEMA as SHARED_BRIEF_SCHEMA,
+  BRIEF_SYSTEM,
+  ModelProviderUnavailableError,
+} from '../../src/platform/contracts.ts'
 import { AnthropicGenerationProvider, SchemaViolationError, configFromEnv, redact } from './anthropic.ts'
 import { kindForSchema, validatePayload } from './schema.ts'
 import { createGenerationServer, type StandaloneServer } from './serve.ts'
@@ -373,6 +377,28 @@ describe('POST /api/brief', () => {
     evidence: [{ field: 'subject', phrase: 'a red pickup truck' }],
     conflicts: [],
   }
+
+  it('asks for a brief with the shared contract, not a copy of it', async () => {
+    /*
+     * Two things compile a brief — this route and `src/generation/brief.ts` —
+     * and each used to hold its own prompt and schema, with a comment on both
+     * saying they must not drift and nothing checking that they had not. The
+     * schema is the one that matters: the browser hashes it into a brief's
+     * provenance, so copies that disagreed would change what a brief is
+     * identified as rather than only what it asks for.
+     */
+    const { client, calls } = stubClient([message(modelBrief)])
+    const server = await start({ client })
+    await fetch(`${server.url}/api/brief`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Build a red pickup truck' }),
+    })
+    // Sent as a content block so the prefix can carry a cache breakpoint.
+    expect((calls[0].system as Array<{ text: string }>)[0].text).toBe(BRIEF_SYSTEM)
+    // The shared one, not the minimal stub this file uses for classification.
+    expect((calls[0].output_config as { format: { schema: unknown } }).format.schema).toBe(SHARED_BRIEF_SCHEMA)
+  })
 
   it('returns a version-1 design brief with the palette resolved to LDraw codes', async () => {
     const { client } = stubClient([message(modelBrief)])
