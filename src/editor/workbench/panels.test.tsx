@@ -142,7 +142,14 @@ describe('palette', () => {
     expect(container.querySelectorAll('.part-card').length).toBe(1)
   })
 
-  it('switches between card, compact and list layouts', () => {
+  it('gives category chips a real button type', () => {
+    const { container } = renderPalette()
+    const chips = [...container.querySelectorAll('.category-row button')]
+    expect(chips.length).toBeGreaterThan(3)
+    expect(chips.every((chip) => chip.getAttribute('type') === 'button')).toBe(true)
+  })
+
+  it('switches between card and list layouts', () => {
     const { container } = renderPalette()
     expect(container.querySelector('.parts-grid')?.className).toContain('view-card')
     fireEvent.click(screen.getByRole('radio', { name: 'List view' }))

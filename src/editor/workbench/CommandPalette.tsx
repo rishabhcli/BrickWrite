@@ -183,15 +183,15 @@ export function CommandPalette({
             <h2 id="command-palette-title">Command palette</h2>
           </div>
           <div className="palette-tabs" role="tablist" aria-label="Palette mode">
-            <button role="tab" aria-selected={tab === 'run'} className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}>
+            <button type="button" role="tab" aria-selected={tab === 'run'} className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}>
               <Search size={11} /> RUN
             </button>
-            <button role="tab" aria-selected={tab === 'keys'} className={tab === 'keys' ? 'active' : ''} onClick={() => setTab('keys')}>
+            <button type="button" role="tab" aria-selected={tab === 'keys'} className={tab === 'keys' ? 'active' : ''} onClick={() => setTab('keys')}>
               <Keyboard size={11} /> KEYS
               {conflicts.length > 0 && <em className="conflict-count">{conflicts.length}</em>}
             </button>
           </div>
-          <button className="command-close" onClick={onClose} aria-label="Close the command palette"><X size={15} /></button>
+          <button type="button" className="command-close" onClick={onClose} aria-label="Close the command palette"><X size={15} /></button>
         </header>
 
         {tab === 'run' ? (
@@ -229,6 +229,7 @@ export function CommandPalette({
                     return (
                       <button
                         key={command.id}
+                        type="button"
                         role="option"
                         aria-selected={cursor === index}
                         aria-disabled={Boolean(reason)}

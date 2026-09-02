@@ -77,6 +77,7 @@ export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }
     <div className="viewport-empty" data-state="empty">
       <div className="viewport-empty-mark" aria-hidden="true"><span /><span /><span /></div>
       <strong>Drag a part here</strong>
+      <p>Drop from the palette, or start with a 2×4 brick.</p>
       <button type="button" onClick={onPickStarter}>Start with a brick</button>
       {starters.length > 0 && (
         <div className="viewport-empty-starters">

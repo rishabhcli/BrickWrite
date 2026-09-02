@@ -18,6 +18,7 @@ import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
 import { WorkbenchIcon } from './WorkbenchIcons'
+import { describeWorkbenchEscape, describeWorkbenchMode } from './StatusBar'
 import type { Workbench } from './useWorkbench'
 
 /**
@@ -78,6 +79,10 @@ export function Toolbar({
             onClick={() => setTool('connect')}
           />
         </div>
+        <span className="tool-mode" data-mode={tool} data-testid="tool-mode" role="status">
+          <b>{describeWorkbenchMode(workbench)}</b>
+          <em>{describeWorkbenchEscape(workbench)}</em>
+        </span>
 
         {selected > 0 && (
           <>
@@ -235,6 +240,7 @@ function ToolButton({
 }) {
   return (
     <button
+      type="button"
       className={`tool-button ${active ? 'active' : ''}`}
       onClick={onClick}
       role="radio"
@@ -269,6 +275,7 @@ function IconButton({
     disabled && disabledReason ? `${label} — ${disabledReason}` : shortcut ? `${label} (${shortcut})` : label
   return (
     <button
+      type="button"
       className={`icon-button ${active ? 'active' : ''}`}
       onClick={onClick}
       disabled={disabled}

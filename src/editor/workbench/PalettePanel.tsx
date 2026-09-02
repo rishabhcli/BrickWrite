@@ -504,6 +504,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         {['All parts', ...categories].map((item) => (
           <button
             key={item}
+            type="button"
             className={category === item ? 'active' : ''}
             onClick={() => {
               setCategory(item)
@@ -516,6 +517,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           </button>
         ))}
         <button
+          type="button"
           className={`facet-toggle ${facetsOpen ? 'active' : ''}`}
           onClick={() => setFacetsOpen((value) => !value)}
           aria-expanded={facetsOpen}
@@ -533,6 +535,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             {TIERS.map((entry) => (
               <button
                 key={entry.id}
+                type="button"
                 role="tab"
                 aria-selected={tier === entry.id}
                 className={tier === entry.id ? 'active' : ''}
@@ -615,6 +618,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           )}
           <div className="palette-sets" role="tablist" aria-label="Saved part sets">
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === null}
               className={activeSet === null ? 'active' : ''}
@@ -623,6 +627,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               <Search size={10} /> RESULTS
             </button>
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === 'favourites'}
               className={activeSet === 'favourites' ? 'active' : ''}
@@ -633,6 +638,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               <Star size={10} /> FAVOURITES <em>{favourites.length}</em>
             </button>
             <button
+              type="button"
               role="tab"
               aria-selected={activeSet === 'recents'}
               className={activeSet === 'recents' ? 'active' : ''}
@@ -645,6 +651,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             {customPalettes.map((set) => (
               <button
                 key={set.id}
+                type="button"
                 role="tab"
                 aria-selected={activeSet === set.id}
                 className={activeSet === set.id ? 'active' : ''}
@@ -654,6 +661,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               </button>
             ))}
             <button
+              type="button"
               className="palette-set-new"
               title="Save the current results as a named palette"
               aria-label="Save the current results as a named palette"
@@ -843,6 +851,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             .map((color) => (
               <button
                 key={color.code}
+                type="button"
                 className={`${activeColor === color.code ? 'selected' : ''} ${colourFavourites.includes(color.code) ? 'favourite' : ''}`}
                 style={{ '--swatch': color.hex } as React.CSSProperties}
                 onClick={() => onColorChange(color.code)}

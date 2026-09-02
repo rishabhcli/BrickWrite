@@ -166,6 +166,9 @@ describe('grid templates', () => {
 
 describe('chrome', () => {
   it('matches the quieter shell strip heights', () => {
+    // Status and tool-rail heights stay zero: those surfaces overlay the
+    // viewport instead of occupying grid rows. Pinning this stops a drive-by
+    // remount from shrinking the model without a product decision.
     expect(TOPBAR_HEIGHT).toBe(52)
     expect(TOOLRAIL_HEIGHT).toBe(0)
     expect(STATUSBAR_HEIGHT).toBe(0)

@@ -34,19 +34,19 @@ export function PlacementBar({ workbench: w, preview }: { workbench: Workbench; 
         {preview && !preview.legal ? <CircleAlert size={16} /> : <Check size={16} />}
         <span className="visually-hidden">{announced}</span>
       </span>
-      <button aria-label="Rotate placement counterclockwise" title="Rotate left (Shift+R)" onClick={() => w.rotatePlacement(-1)}>
+      <button type="button" aria-label="Rotate placement counterclockwise" title="Rotate left (Shift+R)" onClick={() => w.rotatePlacement(-1)}>
         <RotateCcw size={16} />
       </button>
       <output className="visually-hidden" aria-label="Placement angle">{(((w.placement.quarterTurns % 4) + 4) % 4) * 90}°</output>
-      <button aria-label="Rotate placement clockwise" title="Rotate right (R)" onClick={() => w.rotatePlacement(1)}>
+      <button type="button" aria-label="Rotate placement clockwise" title="Rotate right (R)" onClick={() => w.rotatePlacement(1)}>
         <RotateCw size={16} />
       </button>
       {!w.placement.movingPartId && (
-        <button aria-label="Keep building" title="Repeat placement" aria-pressed={w.repeatPlacement} onClick={() => w.setRepeatPlacement(!w.repeatPlacement)}>
+        <button type="button" aria-label="Keep building" title="Repeat placement" aria-pressed={w.repeatPlacement} onClick={() => w.setRepeatPlacement(!w.repeatPlacement)}>
           <Repeat2 size={16} />
         </button>
       )}
-      <button aria-label="Cancel placement" title="Cancel placement (Esc)" onClick={w.cancelPlacement}>
+      <button type="button" aria-label="Cancel placement" title="Cancel placement (Esc)" onClick={w.cancelPlacement}>
         <X size={16} />
       </button>
     </GlassIsland>

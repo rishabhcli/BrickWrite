@@ -46,6 +46,7 @@ import {
   saveLayout,
   workspaceColumns,
   type DockId,
+  type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
 import {
@@ -310,6 +311,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       })
     },
     [rawLayout, updateLayout],
+  )
+
+  const applyPreset = useCallback(
+    (id: LayoutPresetId) => {
+      updateLayout({
+        ...LAYOUT_PRESETS[id].layout,
+        sections: rawLayout.sections,
+      })
+    },
+    [rawLayout.sections, updateLayout],
   )
 
   const toggleSection = useCallback(
@@ -766,7 +777,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
          * was open without reading the chrome. It is hidden because the
          * document name is already on screen in the title bar. */}
         <h1 className="visually-hidden">{workbench.state.document.name} — Brickwright editor</h1>
-        <TopBar workbench={workbench} />
+        <TopBar workbench={workbench} preset={layout.preset} onPreset={applyPreset} />
         <Toolbar
           workbench={workbench}
           shortcuts={shortcuts}

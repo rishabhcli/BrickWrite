@@ -54,3 +54,10 @@ describe('empty viewport starters', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })
+
+describe('empty viewport copy', () => {
+  it('keeps the secondary hint visible instead of hiding every paragraph', () => {
+    render(<EmptyBuildState onPickStarter={() => {}} />)
+    expect(screen.getByText(/Drop from the palette/)).not.toBeNull()
+  })
+})

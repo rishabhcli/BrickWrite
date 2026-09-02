@@ -846,6 +846,10 @@
   border-color: var(--cyan);
   box-shadow: 0 0 14px rgba(131, 231, 238, 0.12);
 }
+.search-field:has(:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
 .search-field input {
   flex: 1;
   min-width: 0;
@@ -886,7 +890,8 @@
   background: var(--panel-2);
   color: var(--muted);
   border-radius: 4px;
-  padding: 5px 9px;
+  min-height: 32px;
+  padding: 6px 10px;
   font-family: var(--display);
   font-size: 9px;
   font-weight: 700;
@@ -894,6 +899,10 @@
   letter-spacing: 0.08em;
   cursor: pointer;
   transition: var(--t-control);
+}
+.category-row button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
 }
 .category-row button:hover {
   color: var(--ink);
@@ -5960,8 +5969,8 @@
   box-shadow: 0 0 10px rgba(131, 231, 238, 0.3);
 }
 .keymap-clear {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border: 1px solid transparent;
@@ -5969,6 +5978,10 @@
   color: var(--faint);
   cursor: pointer;
   border-radius: 4px;
+}
+.keymap-clear:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 0;
 }
 .keymap-clear:hover:not(:disabled) {
   color: var(--red);
@@ -8097,6 +8110,9 @@
 /* Minimal building surface ------------------------------------------------- */
 body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-select: none !important; }
 .part-card.dragging { opacity: .42; transform: scale(.96); }
+/* StatusBar and the old dock-bar stay unmounted: they would occupy a grid row
+   the quieter shell already gave to the model. Mode/Esc/preset live in TopBar
+   and the toolbar island instead. */
 .dock-bar, .statusbar { display: none !important; }
 .app-shell { grid-template-rows: 44px 0 minmax(0, 1fr) 0 !important; }
 .toolbar-island { margin-bottom: 12px; }
@@ -8133,7 +8149,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .category-row .facet-toggle { display: inline-flex; align-items: center; gap: 9px; font-size: 0; }
 .category-row .facet-toggle:not(:has(svg:only-child)) { font-size: 10px; }
 .palette-label span { text-transform: none; letter-spacing: 0; }
-.viewport-empty p { display: none; }
 .part-card.armed::before { display: none; }
 .placement-repeat { display: flex; gap: 9px; align-items: center; font-size: 10px; cursor: pointer; }
 .placement-repeat input { accent-color: var(--cyan); margin: 0; }
@@ -8338,7 +8353,8 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 .part-context-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; width: 230px; max-height: calc(100dvh - 16px); overflow: auto; padding: 6px; background: #111b1ff7; border: 1px solid #4b5c60; border-radius: var(--r-panel); box-shadow: 0 14px 44px #0009; backdrop-filter: blur(var(--glass-blur-control)); }
 .part-context-heading { color: var(--faint); font: 700 10px var(--display); padding: 9px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .part-context-menu button { padding: 9px 10px; min-height: 29px; text-align: left; background: none; border: 0; border-radius: 9px; color: var(--ink); font-size: 12px; cursor: pointer; }
-.part-context-menu button:focus-visible, .part-context-menu button:hover:not(:disabled) { outline: none; background: #2c4549; color: #cefcf4; }
+.part-context-menu button:hover:not(:disabled) { background: #2c4549; color: #cefcf4; }
+.part-context-menu button:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; background: #2c4549; color: #cefcf4; }
 .part-context-menu button:disabled { opacity: .35; cursor: default; }
 .part-context-menu button.danger { color: #ff9b86; }
 .part-context-menu [role='separator'] { border-top: 1px solid var(--line); margin: 4px 5px; }
@@ -8794,6 +8810,9 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 }
 
 @media (max-width: 1080px) {
+  .tool-mode em {
+    display: none;
+  }
   .brand-lockup strong {
     font-size: 13px;
   }
@@ -8809,3 +8828,71 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
     min-width: 33px;
   }
 }
+
+.layout-preset {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px 0 0;
+  border-left: 1px solid var(--line);
+}
+.layout-preset select {
+  min-height: 32px;
+  max-width: 132px;
+  margin-left: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.layout-preset select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.tool-mode {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  max-width: 168px;
+  padding: 0 8px 0 4px;
+  color: var(--orange);
+  font-family: var(--display);
+}
+.tool-mode[data-mode='connect'] {
+  color: var(--cyan);
+}
+.tool-mode b {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+}
+.tool-mode em {
+  color: var(--faint);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toolbar-island .tool-button:focus-visible,
+.toolbar-island .icon-button:focus-visible,
+.placement-bar button:focus-visible,
+.palette-views button:focus-visible,
+.palette-sets button:focus-visible,
+.tier-row button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+

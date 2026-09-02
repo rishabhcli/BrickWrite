@@ -188,6 +188,12 @@ export const COLLAPSED_BAR = 0
 export const TOPBAR_HEIGHT = 52
 /** The tools float inside the viewport now; no permanent grid strip is reserved. */
 export const TOOLRAIL_HEIGHT = 0
+/**
+ * Zero on purpose. The tools float as a viewport island, and remounting a
+ * dedicated status strip would steal model pixels the quieter shell already
+ * gave back. Mode, Esc and layout-preset live on that island and the top bar.
+ * StatusBar.tsx is the full readout if a density option ever wants it back.
+ */
 export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
