@@ -223,13 +223,43 @@ export function legalConnectCandidates(
     maxCandidates?: number
   } = {},
 ): SnapCandidate[] {
-  return findSnapCandidates(source, document, source.transform, {
+  return listConnectSolutions(source, target, document, options).solutions
+}
+
+/**
+ * Ranked legal mates, with an honest truncated flag.
+ *
+ * The solver still ranks (best seat first) so Tab has an order. The cap is
+ * applied *after* the pose gate, and callers must show when solutions were
+ * dropped rather than pretending 48 is the whole set.
+ */
+export const CONNECT_SOLUTION_CAP = 256
+
+export function listConnectSolutions(
+  source: PartInstance,
+  target: PartInstance,
+  document: ModelDocument,
+  options: {
+    sourceFeatureId?: string | null
+    targetFeatureId?: string | null
+    radiusLdu?: number
+    maxCandidates?: number
+  } = {},
+): { solutions: SnapCandidate[]; truncated: boolean; considered: number } {
+  const cap = options.maxCandidates ?? CONNECT_SOLUTION_CAP
+  const ranked = findSnapCandidates(source, document, source.transform, {
     radiusLdu: options.radiusLdu ?? 400,
     targetPartIds: [target.id],
-    maxCandidates: options.maxCandidates ?? 12,
+    maxCandidates: Math.max(cap + 1, 512),
     ...(options.sourceFeatureId ? { movingFeatureId: options.sourceFeatureId } : {}),
     ...(options.targetFeatureId ? { targetFeatureId: options.targetFeatureId } : {}),
-  }).filter((entry) => !poseRefusal(document, source.id, entry.transform))
+  })
+  const legal = ranked.filter((entry) => !poseRefusal(document, source.id, entry.transform))
+  return {
+    solutions: legal.slice(0, cap),
+    truncated: legal.length > cap,
+    considered: legal.length,
+  }
 }
 
 /**

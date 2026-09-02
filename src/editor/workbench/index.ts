@@ -32,6 +32,8 @@ export {
 
 export {
   applyLocks,
+  gizmoAxisVisible,
+  lockRotation,
   canonicalisePose,
   connectorFrame,
   gizmoPose,

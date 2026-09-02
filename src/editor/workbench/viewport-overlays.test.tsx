@@ -126,6 +126,30 @@ describe('selection HUD', () => {
     expect(onDuplicate).toHaveBeenCalledOnce()
   })
 
+  it('shows Euler fields for a multi-part selection', () => {
+    render(
+      <SelectionHUD
+        count={2}
+        label="2 selected"
+        position={[0, -24, 0]}
+        rotation={[0, 0, 0]}
+        locks={{ x: true, y: false, z: false }}
+        frame="world"
+        tool="move"
+        onTool={vi.fn()}
+        onFocus={vi.fn()}
+        onGround={vi.fn()}
+        onDuplicate={vi.fn()}
+        onPosition={vi.fn()}
+        onRotate={vi.fn()}
+        onMore={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Rotation 0, 0, 0 degrees')).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'RX rotation in degrees' })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'RY rotation in degrees' })).not.toBeDisabled()
+  })
+
   it('keeps the identity named as the selection, not as more-actions', () => {
     const onMore = vi.fn()
     render(

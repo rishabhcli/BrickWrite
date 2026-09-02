@@ -42,6 +42,7 @@ import {
   planGroundSelection,
   resolvePivot,
   translatePose,
+  rotatePose,
   numericPose,
   planRotateSelection,
   referenceBasis,
@@ -180,9 +181,8 @@ export function useWorkbench() {
     return parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
   }, [state.document.parts, state.selection])
   const selectionRotation = useMemo<Vec3 | null>(() => {
-    if (state.selection.length !== 1) return null
-    const part = state.document.parts[state.selection[0]]
-    return part ? eulerDegreesFromBasis(part.transform.basis) : null
+    const lead = state.document.parts[state.selection[0]]
+    return lead ? eulerDegreesFromBasis(lead.transform.basis) : null
   }, [state.document.parts, state.selection])
 
   // -- notices --------------------------------------------------------------
@@ -549,19 +549,52 @@ export function useWorkbench() {
     [commitTransforms, transformPrefs.frame, transformPrefs.locks],
   )
 
-  /** Single-part Euler, matching Transform. Multi-part yaw stays on the steppers. */
+  /**
+   * Euler fields for one part or a rigid group.
+   *
+   * A single part writes an absolute basis. Several parts turn about the
+   * selection centre by the delta from the lead part's displayed Euler, so the
+   * numbers stay a group attitude rather than spinning each brick in place.
+   */
   const orientSelection = useCallback(
     (axis: 0 | 1 | 2, value: number) => {
       if (!Number.isFinite(value)) return false
       const snapshot = cadEngine.getSnapshot()
-      if (snapshot.selection.length !== 1) return false
-      const part = snapshot.document.parts[snapshot.selection[0]]
-      if (!part) return false
-      const rotation = [...eulerDegreesFromBasis(part.transform.basis)] as [number, number, number]
-      rotation[axis] = value
-      return handleTransform(part.id, numericPose(part.transform, { rotationDegrees: rotation }), true)
+      const parts = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
+      if (!parts.length) return false
+      const lead = parts[0]
+      const current = eulerDegreesFromBasis(lead.transform.basis)
+      if (parts.length === 1) {
+        const rotation = [...current] as [number, number, number]
+        rotation[axis] = value
+        const next = numericPose(lead.transform, { rotationDegrees: rotation })
+        const locked = applyLocks(lead.transform, next, transformPrefs.locks, referenceBasis(lead, transformPrefs.frame))
+        return handleTransform(lead.id, locked, true)
+      }
+      const delta = value - current[axis]
+      if (Math.abs(delta) < 1e-6) return false
+      const vector: [number, number, number] = [0, 0, 0]
+      vector[axis] = 1
+      const pivot = resolvePivot(parts, transformPrefs.pivot)
+      const frame = referenceBasis(lead, transformPrefs.frame)
+      if (transformPrefs.locks[(['x', 'y', 'z'] as const)[axis]]) return false
+      const operations = parts.flatMap((part) => {
+        const transform = rotatePose(
+          part.transform,
+          vector,
+          delta,
+          transformPrefs.frame,
+          pivot,
+          frame ?? undefined,
+        )
+        return posesEqual(part.transform, transform)
+          ? []
+          : [{ type: 'part.transform' as const, partId: part.id, transform }]
+      })
+      if (!operations.length) return false
+      return commitTransforms(`Orient ${parts.length} parts`, operations)
     },
-    [handleTransform],
+    [commitTransforms, handleTransform, transformPrefs.frame, transformPrefs.locks, transformPrefs.pivot],
   )
 
   // -- placement ------------------------------------------------------------

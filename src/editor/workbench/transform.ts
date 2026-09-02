@@ -8,6 +8,7 @@ import {
   composeTransform,
   degreesToRadians,
   eulerDegreesFromBasis,
+  IDENTITY_BASIS,
   orthonormalize,
   rotateLocal,
   rotateWorld,
@@ -79,7 +80,12 @@ export function planGizmoTransforms(
   raw: Transform,
   options: { rotating: boolean; gridLdu: number; locks: AxisLocks },
 ): CadOperation[] {
-  const rotation = multiplyMat3(raw.basis, transposeMat3(start.basis))
+  const rotation = lockRotation(
+    IDENTITY_BASIS,
+    multiplyMat3(raw.basis, transposeMat3(start.basis)),
+    options.locks,
+    start.basis as Mat3,
+  )
   const localDelta = applyMat3(transposeMat3(start.basis), [
     raw.position[0] - start.position[0],
     raw.position[1] - start.position[1],
@@ -169,8 +175,37 @@ export function applyLocks(base: Transform, next: Transform, locks: AxisLocks, f
   const world = frame ? applyMat3(frame, filtered) : filtered
   return {
     position: [base.position[0] + world[0], base.position[1] + world[1], base.position[2] + world[2]],
-    basis: next.basis,
+    basis: lockRotation(base.basis as Mat3, next.basis as Mat3, locks, frame),
   }
+}
+
+/**
+ * Hide the gizmo handle that would defeat a named axis lock.
+ *
+ * Translate and rotate share one lock map: locking X must hide both the X
+ * arrow and the X ring, otherwise the HUD says locked while the ring still
+ * turns the part.
+ */
+export function gizmoAxisVisible(locks: AxisLocks): { showX: boolean; showY: boolean; showZ: boolean } {
+  return { showX: !locks.x, showY: !locks.y, showZ: !locks.z }
+}
+
+/**
+ * Freeze locked Euler components of a relative rotation, in the named frame.
+ *
+ * WORLD locks document XYZ rings. LOCAL/MATE lock the gizmo's own rings —
+ * the same axes the operator hid.
+ */
+export function lockRotation(base: Mat3, next: Mat3, locks: AxisLocks, frame?: Mat3 | null): Mat3 {
+  if (!locks.x && !locks.y && !locks.z) return next
+  const relative = multiplyMat3(next, transposeMat3(base))
+  const F = frame ?? IDENTITY_BASIS
+  const localRel = multiplyMat3(transposeMat3(F), multiplyMat3(relative, F))
+  const euler = eulerDegreesFromBasis(localRel)
+  const filtered: Vec3 = [locks.x ? 0 : euler[0], locks.y ? 0 : euler[1], locks.z ? 0 : euler[2]]
+  if (filtered[0] === euler[0] && filtered[1] === euler[1] && filtered[2] === euler[2]) return next
+  const localOut = basisFromEulerDegrees(filtered)
+  return multiplyMat3(multiplyMat3(F, multiplyMat3(localOut, transposeMat3(F))), base)
 }
 
 /** Snaps a position to a grid increment, leaving the basis untouched. */

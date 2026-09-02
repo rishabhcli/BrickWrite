@@ -34,7 +34,7 @@ describe('chrome reveal', () => {
     expect(next.sections['refinement.panel']).toBe(false)
   })
 
-  it('opens one right-dock section by closing the others', () => {
+  it('opens one Design sheet by closing the other Design sheets, leaving Object companions', () => {
     const crowded: WorkbenchLayout = {
       ...defaultLayout(),
       sections: {
@@ -47,9 +47,10 @@ describe('chrome reveal', () => {
     }
     const next = applyDockFocus(crowded, 'generation.panel', true)
     expect(next.sections['generation.panel']).toBe(true)
-    expect(next.sections.selection).toBe(false)
-    expect(next.sections.transform).toBe(false)
-    expect(next.sections.inspector).toBe(false)
+    expect(next.sections['refinement.panel']).toBe(false)
+    expect(next.sections.selection).toBe(true)
+    expect(next.sections.transform).toBe(true)
+    expect(next.sections.inspector).toBe(true)
     expect(next.sections.palette).toBe(true)
   })
 
@@ -76,7 +77,7 @@ describe('chrome reveal', () => {
     const next = applyChromeReveal(closed, 'model')
     expect(next.right.collapsed).toBe(false)
     expect(next.sections['model.explorer']).toBe(true)
-    expect(next.sections.selection).toBe(false)
+    expect(next.sections.selection).toBe(true)
   })
 
   it('opens Model Health inside the focused inspector sheet', () => {
@@ -88,7 +89,7 @@ describe('chrome reveal', () => {
     const next = applyChromeReveal(closed, 'health')
     expect(next.right.collapsed).toBe(false)
     expect(next.sections.inspector).toBe(true)
-    expect(next.sections.selection).toBe(false)
+    expect(next.sections.selection).toBe(true)
   })
 
   it('opens the measured proposal review queue in the bottom dock', () => {
@@ -211,6 +212,30 @@ describe('chrome reveal', () => {
     const next = applyDockFocus(crowded, 'inspector', true)
     expect(next.sections.inspector).toBe(true)
     expect(next.sections.connect).toBe(true)
-    expect(next.sections.transform).toBe(false)
+    expect(next.sections.transform).toBe(true)
+  })
+
+  it('opens inspector beside transform instead of exclusive-closing Object sheets', () => {
+    const crowded: WorkbenchLayout = {
+      ...defaultLayout(),
+      sections: { ...defaultLayout().sections, transform: true, inspector: false, selection: true, 'model.explorer': true },
+    }
+    const next = applyDockFocus(crowded, 'inspector', true)
+    expect(next.sections.inspector).toBe(true)
+    expect(next.sections.transform).toBe(true)
+    expect(next.sections.selection).toBe(true)
+    expect(next.sections['model.explorer']).toBe(true)
+  })
+
+  it('targets the Connect sheet as a real chrome surface', () => {
+    const closed: WorkbenchLayout = {
+      ...defaultLayout(),
+      right: { size: 300, collapsed: true },
+      sections: { ...defaultLayout().sections, connect: false, inspector: true },
+    }
+    const next = applyChromeReveal(closed, 'connect')
+    expect(next.right.collapsed).toBe(false)
+    expect(next.sections.connect).toBe(true)
+    expect(next.sections.inspector).toBe(true)
   })
 })

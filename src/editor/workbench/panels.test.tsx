@@ -385,7 +385,7 @@ describe('transform controls', () => {
     renderTransform()
     select([id])
     expect((screen.getByLabelText('Y in LDraw units') as HTMLInputElement).disabled).toBe(false)
-    fireEvent.click(screen.getByTitle('Lock Y'))
+    fireEvent.click(screen.getByTitle('Lock Y translation and rotation'))
     expect((screen.getByLabelText('Y in LDraw units') as HTMLInputElement).disabled).toBe(true)
   })
 

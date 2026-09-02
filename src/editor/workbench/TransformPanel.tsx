@@ -26,7 +26,6 @@ import {
   applyLocks,
   canonicalisePose,
   connectorFrame,
-  numericPose,
   planAlign,
   planDistribute,
   readNumericPose,
@@ -93,7 +92,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
   )
   const single = parts.length === 1 ? parts[0] : undefined
   const extent = useMemo(() => selectionExtent(state.document, state.selection), [state.document, state.selection])
-  const numeric = single ? readNumericPose(single.transform) : null
+  const numeric = parts[0] ? readNumericPose(parts[0].transform) : null
   const position = single ? single.transform.position : resolvePivot(parts, 'centre')
 
   /**
@@ -140,12 +139,9 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
 
   const setRotation = useCallback(
     (axis: 0 | 1 | 2, value: number) => {
-      if (!single || !numeric) return
-      const rotation = [...numeric.rotationDegrees] as [number, number, number]
-      rotation[axis] = value
-      workbench.handleTransform(single.id, numericPose(single.transform, { rotationDegrees: rotation }), true)
+      workbench.orientSelection(axis, value)
     },
-    [numeric, single, workbench],
+    [workbench],
   )
 
   const nudge = useCallback(
@@ -170,6 +166,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
   const turn = useCallback(
     (axis: 0 | 1 | 2, direction: 1 | -1) => {
       if (!parts.length) return
+      if (transformPrefs.locks[(['x', 'y', 'z'] as const)[axis]]) return
       const vector = [0, 0, 0] as [number, number, number]
       vector[axis] = 1
       const pivot = resolvePivot(parts, transformPrefs.pivot)
@@ -189,7 +186,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
         })),
       )
     },
-    [commit, parts, transformPrefs.frame, transformPrefs.pivot, transformPrefs.rotationStep],
+    [commit, parts, transformPrefs.frame, transformPrefs.locks, transformPrefs.pivot, transformPrefs.rotationStep],
   )
 
   const runArray = useCallback(() => {
@@ -290,8 +287,8 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             className={transformPrefs.locks[axis] ? 'locked' : ''}
             title={
               transformPrefs.locks[axis]
-                ? `${axis.toUpperCase()} is locked; drags cannot change it`
-                : `Lock ${axis.toUpperCase()}`
+                ? `${axis.toUpperCase()} is locked; move and rotate cannot change it`
+                : `Lock ${axis.toUpperCase()} translation and rotation`
             }
             onClick={() =>
               setTransformPrefs({
@@ -323,7 +320,8 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
         <>
           {!single && (
             <p className="transform-multi-note">
-              Position the selection’s centre. All {parts.length} parts move together.
+              Position the selection’s centre and turn it as one. Euler numbers are the lead
+              part; a typed change rotates the whole set about the pivot.
             </p>
           )}
           {transformPrefs.frame !== 'world' && (
@@ -352,14 +350,15 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           {/* Euler degrees are a display affordance only. The document stores an
               exact basis; these fields decompose it for editing and recompose on
               commit, through the same canonical path the gizmo uses. */}
-          {single && numeric && (
+          {numeric && (
             <div className="fields-grid rotation-fields" role="group" aria-label="Rotation in degrees">
               {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
                 <NumberField
-                  key={`r_${axis}_${single.id}`}
+                  key={`r_${axis}_${parts.map((part) => part.id).join('|')}`}
                   label={axis}
                   value={numeric.rotationDegrees[index]}
                   suffix="°"
+                  disabled={transformPrefs.locks[(['x', 'y', 'z'] as const)[index]]}
                   onCommit={(value) => setRotation(index as 0 | 1 | 2, value)}
                 />
               ))}
@@ -432,7 +431,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
               <em>R{axis}</em>
               <button
                 type="button"
-                disabled={disabled}
+                disabled={disabled || transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
                 aria-label={`Turn ${axis} negative`}
                 onClick={() => turn(index as 0 | 1 | 2, -1)}
               >
@@ -440,7 +439,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
               </button>
               <button
                 type="button"
-                disabled={disabled}
+                disabled={disabled || transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
                 aria-label={`Turn ${axis} positive`}
                 onClick={() => turn(index as 0 | 1 | 2, 1)}
               >

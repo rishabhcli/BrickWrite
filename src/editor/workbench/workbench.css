@@ -1198,6 +1198,8 @@
   position: relative;
   background: #070c0e;
   overflow: hidden;
+  container-type: size;
+  container-name: viewport-stage;
 }
 .viewport-shell canvas {
   display: block;
@@ -8441,6 +8443,14 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 }
 .viewport-top-stack { top: 12px; }
 .viewport-bottom-stack { bottom: 76px; }
+.app-shell[data-timeline='open'] .viewport-bottom-stack { bottom: 10px; gap: 4px; }
+@container viewport-stage (max-height: 520px) {
+  .viewport-bottom-stack { bottom: 8px; gap: 4px; }
+  .viewport-top-stack { top: 6px; gap: 4px; }
+  .proposal-overlay em,
+  .proposal-overlay small { display: none; }
+  .instruction-overlay em { display: none; }
+}
 .viewport-top-stack > *,
 .viewport-bottom-stack > * {
   pointer-events: auto;
@@ -9056,3 +9066,28 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   row-gap: 4px;
 }
 
+
+.connect-pending-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 10px 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+  color: var(--ink);
+  font-size: 11px;
+}
+.connect-pending-banner button {
+  border: 1px solid var(--line);
+  background: #183431;
+  color: #9af7e9;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 4px;
+}

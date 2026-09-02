@@ -249,6 +249,20 @@ describe('WebMCP surface inventory', () => {
     })
   })
 
+  it('lets an agent reveal Connect and name the mate target', async () => {
+    adapter.start()
+    const seen: string[] = []
+    setChromeRevealHandler((surface) => seen.push(surface))
+    const revealed = await invoke('workspace_reveal', { surface: 'connect' })
+    expect(seen).toEqual(['connect'])
+    expect(revealed).toMatchObject({
+      surface: 'connect',
+      applied: true,
+      dock: 'right',
+      section: 'connect',
+    })
+  })
+
   it('lets an agent reveal the same bottom-dock feedback inbox a human uses', async () => {
     adapter.start()
     const seen: string[] = []

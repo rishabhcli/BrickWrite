@@ -98,6 +98,7 @@ export function SelectionHUD({
               label={axis}
               value={rotation[index]}
               suffix="°"
+              disabled={locks[(['x', 'y', 'z'] as const)[index]]}
               onCommit={(value) => onRotate(index as 0 | 1 | 2, value)}
             />
           ))}

@@ -274,13 +274,23 @@ export function InspectorPanel({
                     label={axis}
                     value={displayRotation[index]}
                     suffix="°"
+                    disabled={Boolean(locks?.[(['x', 'y', 'z'] as const)[index]])}
                     onCommit={(value) => {
                       const rotation = [...displayRotation] as [number, number, number]
                       rotation[index] = value
-                      onTransform(inspectPart.id, {
+                      const next = canonicalisePose({
                         position: inspectPart.transform.position,
                         basis: basisFromEulerDegrees(rotation),
                       })
+                      onTransform(
+                        inspectPart.id,
+                        applyLocks(
+                          inspectPart.transform,
+                          next,
+                          locks ?? { x: false, y: false, z: false },
+                          referenceBasis(inspectPart, frame),
+                        ),
+                      )
                     }}
                   />
                 ))}
