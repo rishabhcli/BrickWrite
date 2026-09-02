@@ -362,3 +362,107 @@ describe('deleting a comment', () => {
     ).toBe('NOT_FOUND')
   })
 })
+
+describe('deleting a project', () => {
+  /** Membership rows for one account, live or not. */
+  const grants = (t: Harness, subject: string): Promise<number> =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('members')
+          .withIndex('by_subject', (q) => q.eq('subject', subject))
+          .collect()
+      ).length,
+    )
+
+  const claim = (t: Harness, as: string, localProjectId: string) =>
+    t.withIdentity(person(as)).mutation(api.projects.create, {
+      localProjectId,
+      name: localProjectId,
+      schemaVersion: 2,
+      catalogVersion: 'fixture-1',
+    })
+
+  test('gives the account its slot back', async () => {
+    const t = harness()
+    const created = expectOk(await claim(t, 'owner', 'doc-1'))
+    expect(await grants(t, subjectOf('owner'))).toBe(1)
+
+    expectOk(await t.withIdentity(person('owner')).mutation(api.projects.remove, { projectId: created.projectId }))
+    // The project stays as history; the grant to open it does not, because
+    // nothing can open it any more.
+    expect(await grants(t, subjectOf('owner'))).toBe(0)
+    const still = await t.run(async (ctx) => (await ctx.db.get(created.projectId as Id<'projects'>)) !== null)
+    expect(still).toBe(true)
+  })
+
+  test('lets an account that filled its ceiling with deleted projects keep working', async () => {
+    /*
+     * The failure this exists for. `projects.list` bounds its read on
+     * memberships and only then skips deleted projects, so an account that had
+     * created and deleted its ceiling could list none of its projects and was
+     * refused a new one. Deleting and creating are ordinary things to do.
+     */
+    const t = harness()
+    const subject = subjectOf('collector')
+    const now = Date.now()
+    // One past the list's window, which is where the read starts refusing.
+    await t.run(async (ctx) => {
+      for (let index = 0; index <= COLLECTION_LIMITS.membershipsPerAccount; index += 1) {
+        const projectId = await ctx.db.insert('projects', {
+          ownerSubject: subject,
+          name: `p${index}`,
+          visibility: 'private',
+          localProjectId: `local-${index}`,
+          schemaVersion: 2,
+          catalogVersion: 'fixture-1',
+          createdAt: now,
+          updatedAt: now,
+          // Written before `remove` dropped the grant with the project.
+          deletedAt: now,
+        })
+        await ctx.db.insert('members', { projectId, subject, role: 'owner', addedAt: now })
+      }
+    })
+    expect(codeOf(await t.withIdentity(person('collector')).query(api.projects.list, {}))).toBe('INCOMPLETE_LIST')
+
+    expect(codeOf(await claim(t, 'collector', 'doc-new'))).toBe('ok')
+    // And the account can see what it has again.
+    expect(expectOk(await t.withIdentity(person('collector')).query(api.projects.list, {}))).toHaveLength(1)
+  })
+
+  test('still refuses an account holding its ceiling in live projects', async () => {
+    const t = harness()
+    const subject = subjectOf('collector')
+    const now = Date.now()
+    await t.run(async (ctx) => {
+      for (let index = 0; index < COLLECTION_LIMITS.membershipsPerAccount; index += 1) {
+        const projectId = await ctx.db.insert('projects', {
+          ownerSubject: subject,
+          name: `p${index}`,
+          visibility: 'private',
+          localProjectId: `local-${index}`,
+          schemaVersion: 2,
+          catalogVersion: 'fixture-1',
+          createdAt: now,
+          updatedAt: now,
+        })
+        await ctx.db.insert('members', { projectId, subject, role: 'owner', addedAt: now })
+      }
+    })
+    expect(codeOf(await claim(t, 'collector', 'doc-new'))).toBe('COLLECTION_FULL')
+  })
+
+  test('does not touch another account’s grants', async () => {
+    const t = harness()
+    const seeded = await seedProject(t, { owner: 'owner', members: { editor: 'editor' } })
+    expect(await grants(t, subjectOf('editor'))).toBe(1)
+
+    expectOk(await t.withIdentity(person('owner')).mutation(api.projects.remove, { projectId: seeded.projectId }))
+    // Removed with the project they were for, not left pointing at it.
+    expect(await grants(t, subjectOf('editor'))).toBe(0)
+    const other = await seedProject(t, { owner: 'other', members: { editor: 'editor' } })
+    expect(other.projectId).toBeTruthy()
+    expect(await grants(t, subjectOf('editor'))).toBe(1)
+  })
+})

@@ -190,8 +190,27 @@ export const create = mutation({
       .query('members')
       .withIndex('by_subject', (q) => q.eq('subject', identity.subject))
       .take(COLLECTION_LIMITS.membershipsPerAccount)
+
+    /*
+     * At the ceiling, and only there, check what those grants still point at.
+     *
+     * `remove` drops them now, so this is for rows written before it did — and
+     * for a project deleted by another owner. Reading a project per membership
+     * is too much to do on every claim and exactly right on the one that would
+     * otherwise be refused, which is the same trade the invitation reaper makes.
+     */
+    let held = memberships.length
+    if (held >= COLLECTION_LIMITS.membershipsPerAccount) {
+      for (const membership of memberships) {
+        const owner = await ctx.db.get(membership.projectId)
+        if (owner && owner.deletedAt === undefined) continue
+        await ctx.db.delete(membership._id)
+        held -= 1
+      }
+    }
+
     const atLimit = collectionFull(
-      memberships.length,
+      held,
       COLLECTION_LIMITS.membershipsPerAccount,
       'cloud projects',
       'Delete a cloud project you no longer need, or leave one you were added to.',
@@ -326,11 +345,40 @@ export const remove = mutation({
     const { project, identity } = authorised.value
     const now = Date.now()
     await ctx.db.patch(project._id, { deletedAt: now, updatedAt: now })
+
+    /*
+     * The project survives; the grants to open it do not.
+     *
+     * A membership is "who may open this", and for a deleted project the answer
+     * is nobody — `list` skips it and `authoriseProject` refuses it. Leaving the
+     * rows behind was not harmless: `projects.list` bounds its read on
+     * memberships and only then skips deleted projects, so an account that had
+     * created and deleted two hundred projects could list none of them, and the
+     * per-account ceiling refused it a new one. Deleting and creating are
+     * ordinary things to do, and doing them enough locked the account out of
+     * both.
+     *
+     * The roster is not lost history: `ownerSubject` stays on the project and
+     * every role change and acceptance is in `auditEvents`.
+     */
+    const roster = await ctx.db
+      .query('members')
+      .withIndex('by_project', (q) => q.eq('projectId', project._id))
+      .take(COLLECTION_LIMITS.membersPerProject)
+    for (const membership of roster) await ctx.db.delete(membership._id)
+
+    // Cursors on a project nobody can open are nothing to anybody.
+    const sessions = await ctx.db
+      .query('presence')
+      .withIndex('by_project_expiry', (q) => q.eq('projectId', project._id))
+      .take(64)
+    for (const session of sessions) await ctx.db.delete(session._id)
+
     await writeAuditEvent(ctx, {
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'project.delete',
-      detail: { soft: true },
+      detail: { soft: true, members: roster.length },
     })
     return { ok: true, value: { projectId: project._id, deletedAt: iso(now) } }
   },
