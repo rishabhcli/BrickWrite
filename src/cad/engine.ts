@@ -2,7 +2,14 @@ import { catalog, searchCatalog } from './catalog'
 import { jointFor } from './connections'
 import { createId } from './ids'
 import { cleanBasis, isOrthonormal, orthonormalize, type RigidTransform } from './math'
-import { applyMutations, invertMutations, mutationsForOperations, touchedBy, type DocumentPatch, type EntityMutation } from './patch'
+import {
+  applyMutations,
+  invertMutations,
+  mutationsForOperations,
+  touchedBy,
+  type DocumentPatch,
+  type EntityMutation,
+} from './patch'
 import {
   connectionEdgeId as edgeId,
   deriveConnections,
@@ -40,10 +47,15 @@ import type {
   Transaction,
 } from './types'
 
-const clone = <T,>(value: T): T => structuredClone(value)
+const clone = <T>(value: T): T => structuredClone(value)
 const now = () => new Date().toISOString()
 
-function error(code: EngineErrorShape['code'], message: string, repair: string, details?: unknown): CommandResult<never> {
+function error(
+  code: EngineErrorShape['code'],
+  message: string,
+  repair: string,
+  details?: unknown,
+): CommandResult<never> {
   return { ok: false, error: { code, message, repair, details } }
 }
 
@@ -242,34 +254,64 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
 
   const validateConstraint = (constraint: Constraint): CommandResult<true> => {
     if (!constraint.id.trim() || constraint.id.length > 80) {
-      return error('INVALID_OPERATION', 'Constraint ids must contain 1–80 characters.', 'Use a stable, concise constraint id.')
+      return error(
+        'INVALID_OPERATION',
+        'Constraint ids must contain 1–80 characters.',
+        'Use a stable, concise constraint id.',
+      )
     }
     if (!constraint.label.trim() || constraint.label.trim().length > 120) {
-      return error('INVALID_OPERATION', 'Constraint labels must contain 1–120 characters.', 'Describe the design limit concisely.')
+      return error(
+        'INVALID_OPERATION',
+        'Constraint labels must contain 1–120 characters.',
+        'Describe the design limit concisely.',
+      )
     }
     if (constraint.kind === 'piece-count') {
       const maximum = Number(constraint.value)
       if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100_000) {
-        return error('INVALID_OPERATION', 'Piece-count constraints must be integers between 1 and 100,000.', 'Choose a positive, bounded piece budget.')
+        return error(
+          'INVALID_OPERATION',
+          'Piece-count constraints must be integers between 1 and 100,000.',
+          'Choose a positive, bounded piece budget.',
+        )
       }
     }
     if (constraint.kind === 'dimensions') {
       const value = constraint.value as { width?: unknown; depth?: unknown; height?: unknown } | null
-      const dimensions = [value?.width, value?.depth, ...(value?.height === undefined ? [] : [value.height])].map(Number)
+      const dimensions = [value?.width, value?.depth, ...(value?.height === undefined ? [] : [value.height])].map(
+        Number,
+      )
       if (!value || dimensions.length < 2 || dimensions.some((entry) => !Number.isFinite(entry) || entry <= 0)) {
-        return error('INVALID_OPERATION', 'Dimension constraints need positive finite width and depth, plus an optional height.', 'Send dimensions in studs as { width, depth, height? }.')
+        return error(
+          'INVALID_OPERATION',
+          'Dimension constraints need positive finite width and depth, plus an optional height.',
+          'Send dimensions in studs as { width, depth, height? }.',
+        )
       }
     }
     if (constraint.kind === 'palette') {
       const colors = Array.isArray(constraint.value) ? constraint.value.map(Number) : []
-      if (!colors.length || colors.length > 64 || colors.some((color) => !Number.isInteger(color) || !catalog.hasColor(color))) {
-        return error('COLOR_UNAVAILABLE', 'Palette constraints need 1–64 defined LDraw colour codes.', 'Choose colour codes returned by workspace_get or the project palette.')
+      if (
+        !colors.length ||
+        colors.length > 64 ||
+        colors.some((color) => !Number.isInteger(color) || !catalog.hasColor(color))
+      ) {
+        return error(
+          'COLOR_UNAVAILABLE',
+          'Palette constraints need 1–64 defined LDraw colour codes.',
+          'Choose colour codes returned by workspace_get or the project palette.',
+        )
       }
     }
     if (constraint.kind === 'locked-region') {
       const subassemblyId = String(constraint.value ?? '')
       if (!subassemblies.has(subassemblyId)) {
-        return error('INVALID_OPERATION', `Locked-region constraint references missing subassembly ${subassemblyId || '(empty)'}.`, 'Choose a current subassembly id.')
+        return error(
+          'INVALID_OPERATION',
+          `Locked-region constraint references missing subassembly ${subassemblyId || '(empty)'}.`,
+          'Choose a current subassembly id.',
+        )
       }
     }
     return { ok: true, value: true }
@@ -277,7 +319,11 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
 
   for (const operation of operations) {
     if (operation.type === 'document.rename' && (!operation.name.trim() || operation.name.trim().length > 120)) {
-      return error('INVALID_OPERATION', 'Document names must contain 1–120 characters.', 'Choose a concise non-empty project name.')
+      return error(
+        'INVALID_OPERATION',
+        'Document names must contain 1–120 characters.',
+        'Choose a concise non-empty project name.',
+      )
     }
     if (operation.type === 'part.add') {
       const definition = catalog.get(operation.part.definitionId)
@@ -300,14 +346,26 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
       const colorCheck = checkColor(activeConstraints(), definition.availableColors, operation.part.color)
       if (colorCheck) return colorCheck
       if (parts.has(operation.part.id)) {
-        return error('INVALID_OPERATION', `Part id ${operation.part.id} already exists.`, 'Generate a fresh stable part id.')
+        return error(
+          'INVALID_OPERATION',
+          `Part id ${operation.part.id} already exists.`,
+          'Generate a fresh stable part id.',
+        )
       }
       const destination = subassemblies.get(operation.part.subassemblyId)
       if (!destination) {
-        return error('INVALID_OPERATION', `Subassembly ${operation.part.subassemblyId} does not exist.`, 'Create the subassembly earlier in the same batch or choose a current one.')
+        return error(
+          'INVALID_OPERATION',
+          `Subassembly ${operation.part.subassemblyId} does not exist.`,
+          'Create the subassembly earlier in the same batch or choose a current one.',
+        )
       }
       if (!document.steps.some((step) => step.id === operation.part.stepId)) {
-        return error('INVALID_OPERATION', `Build step ${operation.part.stepId} does not exist.`, 'Choose a current build step id.')
+        return error(
+          'INVALID_OPERATION',
+          `Build step ${operation.part.stepId} does not exist.`,
+          'Choose a current build step id.',
+        )
       }
       if (actor === 'agent' && destination.locked) {
         return error(
@@ -321,7 +379,11 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
     if ('partId' in operation) {
       const part = parts.get(operation.partId)
       if (!part) {
-        return error('PART_NOT_FOUND', `Part ${operation.partId} is not present at revision ${document.revision}.`, 'Reread the scene region and retry.')
+        return error(
+          'PART_NOT_FOUND',
+          `Part ${operation.partId} is not present at revision ${document.revision}.`,
+          'Reread the scene region and retry.',
+        )
       }
       if (actor === 'agent' && (part.protected || subassemblies.get(part.subassemblyId)?.locked)) {
         const region = subassemblies.get(part.subassemblyId)?.name ?? 'protected selection'
@@ -344,10 +406,18 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
     if (operation.type === 'part.assign-subassembly') {
       const destination = subassemblies.get(operation.subassemblyId)
       if (!destination) {
-        return error('INVALID_OPERATION', `Subassembly ${operation.subassemblyId} does not exist.`, 'Create the subassembly earlier in the same batch or choose an existing unlocked subassembly.')
+        return error(
+          'INVALID_OPERATION',
+          `Subassembly ${operation.subassemblyId} does not exist.`,
+          'Create the subassembly earlier in the same batch or choose an existing unlocked subassembly.',
+        )
       }
       if (actor === 'agent' && destination.locked) {
-        return error('PROTECTED_REGION', `Subassembly ${operation.subassemblyId} is locked.`, 'Assign the part to an unlocked subassembly.')
+        return error(
+          'PROTECTED_REGION',
+          `Subassembly ${operation.subassemblyId} is locked.`,
+          'Assign the part to an unlocked subassembly.',
+        )
       }
       const part = parts.get(operation.partId)
       if (part) parts.set(part.id, { ...part, subassemblyId: operation.subassemblyId })
@@ -355,36 +425,68 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
     if (operation.type === 'part.remove') parts.delete(operation.partId)
     if (operation.type === 'subassembly.add') {
       if (subassemblies.has(operation.subassembly.id)) {
-        return error('INVALID_OPERATION', `Subassembly ${operation.subassembly.id} already exists.`, 'Choose a new stable subassembly id.')
+        return error(
+          'INVALID_OPERATION',
+          `Subassembly ${operation.subassembly.id} already exists.`,
+          'Choose a new stable subassembly id.',
+        )
       }
       if (!operation.subassembly.name.trim() || operation.subassembly.name.trim().length > 80) {
-        return error('INVALID_OPERATION', 'Subassembly names must contain 1–80 characters.', 'Choose a concise non-empty subassembly name.')
+        return error(
+          'INVALID_OPERATION',
+          'Subassembly names must contain 1–80 characters.',
+          'Choose a concise non-empty subassembly name.',
+        )
       }
       if (!/^#[0-9a-f]{6}$/i.test(operation.subassembly.accent)) {
-        return error('INVALID_OPERATION', 'Subassembly accents must be six-digit hexadecimal colours.', 'Send an accent such as #e79032.')
+        return error(
+          'INVALID_OPERATION',
+          'Subassembly accents must be six-digit hexadecimal colours.',
+          'Send an accent such as #e79032.',
+        )
       }
       subassemblies.set(operation.subassembly.id, operation.subassembly)
     }
     if (operation.type === 'subassembly.rename') {
       const subassembly = subassemblies.get(operation.subassemblyId)
       if (!subassembly) {
-        return error('INVALID_OPERATION', `Subassembly ${operation.subassemblyId} does not exist.`, 'Choose a current subassembly id.')
+        return error(
+          'INVALID_OPERATION',
+          `Subassembly ${operation.subassemblyId} does not exist.`,
+          'Choose a current subassembly id.',
+        )
       }
       if (!operation.name.trim() || operation.name.trim().length > 80) {
-        return error('INVALID_OPERATION', 'Subassembly names must contain 1–80 characters.', 'Choose a concise non-empty subassembly name.')
+        return error(
+          'INVALID_OPERATION',
+          'Subassembly names must contain 1–80 characters.',
+          'Choose a concise non-empty subassembly name.',
+        )
       }
       if (actor === 'agent' && subassembly.locked) {
-        return error('PROTECTED_REGION', `Subassembly ${operation.subassemblyId} is locked.`, 'Rename an unlocked subassembly or ask the human to unlock it.')
+        return error(
+          'PROTECTED_REGION',
+          `Subassembly ${operation.subassemblyId} is locked.`,
+          'Rename an unlocked subassembly or ask the human to unlock it.',
+        )
       }
       subassemblies.set(subassembly.id, { ...subassembly, name: operation.name.trim() })
     }
     if (operation.type === 'subassembly.lock') {
       const subassembly = subassemblies.get(operation.subassemblyId)
       if (!subassembly) {
-        return error('INVALID_OPERATION', `Subassembly ${operation.subassemblyId} does not exist.`, 'Choose a current subassembly id.')
+        return error(
+          'INVALID_OPERATION',
+          `Subassembly ${operation.subassemblyId} does not exist.`,
+          'Choose a current subassembly id.',
+        )
       }
       if (actor === 'agent' && subassembly.locked && !operation.locked) {
-        return error('PROTECTED_REGION', `Subassembly ${operation.subassemblyId} is locked by the human.`, 'Ask the human to unlock it or work elsewhere.')
+        return error(
+          'PROTECTED_REGION',
+          `Subassembly ${operation.subassemblyId} is locked by the human.`,
+          'Ask the human to unlock it or work elsewhere.',
+        )
       }
       subassemblies.set(subassembly.id, { ...subassembly, locked: operation.locked })
     }
@@ -395,17 +497,29 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
     }
     if (operation.type === 'constraint.remove') {
       if (!constraints.has(operation.constraintId)) {
-        return error('INVALID_OPERATION', `Constraint ${operation.constraintId} does not exist.`, 'Choose a current constraint id.')
+        return error(
+          'INVALID_OPERATION',
+          `Constraint ${operation.constraintId} does not exist.`,
+          'Choose a current constraint id.',
+        )
       }
       constraints.delete(operation.constraintId)
     }
     if (operation.type === 'module.define') {
       if (!operation.module.parts.length) {
-        return error('INVALID_OPERATION', `Module ${operation.module.name} contains no parts.`, 'Capture a module from a selection that holds at least one part.')
+        return error(
+          'INVALID_OPERATION',
+          `Module ${operation.module.name} contains no parts.`,
+          'Capture a module from a selection that holds at least one part.',
+        )
       }
       const unplaceable = operation.module.parts.find((entry) => !catalog.get(entry.definitionId))
       if (unplaceable) {
-        return error('GEOMETRY_UNAVAILABLE', `Module ${operation.module.name} references ${unplaceable.definitionId}, which has no compiled geometry.`, 'Capture the module from parts this build can place.')
+        return error(
+          'GEOMETRY_UNAVAILABLE',
+          `Module ${operation.module.name} references ${unplaceable.definitionId}, which has no compiled geometry.`,
+          'Capture the module from parts this build can place.',
+        )
       }
       modules.set(operation.module.id, operation.module)
     }
@@ -417,35 +531,63 @@ function validateOperations(document: ModelDocument, operations: CadOperation[],
     }
     if (operation.type === 'note.add') {
       if (noteIds.has(operation.note.id)) {
-        return error('INVALID_OPERATION', `Builder note ${operation.note.id} already exists.`, 'Generate a fresh note id.')
+        return error(
+          'INVALID_OPERATION',
+          `Builder note ${operation.note.id} already exists.`,
+          'Generate a fresh note id.',
+        )
       }
       if (!operation.note.text.trim() || operation.note.text.trim().length > 800) {
-        return error('INVALID_OPERATION', 'Builder notes must contain 1–800 characters.', 'Send a concise non-empty note.')
+        return error(
+          'INVALID_OPERATION',
+          'Builder notes must contain 1–800 characters.',
+          'Send a concise non-empty note.',
+        )
       }
       const missing = operation.note.anchorPartIds.filter((id) => !parts.has(id))
       if (!operation.note.anchorPartIds.length || missing.length) {
-        return error('PART_NOT_FOUND', `Builder note anchors must reference current parts${missing[0] ? `; ${missing[0]} is missing` : ''}.`, 'Anchor the note to at least one current part id.')
+        return error(
+          'PART_NOT_FOUND',
+          `Builder note anchors must reference current parts${missing[0] ? `; ${missing[0]} is missing` : ''}.`,
+          'Anchor the note to at least one current part id.',
+        )
       }
       noteIds.add(operation.note.id)
     }
     if (operation.type === 'note.respond' && !noteIds.has(operation.noteId)) {
-      return error('INVALID_OPERATION', `Builder note ${operation.noteId} does not exist.`, 'Call builder_feedback_get and respond to a current note id.')
+      return error(
+        'INVALID_OPERATION',
+        `Builder note ${operation.noteId} does not exist.`,
+        'Call builder_feedback_get and respond to a current note id.',
+      )
     }
     if (operation.type === 'steps.replace') {
       const placed = new Set<string>()
       for (const step of operation.steps) {
         for (const partId of step.partIds) {
           if (!parts.has(partId)) {
-            return error('PART_NOT_FOUND', `Build step ${step.id} references missing part ${partId}.`, 'Use only current part ids in the replacement sequence.')
+            return error(
+              'PART_NOT_FOUND',
+              `Build step ${step.id} references missing part ${partId}.`,
+              'Use only current part ids in the replacement sequence.',
+            )
           }
           if (placed.has(partId)) {
-            return error('INVALID_OPERATION', `Part ${partId} appears in more than one build step.`, 'Assign every part to exactly one step.')
+            return error(
+              'INVALID_OPERATION',
+              `Part ${partId} appears in more than one build step.`,
+              'Assign every part to exactly one step.',
+            )
           }
           placed.add(partId)
         }
       }
       if (placed.size !== parts.size) {
-        return error('INVALID_OPERATION', `Build sequence covers ${placed.size} of ${parts.size} parts.`, 'Assign every current part to exactly one step.')
+        return error(
+          'INVALID_OPERATION',
+          `Build sequence covers ${placed.size} of ${parts.size} parts.`,
+          'Assign every current part to exactly one step.',
+        )
       }
     }
   }
@@ -662,7 +804,11 @@ export class CadEngine {
     sourceTool?: string,
   ): CommandResult<Transaction> {
     if (actor === 'agent' && this.autonomy !== 'build') {
-      return error('READ_ONLY_MODE', `Agent writes are disabled in ${this.autonomy} mode.`, 'Switch to Build mode or create a proposal instead.')
+      return error(
+        'READ_ONLY_MODE',
+        `Agent writes are disabled in ${this.autonomy} mode.`,
+        'Switch to Build mode or create a proposal instead.',
+      )
     }
     if (expectedRevision !== this.document.revision) {
       return error(
@@ -701,14 +847,18 @@ export class CadEngine {
     // points at — which would be a dead end if softening a failing constraint
     // were itself refused.
     const priorHard = new Map(
-      this.document.constraints.filter((constraint) => constraint.hard).map((constraint) => [constraint.id, constraint]),
+      this.document.constraints
+        .filter((constraint) => constraint.hard)
+        .map((constraint) => [constraint.id, constraint]),
     )
     const unchanged = (constraint: Constraint) => {
       const prior = priorHard.get(constraint.id)
       return prior !== undefined && JSON.stringify(prior) === JSON.stringify(constraint)
     }
     const hardConstraintIds = new Set(
-      after.constraints.filter((constraint) => constraint.hard && unchanged(constraint)).map((constraint) => constraint.id),
+      after.constraints
+        .filter((constraint) => constraint.hard && unchanged(constraint))
+        .map((constraint) => constraint.id),
     )
     if (hardConstraintIds.size) {
       const priorConstraintStatus = new Map(
@@ -759,8 +909,12 @@ export class CadEngine {
       }
     }
 
-    const addedIds = operations.filter((operation) => operation.type === 'part.add').map((operation) => operation.part.id)
-    const movedIds = operations.filter((operation) => operation.type === 'part.transform').map((operation) => operation.partId)
+    const addedIds = operations
+      .filter((operation) => operation.type === 'part.add')
+      .map((operation) => operation.part.id)
+    const movedIds = operations
+      .filter((operation) => operation.type === 'part.transform')
+      .map((operation) => operation.partId)
     // Walls and storeys are many *adds* in one transaction; their clutch is the
     // planner's job. Every *moved* part is still a brick the operator or agent
     // is dragging — lifting two unconnected bricks into the air, or aligning a
@@ -877,7 +1031,8 @@ export class CadEngine {
 
   applyProposal(proposalId: string, actor: Actor = 'human'): CommandResult<Transaction> {
     const proposal = this.proposals.get(proposalId)
-    if (!proposal) return error('PROPOSAL_NOT_FOUND', `Proposal ${proposalId} does not exist.`, 'List current proposals and retry.')
+    if (!proposal)
+      return error('PROPOSAL_NOT_FOUND', `Proposal ${proposalId} does not exist.`, 'List current proposals and retry.')
     if (proposal.baseRevision !== this.document.revision) {
       return error(
         'PROPOSAL_STALE',
@@ -920,7 +1075,11 @@ export class CadEngine {
     if (actor === 'agent') this.autonomy = 'build'
     const result = this.execute(proposal.label, proposal.operations, actor, proposal.baseRevision, 'build_apply')
     this.autonomy = priorAutonomy
-    if (result.ok) proposal.status = 'applied'
+    // A refused apply must leave the ghost queued. Dropping it here made the
+    // overlay look like the operator had rejected the proposal, while Generate
+    // still thought a review was in progress.
+    if (!result.ok) return result
+    proposal.status = 'applied'
     this.proposals.delete(proposalId)
     this.emit()
     return result
@@ -928,7 +1087,8 @@ export class CadEngine {
 
   rejectProposal(proposalId: string): CommandResult<Proposal> {
     const proposal = this.proposals.get(proposalId)
-    if (!proposal) return error('PROPOSAL_NOT_FOUND', `Proposal ${proposalId} does not exist.`, 'List current proposals and retry.')
+    if (!proposal)
+      return error('PROPOSAL_NOT_FOUND', `Proposal ${proposalId} does not exist.`, 'List current proposals and retry.')
     proposal.status = 'rejected'
     this.proposals.delete(proposalId)
     this.emit()
@@ -946,7 +1106,11 @@ export class CadEngine {
   undo(actor: Actor = 'human'): CommandResult<Transaction> {
     const undone = this.undoStack.at(-1)
     if (!undone) {
-      return error('INVALID_OPERATION', 'There is no transaction to undo.', 'Continue building or choose a named checkpoint.')
+      return error(
+        'INVALID_OPERATION',
+        'There is no transaction to undo.',
+        'Continue building or choose a named checkpoint.',
+      )
     }
     if (actor === 'agent' && undone.affectedPartIds.some((partId) => isPartProtected(this.document, partId))) {
       return error(
@@ -1039,13 +1203,8 @@ export class CadEngine {
 export const cadEngine = new CadEngine(createBlankDocument())
 
 export const commandBus = {
-  dispatch: (
-    label: string,
-    operations: CadOperation[],
-    actor: Actor,
-    expectedRevision?: number,
-    sourceTool?: string,
-  ) => cadEngine.execute(label, operations, actor, expectedRevision, sourceTool),
+  dispatch: (label: string, operations: CadOperation[], actor: Actor, expectedRevision?: number, sourceTool?: string) =>
+    cadEngine.execute(label, operations, actor, expectedRevision, sourceTool),
   preflight: (label: string, operations: CadOperation[], actor: Actor, expectedRevision?: number) =>
     cadEngine.preflight(label, operations, actor, expectedRevision),
 }

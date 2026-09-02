@@ -1302,10 +1302,14 @@
   cursor: pointer;
   border-radius: 4px;
 }
-.proposal-overlay button:last-child {
-  width: 28px;
-  padding: 0;
-  justify-content: center;
+.proposal-overlay button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.proposal-overlay[data-ready='false'] {
+  border-color: rgba(255, 103, 83, 0.55);
+}
+.proposal-overlay-reject {
   background: transparent;
   border-color: #2b393c;
   color: var(--muted);

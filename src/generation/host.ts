@@ -30,12 +30,7 @@ import {
   type GenerationSurface,
 } from '../webmcp/surfaceSnapshot'
 import type { DesignBrief } from '../platform/contracts'
-import {
-  GenerationSession,
-  unresolvedConflicts,
-  type GenerateState,
-  type GenerationSessionOptions,
-} from './session'
+import { GenerationSession, unresolvedConflicts, type GenerateState, type GenerationSessionOptions } from './session'
 
 let current: GenerationSession | null = null
 let unsubscribe: (() => void) | null = null
@@ -160,7 +155,11 @@ export async function compileBriefFromServer(prompt?: string) {
   const session = getGenerationSession()
   if (prompt !== undefined) session.setPrompt(prompt)
   if (!session.getState().prompt.trim()) {
-    throw new ContractError('INVALID_INPUT', 'Nothing to compile.', 'Send prompt, or call generation_set with a prompt first.')
+    throw new ContractError(
+      'INVALID_INPUT',
+      'Nothing to compile.',
+      'Send prompt, or call generation_set with a prompt first.',
+    )
   }
   await session.compile()
   const state = session.getState()
@@ -187,7 +186,11 @@ export function compileBriefLocal(prompt?: string) {
   const session = getGenerationSession()
   if (prompt !== undefined) session.setPrompt(prompt)
   if (!session.getState().prompt.trim()) {
-    throw new ContractError('INVALID_INPUT', 'Nothing to compile.', 'Send prompt, or call generation_set with a prompt first.')
+    throw new ContractError(
+      'INVALID_INPUT',
+      'Nothing to compile.',
+      'Send prompt, or call generation_set with a prompt first.',
+    )
   }
   session.compileLocally()
   return compactGeneration(session.getState())
@@ -273,7 +276,11 @@ export function applyGeneration(expectedRevision?: number) {
   const session = getGenerationSession()
   const ghost = session.getState().ghost
   if (!ghost) {
-    throw new ContractError('INVALID_INPUT', 'Nothing is under review.', 'Call generation_preview with a candidateId first.')
+    throw new ContractError(
+      'INVALID_INPUT',
+      'Nothing is under review.',
+      'Call generation_preview with a candidateId first.',
+    )
   }
   if (expectedRevision !== undefined && expectedRevision !== ghost.baseRevision) {
     throw new ContractError(
@@ -286,10 +293,17 @@ export function applyGeneration(expectedRevision?: number) {
   const outcome = session.accept('agent')
   if (outcome.kind !== 'applied') {
     const code =
-      outcome.code === 'STALE_DOCUMENT' || outcome.code === 'COLLISION' || outcome.code === 'DISCONNECTED'
+      outcome.code === 'STALE_DOCUMENT' ||
+      outcome.code === 'COLLISION' ||
+      outcome.code === 'DISCONNECTED' ||
+      outcome.code === 'CONSTRAINT_VIOLATION'
         ? outcome.code
         : 'INVALID_OPERATION'
-    throw new ContractError(code, outcome.detail, outcome.repair ?? 'Call generation_state and preview another candidate.')
+    throw new ContractError(
+      code,
+      outcome.detail,
+      outcome.repair ?? 'Call generation_state and preview another candidate.',
+    )
   }
   return {
     ...compactGeneration(session.getState()),
@@ -309,7 +323,12 @@ export function applyGeneration(expectedRevision?: number) {
  */
 export function refusalOf(cause: unknown): { code: string; message: string; repair: string; details?: unknown } | null {
   if (!(cause instanceof ContractError)) return null
-  return { code: cause.code, message: cause.message, repair: cause.repair, ...(cause.details ? { details: cause.details } : {}) }
+  return {
+    code: cause.code,
+    message: cause.message,
+    repair: cause.repair,
+    ...(cause.details ? { details: cause.details } : {}),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +361,11 @@ export function planCandidateWave(candidateId: string): CandidateWavePlan {
   const session = getGenerationSession()
   const state = session.getState()
   if (!state.run) {
-    throw new ContractError('INVALID_INPUT', 'No generation run is loaded.', 'Call generation_run first, then preview a candidate id from its result.')
+    throw new ContractError(
+      'INVALID_INPUT',
+      'No generation run is loaded.',
+      'Call generation_run first, then preview a candidate id from its result.',
+    )
   }
   const candidate = session.adoptCandidate(candidateId)
   if (!candidate) {

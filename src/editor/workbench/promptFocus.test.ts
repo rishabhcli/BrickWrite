@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  announceGenerationPromptReady,
-  claimGeneratePrompt,
-  watchGeneratePrompt,
-} from './promptFocus'
+import { announceGenerationPromptReady, claimGeneratePrompt, watchGeneratePrompt } from './promptFocus'
 
 function mountPrompt() {
   const wrap = document.createElement('div')
@@ -54,5 +50,15 @@ describe('generate prompt focus', () => {
     mountPrompt()
     expect(claimGeneratePrompt()).toBe(true)
     expect(document.activeElement).toBe(other)
+  })
+
+  it('takes the caret from the canvas, which is default focus not an operator choice', () => {
+    const canvas = document.createElement('canvas')
+    canvas.tabIndex = 0
+    document.body.appendChild(canvas)
+    canvas.focus()
+    const field = mountPrompt()
+    expect(claimGeneratePrompt()).toBe(true)
+    expect(document.activeElement).toBe(field)
   })
 })

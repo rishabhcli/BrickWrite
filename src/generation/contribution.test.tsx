@@ -2,9 +2,9 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBlankDocument } from '../cad/sample'
-import { createExtensionRegistry, ExtensionRegistryProvider } from '../editor/workbench'
+import { createExtensionRegistry, ExtensionRegistryProvider, ModalSlot } from '../editor/workbench'
 import type { WorkbenchApi } from '../editor/workbench'
-import { GeneratePanel } from './GeneratePanel'
+import { COMPARE_MODAL_ID, GeneratePanel } from './GeneratePanel'
 import { GeneratePanelContribution } from './contribution'
 import { disposeGenerationHost, getGenerationSession } from './host'
 
@@ -64,6 +64,21 @@ describe('intent=describe', () => {
 
     window.dispatchEvent(new CustomEvent('brickwright:intent-describe'))
     await waitFor(() => expect(screen.getByRole('textbox')).toHaveFocus())
+  })
+
+  it('closes compare when the run no longer has candidates instead of showing an empty table', () => {
+    const session = getGenerationSession({ tickMs: 0 })
+    const openModal = vi.fn()
+    const liveApi = { ...api, openModal, activeModal: COMPARE_MODAL_ID } as unknown as WorkbenchApi
+    render(
+      <ExtensionRegistryProvider registry={createExtensionRegistry()} api={liveApi}>
+        <GeneratePanelContribution options={{ tickMs: 0 }} />
+        <GeneratePanel api={liveApi} session={session} />
+        <ModalSlot />
+      </ExtensionRegistryProvider>,
+    )
+    expect(screen.queryByRole('dialog', { name: 'Candidates side by side' })).not.toBeInTheDocument()
+    expect(openModal).toHaveBeenCalledWith(null)
   })
 
   it('leaves the prompt alone when the builder arrived any other way', async () => {

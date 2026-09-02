@@ -35,7 +35,15 @@ export function claimGeneratePrompt(): boolean {
   const field = generationPromptField()
   if (!field) return false
   const active = document.activeElement
-  if (active === null || active === document.body) field.focus()
+  if (active === field) return true
+  // `?intent=describe` lands after the canvas is already tabbable. Treating
+  // that default focus as an operator choice left the caret in an empty
+  // viewport instead of the prompt the route promised.
+  const operatorHeld =
+    active instanceof HTMLElement &&
+    (active.matches('input, textarea, select, [contenteditable="true"]') ||
+      Boolean(active.closest('[role="dialog"][aria-modal="true"]')))
+  if (!operatorHeld) field.focus()
   return true
 }
 

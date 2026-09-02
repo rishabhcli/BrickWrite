@@ -30,7 +30,12 @@ describe('CadEngine', () => {
     engine.setAutonomy('build')
     const first = engine.execute('Place foundation', [{ type: 'part.add', part: makePart('a') }], 'human', 0)
     expect(first.ok && first.value.resultRevision).toBe(1)
-    const stale = engine.execute('Stale move', [{ type: 'part.transform', partId: 'a', transform: { position: [20, 0, 0], basis: IDENTITY_BASIS } }], 'agent', 0)
+    const stale = engine.execute(
+      'Stale move',
+      [{ type: 'part.transform', partId: 'a', transform: { position: [20, 0, 0], basis: IDENTITY_BASIS } }],
+      'agent',
+      0,
+    )
     expect(stale).toMatchObject({ ok: false, error: { code: 'STALE_DOCUMENT' } })
     expect(engine.getSnapshot().document.parts.a.transform.position).toEqual([0, 0, 0])
   })
@@ -60,6 +65,23 @@ describe('CadEngine', () => {
     expect(proposal.value.validation.collisions).toHaveLength(1)
     expect(engine.applyProposal(proposal.value.id, 'agent')).toMatchObject({ ok: false, error: { code: 'COLLISION' } })
     expect(Object.keys(engine.getSnapshot().document.parts)).toHaveLength(0)
+    expect(engine.getSnapshot().proposals.some((entry) => entry.id === proposal.value.id)).toBe(true)
+  })
+
+  it('keeps a constraint-refused ghost queued instead of silently dropping it', () => {
+    const engine = new CadEngine(createShowcaseDocument())
+    const stray = engine.preflight(
+      'Place far out',
+      [{ type: 'part.add', part: makePart('stray', [400, 0, 0]) }],
+      'human',
+    )
+    expect(stray.ok).toBe(true)
+    if (!stray.ok) return
+    expect(stray.value.validation.healthy).toBe(false)
+    const applied = engine.applyProposal(stray.value.id, 'human')
+    expect(applied).toMatchObject({ ok: false, error: { code: 'CONSTRAINT_VIOLATION' } })
+    expect(engine.getSnapshot().document.parts.stray).toBeUndefined()
+    expect(engine.getSnapshot().proposals.some((entry) => entry.id === stray.value.id)).toBe(true)
   })
 
   it('shares undo and redo while keeping revisions monotonic', () => {
@@ -130,12 +152,22 @@ describe('hard design constraints', () => {
     // Refusing it would make an aspirational budget impossible to express, and
     // would contradict the refusal message's own advice to soften the limit.
     const engine = new CadEngine(createShowcaseDocument())
-    const result = engine.execute('Tighten envelope', [
-      {
-        type: 'constraint.set',
-        constraint: { id: 'c_size', kind: 'dimensions', label: 'Envelope ≤ 5 × 5 studs', value: { width: 5, depth: 5 }, hard: true },
-      },
-    ], 'human')
+    const result = engine.execute(
+      'Tighten envelope',
+      [
+        {
+          type: 'constraint.set',
+          constraint: {
+            id: 'c_size',
+            kind: 'dimensions',
+            label: 'Envelope ≤ 5 × 5 studs',
+            value: { width: 5, depth: 5 },
+            hard: true,
+          },
+        },
+      ],
+      'human',
+    )
 
     expect(result.ok).toBe(true)
     expect(engine.getSnapshot().validation.constraints.find((entry) => entry.id === 'c_size')?.status).toBe('fail')
@@ -145,12 +177,22 @@ describe('hard design constraints', () => {
     // Having gone over budget, an operator still has to be able to edit — not
     // least to edit their way back under it.
     const engine = new CadEngine(createShowcaseDocument())
-    engine.execute('Tighten envelope', [
-      {
-        type: 'constraint.set',
-        constraint: { id: 'c_size', kind: 'dimensions', label: 'Envelope ≤ 5 × 5 studs', value: { width: 5, depth: 5 }, hard: true },
-      },
-    ], 'human')
+    engine.execute(
+      'Tighten envelope',
+      [
+        {
+          type: 'constraint.set',
+          constraint: {
+            id: 'c_size',
+            kind: 'dimensions',
+            label: 'Envelope ≤ 5 × 5 studs',
+            value: { width: 5, depth: 5 },
+            hard: true,
+          },
+        },
+      ],
+      'human',
+    )
 
     const followUp = engine.execute(
       'Keep building',
@@ -164,7 +206,9 @@ describe('hard design constraints', () => {
     const engine = new CadEngine(createShowcaseDocument())
     expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(false)
 
-    expect(engine.execute('Drop envelope', [{ type: 'constraint.remove', constraintId: 'c_size' }], 'human').ok).toBe(true)
+    expect(engine.execute('Drop envelope', [{ type: 'constraint.remove', constraintId: 'c_size' }], 'human').ok).toBe(
+      true,
+    )
     expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(true)
   })
 })
