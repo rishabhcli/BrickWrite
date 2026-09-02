@@ -5,6 +5,30 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync(path.resolve(__dirname, 'workbench.css'), 'utf8')
 const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
+function mediaBlocks(source: string, width: string): string[] {
+  const blocks: string[] = []
+  const needle = `@media (max-width: ${width})`
+  let from = 0
+  while (true) {
+    const start = source.indexOf(needle, from)
+    if (start === -1) break
+    const brace = source.indexOf('{', start)
+    let depth = 0
+    for (let i = brace; i < source.length; i++) {
+      if (source[i] === '{') depth++
+      else if (source[i] === '}') {
+        depth--
+        if (depth === 0) {
+          blocks.push(source.slice(start, i + 1))
+          from = i + 1
+          break
+        }
+      }
+    }
+  }
+  return blocks
+}
+
 describe('workbench chrome polish', () => {
   it('does not pin the timeline row to 0 with !important', () => {
     expect(withoutComments).not.toMatch(/\.app-shell[^{]*{[^{}]*grid-template-rows:[^;}]*!important/)
@@ -56,5 +80,37 @@ describe('workbench chrome polish', () => {
   it('opens the CSS timeline fallback when the shell is marked open', () => {
     expect(withoutComments).toMatch(/\.app-shell\[data-timeline='open'\]/)
     expect(withoutComments).toMatch(/--timeline-track:\s*152px/)
+  })
+
+  it('sizes island tools, history and selection popovers from the island, not the window', () => {
+    const at1300 = mediaBlocks(withoutComments, '1300px')
+    expect(at1300.length).toBeGreaterThan(0)
+    for (const block of at1300) {
+      expect(block).not.toContain('.toolbar-island')
+    }
+    const at1380 = mediaBlocks(withoutComments, '1380px')
+    expect(at1380.length).toBeGreaterThan(0)
+    for (const block of at1380) {
+      expect(block).not.toContain('.toolbar-island')
+      expect(block).not.toContain('.selection-tools')
+      expect(block).not.toContain('.history-tools')
+    }
+
+    const island760 = withoutComments.indexOf('@container toolbar-island (max-width: 760px)')
+    const slice760 = withoutComments.slice(island760, island760 + 900)
+    expect(slice760).toContain('.history-tools')
+    expect(slice760).toContain('.selection-tools')
+
+    const island720 = withoutComments.indexOf('@container toolbar-island (max-width: 720px)')
+    expect(withoutComments.slice(island720, island720 + 700)).toContain('.tool-button')
+  })
+
+  it('keys the open-timeline CSS fallback to the preset already on the shell', () => {
+    expect(withoutComments).toMatch(
+      /\.app-shell\[data-preset='laptop'\]\[data-timeline='open'\]\s*\{[^}]*--timeline-track:\s*124px/,
+    )
+    expect(withoutComments).toMatch(
+      /\.app-shell\[data-preset='ultrawide'\]\[data-timeline='open'\]\s*\{[^}]*--timeline-track:\s*168px/,
+    )
   })
 })
