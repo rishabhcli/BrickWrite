@@ -623,6 +623,7 @@ describe('the comparison dialog', () => {
       />,
     )
     const dialog = screen.getByRole('dialog', { name: 'Candidates side by side' })
+    expect(dialog.parentElement).toHaveAttribute('role', 'presentation')
     for (const row of CANDIDATE_METRICS) {
       expect(
         within(dialog)

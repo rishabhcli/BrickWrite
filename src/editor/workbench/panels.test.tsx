@@ -637,6 +637,20 @@ describe('command palette', () => {
     expect(screen.getAllByRole('option')[0].textContent).toContain('Pick colour')
   })
 
+  it('points the combobox at the highlighted option so arrows announce it', () => {
+    renderPalette()
+    const input = screen.getByRole('combobox', { name: 'Search commands' })
+    expect(input.getAttribute('aria-haspopup')).toBe('listbox')
+    const options = screen.getAllByRole('option')
+    expect(options[0].id).toMatch(/^command-palette-option-/)
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id)
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[1].id)
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    expect(options[0]).toHaveAttribute('aria-selected', 'false')
+  })
+
   it('runs the command under the cursor on Enter', () => {
     const { onRun, onClose } = renderPalette()
     const input = screen.getByLabelText('Search commands')
