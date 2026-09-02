@@ -1,3 +1,4 @@
+import { isPubliclyListable } from '../access'
 import { deepFreeze } from '../publish'
 import { isValidSlug } from '../sanitize'
 import { ShareError, type Collection, type Publication, type Report, type ShareTokenRecord } from '../types'
@@ -16,7 +17,8 @@ import type { KvNamespace, PublicationStore, StoredCard } from './adapter'
  *
  *   `pub:slug:<slug>`      the record, keyed by what a URL carries
  *   `pub:id:<id>`          slug pointer, so a token can find its publication
- *   `pub:feed:<sortKey>`   listing index; the key sorts newest-first so the
+ *   `pub:feed:<sortKey>`   listing index, holding **only** publicly listable
+ *                          publications; the key sorts newest-first so the
  *                          gallery pages with KV's own prefix listing instead
  *                          of loading every publication to sort it
  *   `card:<sha256>`        card bytes, content-addressed and immutable
@@ -38,6 +40,15 @@ const TOKEN_INDEX_KEY = (publicationId: string, tokenId: string) => `tokidx:${pu
 const REPORT_KEY = (id: string) => `rep:${id}`
 const COLLECTION_KEY = (id: string) => `col:${id}`
 const FEED_PREFIX = 'pub:feed:'
+
+/**
+ * Records one listing request may read.
+ *
+ * A ceiling on subrequests, not a page size: the page size is what the caller
+ * asked for, and this is what stops a run of stale index keys from spending a
+ * Worker's whole budget on a single gallery load.
+ */
+const MAX_KEYS_EXAMINED = 200
 
 /**
  * Newest-first ordering inside a lexically-sorted key space.
@@ -91,7 +102,11 @@ export class KvPublicationStore implements PublicationStore {
     }
     await this.writeJson(SLUG_KEY(publication.slug), publication)
     await this.kv.put(ID_KEY(publication.id), publication.slug)
-    await this.kv.put(feedKey(publication), publication.slug)
+    // Only if the gallery would show it. Indexing everything meant `listPublic`
+    // read one record per *hidden* publication before it could return a visible
+    // one, so a namespace whose publications are mostly unlisted — the ordinary
+    // case — cost a KV read per one of them on every gallery load.
+    if (isPubliclyListable(publication)) await this.kv.put(feedKey(publication), publication.slug)
   }
 
   async getBySlug(slug: string): Promise<Publication | null> {
@@ -128,6 +143,13 @@ export class KvPublicationStore implements PublicationStore {
       )
     }
     await this.writeJson(SLUG_KEY(publication.slug), publication)
+    // Visibility, revocation and moderation are exactly what this index means,
+    // and they are exactly what this method is allowed to change. Kept in step
+    // here so a revoked publication leaves the gallery rather than being read
+    // and discarded on every listing until somebody notices.
+    const key = feedKey(publication)
+    if (isPubliclyListable(publication)) await this.kv.put(key, publication.slug)
+    else await this.kv.delete(key)
   }
 
   async listPublic(options: { limit?: number; cursor?: string | null } = {}): Promise<{
@@ -138,29 +160,41 @@ export class KvPublicationStore implements PublicationStore {
     const entries: Publication[] = []
     let cursor = options.cursor ?? undefined
     let complete = false
+    let examined = 0
 
-    // KV's listing does not filter, so a page of keys can yield fewer public
-    // publications than asked for. The loop keeps pulling until the page is
-    // full or the namespace is exhausted, rather than returning a short page
-    // that looks like the end of the gallery.
-    //
-    // Each batch asks for exactly as many keys as are still needed, which is
-    // what keeps the returned cursor aligned: at most one entry is produced per
-    // key examined, so the cursor never runs past a publication that has not
-    // been emitted. Asking for a larger batch and stopping early would silently
-    // drop everything between the last emitted entry and the end of the batch.
-    while (entries.length < limit && !complete) {
+    /*
+     * The index holds only listable publications, so a key normally yields an
+     * entry and this loop runs once. The filter below stays as a safety net —
+     * an index entry can outlive the state that justified it, and serving a
+     * revoked model because a key was missed is the one outcome this surface
+     * must not have.
+     *
+     * `examined` is the hard part. Without it a run of stale keys turns one
+     * request into one KV read per stale key, with no ceiling; a Worker has a
+     * finite subrequest budget, so "the gallery is slow" would become "the
+     * gallery returns an error" at a size nobody chose. A short page with a
+     * cursor is not the end of the gallery, and the caller pages on.
+     *
+     * Each batch asks for exactly as many keys as are still needed, which keeps
+     * the returned cursor aligned: at most one entry is produced per key
+     * examined, so the cursor never runs past a publication that has not been
+     * emitted.
+     */
+    while (entries.length < limit && !complete && examined < MAX_KEYS_EXAMINED) {
       const page = await this.kv.list({ prefix: FEED_PREFIX, limit: limit - entries.length, cursor })
       cursor = page.cursor
       complete = page.list_complete
       for (const key of page.keys) {
+        examined += 1
         const slug = key.name.slice(key.name.lastIndexOf(':') + 1)
         const publication = await this.getBySlug(slug)
-        if (!publication) continue
-        if (publication.visibility !== 'public') continue
-        if (publication.revokedAt || publication.moderation?.status === 'hidden') continue
-        if (!publication.capabilities.view) continue
-        entries.push(publication)
+        if (publication && isPubliclyListable(publication)) {
+          entries.push(publication)
+          continue
+        }
+        // The index disagreed with the record. Drop the key rather than pay to
+        // rediscover it on every listing; the record itself is untouched.
+        await this.kv.delete(key.name)
       }
     }
 

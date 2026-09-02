@@ -248,3 +248,80 @@ describe('cloud schema fragments', () => {
     expect(CONVEX_SHARE_FUNCTIONS).toContain('SHARE_PUBLISH_TOKEN')
   })
 })
+
+/**
+ * The gallery listing reads one record per entry it returns, not one per
+ * publication that exists.
+ *
+ * The feed index used to hold every publication and `listPublic` filtered it,
+ * so a namespace whose publications are mostly unlisted — the ordinary case —
+ * spent a KV read on each of them before it could return a visible one. A
+ * Worker has a finite subrequest budget, so that is not a slow gallery, it is
+ * one that starts failing at a size nobody chose.
+ */
+describe('the gallery index', () => {
+  /** Counts record reads so the listing's cost can be asserted, not assumed. */
+  class CountingKv extends MemoryKv {
+    reads = 0
+    override get(key: string, type: 'text'): Promise<string | null>
+    override get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>
+    override get(key: string, type: 'text' | 'arrayBuffer') {
+      if (key.startsWith('pub:slug:')) this.reads += 1
+      return super.get(key, type as 'text')
+    }
+  }
+
+  const counting = () => {
+    const kv = new CountingKv()
+    return { kv, store: new KvPublicationStore(kv) }
+  }
+
+  it('reads only the records it returns, whatever else is stored', async () => {
+    const { kv, store } = counting()
+    for (let index = 0; index < 30; index += 1) {
+      await store.put(await publish(index, { visibility: 'unlisted', title: `Hidden ${index}` }))
+    }
+    await store.put(await publish(99, { title: 'The one public build' }))
+
+    kv.reads = 0
+    const page = await store.listPublic({ limit: 24 })
+    expect(page.entries.map((entry) => entry.title)).toEqual(['The one public build'])
+    // One read for the one entry. Thirty unlisted publications cost nothing.
+    expect(kv.reads).toBe(1)
+  })
+
+  it('drops a publication from the gallery when it is revoked', async () => {
+    const { store } = counting()
+    const publication = await publish(4)
+    await store.put(publication)
+    expect((await store.listPublic()).entries).toHaveLength(1)
+
+    await store.updateMetadata(revokePublication(publication))
+    expect((await store.listPublic()).entries).toEqual([])
+  })
+
+  it('adds a publication to the gallery when it becomes public', async () => {
+    const { store } = counting()
+    const publication = await publish(4, { visibility: 'unlisted' })
+    await store.put(publication)
+    expect((await store.listPublic()).entries).toEqual([])
+
+    await store.updateMetadata(updatePublicationAccess(publication, { visibility: 'public' }))
+    expect((await store.listPublic()).entries.map((entry) => entry.slug)).toEqual([publication.slug])
+  })
+
+  it('repairs an index entry that no longer matches its record', async () => {
+    // An entry can outlive the state that justified it — a record written by an
+    // older build, or a write that landed and its index update that did not.
+    // The listing must not serve it, and must not pay to rediscover it.
+    const { kv, store } = counting()
+    const publication = await publish(4)
+    await store.put(publication)
+    await kv.put(`pub:slug:${publication.slug}`, JSON.stringify({ ...publication, visibility: 'unlisted' }))
+
+    expect((await store.listPublic()).entries).toEqual([])
+    kv.reads = 0
+    expect((await store.listPublic()).entries).toEqual([])
+    expect(kv.reads).toBe(0)
+  })
+})
