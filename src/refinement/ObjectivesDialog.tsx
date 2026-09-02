@@ -70,6 +70,7 @@ export function ObjectivesDialog({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="bw-refine-dialog"
+      role="presentation"
       onKeyDown={onKeyDown}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()

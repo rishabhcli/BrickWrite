@@ -40,7 +40,7 @@ export function CloudVersionHistory({ api }: { api: CloudWorkbenchApi }) {
   const dialogRef = useFocusTrap(true, { onEscape: close })
 
   return (
-    <div className="bw-cloud-backdrop" data-testid="cloud-version-history">
+    <div className="bw-cloud-backdrop" role="presentation" data-testid="cloud-version-history">
       <div
         className="bw-cloud-dialog"
         role="dialog"

@@ -682,9 +682,25 @@ describe('command palette', () => {
     expect(row.textContent).toContain('Select at least one part first.')
   })
 
+  it('keeps Tab off the command options so focus stays on the combobox chrome', async () => {
+    renderPalette()
+    const input = screen.getByRole('combobox', { name: 'Search commands' })
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+    })
+    expect(document.activeElement).toBe(input)
+    const options = screen.getAllByRole('option')
+    expect(options.length).toBeGreaterThan(1)
+    for (const option of options) {
+      expect(option).toHaveAttribute('tabIndex', '-1')
+    }
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' })
+    expect(options.some((option) => option === document.activeElement)).toBe(false)
+  })
+
   it('traps focus so Tab cannot leave the dialog', () => {
     const { container } = renderPalette()
-    const focusable = [...container.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')]
+    const focusable = [...container.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled)')]
     const last = focusable[focusable.length - 1]
     last.focus()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' })

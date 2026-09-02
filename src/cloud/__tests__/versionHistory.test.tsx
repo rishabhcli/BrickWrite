@@ -65,6 +65,7 @@ describe('Version history — states with nothing to show', () => {
   it('explains an unconfigured deployment, and what the editor keeps instead', async () => {
     const harness = makeUiHarness()
     await mount(harness)
+    expect(screen.getByTestId('cloud-version-history')).toHaveAttribute('role', 'presentation')
     const note = screen.getByRole('note')
     expect(note).toHaveTextContent('No cloud is configured, so there are no versions')
     expect(note).toHaveTextContent('VITE_CONVEX_URL is not set')
