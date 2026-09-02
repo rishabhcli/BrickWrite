@@ -23,7 +23,7 @@ const FOCUSABLE = [
 /** Focusable descendants, in document order, skipping anything hidden. */
 export function focusableWithin(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (element) => element.getAttribute('aria-hidden') !== 'true' && element.tabIndex !== -1,
+    (element) => element.getAttribute('aria-hidden') !== 'true' && !element.hidden && element.tabIndex !== -1,
   )
 }
 

@@ -10,7 +10,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { exportBomCsv } from '../cad/bom'
 import { describeBrickLinkExport, exportBrickLinkXml } from '../cad/bricklink'
 import { catalog } from '../cad/catalog'
@@ -39,7 +39,11 @@ type GuideState =
   | { kind: 'loading'; loaded: number; total: number; phase: 'geometry' | 'rendering' }
   | { kind: 'done' }
 
-const safeFilename = (name: string) => name.trim().replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'brickwright_model'
+const safeFilename = (name: string) =>
+  name
+    .trim()
+    .replace(/\W+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'brickwright_model'
 
 /** Converts a software-rendered RGBA buffer into an inline PNG. */
 function encodePng(image: RasterImage): string {
@@ -63,10 +67,28 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
   const trigger = useRef<HTMLButtonElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const close = useCallback(() => setOpen(false), [])
+  // Restore to the chevron that opened the panel, not the sibling LDR button.
   const panel = useFocusTrap(open, { onEscape: close, restoreTo: trigger })
   const name = safeFilename(state.document.name)
   const ready = state.validation.healthy && state.validation.unverifiedCollisions === 0
   const archiveInput = useRef<HTMLInputElement>(null)
+  const dialogId = useId()
+  const titleId = useId()
+
+  const deliver = useCallback(
+    (label: string, run: () => void) => {
+      try {
+        run()
+      } catch (cause) {
+        onNotice({
+          kind: 'error',
+          title: `${label} not exported`,
+          detail: cause instanceof Error ? cause.message : String(cause),
+        })
+      }
+    },
+    [onNotice],
+  )
 
   useEffect(() => {
     if (!open) return
@@ -157,28 +179,43 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
     <div className="export-center" ref={root}>
       <div className="export-split">
         <button
-          ref={trigger}
+          type="button"
           className="export-primary"
-          onClick={() => downloadText(`${name}.ldr`, exportLDraw(state.document))}
+          onClick={() => deliver('Flat LDraw', () => downloadText(`${name}.ldr`, exportLDraw(state.document)))}
           aria-label="Export LDR"
         >
           <Download size={13} /> EXPORT LDR
         </button>
         <button
+          ref={trigger}
+          type="button"
           className="export-toggle"
           onClick={() => setOpen((value) => !value)}
           aria-label="More export options"
+          aria-haspopup="dialog"
           aria-expanded={open}
+          aria-controls={open ? dialogId : undefined}
         >
           <ChevronDown size={12} />
         </button>
       </div>
 
       {open && (
-        <div ref={panel as RefObject<HTMLDivElement>} className="export-panel" role="dialog" aria-modal="true" aria-label="Deliverables">
+        <div
+          id={dialogId}
+          ref={panel as RefObject<HTMLDivElement>}
+          className="export-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+        >
           <header>
-            <div><strong>Export</strong></div>
-            <button onClick={() => setOpen(false)} aria-label="Close export"><X size={13} /></button>
+            <div>
+              <strong id={titleId}>Export</strong>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close export">
+              <X size={13} />
+            </button>
           </header>
 
           <div className={`release-readiness ${ready ? 'ready' : 'review'}`}>
@@ -186,37 +223,67 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
             <div>
               <strong>{ready ? 'Revision ready to deliver' : 'Review before building'}</strong>
               <small>
-                r{state.document.revision} · {state.validation.partCount} parts · {state.validation.connectionCount} connections ·{' '}
-                {state.validation.collisions.length} collision issue{state.validation.collisions.length === 1 ? '' : 's'}
+                r{state.document.revision} · {state.validation.partCount} parts · {state.validation.connectionCount}{' '}
+                connections · {state.validation.collisions.length} collision issue
+                {state.validation.collisions.length === 1 ? '' : 's'}
               </small>
             </div>
           </div>
 
           <div className="export-grid">
-            <button onClick={() => downloadText(`${name}.ldr`, exportLDraw(state.document))}>
+            <button
+              type="button"
+              onClick={() => deliver('Flat LDraw', () => downloadText(`${name}.ldr`, exportLDraw(state.document)))}
+            >
               <FileBox size={17} />
-              <span><strong>Flat LDraw</strong><small>.ldr · exact transforms + STEP</small></span>
-            </button>
-            <button onClick={() => downloadText(`${name}.mpd`, exportMpd(state.document))}>
-              <FileBox size={17} />
-              <span><strong>Assembly MPD</strong><small>.mpd · submodels preserved</small></span>
-            </button>
-            <button onClick={() => downloadText(`${name}_BOM.csv`, exportBomCsv(state.document), 'text/csv')}>
-              <FileSpreadsheet size={17} />
-              <span><strong>Parts manifest</strong><small>.csv · LDraw + external IDs</small></span>
+              <span>
+                <strong>Flat LDraw</strong>
+                <small>.ldr · exact transforms + STEP</small>
+              </span>
             </button>
             <button
-              onClick={() => {
-                const { xml, report } = exportBrickLinkXml(state.document)
-                downloadText(`${name}_wanted.xml`, xml, 'application/xml')
-                const copy = describeBrickLinkExport(report)
-                if (copy) onNotice({ kind: 'info', title: copy.title, detail: copy.detail })
-              }}
+              type="button"
+              onClick={() => deliver('Assembly MPD', () => downloadText(`${name}.mpd`, exportMpd(state.document)))}
+            >
+              <FileBox size={17} />
+              <span>
+                <strong>Assembly MPD</strong>
+                <small>.mpd · submodels preserved</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                deliver('Parts manifest', () =>
+                  downloadText(`${name}_BOM.csv`, exportBomCsv(state.document), 'text/csv'),
+                )
+              }
             >
               <FileSpreadsheet size={17} />
-              <span><strong>BrickLink wanted list</strong><small>.xml · for ordering</small></span>
+              <span>
+                <strong>Parts manifest</strong>
+                <small>.csv · LDraw + external IDs</small>
+              </span>
             </button>
             <button
+              type="button"
+              onClick={() =>
+                deliver('BrickLink wanted list', () => {
+                  const { xml, report } = exportBrickLinkXml(state.document)
+                  downloadText(`${name}_wanted.xml`, xml, 'application/xml')
+                  const copy = describeBrickLinkExport(report)
+                  if (copy) onNotice({ kind: 'info', title: copy.title, detail: copy.detail })
+                })
+              }
+            >
+              <FileSpreadsheet size={17} />
+              <span>
+                <strong>BrickLink wanted list</strong>
+                <small>.xml · for ordering</small>
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 void session.exportArchive().then(
                   (json) => {
@@ -233,12 +300,26 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
               }}
             >
               <FileBox size={17} />
-              <span><strong>Project archive</strong><small>.json · connections, notes, history</small></span>
+              <span>
+                <strong>Project archive</strong>
+                <small>.json · connections, notes, history</small>
+              </span>
             </button>
-            <button className="guide-export" onClick={() => void generateGuide()} disabled={guide.kind === 'loading'}>
+            <button
+              type="button"
+              className="guide-export"
+              onClick={() => void generateGuide()}
+              disabled={guide.kind === 'loading'}
+            >
               {guide.kind === 'loading' ? <LoaderCircle className="spin" size={17} /> : <BookOpenCheck size={17} />}
               <span>
-                <strong>{guide.kind === 'loading' ? 'Rendering guide…' : guide.kind === 'done' ? 'Build guide again' : 'Printable build guide'}</strong>
+                <strong>
+                  {guide.kind === 'loading'
+                    ? 'Rendering guide…'
+                    : guide.kind === 'done'
+                      ? 'Build guide again'
+                      : 'Printable build guide'}
+                </strong>
                 <small>
                   {guide.kind === 'loading'
                     ? guide.phase === 'geometry'
@@ -250,23 +331,39 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
             </button>
           </div>
 
-          <button className="import-row" onClick={() => input.current?.click()}>
+          <button type="button" className="import-row" onClick={() => input.current?.click()}>
             <Upload size={14} />
-            <span><strong>Import LDraw or MPD</strong><small>Unknown and uncompiled references are reported, never silently dropped.</small></span>
+            <span>
+              <strong>Import LDraw or MPD</strong>
+              <small>Unknown and uncompiled references are reported, never silently dropped.</small>
+            </span>
           </button>
-          <button className="import-row" onClick={() => archiveInput.current?.click()}>
+          <button type="button" className="import-row" onClick={() => archiveInput.current?.click()}>
             <Upload size={14} />
-            <span><strong>Import project archive</strong><small>.json · opens as a new local project, never overwrites.</small></span>
+            <span>
+              <strong>Import project archive</strong>
+              <small>.json · opens as a new local project, never overwrites.</small>
+            </span>
           </button>
           <input
             ref={input}
             hidden
+            tabIndex={-1}
             type="file"
             accept=".ldr,.mpd,text/plain"
+            aria-hidden="true"
             onChange={async (event) => {
               const file = event.target.files?.[0]
               if (!file) return
-              await onImport(file)
+              try {
+                await onImport(file)
+              } catch (cause) {
+                onNotice({
+                  kind: 'error',
+                  title: 'LDraw not imported',
+                  detail: cause instanceof Error ? cause.message : String(cause),
+                })
+              }
               event.target.value = ''
               setOpen(false)
             }}
@@ -274,23 +371,39 @@ export function ExportCenter({ state, onImport, onNotice }: ExportCenterProps) {
           <input
             ref={archiveInput}
             hidden
+            tabIndex={-1}
             type="file"
             accept=".json,application/json"
+            aria-hidden="true"
             onChange={async (event) => {
               const file = event.target.files?.[0]
               if (!file) return
-              const imported = await session.importArchive(await file.text())
-              if (!imported.ok) {
-                onNotice({ kind: 'error', title: 'Archive not imported', detail: imported.message })
-              } else {
-                const copy = describeArchiveImport(imported.report)
-                onNotice({ kind: imported.report.unplaceableParts.length ? 'info' : 'success', title: copy.title, detail: copy.detail })
+              try {
+                const imported = await session.importArchive(await file.text())
+                if (!imported.ok) {
+                  onNotice({ kind: 'error', title: 'Archive not imported', detail: imported.message })
+                } else {
+                  const copy = describeArchiveImport(imported.report)
+                  onNotice({
+                    kind: imported.report.unplaceableParts.length ? 'info' : 'success',
+                    title: copy.title,
+                    detail: copy.detail,
+                  })
+                }
+              } catch (cause) {
+                onNotice({
+                  kind: 'error',
+                  title: 'Archive not imported',
+                  detail: cause instanceof Error ? cause.message : String(cause),
+                })
               }
               event.target.value = ''
               setOpen(false)
             }}
           />
-          <footer>Every artifact is generated locally from revision {state.document.revision}. No model geometry is uploaded.</footer>
+          <footer>
+            Every artifact is generated locally from revision {state.document.revision}. No model geometry is uploaded.
+          </footer>
         </div>
       )}
     </div>
