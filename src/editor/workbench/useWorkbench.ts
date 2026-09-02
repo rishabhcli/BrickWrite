@@ -5,6 +5,7 @@ import { catalog, STUD_LDU } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { createId } from '../../cad/ids'
+import { eulerDegreesFromBasis } from '../../cad/math'
 import { geometryCache } from '../../cad/mesh'
 import { parseLDraw, describeLDrawImport } from '../../cad/ldraw'
 import { session, type SessionStatus } from '../../cad/session'
@@ -35,13 +36,15 @@ import {
 } from './selection'
 import { poseRefusal } from '../../cad/validation'
 import {
+  applyLocks,
   canonicalisePose,
   posesEqual,
   planGroundSelection,
   resolvePivot,
   translatePose,
-  connectorFrame,
+  numericPose,
   planRotateSelection,
+  referenceBasis,
   NO_LOCKS,
   type AxisLocks,
   type PivotMode,
@@ -175,6 +178,11 @@ export function useWorkbench() {
     const parts = state.selection.map((id) => state.document.parts[id]).filter(Boolean)
     if (!parts.length) return [0, 0, 0]
     return parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
+  }, [state.document.parts, state.selection])
+  const selectionRotation = useMemo<Vec3 | null>(() => {
+    if (state.selection.length !== 1) return null
+    const part = state.document.parts[state.selection[0]]
+    return part ? eulerDegreesFromBasis(part.transform.basis) : null
   }, [state.document.parts, state.selection])
 
   // -- notices --------------------------------------------------------------
@@ -492,26 +500,20 @@ export function useWorkbench() {
     (dx: number, dz: number, dy = 0) => {
       const snapshot = cadEngine.getSnapshot()
       const operations: CadOperation[] = []
+      const lead = snapshot.document.parts[snapshot.selection[0]]
+      const frame = referenceBasis(lead, transformPrefs.frame)
       for (const partId of snapshot.selection) {
         const part = snapshot.document.parts[partId]
         if (!part) continue
-        const delta: Vec3 = [
-          transformPrefs.locks.x ? 0 : dx,
-          transformPrefs.locks.y ? 0 : dy,
-          transformPrefs.locks.z ? 0 : dz,
-        ]
-        operations.push({
-          type: 'part.transform',
-          partId,
-          transform: translatePose(
-            part.transform,
-            delta,
-            transformPrefs.frame,
-            transformPrefs.frame === 'connector'
-              ? (connectorFrame(snapshot.document.parts[snapshot.selection[0]]) ?? undefined)
-              : snapshot.document.parts[snapshot.selection[0]].transform.basis,
-          ),
-        })
+        const moved = translatePose(
+          part.transform,
+          [dx, dy, dz],
+          transformPrefs.frame,
+          frame ?? undefined,
+        )
+        const transform = applyLocks(part.transform, moved, transformPrefs.locks, frame)
+        if (posesEqual(part.transform, transform)) continue
+        operations.push({ type: 'part.transform', partId, transform })
       }
       if (!operations.length) return false
       return commitTransforms(`Nudge ${operations.length} part${operations.length === 1 ? '' : 's'}`, operations)
@@ -531,21 +533,35 @@ export function useWorkbench() {
       const snapshot = cadEngine.getSnapshot()
       const parts = snapshot.selection.map((id) => snapshot.document.parts[id]).filter(Boolean)
       if (!parts.length) return false
-      const axisName = (['x', 'y', 'z'] as const)[axis]
-      if (transformPrefs.locks[axisName]) return false
       const current = parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
       const delta: [number, number, number] = [0, 0, 0]
       delta[axis] = value - current[axis]
-      return commitTransforms(
-        `Position ${parts.length} part${parts.length === 1 ? '' : 's'}`,
-        parts.map((part) => ({
-          type: 'part.transform',
-          partId: part.id,
-          transform: translatePose(part.transform, delta, 'world'),
-        })),
-      )
+      const frame = referenceBasis(parts[0], transformPrefs.frame)
+      const operations = parts.flatMap((part) => {
+        const transform = applyLocks(part.transform, translatePose(part.transform, delta, 'world'), transformPrefs.locks, frame)
+        return posesEqual(part.transform, transform)
+          ? []
+          : [{ type: 'part.transform' as const, partId: part.id, transform }]
+      })
+      if (!operations.length) return false
+      return commitTransforms(`Position ${parts.length} part${parts.length === 1 ? '' : 's'}`, operations)
     },
-    [commitTransforms, transformPrefs.locks],
+    [commitTransforms, transformPrefs.frame, transformPrefs.locks],
+  )
+
+  /** Single-part Euler, matching Transform. Multi-part yaw stays on the steppers. */
+  const orientSelection = useCallback(
+    (axis: 0 | 1 | 2, value: number) => {
+      if (!Number.isFinite(value)) return false
+      const snapshot = cadEngine.getSnapshot()
+      if (snapshot.selection.length !== 1) return false
+      const part = snapshot.document.parts[snapshot.selection[0]]
+      if (!part) return false
+      const rotation = [...eulerDegreesFromBasis(part.transform.basis)] as [number, number, number]
+      rotation[axis] = value
+      return handleTransform(part.id, numericPose(part.transform, { rotationDegrees: rotation }), true)
+    },
+    [handleTransform],
   )
 
   // -- placement ------------------------------------------------------------
@@ -1232,6 +1248,7 @@ export function useWorkbench() {
     selectedPart,
     selectedDefinition,
     selectionPosition,
+    selectionRotation,
     activeColor,
     setActiveColor,
     toolPicks,
@@ -1292,6 +1309,7 @@ export function useWorkbench() {
     commitTransforms,
     nudgeSelection,
     positionSelection,
+    orientSelection,
     handleSelect,
     handleSelectMany,
     handleTransform,

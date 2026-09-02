@@ -23,15 +23,18 @@ import type { CadOperation } from '../../cad/types'
 import { poseRefusal } from '../../cad/validation'
 import {
   AXIS_INDEX,
+  applyLocks,
   canonicalisePose,
   connectorFrame,
   numericPose,
   planAlign,
   planDistribute,
   readNumericPose,
+  referenceBasis,
   resolvePivot,
   rotatePose,
   selectionExtent,
+  posesEqual,
   translatePose,
   type AlignEdge,
   type PivotMode,
@@ -121,16 +124,18 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       if (!Number.isFinite(value) || !parts.length) return
       const delta: [number, number, number] = [0, 0, 0]
       delta[axis] = value - position[axis]
+      const frame = referenceBasis(parts[0], transformPrefs.frame)
       commit(
         'Position selection',
-        parts.map((part) => ({
-          type: 'part.transform',
-          partId: part.id,
-          transform: translatePose(part.transform, delta, 'world'),
-        })),
+        parts.flatMap((part) => {
+          const transform = applyLocks(part.transform, translatePose(part.transform, delta, 'world'), transformPrefs.locks, frame)
+          return posesEqual(part.transform, transform)
+            ? []
+            : [{ type: 'part.transform' as const, partId: part.id, transform }]
+        }),
       )
     },
-    [commit, parts, position],
+    [commit, parts, position, transformPrefs.frame, transformPrefs.locks],
   )
 
   const setRotation = useCallback(
@@ -339,7 +344,7 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
                 label={axis}
                 value={position[index]}
                 suffix="LDU"
-                disabled={transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
+                disabled={transformPrefs.frame === 'world' && transformPrefs.locks[axis.toLowerCase() as 'x' | 'y' | 'z']}
                 onCommit={(value) => setPosition(index as 0 | 1 | 2, value)}
               />
             ))}

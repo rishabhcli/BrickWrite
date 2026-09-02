@@ -9,6 +9,13 @@ import { ModelHealthPanel } from './ModelHealthPanel'
 import { NumberField } from './NumberField'
 import { describeConnectHudLabel } from './ConnectPanel'
 import type { ConnectFlow } from './useWorkbench'
+import {
+  applyLocks,
+  canonicalisePose,
+  referenceBasis,
+  type AxisLocks,
+  type ReferenceFrame,
+} from './transform'
 
 /** How many observed colours the inspector shows before offering the rest. */
 const INSPECTOR_SWATCH_LIMIT = 18
@@ -42,6 +49,8 @@ interface InspectorPanelProps {
   onArticulate: (edgeId: string, request: { rotateDegrees?: number; slideLdu?: number }) => void
   /** Two-stage Connect naming, so OBJECT does not pretend the kernel selection is the whole mate. */
   connect?: ConnectFlow
+  locks?: AxisLocks
+  frame?: ReferenceFrame
 }
 
 export type InspectorView = 'object' | 'validate'
@@ -112,6 +121,8 @@ export function InspectorPanel({
   onSelectIds,
   onArticulate,
   connect,
+  locks,
+  frame = 'world',
 }: InspectorPanelProps) {
   const [localView, setLocalView] = useState<InspectorView>('object')
   const [allColors, setAllColors] = useState(false)
@@ -233,17 +244,22 @@ export function InspectorPanel({
                 <span>TRANSFORM</span>
                 <em>WORLD · LDU</em>
               </header>
-              <div className="fields-grid">
+              <div className="fields-grid" data-position-frame="world">
                 {(['X', 'Y', 'Z'] as const).map((axis, index) => (
                   <NumberField
                     key={`p_${axis}_${inspectPart.id}`}
                     label={axis}
                     value={inspectPart.transform.position[index]}
                     suffix="LDU"
+                    disabled={frame === 'world' && Boolean(locks?.[axis.toLowerCase() as 'x' | 'y' | 'z'])}
                     onCommit={(value) => {
                       const position = [...inspectPart.transform.position] as [number, number, number]
                       position[index] = value
-                      onTransform(inspectPart.id, { ...inspectPart.transform, position })
+                      const next = canonicalisePose({ ...inspectPart.transform, position })
+                      onTransform(
+                        inspectPart.id,
+                        applyLocks(inspectPart.transform, next, locks ?? { x: false, y: false, z: false }, referenceBasis(inspectPart, frame)),
+                      )
                     }}
                   />
                 ))}

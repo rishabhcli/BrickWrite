@@ -234,6 +234,9 @@ export function withChromeReveal<T extends object>(surface: ChromeSurface, paylo
  * three Design sheets, because Generate, Refine and the design partner are one
  * intentional stack rather than rivals for the column.
  *
+ * Connect is omitted on purpose: the mate sheet is a companion to inspector
+ * and transform, not a rival that should blank the rest of the Object dock.
+ *
  * There was also an `applyExclusiveDock` here, collapsing a *restored* layout to
  * a single sheet. It was removed rather than kept: nothing called it, and it
  * folded over this whole list, so reviving it would have quietly closed two of
@@ -244,7 +247,6 @@ export const DOCK_FOCUS_SECTIONS = [
   'model.explorer',
   'transform',
   'inspector',
-  'connect',
   'generation.panel',
   'refinement.panel',
   'agent.workbench',

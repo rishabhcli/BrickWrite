@@ -182,4 +182,31 @@ describe('inspector OBJECT / VALIDATE chrome', () => {
     )
     expect(document.querySelector('.connect-mate-note')?.textContent).toMatch(/→/)
   })
+
+  it('honours world axis locks on OBJECT XYZ the same way the HUD does', () => {
+    const state = blockedSnapshot()
+    state.selection = ['allowed']
+    handlers.onTransform.mockClear()
+    render(
+      <InspectorHost>
+        <InspectorPanel
+          state={state}
+          selectedPart={state.document.parts.allowed}
+          {...handlers}
+          locks={{ x: true, y: false, z: false }}
+          frame="world"
+        />
+      </InspectorHost>,
+    )
+    const x = screen.getByRole('spinbutton', { name: 'X in LDraw units' })
+    expect(x).toBeDisabled()
+    const y = screen.getByRole('spinbutton', { name: 'Y in LDraw units' })
+    expect(y).not.toBeDisabled()
+    fireEvent.change(y, { target: { value: '-8' } })
+    fireEvent.keyDown(y, { key: 'Enter' })
+    expect(handlers.onTransform).toHaveBeenCalled()
+    const next = handlers.onTransform.mock.calls.at(-1)?.[1]
+    expect(next.position[0]).toBe(0)
+    expect(next.position[1]).toBe(-8)
+  })
 })

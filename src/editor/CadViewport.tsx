@@ -480,6 +480,8 @@ export interface ViewportAnimation {
 interface CadViewportProps {
   document: ModelDocument
   selection: string[]
+  /** Secondary highlight (Connect target) that is not the kernel selection. */
+  highlightIds?: string[]
   proposals: Proposal[]
   tool: EditorTool
   gridLdu: number
@@ -552,7 +554,7 @@ const MemoViewportScene = memo(CadViewportScene, (previous, next) => {
   for (const key of Object.keys(next) as Array<keyof CadViewportProps>) {
     const a = previous[key], b = next[key]
     if (a === b) continue
-    if ((key === 'selection' || key === 'proposals') && Array.isArray(a) && Array.isArray(b) &&
+    if ((key === 'selection' || key === 'proposals' || key === 'highlightIds') && Array.isArray(a) && Array.isArray(b) &&
       a.length === b.length && a.every((value, index) => value === b[index])) continue
     return false
   }
@@ -562,6 +564,7 @@ const MemoViewportScene = memo(CadViewportScene, (previous, next) => {
 function CadViewportScene({
   document,
   selection,
+  highlightIds,
   proposals,
   tool,
   gridLdu,
@@ -605,6 +608,7 @@ function CadViewportScene({
   )
   const subassemblyOrder = useMemo(() => Object.keys(document.subassemblies), [document.subassemblies])
   const selected = useMemo(() => new Set(selection), [selection])
+  const highlighted = useMemo(() => new Set((highlightIds ?? []).filter((id) => !selected.has(id))), [highlightIds, selected])
   const root = useRef<THREE.Group>(null)
 
   /** Pose being dragged right now, shown live instead of waiting for the commit. */
@@ -913,9 +917,11 @@ function CadViewportScene({
       if (partId === placement?.movingPartId) return 'ghost'
       if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
       if (renderMode === 'silhouette') return 'silhouette'
-      return selected.has(partId) ? 'selected' : 'solid'
+      if (selected.has(partId)) return 'selected'
+      if (highlighted.has(partId)) return 'target'
+      return 'solid'
     },
-    [invalidIds, renderMode, selected, placement?.movingPartId],
+    [invalidIds, renderMode, selected, highlighted, placement?.movingPartId],
   )
 
   // Framing follows what is drawn, so exploding the model reframes onto the
@@ -962,10 +968,15 @@ function CadViewportScene({
     [solidMembers, baseExclusions, planAppearance],
   )
   const selectionPlan = useMemo(() => {
-    const highlighted = overlaySelection && renderMode !== 'silhouette'
+    const overlay = overlaySelection && renderMode !== 'silhouette'
       ? solidMembers.filter(member => selected.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id))) : []
-    return planBatches(highlighted, highlighted.length <= INDIVIDUAL_SELECTION_LIMIT ? selected : emptyExclusions, () => 'selected')
+    return planBatches(overlay, overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? selected : emptyExclusions, () => 'selected')
   }, [overlaySelection, renderMode, solidMembers, selected, emptyExclusions, invalidIds])
+  const targetPlan = useMemo(() => {
+    const overlay = overlaySelection && renderMode !== 'silhouette'
+      ? solidMembers.filter(member => highlighted.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id))) : []
+    return planBatches(overlay, overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? highlighted : emptyExclusions, () => 'target')
+  }, [overlaySelection, renderMode, solidMembers, highlighted, emptyExclusions, invalidIds])
   const ghostPlan = useMemo(() => planBatches(ghostMembers, new Set<string>()), [ghostMembers])
 
   /**
@@ -1240,6 +1251,10 @@ function CadViewportScene({
               descriptor={descriptor} showEdges={true} silhouette={false} interactive={false} onSelect={onSelect} />)}
             {selectionPlan.individual.map(member => <PartObject key={`selection:${member.part.id}`}
               part={member.part} displayTransform={member.transform} appearance="selected" interactive={false} onSelect={onSelect} />)}
+            {targetPlan.batches.map(descriptor => <PartBatch key={`target:${descriptor.key}`}
+              descriptor={descriptor} showEdges={true} silhouette={false} interactive={false} onSelect={onSelect} />)}
+            {targetPlan.individual.map(member => <PartObject key={`target:${member.part.id}`}
+              part={member.part} displayTransform={member.transform} appearance="target" interactive={false} onSelect={onSelect} />)}
           </group>
 
           {placement && placementDefinition && placementPreview && (

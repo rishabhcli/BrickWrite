@@ -150,15 +150,25 @@ export const poseKey = (pose: Transform): string => canonicalTransform(canonical
 
 export const posesEqual = (a: Transform, b: Transform): boolean => poseKey(a) === poseKey(b)
 
-/** Applies per-axis locks by taking the locked components from the base pose. */
-export function applyLocks(base: Transform, next: Transform, locks: AxisLocks): Transform {
+/**
+ * Applies per-axis locks in the active reference frame.
+ *
+ * WORLD freezes document X/Y/Z. LOCAL and MATE freeze those same named axes
+ * on the gizmo — a 90° yaw must not let a locked X slide along world X while
+ * the handle the operator hid was the part's own X.
+ */
+export function applyLocks(base: Transform, next: Transform, locks: AxisLocks, frame?: Mat3 | null): Transform {
   if (!locks.x && !locks.y && !locks.z) return next
+  const worldDelta: Vec3 = [
+    next.position[0] - base.position[0],
+    next.position[1] - base.position[1],
+    next.position[2] - base.position[2],
+  ]
+  const local = frame ? applyMat3(transposeMat3(frame), worldDelta) : worldDelta
+  const filtered: Vec3 = [locks.x ? 0 : local[0], locks.y ? 0 : local[1], locks.z ? 0 : local[2]]
+  const world = frame ? applyMat3(frame, filtered) : filtered
   return {
-    position: [
-      locks.x ? base.position[0] : next.position[0],
-      locks.y ? base.position[1] : next.position[1],
-      locks.z ? base.position[2] : next.position[2],
-    ],
+    position: [base.position[0] + world[0], base.position[1] + world[1], base.position[2] + world[2]],
     basis: next.basis,
   }
 }
@@ -209,11 +219,11 @@ export function numericPose(base: Transform, entry: Partial<NumericPose>): Trans
 export function gizmoPose(
   base: Transform,
   raw: Transform,
-  options: { gridLdu?: number; locks?: AxisLocks; rotating?: boolean } = {},
+  options: { gridLdu?: number; locks?: AxisLocks; rotating?: boolean; frame?: Mat3 | null } = {},
 ): Transform {
   const grid = options.rotating ? 0 : (options.gridLdu ?? 0)
   const positioned: Transform = { position: snapPosition(raw.position as Vec3, grid), basis: raw.basis }
-  return canonicalisePose(applyLocks(base, positioned, options.locks ?? NO_LOCKS))
+  return canonicalisePose(applyLocks(base, positioned, options.locks ?? NO_LOCKS, options.frame))
 }
 
 /** Moves a pose by an offset expressed in the chosen reference frame. */
@@ -295,6 +305,12 @@ export function connectorFrame(part: PartInstance, featureId?: string): Mat3 | n
   if (!connectors.length) return null
   const chosen = featureId ? connectors.find((entry) => entry.id === featureId) : connectors[0]
   return (chosen ?? connectors[0]).frame.basis as Mat3
+}
+
+/** Basis axis locks are measured in. Null means world XYZ. */
+export function referenceBasis(part: PartInstance | undefined, frame: ReferenceFrame): Mat3 | null {
+  if (!part || frame === 'world') return null
+  return frame === 'connector' ? connectorFrame(part) : (part.transform.basis as Mat3)
 }
 
 export type AlignEdge = 'min' | 'centre' | 'max'
