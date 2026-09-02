@@ -264,6 +264,7 @@ describe('the beginner path through the shell', () => {
     expect(document.querySelector('.statusbar')).toBeNull()
     fireEvent.change(control('select[aria-label="Layout preset"]'), { target: { value: 'laptop' } })
     expect(document.querySelector('.app-shell')?.getAttribute('data-preset')).toBe('laptop')
+    expect(document.querySelector('.app-shell')?.getAttribute('data-bottom-size')).toBe('124')
   })
 
   it('puts a brick down from the empty viewport in one press', () => {
