@@ -3,7 +3,7 @@ import { sanitizeFilename } from '../../../src/features/share/sanitize'
 import { ShareError } from '../../../src/features/share/types'
 import { originFor, storeFor, type ShareEnv } from '../../_lib/env'
 import { resolvePublication } from '../../_lib/resolve'
-import { handleError, json, notModified, png, presentedToken, wantsHtml } from '../../_lib/respond'
+import { handleError, json, matchesEtag, notModified, png, presentedToken, wantsHtml } from '../../_lib/respond'
 
 /**
  * Everything under `/share/:slug/`.
@@ -104,13 +104,4 @@ export const onRequestGet = async (context: {
   } catch (cause) {
     return handleError(cause, { origin, wantsHtml: wantsHtml(request), path: url.pathname + url.search })
   }
-}
-
-function matchesEtag(request: Request, etag: string): boolean {
-  const header = request.headers.get('if-none-match')
-  if (!header) return false
-  return header
-    .split(',')
-    .map((entry) => entry.trim().replace(/^W\//, '').replace(/^"|"$/g, ''))
-    .includes(etag)
 }

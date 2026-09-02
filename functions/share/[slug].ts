@@ -1,7 +1,16 @@
-import { renderSharePage } from '../../src/features/share/page'
+import { pageEtag, renderSharePage } from '../../src/features/share/page'
 import { originFor, storeFor, type ShareEnv } from '../_lib/env'
 import { resolvePublication } from '../_lib/resolve'
-import { cookieToken, exchangeTokenForCookie, handleError, html, presentedToken, wantsHtml } from '../_lib/respond'
+import {
+  cookieToken,
+  exchangeTokenForCookie,
+  handleError,
+  html,
+  matchesEtag,
+  notModified,
+  presentedToken,
+  wantsHtml,
+} from '../_lib/respond'
 
 /**
  * `GET /share/:slug` — the crawlable share page.
@@ -73,11 +82,28 @@ export const onRequestGet = async (context: {
       return exchangeTokenForCookie(slug, fromUrl)
     }
 
+    /*
+     * Revalidation, now that there is something to revalidate against.
+     *
+     * The page has always been `must-revalidate` with no validator, so a reload
+     * re-rendered it and re-sent the whole body. The tag covers the publication
+     * and the access decision, so a revocation moves it on the next request —
+     * which is what lets this be a conditional request rather than a cached one.
+     */
+    const etag = await pageEtag('share', { publication, decision, origin })
+    if (matchesEtag(request, etag)) {
+      return notModified(etag, { 'Cache-Control': page304CacheControl(decision.noindex) })
+    }
+
     const page = renderSharePage({ publication, decision, origin })
     // A HEAD request must produce identical headers with no body; Cloudflare
     // derives HEAD from GET, so nothing extra is needed here.
-    return html(page)
+    return html(page, { ETag: `"${etag}"` })
   } catch (cause) {
     return handleError(cause, { origin, wantsHtml: wantsHtml(request), path: url.pathname + url.search })
   }
 }
+
+/** Mirrors what the rendered page sends, so a 304 does not relax its own caching. */
+const page304CacheControl = (noindex: boolean): string =>
+  noindex ? 'private, no-store' : 'public, max-age=0, must-revalidate'

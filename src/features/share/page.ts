@@ -1,4 +1,4 @@
-import { base64url, randomBytes } from './canonical'
+import { base64url, canonicalJson, randomBytes, sha256Hex } from './canonical'
 import { describeFork } from './fork'
 import { OG_CARD } from './render/presets'
 import { escapeAttribute, escapeHtml, escapeJsonLd, redactShareUrl } from './sanitize'
@@ -79,6 +79,41 @@ export function metaDescription(publication: Publication): string {
 }
 
 /** Security headers shared by every response this module produces. */
+/**
+ * Bumped when a template changes.
+ *
+ * The tag is derived from the page's inputs rather than its bytes, because the
+ * bytes carry a fresh CSP nonce every response and would never match. That
+ * trade means a template edit does not move the tag on its own, so this does.
+ */
+const RENDER_VERSION = '1'
+
+/**
+ * A validator for a rendered page.
+ *
+ * The pages carried `must-revalidate` with nothing to revalidate against, so
+ * every reload of a share link re-rendered the page and re-sent the whole body.
+ * Derived from the publication, the access decision and the origin — everything
+ * that decides what the page says — so a revocation or a visibility change
+ * moves it immediately, which is why the pages can be revalidated rather than
+ * cached outright.
+ *
+ * The nonce is deliberately not an input: it differs per response and changes
+ * nothing a reader sees.
+ */
+export async function pageEtag(kind: 'share' | 'embed', options: PageOptions): Promise<string> {
+  return sha256Hex(
+    canonicalJson({
+      v: RENDER_VERSION,
+      kind,
+      origin: options.origin,
+      ancestors: options.embedAncestors ?? null,
+      publication: options.publication,
+      decision: options.decision,
+    }),
+  )
+}
+
 export function baseSecurityHeaders(): Record<string, string> {
   return {
     'X-Content-Type-Options': 'nosniff',

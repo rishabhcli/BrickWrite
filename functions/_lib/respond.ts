@@ -26,8 +26,21 @@ export function json(value: unknown, status = 200, extra: Record<string, string>
   })
 }
 
-export function html(page: { html: string; status: number; headers: Record<string, string> }): Response {
-  return new Response(page.html, { status: page.status, headers: page.headers })
+export function html(
+  page: { html: string; status: number; headers: Record<string, string> },
+  extra: Record<string, string> = {},
+): Response {
+  return new Response(page.html, { status: page.status, headers: { ...page.headers, ...extra } })
+}
+
+/** Whether the caller already holds this representation. */
+export function matchesEtag(request: Request, etag: string): boolean {
+  const header = request.headers.get('if-none-match')
+  if (!header) return false
+  return header
+    .split(',')
+    .map((entry) => entry.trim().replace(/^W\//, '').replace(/^"|"$/g, ''))
+    .includes(etag)
 }
 
 /** A PNG card. Immutable, because it is addressed by the hash of its bytes. */
@@ -47,8 +60,20 @@ export function png(bytes: Uint8Array, etag: string, immutable: boolean): Respon
   })
 }
 
-export function notModified(etag: string): Response {
-  return new Response(null, { status: 304, headers: { ETag: `"${etag}"`, ...baseSecurityHeaders() } })
+/**
+ * A 304, carrying no Content-Security-Policy on purpose.
+ *
+ * A 304 updates the stored response's headers with the ones it carries, and the
+ * stored page's inline script is bound to the nonce in the CSP it was served
+ * with. Sending a fresh nonce here would replace that header and leave the
+ * cached body holding a nonce nothing allows — a page that renders blank on
+ * every revalidation.
+ */
+export function notModified(etag: string, extra: Record<string, string> = {}): Response {
+  return new Response(null, {
+    status: 304,
+    headers: { ETag: `"${etag}"`, ...baseSecurityHeaders(), ...extra },
+  })
 }
 
 /**

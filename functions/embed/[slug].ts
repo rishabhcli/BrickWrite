@@ -1,8 +1,8 @@
-import { renderEmbedPage } from '../../src/features/share/page'
+import { pageEtag, renderEmbedPage } from '../../src/features/share/page'
 import { ShareError } from '../../src/features/share/types'
 import { embedAncestors, originFor, storeFor, type ShareEnv } from '../_lib/env'
 import { resolvePublication } from '../_lib/resolve'
-import { handleError, html, presentedToken, wantsHtml } from '../_lib/respond'
+import { handleError, html, matchesEtag, notModified, presentedToken, wantsHtml } from '../_lib/respond'
 
 /**
  * `GET /embed/:slug` — the framed, read-only surface.
@@ -32,9 +32,15 @@ export const onRequestGet = async (context: {
     if (!decision.capabilities.embed) {
       throw new ShareError('CAPABILITY_DISABLED', 'The author has not enabled embedding for this model.', 403)
     }
-    return html(
-      renderEmbedPage({ publication, decision, origin, embedAncestors: embedAncestors(env) }),
-    )
+    // An embed loads on every page view of whatever framed it, so re-sending
+    // the whole document to a browser that already holds it is the least
+    // affordable place in the surface to do so.
+    const options = { publication, decision, origin, embedAncestors: embedAncestors(env) }
+    const etag = await pageEtag('embed', options)
+    if (matchesEtag(request, etag)) {
+      return notModified(etag, { 'Cache-Control': 'public, max-age=0, must-revalidate' })
+    }
+    return html(renderEmbedPage(options), { ETag: `"${etag}"` })
   } catch (cause) {
     return handleError(cause, { origin, wantsHtml: wantsHtml(request), path: url.pathname + url.search })
   }
