@@ -65,6 +65,27 @@ const showcasePartIds = () => Object.keys(cadEngine.getDocument().parts)
 const select = (ids: string[]) => act(() => cadEngine.setSelection(ids))
 const revision = () => cadEngine.getSnapshot().document.revision
 
+/** Extra placeable search rows so BUILDABLE actually overflows PAGE_SIZE (60). */
+function overflowBuildableSearch() {
+  const payload = fixture as unknown as CatalogPayload
+  catalog.install({
+    ...payload,
+    search: [
+      ...(payload.search ?? []),
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `placeExtra${index}`,
+        n: `Placeable filler ${index}`,
+        c: 'Test fillers',
+        d: null,
+        f: 0,
+        k: [],
+        g: 1,
+        s: 0,
+      })),
+    ],
+  } as CatalogPayload)
+}
+
 // ---------------------------------------------------------------------------
 // Palette
 // ---------------------------------------------------------------------------
@@ -132,33 +153,57 @@ describe('palette', () => {
     expect(onArm).not.toHaveBeenCalled()
   })
 
-  it('pages the catalogue from the search field when results spill past one page', () => {
-    // The compiled fixture is 59 placeable identities; PAGE_SIZE is 60, so the
-    // pager never mounts on BUILDABLE. A dozen catalogued fillers make
-    // EVERYTHING large enough to actually change page, which is the path
-    // PageDown/PageUp are for.
-    catalog.installExternalIndex(
-      Array.from({ length: 12 }, (_, index) => ({
-        id: `pageExtra${index}`,
-        n: `Catalogued filler ${index}`,
-        c: 'Test fillers',
-        f: 0,
-      })),
-    )
+  it('pages BUILDABLE with the next/prev buttons, and resets the cursor onto the new page', () => {
+    overflowBuildableSearch()
     try {
       const { container } = renderPalette()
-      fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
-      fireEvent.click(screen.getByRole('tab', { name: /EVERYTHING/ }))
       const pager = container.querySelector('.parts-pager')
       expect(pager).not.toBeNull()
+      expect(screen.queryByRole('tab', { name: /EVERYTHING/ })).toBeNull()
+
+      const next = screen.getByRole('button', { name: 'Next page of results' })
+      const prev = screen.getByRole('button', { name: 'Previous page of results' })
+      expect(prev).toBeDisabled()
+      expect(next).not.toBeDisabled()
+
       const search = screen.getByLabelText('Search parts')
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      const beforeHighlight = container.querySelector('.part-card.cursor')?.getAttribute('data-part-id')
       const first = container.querySelector('[data-part-id]')?.getAttribute('data-part-id')
+      expect(beforeHighlight).not.toBe(first)
+
       const label = pager?.querySelector('span')?.textContent
-      fireEvent.keyDown(search, { key: 'PageDown' })
+      fireEvent.click(next)
       expect(pager?.querySelector('span')?.textContent).not.toBe(label)
+      const pageFirst = container.querySelector('[data-part-id]')
+      expect(pageFirst?.getAttribute('data-part-id')).not.toBe(first)
+      expect(container.querySelector('.part-card.cursor')).toBe(pageFirst)
+      expect(prev).not.toBeDisabled()
+      expect(next).toBeDisabled()
+
+      fireEvent.click(prev)
+      expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+      expect(container.querySelector('.part-card.cursor')?.getAttribute('data-part-id')).toBe(first)
+      expect(prev).toBeDisabled()
+
+      fireEvent.keyDown(search, { key: 'PageDown' })
       expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).not.toBe(first)
       fireEvent.keyDown(search, { key: 'PageUp' })
       expect(container.querySelector('[data-part-id]')?.getAttribute('data-part-id')).toBe(first)
+    } finally {
+      catalog.install(fixture as unknown as CatalogPayload)
+    }
+  })
+
+  it('does not invent a keyboard cursor when paging with the mouse', () => {
+    overflowBuildableSearch()
+    try {
+      const { container } = renderPalette()
+      expect(container.querySelector('.part-card.cursor')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Next page of results' }))
+      expect(container.querySelector('.part-card.cursor')).toBeNull()
     } finally {
       catalog.install(fixture as unknown as CatalogPayload)
     }
