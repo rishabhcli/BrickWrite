@@ -125,7 +125,13 @@ const brickRun = (): GenerationRun => {
   }
   return {
     promptHash: 'test',
-    provenance: { provider: 'deterministic', model: null, promptHash: 'test', seed: 0, createdAt: new Date().toISOString() },
+    provenance: {
+      provider: 'deterministic',
+      model: null,
+      promptHash: 'test',
+      seed: 0,
+      createdAt: new Date().toISOString(),
+    },
     settings: { candidates: 1, repairBudget: 0, strategies: ['test-brick'], constraints: null },
     candidates: [candidate],
     rejected: [],
@@ -139,43 +145,44 @@ const brickRun = (): GenerationRun => {
 
 const replayBrick: GenerationRunner = async () => brickRun()
 
-const refineZeros = (): RefineMetrics =>
-  Object.fromEntries(OBJECTIVE_IDS.map((id) => [id, 0])) as RefineMetrics
+const refineZeros = (): RefineMetrics => Object.fromEntries(OBJECTIVE_IDS.map((id) => [id, 0])) as RefineMetrics
 
-const recolorRunner = (color: number): RefinementRunner => async (request) => {
-  const partId = request.scopePartIds[0]
-  const proposal: RefinementProposalV1 = {
-    version: 1,
-    id: 'prop_recolor',
-    requestId: request.id,
-    baseRevision: request.baseRevision,
-    strategy: 'recolor-test',
-    label: 'Recolor the selection',
-    operations: [{ type: 'part.recolor', partId, color }],
-    changedPartIds: [partId],
-    metrics: { before: refineZeros(), after: refineZeros(), delta: refineZeros() },
-    score: 1,
-    regressions: [],
-    warnings: [],
-    overlay: [],
-    provenance: { provider: 'test', model: null, promptHash: 'test', seed: 0, createdAt: new Date().toISOString() },
-    status: 'ranked',
-    rejection: null,
+const recolorRunner =
+  (color: number): RefinementRunner =>
+  async (request) => {
+    const partId = request.scopePartIds[0]
+    const proposal: RefinementProposalV1 = {
+      version: 1,
+      id: 'prop_recolor',
+      requestId: request.id,
+      baseRevision: request.baseRevision,
+      strategy: 'recolor-test',
+      label: 'Recolor the selection',
+      operations: [{ type: 'part.recolor', partId, color }],
+      changedPartIds: [partId],
+      metrics: { before: refineZeros(), after: refineZeros(), delta: refineZeros() },
+      score: 1,
+      regressions: [],
+      warnings: [],
+      overlay: [],
+      provenance: { provider: 'test', model: null, promptHash: 'test', seed: 0, createdAt: new Date().toISOString() },
+      status: 'ranked',
+      rejection: null,
+    }
+    const report: SearchReport = {
+      evaluated: 1,
+      generated: 1,
+      elapsedMs: 0,
+      aborted: false,
+      budgetExhausted: false,
+      strategiesRun: ['recolor-test'],
+      strategiesSkipped: [],
+      baseMetrics: refineZeros(),
+      weights: refineZeros(),
+      reference: { width: 1, height: 1, mask: [1], frameMin: [0, 0, 0], frameMax: [1, 1, 1] },
+    }
+    return { proposals: [proposal], report, rankingRationale: 'test runner', ranOn: 'inline' }
   }
-  const report: SearchReport = {
-    evaluated: 1,
-    generated: 1,
-    elapsedMs: 0,
-    aborted: false,
-    budgetExhausted: false,
-    strategiesRun: ['recolor-test'],
-    strategiesSkipped: [],
-    baseMetrics: refineZeros(),
-    weights: refineZeros(),
-    reference: { width: 1, height: 1, mask: [1], frameMin: [0, 0, 0], frameMax: [1, 1, 1] },
-  }
-  return { proposals: [proposal], report, rankingRationale: 'test runner', ranOn: 'inline' }
-}
 
 describe('WebMCP surface inventory', () => {
   const inspectOnly = [
@@ -281,6 +288,7 @@ describe('WebMCP surface inventory', () => {
       applied: true,
       connect: { stage: 'review', sourcePartId: 'part_a', targetPartId: 'part_b', candidateIndex: 2 },
     })
+    expect(steered).toHaveProperty('listing')
   })
 
   it('lets an agent reveal the same bottom-dock feedback inbox a human uses', async () => {
@@ -390,7 +398,12 @@ describe('part_intent_resolve', () => {
   it('resolves a 2 x 4 brick to placeable 3001 without loading the semantic index', async () => {
     adapter.start()
     const result = await invoke('part_intent_resolve', { query: '2 x 4 brick', semantic: false })
-    const matches = result.matches as Array<{ canonicalId: string; placeable: boolean; tier: string; confidence: number }>
+    const matches = result.matches as Array<{
+      canonicalId: string
+      placeable: boolean
+      tier: string
+      confidence: number
+    }>
     expect(matches.some((match) => match.canonicalId === '3001' && match.placeable)).toBe(true)
     const brick = matches.find((match) => match.canonicalId === '3001')
     expect(brick?.confidence).toBeGreaterThan(0)

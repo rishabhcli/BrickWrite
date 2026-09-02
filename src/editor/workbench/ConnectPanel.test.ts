@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { IDENTITY_BASIS } from '../../cad/math'
 import type { WorldConnector } from '../../cad/snapping'
-import { connectorChipLabel, connectorStudCell } from './ConnectPanel'
+import { compareConnectorsSpatially, connectorChipLabel, connectorStudCell } from './ConnectPanel'
 
 const stud = (id: string, x: number, z: number): WorldConnector =>
   ({
@@ -29,5 +29,11 @@ describe('Connect chip labels', () => {
     expect(connectorChipLabel(siblings[1]!, siblings)).toBe('stud M 1,-2')
     expect(new Set(siblings.map((entry) => connectorChipLabel(entry, siblings))).size).toBe(3)
     expect(connectorChipLabel(siblings[0]!, siblings)).not.toMatch(/M\d+$/)
+  })
+
+  it('orders chips on the stud grid, not catalog index', () => {
+    const siblings = [stud('late', 20, -20), stud('early', -20, -40), stud('mid', -20, -20)]
+    const ordered = [...siblings].sort(compareConnectorsSpatially)
+    expect(ordered.map((entry) => entry.id)).toEqual(['early', 'mid', 'late'])
   })
 })

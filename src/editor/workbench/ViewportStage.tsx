@@ -232,6 +232,7 @@ export function ViewportStage({
             )}
             position={workbench.selectionPosition}
             rotation={workbench.selectionRotation}
+            rotationMixed={workbench.selectionAttitude.mixed}
             locks={workbench.transformPrefs.locks}
             frame={workbench.transformPrefs.frame}
             tool={workbench.tool}
@@ -273,31 +274,25 @@ export function ViewportStage({
 
       <div className="viewport-bottom-stack" data-overlay-stack="bottom">
         {placement && placementDefinition && <PlacementBar workbench={workbench} preview={preview} />}
-        {activeProposal && (
-          <div className="proposal-overlay" data-review-duplicate={reviewSurfaceOpen ? 'true' : undefined}>
+        {activeProposal && !reviewSurfaceOpen && (
+          <div className="proposal-overlay">
             <span className="proposal-pulse" />
             <div>
               <small>GHOST PROPOSAL</small>
               <strong>{activeProposal.label}</strong>
             </div>
             <em>{activeProposal.operations.length} edits</em>
-            {onReviewProposal && !reviewSurfaceOpen && (
+            {onReviewProposal && (
               <button onClick={() => onReviewProposal(activeProposal.id)}>
                 <Eye size={13} /> Review
               </button>
             )}
-            {reviewSurfaceOpen ? (
-              <span className="proposal-overlay-reviewing">Reviewing in timeline</span>
-            ) : (
-              <>
-                <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
-                  <Check size={13} /> Accept
-                </button>
-                <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
-                  <X size={13} />
-                </button>
-              </>
-            )}
+            <button onClick={() => workbench.acceptProposal(activeProposal.id)}>
+              <Check size={13} /> Accept
+            </button>
+            <button onClick={() => workbench.rejectProposal(activeProposal.id)} aria-label="Reject proposal">
+              <X size={13} />
+            </button>
           </div>
         )}
       </div>

@@ -14,6 +14,7 @@ import { catalog } from '../cad/catalog'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../cad/catalog-loader'
 import { buildBom } from '../cad/bom'
 import { cadEngine } from '../cad/engine'
+import { listConnectSolutions } from '../cad/placement'
 import { createId } from '../cad/ids'
 import { exportLDraw, exportMpd } from '../cad/ldraw'
 import { inspectModelHealth } from '../cad/modelHealth'
@@ -33,7 +34,15 @@ import {
   toolProfileHash,
 } from './contract'
 import { json, resultOf, revisionProperty, schema } from './gateway'
-import { CHROME_SURFACES, focusModelHealth, focusProposalReview, focusWorkspace, readChrome, revealChrome, steerConnect } from './chrome'
+import {
+  CHROME_SURFACES,
+  focusModelHealth,
+  focusProposalReview,
+  focusWorkspace,
+  readChrome,
+  revealChrome,
+  steerConnect,
+} from './chrome'
 import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
 import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
 import { intelligenceReadTools } from './surfaces/intelligence'
@@ -127,7 +136,8 @@ function profileContext() {
 const readTools: ToolDefinition[] = [
   {
     name: 'workspace_get',
-    description: 'Read the current Brickwright project, exact document revision, selection, constraints, autonomy state, dock chrome, and validation summary.',
+    description:
+      'Read the current Brickwright project, exact document revision, selection, constraints, autonomy state, dock chrome, and validation summary.',
     inputSchema: schema({}),
     annotations: { readOnlyHint: true },
     execute: () => {
@@ -166,7 +176,12 @@ const readTools: ToolDefinition[] = [
         selection: state.selection,
         autonomy: state.autonomy,
         partCount: state.validation.partCount,
-        subassemblies: Object.values(state.document.subassemblies).map(({ id, name, partIds, locked }) => ({ id, name, partCount: partIds.length, locked })),
+        subassemblies: Object.values(state.document.subassemblies).map(({ id, name, partIds, locked }) => ({
+          id,
+          name,
+          partCount: partIds.length,
+          locked,
+        })),
         constraints: state.document.constraints,
         validation: {
           healthy: state.validation.healthy,
@@ -176,7 +191,13 @@ const readTools: ToolDefinition[] = [
           boundsLdu: state.validation.bounds,
         },
         surfaces: {
-          generation: surfaceSnapshot.generation ?? { briefPhase: 'idle', runPhase: 'idle', candidateCount: 0, selectedCandidateId: null, ghost: false },
+          generation: surfaceSnapshot.generation ?? {
+            briefPhase: 'idle',
+            runPhase: 'idle',
+            candidateCount: 0,
+            selectedCandidateId: null,
+            ghost: false,
+          },
           refinement: surfaceSnapshot.refinement ?? { status: 'idle', proposalCount: 0, selectedId: null },
           project: { id: state.document.id, name: state.document.name },
           share: surfaceSnapshot.share,
@@ -188,20 +209,21 @@ const readTools: ToolDefinition[] = [
           model: modelSurface,
           review: {
             pending: state.proposals.length,
-            blocked: state.proposals.filter((proposal) =>
-              proposal.baseRevision !== state.document.revision
-              || proposal.validation.collisions.length > 0
-              || proposal.validation.constraints.some((constraint) => constraint.status === 'fail'),
+            blocked: state.proposals.filter(
+              (proposal) =>
+                proposal.baseRevision !== state.document.revision ||
+                proposal.validation.collisions.length > 0 ||
+                proposal.validation.constraints.some((constraint) => constraint.status === 'fail'),
             ).length,
           },
           health: {
             kernelBlockers:
-              state.validation.collisions.filter((collision) => collision.certainty !== 'unknown').length
-              + state.validation.constraints.filter((constraint) => constraint.status === 'fail').length,
+              state.validation.collisions.filter((collision) => collision.certainty !== 'unknown').length +
+              state.validation.constraints.filter((constraint) => constraint.status === 'fail').length,
             advisories:
-              state.validation.unverifiedCollisions
-              + (state.validation.componentCount > 1 ? 1 : 0)
-              + (state.validation.virtualColors.length ? 1 : 0),
+              state.validation.unverifiedCollisions +
+              (state.validation.componentCount > 1 ? 1 : 0) +
+              (state.validation.virtualColors.length ? 1 : 0),
             fullScan: 'call validate_model',
           },
         },
@@ -212,11 +234,11 @@ const readTools: ToolDefinition[] = [
   {
     name: 'workspace_reveal',
     description:
-      'Open a workbench dock section so a human can see what the agent is working on. '
-      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, connect, timeline, review, feedback. '
-      + 'For health and review, pass focusId to land on one issue or proposal; omit it for the most urgent. '
-      + 'Connect still needs workspace_connect to pick a stage or solution; this only opens the sheet. '
-      + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
+      'Open a workbench dock section so a human can see what the agent is working on. ' +
+      'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, connect, timeline, review, feedback. ' +
+      'For health and review, pass focusId to land on one issue or proposal; omit it for the most urgent. ' +
+      'Connect still needs workspace_connect to pick a stage or solution; this only opens the sheet. ' +
+      'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),
     annotations: { readOnlyHint: true },
     execute: (input) => {
@@ -243,17 +265,43 @@ const readTools: ToolDefinition[] = [
   {
     name: 'workspace_connect',
     description:
-      'Arm the Connect mate flow and pick a stage, named pair, connector or listed solution. '
-      + 'Does not commit a pose or advance the CAD revision. Use workspace_reveal with surface=connect to only open the sheet, '
-      + 'and this tool to actually steer it. candidateIndex is the spatial-grid index the Connect sheet Tab-cycles.',
+      'Arm the Connect mate flow and pick a stage, named pair, connector or listed solution. ' +
+      'Does not commit a pose or advance the CAD revision. Use workspace_reveal with surface=connect to only open the sheet, ' +
+      'and this tool to actually steer it. candidateIndex is the spatial-grid index the Connect sheet Tab-cycles.',
     inputSchema: jsonSchemaOf(WorkspaceConnectSchema),
     annotations: { readOnlyHint: true },
     execute: (input) => {
       try {
         const request = WorkspaceConnectSchema.parse(input)
+        const steered = steerConnect(request)
+        const document = cadEngine.getDocument()
+        const source = steered.connect.sourcePartId ? document.parts[steered.connect.sourcePartId] : undefined
+        const target = steered.connect.targetPartId ? document.parts[steered.connect.targetPartId] : undefined
+        const listed =
+          source && target
+            ? listConnectSolutions(source, target, document, {
+                sourceFeatureId: steered.connect.sourceFeatureId,
+                targetFeatureId: steered.connect.targetFeatureId,
+              })
+            : null
         return json({
           ...profileContext(),
-          ...steerConnect(request),
+          ...steered,
+          listing: listed
+            ? {
+                truncated: listed.truncated,
+                considered: listed.considered,
+                count: listed.solutions.length,
+                candidateIndex: steered.connect.candidateIndex,
+                solutions: listed.solutions.slice(0, 32).map((solution, index) => ({
+                  index,
+                  movingFeatureId: solution.movingFeatureId,
+                  targetFeatureId: solution.targetFeatureId,
+                  position: solution.transform.position,
+                  simultaneousMatches: solution.simultaneousMatches,
+                })),
+              }
+            : null,
           chrome: readChrome(),
         })
       } catch (cause) {
@@ -264,9 +312,9 @@ const readTools: ToolDefinition[] = [
   {
     name: 'workspace_focus',
     description:
-      'Select and reveal exact placed parts or one subassembly in the shared Model Map. '
-      + 'Modes select, frame, and isolate change only ephemeral UI state; the CAD document and revision are untouched. '
-      + 'Use this to hand visual context to the human after scene_query or part_inspect.',
+      'Select and reveal exact placed parts or one subassembly in the shared Model Map. ' +
+      'Modes select, frame, and isolate change only ephemeral UI state; the CAD document and revision are untouched. ' +
+      'Use this to hand visual context to the human after scene_query or part_inspect.',
     inputSchema: jsonSchemaOf(WorkspaceFocusSchema),
     annotations: { readOnlyHint: true },
     execute: (input) => {
@@ -285,10 +333,10 @@ const readTools: ToolDefinition[] = [
   {
     name: 'catalog_search',
     description:
-      'Search every catalogued LEGO identity by text, part number, size like "2 x 4", category, connector families and observed LDraw colors. '
-      + 'Results are ranked and paged, and each carries the tier that says what is actually known about it: '
-      + 'placeable (compiled geometry, can be built with), modelled (LDraw knows the shape, this build has no mesh), '
-      + 'catalogued (the part is real and nothing else is known here). Use tier="placeable" to plan a build and tier="all" to answer whether a part exists.',
+      'Search every catalogued LEGO identity by text, part number, size like "2 x 4", category, connector families and observed LDraw colors. ' +
+      'Results are ranked and paged, and each carries the tier that says what is actually known about it: ' +
+      'placeable (compiled geometry, can be built with), modelled (LDraw knows the shape, this build has no mesh), ' +
+      'catalogued (the part is real and nothing else is known here). Use tier="placeable" to plan a build and tier="all" to answer whether a part exists.',
     inputSchema: jsonSchemaOf(CatalogSearchSchema),
     annotations: { readOnlyHint: true },
     execute: async (input) => {
@@ -296,7 +344,10 @@ const readTools: ToolDefinition[] = [
       // Asking past the modelled library pulls the wider catalogue in once, so
       // an agent gets the same answer a human would rather than a narrower one
       // that depends on what the session happened to have already fetched.
-      if ((query.tier === 'catalogued' || query.tier === 'all' || query.tier === undefined) && externalCatalogueAvailable()) {
+      if (
+        (query.tier === 'catalogued' || query.tier === 'all' || query.tier === undefined) &&
+        externalCatalogueAvailable()
+      ) {
         await loadExternalCatalogue().catch(() => undefined)
       }
       const page = catalog.searchPage(query as Parameters<typeof catalog.searchPage>[0])
@@ -340,7 +391,8 @@ const readTools: ToolDefinition[] = [
   },
   {
     name: 'part_inspect',
-    description: 'Expand one catalog definition or placed instance, including identity, dimensions, connectors, color availability, transform, provenance, and protection.',
+    description:
+      'Expand one catalog definition or placed instance, including identity, dimensions, connectors, color availability, transform, provenance, and protection.',
     inputSchema: schema({ id: { type: 'string', description: 'Part definition id or placed instance id.' } }, ['id']),
     annotations: { readOnlyHint: true },
     execute: (input) => {
@@ -359,7 +411,8 @@ const readTools: ToolDefinition[] = [
   },
   {
     name: 'scene_query',
-    description: 'Query semantic CAD entities without dumping the entire scene. Filter by subassembly, selected entities, or part ids.',
+    description:
+      'Query semantic CAD entities without dumping the entire scene. Filter by subassembly, selected entities, or part ids.',
     inputSchema: schema({
       subassemblyId: { type: 'string' },
       partIds: { type: 'array', items: { type: 'string' }, maxItems: 200 },
@@ -383,13 +436,21 @@ const readTools: ToolDefinition[] = [
       return json({
         documentRevision: state.document.revision,
         count: parts.length,
-        parts: query.detail === 'parts' ? parts : parts.map((part) => ({ id: part.id, definitionId: part.definitionId, subassemblyId: part.subassemblyId })),
+        parts:
+          query.detail === 'parts'
+            ? parts
+            : parts.map((part) => ({
+                id: part.id,
+                definitionId: part.definitionId,
+                subassemblyId: part.subassemblyId,
+              })),
       })
     },
   },
   {
     name: 'render_capture',
-    description: 'Capture the live CAD viewport for the agent perception loop. Supports named engineering views and returns the exact document revision, camera view, bounds, visible part count, and PNG pixels.',
+    description:
+      'Capture the live CAD viewport for the agent perception loop. Supports named engineering views and returns the exact document revision, camera view, bounds, visible part count, and PNG pixels.',
     inputSchema: schema({
       view: { type: 'string', enum: ['isometric', 'front', 'rear', 'left', 'right', 'top'] },
       mode: { type: 'string', enum: ['beauty', 'orthographic', 'silhouette', 'connections', 'violations', 'exploded'] },
@@ -424,8 +485,10 @@ const readTools: ToolDefinition[] = [
         selectedPartIds: state.selection,
       }
       const dataUrl = window.__brickwrightCanvas?.toDataURL('image/png')
-      if (!dataUrl) return json({ ...metadata, warning: 'Viewport pixels are unavailable before the renderer initializes.' })
-      if (mode !== 'beauty') window.dispatchEvent(new CustomEvent('brickwright:set-camera-view', { detail: { view, mode: 'beauty' } }))
+      if (!dataUrl)
+        return json({ ...metadata, warning: 'Viewport pixels are unavailable before the renderer initializes.' })
+      if (mode !== 'beauty')
+        window.dispatchEvent(new CustomEvent('brickwright:set-camera-view', { detail: { view, mode: 'beauty' } }))
       return {
         content: [
           { type: 'image', data: dataUrl.split(',')[1], mimeType: 'image/png' },
@@ -438,8 +501,8 @@ const readTools: ToolDefinition[] = [
   {
     name: 'validate_model',
     description:
-      'Run deterministic collision, connectivity, grounding, dimensions, palette, piece-count, balance, and clutch-load analysis. '
-      + 'Opens the same Model Health navigator a human uses and focuses its highest-severity issue.',
+      'Run deterministic collision, connectivity, grounding, dimensions, palette, piece-count, balance, and clutch-load analysis. ' +
+      'Opens the same Model Health navigator a human uses and focuses its highest-severity issue.',
     inputSchema: schema({}),
     annotations: { readOnlyHint: true },
     execute: () => {
@@ -489,15 +552,17 @@ const readTools: ToolDefinition[] = [
     execute: (input) => {
       const query = String((input as { query: string }).query).toLowerCase()
       return json(
-        SHARED_CAPABILITIES
-          .filter((capability) => `${capability.id} ${capability.title} ${capability.summary} ${capability.group}`.toLowerCase().includes(query))
-          .map((capability) => ({
-            id: capability.id,
-            kind: capability.kind,
-            group: capability.group,
-            summary: capability.summary,
-            parity: { human: true, agent: true },
-          })),
+        SHARED_CAPABILITIES.filter((capability) =>
+          `${capability.id} ${capability.title} ${capability.summary} ${capability.group}`
+            .toLowerCase()
+            .includes(query),
+        ).map((capability) => ({
+          id: capability.id,
+          kind: capability.kind,
+          group: capability.group,
+          summary: capability.summary,
+          parity: { human: true, agent: true },
+        })),
       )
     },
   },
@@ -509,16 +574,21 @@ const readTools: ToolDefinition[] = [
     execute: (input) => {
       const capability = String((input as { capability: string }).capability)
       const definition = sharedCapability(capability)
-      if (!definition) return json({ error: 'UNKNOWN_CAPABILITY', repair: 'Call capabilities_search with a task-oriented query.' })
+      if (!definition)
+        return json({ error: 'UNKNOWN_CAPABILITY', repair: 'Call capabilities_search with a task-oriented query.' })
       return json({
         id: definition.id,
         title: definition.title,
         summary: definition.summary,
-        parity: { human: 'Command Deck or primary CAD control', agent: definition.kind === 'read' ? 'action_read' : 'action_mutate' },
+        parity: {
+          human: 'Command Deck or primary CAD control',
+          agent: definition.kind === 'read' ? 'action_read' : 'action_mutate',
+        },
         call: definition.kind === 'read' ? 'action_read' : 'action_mutate',
-        input: definition.kind === 'read'
-          ? { action: definition.id, args: definition.input }
-          : { action: definition.id, expectedRevision: 'integer', args: definition.input },
+        input:
+          definition.kind === 'read'
+            ? { action: definition.id, args: definition.input }
+            : { action: definition.id, expectedRevision: 'integer', args: definition.input },
         // The prose above is a summary; this is the declaration the gateway
         // actually parses `args` with, derived from the same Zod schema. The
         // two cannot drift, because only one of them exists.
@@ -533,9 +603,21 @@ const readTools: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
     execute: (input) => {
       const action = String((input as { action: string }).action)
-      if (action === 'export_ldraw') return json({ documentRevision: cadEngine.getSnapshot().document.revision, ldraw: exportLDraw(cadEngine.getDocument()) })
-      if (action === 'export_bom') return json({ documentRevision: cadEngine.getSnapshot().document.revision, lines: buildBom(cadEngine.getDocument()) })
-      if (action === 'export_mpd') return json({ documentRevision: cadEngine.getSnapshot().document.revision, mpd: exportMpd(cadEngine.getDocument()) })
+      if (action === 'export_ldraw')
+        return json({
+          documentRevision: cadEngine.getSnapshot().document.revision,
+          ldraw: exportLDraw(cadEngine.getDocument()),
+        })
+      if (action === 'export_bom')
+        return json({
+          documentRevision: cadEngine.getSnapshot().document.revision,
+          lines: buildBom(cadEngine.getDocument()),
+        })
+      if (action === 'export_mpd')
+        return json({
+          documentRevision: cadEngine.getSnapshot().document.revision,
+          mpd: exportMpd(cadEngine.getDocument()),
+        })
       if (action === 'catalog_coverage') {
         return json({
           catalogVersion: catalog.version,
@@ -552,7 +634,9 @@ const readTools: ToolDefinition[] = [
       }
       if (action === 'statics') {
         const request = (input as { args?: { clutchGramsPerStud?: number } }).args ?? {}
-        const clutch = Number.isFinite(Number(request.clutchGramsPerStud)) ? Number(request.clutchGramsPerStud) : DEFAULT_CLUTCH_GRAMS
+        const clutch = Number.isFinite(Number(request.clutchGramsPerStud))
+          ? Number(request.clutchGramsPerStud)
+          : DEFAULT_CLUTCH_GRAMS
         const document = cadEngine.getDocument()
         const report = analyseStatics(document, clutch)
         return json({
@@ -574,7 +658,10 @@ const readTools: ToolDefinition[] = [
         })
       }
       if (action === 'weak_attachments') {
-        return json({ documentRevision: cadEngine.getSnapshot().document.revision, weak: findWeakAttachments(cadEngine.getDocument()) })
+        return json({
+          documentRevision: cadEngine.getSnapshot().document.revision,
+          weak: findWeakAttachments(cadEngine.getDocument()),
+        })
       }
       if (action === 'selection_connected') {
         const state = cadEngine.getSnapshot()
@@ -590,7 +677,8 @@ const readTools: ToolDefinition[] = [
       if (action === 'compute_build_order') {
         const state = cadEngine.getSnapshot()
         const result = computeBuildOrder(state.document, {
-          maxPartsPerStep: Number((input as { args?: { maxPartsPerStep?: number } }).args?.maxPartsPerStep) || undefined,
+          maxPartsPerStep:
+            Number((input as { args?: { maxPartsPerStep?: number } }).args?.maxPartsPerStep) || undefined,
           // An agent reading this order will hand it to a person. The graph
           // check alone would call a mechanism sequenced after the shell that
           // encloses it "verified", so the physical check is paid for here even
@@ -602,11 +690,11 @@ const readTools: ToolDefinition[] = [
           steps: result.steps.map((step) => ({ index: step.index, name: step.name, partIds: step.partIds })),
           warnings: result.warnings,
           guarantee:
-            'Every part attaches to structure placed in an earlier step, except those listed as beginning a new island. '
-            + 'Each part is additionally checked for a way in: at the moment its step introduces it, its bounding box is '
-            + 'retracted along the six axes against everything already placed, and a part left with no clear approach is '
-            + 'reported as BLOCKED_INSERTION. That sweep is axis-aligned and uses boxes rather than geometry, so it may '
-            + 'over-report a part a hand could thread in at an angle; it is a warning and never withholds a step.',
+            'Every part attaches to structure placed in an earlier step, except those listed as beginning a new island. ' +
+            'Each part is additionally checked for a way in: at the moment its step introduces it, its bounding box is ' +
+            'retracted along the six axes against everything already placed, and a part left with no clear approach is ' +
+            'reported as BLOCKED_INSERTION. That sweep is axis-aligned and uses boxes rather than geometry, so it may ' +
+            'over-report a part a hand could thread in at an angle; it is a warning and never withholds a step.',
           verified: verifyBuildOrder(state.document, result.steps).valid,
         })
       }
@@ -641,7 +729,8 @@ const readTools: ToolDefinition[] = [
 const proposalTools: ToolDefinition[] = [
   {
     name: 'build_preflight',
-    description: 'Dry-run an atomic batch of real CAD operations. Checks revision, protected regions, catalog identity, colors, collision, connectivity, constraints, and produces a visible ghost proposal without mutating the document.',
+    description:
+      'Dry-run an atomic batch of real CAD operations. Checks revision, protected regions, catalog identity, colors, collision, connectivity, constraints, and produces a visible ghost proposal without mutating the document.',
     // Advertised schema and enforced schema are the same declaration, so the
     // operation vocabulary the agent is shown is exactly what the gateway accepts.
     inputSchema: jsonSchemaOf(PreflightSchema),
@@ -665,7 +754,8 @@ const proposalTools: ToolDefinition[] = [
   },
   {
     name: 'proposal_create',
-    description: 'Alias for build_preflight used when the intent is explicitly to leave a translucent, human-reviewable ghost edit.',
+    description:
+      'Alias for build_preflight used when the intent is explicitly to leave a translucent, human-reviewable ghost edit.',
     inputSchema: jsonSchemaOf(PreflightSchema),
     execute: (input) => proposalTools[0].execute(input),
   },
@@ -676,7 +766,8 @@ const proposalTools: ToolDefinition[] = [
 const buildTools: ToolDefinition[] = [
   {
     name: 'build_apply',
-    description: 'Atomically commit a current, collision-free preflight proposal through the same command bus used by the human editor.',
+    description:
+      'Atomically commit a current, collision-free preflight proposal through the same command bus used by the human editor.',
     inputSchema: jsonSchemaOf(ApplySchema),
     execute: (input) => {
       const document = cadEngine.getDocument()
@@ -692,10 +783,26 @@ const buildTools: ToolDefinition[] = [
   {
     name: 'builder_feedback_respond',
     description: 'Respond to a spatial builder note at an exact document revision.',
-    inputSchema: schema({ expectedRevision: revisionProperty, noteId: { type: 'string' }, response: { type: 'string' }, resolved: { type: 'boolean' } }, ['expectedRevision', 'noteId', 'response']),
+    inputSchema: schema(
+      {
+        expectedRevision: revisionProperty,
+        noteId: { type: 'string' },
+        response: { type: 'string' },
+        resolved: { type: 'boolean' },
+      },
+      ['expectedRevision', 'noteId', 'response'],
+    ),
     execute: (input) => {
       const request = input as { expectedRevision: number; noteId: string; response: string; resolved?: boolean }
-      return resultOf(cadEngine.execute('Respond to builder note', [{ type: 'note.respond', noteId: request.noteId, response: request.response, resolved: request.resolved }], 'agent', request.expectedRevision, 'builder_feedback_respond'))
+      return resultOf(
+        cadEngine.execute(
+          'Respond to builder note',
+          [{ type: 'note.respond', noteId: request.noteId, response: request.response, resolved: request.resolved }],
+          'agent',
+          request.expectedRevision,
+          'builder_feedback_respond',
+        ),
+      )
     },
   },
   {
@@ -734,7 +841,13 @@ const buildTools: ToolDefinition[] = [
       const state = cadEngine.getSnapshot()
       const definition = sharedCapability(request.action)
       if (!definition || definition.kind !== 'mutate') {
-        return json({ error: { code: 'INVALID_OPERATION', message: `Unknown mutation ${request.action}`, repair: 'Call capabilities_search and capabilities_help.' } })
+        return json({
+          error: {
+            code: 'INVALID_OPERATION',
+            message: `Unknown mutation ${request.action}`,
+            repair: 'Call capabilities_search and capabilities_help.',
+          },
+        })
       }
       // Arguments are parsed against the same declaration the tool advertises
       // before the planner sees them. Previously the planner coerced whatever
@@ -760,24 +873,31 @@ const buildTools: ToolDefinition[] = [
           selection: state.selection,
           actor: 'agent',
         })
-        const result = cadEngine.execute(plan.label, [...plan.operations], 'agent', request.expectedRevision, 'action_mutate')
+        const result = cadEngine.execute(
+          plan.label,
+          [...plan.operations],
+          'agent',
+          request.expectedRevision,
+          'action_mutate',
+        )
         if (result.ok && plan.nextSelection) cadEngine.setSelection([...plan.nextSelection])
         return result.ok
           ? json({
-            ...result.value,
-            capability: plan.capability,
-            summary: plan.summary,
-            // Measured facts, not just a sentence: a generated assembly reports
-            // its bill, its course count and every course it could not bond,
-            // so the caller can check the work instead of trusting it.
-            ...(plan.report ? { report: plan.report } : {}),
-            selection: plan.nextSelection ?? state.selection,
-          })
+              ...result.value,
+              capability: plan.capability,
+              summary: plan.summary,
+              // Measured facts, not just a sentence: a generated assembly reports
+              // its bill, its course count and every course it could not bond,
+              // so the caller can check the work instead of trusting it.
+              ...(plan.report ? { report: plan.report } : {}),
+              selection: plan.nextSelection ?? state.selection,
+            })
           : resultOf(result)
       } catch (cause) {
-        const error = cause instanceof SharedCapabilityError
-          ? new ContractError(cause.code, cause.message, cause.repair, cause.details)
-          : cause
+        const error =
+          cause instanceof SharedCapabilityError
+            ? new ContractError(cause.code, cause.message, cause.repair, cause.details)
+            : cause
         return json(toErrorEnvelope(error, { currentRevision: state.document.revision }))
       }
     },
@@ -817,7 +937,8 @@ export class WebMcpAdapter {
       tools: this.fallbackTools,
       invoke: async (name, input = {}) => {
         const tool = this.fallbackTools.get(name)
-        if (!tool) throw new Error(`Brickwright tool ${name} is not registered in ${cadEngine.getSnapshot().autonomy} mode.`)
+        if (!tool)
+          throw new Error(`Brickwright tool ${name} is not registered in ${cadEngine.getSnapshot().autonomy} mode.`)
         return tool.execute(input)
       },
       getDocument: () => cadEngine.getDocument(),

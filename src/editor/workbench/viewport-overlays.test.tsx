@@ -205,6 +205,7 @@ function overlayWorkbench(overrides: Record<string, unknown> = {}): Workbench {
     setPlaybackStep: vi.fn(),
     transformPrefs: { locks: { x: false, y: false, z: false }, frame: 'world' },
     selectionPosition: [0, -24, 0],
+    selectionAttitude: { mixed: false, rotationDegrees: [0, 0, 0] },
     selectedDefinition: { name: 'Brick 2 x 4' },
     tool: 'select',
     setTool: vi.fn(),
@@ -249,10 +250,31 @@ describe('viewport overlay stacking', () => {
         <ViewportStage workbench={overlayWorkbench()} reviewSurfaceOpen />
       </OverlayHost>,
     )
-    const overlay = document.querySelector('.proposal-overlay')
-    expect(overlay?.getAttribute('data-review-duplicate')).toBe('true')
-    expect(overlay?.textContent).toMatch(/Reviewing in timeline/)
-    expect(overlay?.textContent).not.toMatch(/Accept/)
-    expect(overlay?.querySelector('[aria-label="Reject proposal"]')).toBeNull()
+    expect(document.querySelector('.proposal-overlay')).toBeNull()
+  })
+
+  it('shows MIXED Euler on the HUD instead of the lead brick when orientations differ', () => {
+    render(
+      <SelectionHUD
+        count={2}
+        label="2 selected"
+        position={[0, -24, 0]}
+        rotation={[0, 90, 0]}
+        rotationMixed
+        locks={{ x: false, y: false, z: false }}
+        frame="world"
+        tool="move"
+        onTool={vi.fn()}
+        onFocus={vi.fn()}
+        onGround={vi.fn()}
+        onDuplicate={vi.fn()}
+        onPosition={vi.fn()}
+        onRotate={vi.fn()}
+        onMore={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Mixed orientations')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Rotation 0, 90, 0 degrees')).toBeNull()
+    expect(screen.getByLabelText('RX mixed orientations')).toBeDisabled()
   })
 })

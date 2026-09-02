@@ -56,6 +56,12 @@ export function connectorStudCell(connector: WorldConnector): readonly [number, 
   return [cell(pos[0]), cell(pos[2])]
 }
 
+export function compareConnectorsSpatially(a: WorldConnector, b: WorldConnector): number {
+  const [ax, az] = connectorStudCell(a)
+  const [bx, bz] = connectorStudCell(b)
+  return ax - bx || az - bz || a.family.localeCompare(b.family) || a.id.localeCompare(b.id)
+}
+
 export function connectorChipLabel(connector: WorldConnector, siblings: readonly WorldConnector[]): string {
   const gender = connector.gender === 'male' ? 'M' : connector.gender === 'female' ? 'F' : 'N'
   const family = siblings.filter((entry) => entry.family === connector.family)
@@ -117,8 +123,14 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
   const source = connect.sourcePartId ? state.document.parts[connect.sourcePartId] : undefined
   const target = connect.targetPartId ? state.document.parts[connect.targetPartId] : undefined
 
-  const sourceConnectors = useMemo(() => (source ? getWorldConnectors(source) : []), [source])
-  const targetConnectors = useMemo(() => (target ? getWorldConnectors(target) : []), [target])
+  const sourceConnectors = useMemo(
+    () => (source ? [...getWorldConnectors(source)].sort(compareConnectorsSpatially) : []),
+    [source],
+  )
+  const targetConnectors = useMemo(
+    () => (target ? [...getWorldConnectors(target)].sort(compareConnectorsSpatially) : []),
+    [target],
+  )
 
   /**
    * Ranked mates for the current pair, restricted to whichever connectors the
@@ -289,7 +301,13 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
                 <div>
                   <dt>Seat</dt>
                   <dd>
-                    {preview.movingFeatureId} → {preview.targetFeatureId}
+                    {(() => {
+                      const moving = sourceConnectors.find((entry) => entry.id === preview.movingFeatureId)
+                      const onto = targetConnectors.find((entry) => entry.id === preview.targetFeatureId)
+                      const from = moving ? connectorChipLabel(moving, sourceConnectors) : preview.movingFeatureId
+                      const to = onto ? connectorChipLabel(onto, targetConnectors) : preview.targetFeatureId
+                      return `${from} → ${to}`
+                    })()}
                   </dd>
                 </div>
               </dl>

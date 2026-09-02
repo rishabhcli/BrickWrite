@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { catalog, originForSurface, searchCatalog, STUD_LDU, surfaceAbove, underPlaneLdu } from './catalog'
 import { getPartBounds, nearbyParts } from './geometry'
 import { IDENTITY_BASIS } from './math'
-import { QUARTER_TURN_BASES, hitApproach, legalConnectCandidates, listConnectSolutions, resolvePlacement, resolveQuickAdd, rotatedBasis, searchMateOnTarget } from './placement'
+import {
+  QUARTER_TURN_BASES,
+  hitApproach,
+  legalConnectCandidates,
+  listConnectSolutions,
+  resolvePlacement,
+  resolveQuickAdd,
+  rotatedBasis,
+  searchMateOnTarget,
+} from './placement'
 import { partPoseCollides } from './collisionGate'
 import { bestSnapTransform } from './snapping'
 import { createBlankDocument, createEmptyDocument } from './sample'
@@ -151,7 +160,10 @@ describe('placement resolution', () => {
     expect(resolved.mated).toBe(true)
     expect(resolved.reason).toBe('mated')
     expect(
-      Math.hypot(resolved.transform.position[0] - capPose!.position[0], resolved.transform.position[2] - capPose!.position[2]),
+      Math.hypot(
+        resolved.transform.position[0] - capPose!.position[0],
+        resolved.transform.position[2] - capPose!.position[2],
+      ),
     ).toBeGreaterThan(8)
   })
 
@@ -178,7 +190,10 @@ describe('placement resolution', () => {
     expect(partPoseCollides(document, { ...part('ghost', '3001'), transform: resolved.transform })).toBe(false)
     expect(Math.abs(resolved.transform.position[1] - left.transform.position[1])).toBeLessThan(2)
     expect(
-      Math.hypot(resolved.transform.position[0] - left.transform.position[0], resolved.transform.position[2] - left.transform.position[2]),
+      Math.hypot(
+        resolved.transform.position[0] - left.transform.position[0],
+        resolved.transform.position[2] - left.transform.position[2],
+      ),
     ).toBeGreaterThan(8)
   })
 
@@ -212,10 +227,16 @@ describe('placement resolution', () => {
     // Searchable identities outnumber placeable ones, and the resolver must not
     // invent a pose for one of them; the kernel's refusal is what the operator
     // should see instead.
-    const unplaceable = searchCatalog({ requireGeometry: false, limit: 400 }).find((record) => !record.geometryAvailable)?.id
-      ?? '__no_such_identity__'
+    const unplaceable =
+      searchCatalog({ requireGeometry: false, limit: 400 }).find((record) => !record.geometryAvailable)?.id ??
+      '__no_such_identity__'
     expect(
-      resolvePlacement({ definitionId: unplaceable, color: 4, quarterTurns: 0 }, withParts(), { point: [0, 0, 0], partId: null }, STUD_LDU),
+      resolvePlacement(
+        { definitionId: unplaceable, color: 4, quarterTurns: 0 },
+        withParts(),
+        { point: [0, 0, 0], partId: null },
+        STUD_LDU,
+      ),
     ).toBeNull()
   })
 
@@ -309,6 +330,9 @@ describe('placement resolution', () => {
     const xs = listed.solutions.map((entry) => entry.transform.position[0])
     const copy = [...xs].sort((a, b) => a - b)
     expect(xs).toEqual(copy)
+    const ranked = legalConnectCandidates(source, target, withParts(target, source))
+    expect(ranked.length).toBeGreaterThan(0)
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(ranked.at(-1)?.score ?? 0)
   })
 })
 

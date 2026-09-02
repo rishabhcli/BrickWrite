@@ -45,6 +45,7 @@ import {
   rotatePose,
   numericPose,
   planRotateSelection,
+  readSelectionAttitude,
   referenceBasis,
   NO_LOCKS,
   type AxisLocks,
@@ -180,10 +181,11 @@ export function useWorkbench() {
     if (!parts.length) return [0, 0, 0]
     return parts.length === 1 ? parts[0].transform.position : resolvePivot(parts, 'centre')
   }, [state.document.parts, state.selection])
-  const selectionRotation = useMemo<Vec3 | null>(() => {
-    const lead = state.document.parts[state.selection[0]]
-    return lead ? eulerDegreesFromBasis(lead.transform.basis) : null
+  const selectionAttitude = useMemo(() => {
+    const parts = state.selection.map((id) => state.document.parts[id]).filter(Boolean)
+    return readSelectionAttitude(parts)
   }, [state.document.parts, state.selection])
+  const selectionRotation = selectionAttitude.rotationDegrees
 
   // -- notices --------------------------------------------------------------
   const notify = useCallback((notice: WorkbenchNotice) => setToast(notice), [])
@@ -505,12 +507,7 @@ export function useWorkbench() {
       for (const partId of snapshot.selection) {
         const part = snapshot.document.parts[partId]
         if (!part) continue
-        const moved = translatePose(
-          part.transform,
-          [dx, dy, dz],
-          transformPrefs.frame,
-          frame ?? undefined,
-        )
+        const moved = translatePose(part.transform, [dx, dy, dz], transformPrefs.frame, frame ?? undefined)
         const transform = applyLocks(part.transform, moved, transformPrefs.locks, frame)
         if (posesEqual(part.transform, transform)) continue
         operations.push({ type: 'part.transform', partId, transform })
@@ -538,7 +535,12 @@ export function useWorkbench() {
       delta[axis] = value - current[axis]
       const frame = referenceBasis(parts[0], transformPrefs.frame)
       const operations = parts.flatMap((part) => {
-        const transform = applyLocks(part.transform, translatePose(part.transform, delta, 'world'), transformPrefs.locks, frame)
+        const transform = applyLocks(
+          part.transform,
+          translatePose(part.transform, delta, 'world'),
+          transformPrefs.locks,
+          frame,
+        )
         return posesEqual(part.transform, transform)
           ? []
           : [{ type: 'part.transform' as const, partId: part.id, transform }]
@@ -568,7 +570,12 @@ export function useWorkbench() {
         const rotation = [...current] as [number, number, number]
         rotation[axis] = value
         const next = numericPose(lead.transform, { rotationDegrees: rotation })
-        const locked = applyLocks(lead.transform, next, transformPrefs.locks, referenceBasis(lead, transformPrefs.frame))
+        const locked = applyLocks(
+          lead.transform,
+          next,
+          transformPrefs.locks,
+          referenceBasis(lead, transformPrefs.frame),
+        )
         return handleTransform(lead.id, locked, true)
       }
       const delta = value - current[axis]
@@ -579,14 +586,7 @@ export function useWorkbench() {
       const frame = referenceBasis(lead, transformPrefs.frame)
       if (transformPrefs.locks[(['x', 'y', 'z'] as const)[axis]]) return false
       const operations = parts.flatMap((part) => {
-        const transform = rotatePose(
-          part.transform,
-          vector,
-          delta,
-          transformPrefs.frame,
-          pivot,
-          frame ?? undefined,
-        )
+        const transform = rotatePose(part.transform, vector, delta, transformPrefs.frame, pivot, frame ?? undefined)
         return posesEqual(part.transform, transform)
           ? []
           : [{ type: 'part.transform' as const, partId: part.id, transform }]
@@ -1282,6 +1282,7 @@ export function useWorkbench() {
     selectedDefinition,
     selectionPosition,
     selectionRotation,
+    selectionAttitude,
     activeColor,
     setActiveColor,
     toolPicks,

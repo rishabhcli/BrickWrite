@@ -12,6 +12,7 @@ type SelectionHUDProps = {
   label: string
   position: Position
   rotation?: Position | null
+  rotationMixed?: boolean
   locks: AxisLocks
   frame: ReferenceFrame
   tool: EditorTool
@@ -30,6 +31,7 @@ export function SelectionHUD({
   label,
   position,
   rotation,
+  rotationMixed = false,
   locks,
   frame,
   tool,
@@ -89,7 +91,19 @@ export function SelectionHUD({
           />
         ))}
       </div>
-      {rotation && onRotate ? (
+      {rotationMixed ? (
+        <div className="selection-hud-rotation" data-mixed="true" aria-label="Mixed orientations">
+          {(['RX', 'RY', 'RZ'] as const).map((axis) => (
+            <label key={axis} className="number-field compact disabled mixed-euler">
+              <span>{axis}</span>
+              <div>
+                <input disabled value="" placeholder="MIXED" aria-label={`${axis} mixed orientations`} />
+                <em>°</em>
+              </div>
+            </label>
+          ))}
+        </div>
+      ) : rotation && onRotate ? (
         <div className="selection-hud-rotation" aria-label={`Rotation ${rotation.join(', ')} degrees`}>
           {(['RX', 'RY', 'RZ'] as const).map((axis, index) => (
             <NumberField
