@@ -194,6 +194,25 @@ describe('palette', () => {
     expect(screen.getByRole('button', { name: 'Search every identity' })).not.toBeNull()
   })
 
+  it('returns the keyboard to search after the query is cleared', () => {
+    renderPalette()
+    const search = screen.getByLabelText('Search parts') as HTMLInputElement
+    fireEvent.change(search, { target: { value: '3001' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(search.value).toBe('')
+    expect(document.activeElement).toBe(search)
+  })
+
+  it('clears a query from Escape without leaving the field', () => {
+    renderPalette()
+    const search = screen.getByLabelText('Search parts') as HTMLInputElement
+    search.focus()
+    fireEvent.change(search, { target: { value: '3001' } })
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(search.value).toBe('')
+    expect(document.activeElement).toBe(search)
+  })
+
   it('retries a failed wider-catalogue fetch from the panel', async () => {
     vi.spyOn(catalog, 'catalogueLoaded', 'get').mockReturnValue(false)
     vi.spyOn(catalogLoader, 'externalCatalogueAvailable').mockReturnValue(true)

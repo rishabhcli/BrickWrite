@@ -134,4 +134,23 @@ describe('workbench chrome polish', () => {
       /\.app-shell\[data-timeline='open'\]\[data-bottom-size\]\s*\{[^}]*--timeline-track:\s*attr\(data-bottom-size px\)/,
     )
   })
+
+  it('does not hide save-state at a 1220px window', () => {
+    for (const block of mediaBlocks(withoutComments, '1220px')) {
+      expect(block).not.toMatch(/\.save-state\s*\{[^}]*display:\s*none/)
+    }
+  })
+
+  it('sizes selection-modes from the inspector, not the window', () => {
+    for (const block of mediaBlocks(withoutComments, '1300px')) {
+      expect(block).not.toContain('.selection-modes')
+      expect(block).not.toContain('.tool-button')
+    }
+    expect(withoutComments).toMatch(/container-name:\s*selection-panel/)
+    expect(withoutComments).toMatch(/@container selection-panel \(max-width: 280px\)/)
+  })
+
+  it('does not restyle island tools from an 1180px window', () => {
+    expect(withoutComments).not.toMatch(/@media \(max-width:\s*1180px\)/)
+  })
 })

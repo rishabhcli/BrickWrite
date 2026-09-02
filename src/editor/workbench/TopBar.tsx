@@ -71,6 +71,15 @@ export function TopBar({
             store, a fallback, or an outright failure. */}
         <div
           className={`save-state ${sessionStatus.error ? 'failing' : sessionStatus.durable ? '' : 'volatile'}`}
+          role="status"
+          aria-live={sessionStatus.error ? 'assertive' : 'polite'}
+          aria-label={
+            sessionStatus.error
+              ? `Not saved: ${sessionStatus.error}`
+              : sessionStatus.durable
+                ? 'Saved'
+                : 'In memory only'
+          }
           title={
             sessionStatus.error
               ? `Autosave failed: ${sessionStatus.error}`
@@ -79,9 +88,9 @@ export function TopBar({
                 : 'IndexedDB is unavailable in this context; work is kept in memory only'
           }
         >
-          <Save size={13} />
+          <Save size={13} aria-hidden="true" />
           <span>{sessionStatus.error ? 'Not saved' : sessionStatus.durable ? 'Saved' : 'In memory'}</span>
-          <em>r{state.document.revision}</em>
+          <em aria-hidden="true">r{state.document.revision}</em>
         </div>
         <AutonomySwitch
           value={state.autonomy}

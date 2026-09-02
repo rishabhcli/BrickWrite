@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -249,11 +249,20 @@ describe('the beginner path through the shell', () => {
     expect(document.querySelector('.bw-gen textarea')).toBeNull()
 
     act(() => void window.dispatchEvent(new CustomEvent('brickwright:intent-describe')))
-    await frames()
-
-    expect(document.activeElement).toBe(document.querySelector('.bw-gen textarea'))
+    await waitFor(() => {
+      expect(document.activeElement).toBe(document.querySelector('.bw-gen textarea'))
+    })
   })
 
+
+  it('announces persistence on the save chip instead of hiding a failure', () => {
+    mount()
+    const chip = control('.save-state')
+    expect(chip.getAttribute('role')).toBe('status')
+    expect(chip.getAttribute('aria-live')).toBe('polite')
+    expect(chip.getAttribute('aria-label')).toMatch(/Saved|In memory/)
+    expect(chip.querySelector('span')?.textContent).toMatch(/Saved|In memory|Not saved/)
+  })
 
   it('keeps mode, Esc and layout-preset affordances in the existing chrome', () => {
     mount()
