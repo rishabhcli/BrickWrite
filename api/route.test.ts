@@ -26,11 +26,16 @@ let usageCost: { inputTokens: number; outputTokens: number } | undefined
  * route list once at module scope, so a cost captured in this closure would be
  * whatever it was when the module first loaded.
  */
+let parked: Promise<void> | null = null
+
 const recorder = (prefix: string): RouteModule => ({
   prefix,
   async handle(_request, response, url, context) {
     if (!url.pathname.startsWith(prefix)) return false
     calls.push({ prefix, context })
+    // Held open so a test can have several requests genuinely in flight at once
+    // — the only way to observe a ceiling that exists to bound concurrency.
+    if (parked) await parked
     if (usageCost) context?.reportUsage?.(usageCost)
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end('{"ok":true}')
@@ -66,11 +71,17 @@ vi.mock('../server/security/budgetStore.js', () => ({
       rows.set(key, next)
       return next
     },
+    async adjust(key: string, by: number) {
+      const next = (rows.get(key) ?? 0) + by
+      rows.set(key, next)
+      return next
+    },
   }),
 }))
 
 const { default: handler } = await import('./[...route]')
 const { configureBudget, DEFAULT_DAILY_TOKEN_CEILING } = await import('../server/security/budget.js')
+const { configureConcurrency, DEFAULT_MAX_IN_FLIGHT } = await import('../server/security/concurrency.js')
 const { budgetStoreFromEnv } = await import('../server/security/budgetStore.js')
 
 interface Captured {
@@ -121,13 +132,18 @@ async function call(pathname: string, options: { method?: string; proxied?: bool
 
 const json = (captured: Captured) => JSON.parse(captured.body || '{}')
 
+/** Spend rows only. The in-flight gauge shares the counter and is not spend. */
+const spendRows = () => [...rows].filter(([key]) => key.startsWith('api-spend:')).map(([, value]) => value)
+
 beforeEach(() => {
   process.env.BRICKWRIGHT_PROXY_SECRET = 'proxy-proof'
   calls.length = 0
   rows.clear()
   usageCost = undefined
   authorization = verified
+  parked = null
   configureBudget(budgetStoreFromEnv(), 1000)
+  configureConcurrency(budgetStoreFromEnv())
 })
 
 describe('the proxy proof', () => {
@@ -150,7 +166,16 @@ describe('health', () => {
   it('answers without a session and reports whether metering is in force', async () => {
     const response = await call('/api/health', { method: 'GET' })
     expect(response.status).toBe(200)
-    expect(json(response)).toMatchObject({ ok: true, metering: 'ready' })
+    expect(json(response)).toMatchObject({
+      ok: true,
+      metering: 'ready',
+      concurrency: { status: 'ready', ceiling: DEFAULT_MAX_IN_FLIGHT },
+    })
+  })
+
+  it('says so when no in-flight counter is configured', async () => {
+    configureConcurrency(null)
+    expect(json(await call('/api/health', { method: 'GET' })).concurrency.status).toBe('unconfigured')
   })
 
   it('says so when no counter is configured', async () => {
@@ -191,7 +216,7 @@ describe('the spend ceiling', () => {
     usageCost = { inputTokens: 100, outputTokens: 10 }
     await call('/api/assistant')
     // 100 input + 10 output × 5 = 150 weighted tokens.
-    expect([...rows.values()]).toEqual([150])
+    expect(spendRows()).toEqual([150])
   })
 
   it('refuses the next call once the ceiling is passed, and never reaches the route', async () => {
@@ -233,7 +258,7 @@ describe('the spend ceiling', () => {
     usageCost = { inputTokens: 5_000_000, outputTokens: 0 }
     expect((await call('/api/assistant')).status).toBe(200)
     expect((await call('/api/assistant')).status).toBe(200)
-    expect(rows.size).toBe(0)
+    expect(spendRows()).toEqual([])
   })
 
   it('uses the documented default ceiling when none is given', async () => {
@@ -242,6 +267,99 @@ describe('the spend ceiling', () => {
     expect((await call('/api/assistant')).status).toBe(200)
     expect((await call('/api/assistant')).status).toBe(200)
     expect((await call('/api/assistant')).status).toBe(429)
+  })
+})
+
+describe('the in-flight ceiling', () => {
+  /** Yields to the event loop, draining every pending microtask first. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('refuses a burst past the ceiling without reaching the route', async () => {
+    // The spend ceiling above cannot do this: it reads tokens already recorded,
+    // so every caller in a burst reads the same total and every one passes.
+    configureConcurrency(budgetStoreFromEnv(), 2)
+    let open!: () => void
+    parked = new Promise<void>((resolve) => {
+      open = resolve
+    })
+
+    const inFlight = [call('/api/assistant'), call('/api/assistant')]
+    await settle()
+    expect(calls).toHaveLength(2)
+
+    const refused = await call('/api/assistant')
+    expect(refused.status).toBe(429)
+    expect(json(refused).error).toBe('too_many_in_flight')
+    expect(refused.headers['retry-after']).toMatch(/^\d+$/)
+    expect(calls).toHaveLength(2)
+
+    open()
+    for (const response of await Promise.all(inFlight)) expect(response.status).toBe(200)
+  })
+
+  it('frees the slot when the request finishes', async () => {
+    configureConcurrency(budgetStoreFromEnv(), 1)
+    expect((await call('/api/assistant')).status).toBe(200)
+    expect((await call('/api/assistant')).status).toBe(200)
+    expect((await call('/api/assistant')).status).toBe(200)
+  })
+
+  it('frees the slot when the spend ceiling refuses the call', async () => {
+    // A refusal that kept its slot would turn one exhausted account into an
+    // account that is also permanently over its concurrency ceiling, and the
+    // second refusal would name the wrong cause.
+    configureConcurrency(budgetStoreFromEnv(), 1)
+    usageCost = { inputTokens: 2000, outputTokens: 0 }
+    await call('/api/assistant')
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const refused = await call('/api/assistant')
+      expect(json(refused).error).toBe('budget_exhausted')
+    }
+  })
+
+  it('does not gate a path that spends nothing', async () => {
+    configureConcurrency(budgetStoreFromEnv(), 1)
+    let open!: () => void
+    parked = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const held = call('/api/assistant')
+    await settle()
+
+    // `/api/health` takes no slot, so an account at its ceiling can still be
+    // asked whether the deployment is up.
+    expect((await call('/api/health', { method: 'GET' })).status).toBe(200)
+    open()
+    await held
+  })
+
+  it('refuses paid traffic when a configured counter cannot be adjusted', async () => {
+    configureConcurrency({
+      async read() {
+        return null
+      },
+      async write() {},
+      async adjust() {
+        throw new Error('counter unreachable')
+      },
+    })
+    const refused = await call('/api/generate')
+    expect(refused.status).toBe(429)
+    expect(json(refused).error).toBe('concurrency_unavailable')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('does not limit anything when no counter is configured', async () => {
+    configureConcurrency(null)
+    let open!: () => void
+    parked = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const inFlight = Array.from({ length: 12 }, () => call('/api/assistant'))
+    await settle()
+    open()
+    for (const response of await Promise.all(inFlight)) expect(response.status).toBe(200)
   })
 })
 

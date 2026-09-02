@@ -9,6 +9,12 @@ import { createGenerationRoute } from '../server/generation/index.js'
 import { authorizePaidRoute } from '../server/security/auth.js'
 import { budgetStatus, checkBudget, configureBudget, recordUsage } from '../server/security/budget.js'
 import { budgetStoreFromEnv } from '../server/security/budgetStore.js'
+import {
+  acquireSlot,
+  concurrencyCeiling,
+  concurrencyStatus,
+  configureConcurrency,
+} from '../server/security/concurrency.js'
 import { logProcessEvent } from '../server/log.js'
 
 const routes = [createAssistantRoute(), createGenerationRoute()]
@@ -16,12 +22,19 @@ const routes = [createAssistantRoute(), createGenerationRoute()]
 /*
  * Installed at module scope, once per cold start.
  *
- * `configureBudget` is idempotent and the store holds no per-request state, so
- * doing this on import rather than per invocation avoids rebuilding it on every
- * warm call. A deployment with no counter configured gets null, which is a
- * supported mode: metering is off and `/api/health` says so.
+ * Both configure calls are idempotent and the store holds no per-request state,
+ * so doing this on import rather than per invocation avoids rebuilding it on
+ * every warm call. A deployment with no counter configured gets null, which is a
+ * supported mode for both: the controls are off and `/api/health` says so.
+ *
+ * One store, two controls. The spend meter answers "has this account bought
+ * enough today"; the in-flight limiter answers "is this account already using
+ * more of the model API than it should at once" — which is the question that
+ * bounds how far past the first answer a burst can get.
  */
-configureBudget(budgetStoreFromEnv())
+const counter = budgetStoreFromEnv()
+configureBudget(counter)
+configureConcurrency(counter)
 
 function json(response: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) {
   response.writeHead(status, {
@@ -65,12 +78,18 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   if (url.pathname === '/api/health') {
-    json(response, 200, { ok: true, routes: routes.map((route) => route.prefix), metering: budgetStatus() })
+    json(response, 200, {
+      ok: true,
+      routes: routes.map((route) => route.prefix),
+      metering: budgetStatus(),
+      concurrency: { status: concurrencyStatus(), ceiling: concurrencyCeiling() },
+    })
     return
   }
 
   let context: RouteContext | undefined
   let metering: Array<Promise<void>> = []
+  let slot: { release(): Promise<void> } | null = null
   if (requiresIdentity(url.pathname, request.method)) {
     const authorization = await authorizePaidRoute(request)
     if (!authorization.ok) {
@@ -78,12 +97,30 @@ export default async function handler(request: IncomingMessage, response: Server
       return
     }
 
+    const { userId } = authorization.identity
+
+    // Taken before the budget is read, because it is what makes that read mean
+    // anything: the spend ceiling sees only *recorded* tokens, so concurrent
+    // callers all read the same total and all pass. Capping how many can be in
+    // flight is what turns the overshoot into a stated number.
+    const admission = await acquireSlot(userId)
+    if (!admission.ok) {
+      json(
+        response,
+        429,
+        { error: admission.code, detail: admission.detail },
+        { 'retry-after': String(admission.retryAfterSeconds) },
+      )
+      return
+    }
+    slot = admission
+
     // The edge caps requests; this caps tokens, which is what is actually
     // bought. Checked before the call, because refusing after the tokens are
     // spent would meter nothing.
-    const { userId } = authorization.identity
     const verdict = await checkBudget(userId)
     if (!verdict.ok) {
+      await slot.release()
       json(
         response,
         429,
@@ -112,20 +149,28 @@ export default async function handler(request: IncomingMessage, response: Server
     }
   }
 
-  for (const route of routes) {
-    if (!url.pathname.startsWith(route.prefix)) continue
-    try {
-      if (await route.handle(request, response, url, context)) return
-    } catch (cause) {
-      logProcessEvent({ level: 'error', service: 'api', message: `${route.prefix} failed`, cause })
-      if (!response.headersSent) json(response, 500, { error: 'internal_error' })
-      else response.end()
-      return
-    } finally {
-      // `recordUsage` never rejects, so this only waits; it cannot turn a
-      // metering failure into a request failure.
-      if (metering.length) await Promise.allSettled(metering)
+  try {
+    for (const route of routes) {
+      if (!url.pathname.startsWith(route.prefix)) continue
+      try {
+        if (await route.handle(request, response, url, context)) return
+      } catch (cause) {
+        logProcessEvent({ level: 'error', service: 'api', message: `${route.prefix} failed`, cause })
+        if (!response.headersSent) json(response, 500, { error: 'internal_error' })
+        else response.end()
+        return
+      } finally {
+        // `recordUsage` never rejects, so this only waits; it cannot turn a
+        // metering failure into a request failure.
+        if (metering.length) await Promise.allSettled(metering)
+      }
     }
+    json(response, 404, { error: 'not_found', detail: `No route claimed ${url.pathname}` })
+  } finally {
+    // Settled before the handler resolves, for the same reason the metering
+    // writes are: a serverless invocation may be frozen the moment it returns,
+    // and a slot released by a promise that never settles is a slot held until
+    // its lease expires. `release` never rejects.
+    await slot?.release()
   }
-  json(response, 404, { error: 'not_found', detail: `No route claimed ${url.pathname}` })
 }

@@ -94,5 +94,19 @@ export function budgetStoreFromEnv(env: BudgetStoreEnv = process.env): BudgetSto
       if (!Number.isFinite(total)) throw new Error('The spend counter returned a total it cannot mean.')
       return total
     },
+
+    async adjust(key, by, ttlSeconds) {
+      // Signed, and the expiry is only sent when the caller asked for it: the
+      // in-flight limiter refreshes a lease on an admitted acquire and must not
+      // refresh it on a refusal, which is what lets a leaked counter expire.
+      const commands: string[][] = [['INCRBY', key, String(Math.round(by))]]
+      if (ttlSeconds !== undefined) commands.push(['EXPIRE', key, String(Math.max(1, Math.floor(ttlSeconds)))])
+      const payload = (await send('/pipeline', commands)) as Array<{ result?: unknown; error?: unknown }> | null
+      const adjusted = Array.isArray(payload) ? payload[0] : undefined
+      if (!adjusted || adjusted.error !== undefined) throw new Error('The counter did not accept the adjustment.')
+      const total = Number(adjusted.result)
+      if (!Number.isFinite(total)) throw new Error('The counter returned a total it cannot mean.')
+      return total
+    },
   }
 }

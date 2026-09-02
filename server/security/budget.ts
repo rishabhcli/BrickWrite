@@ -128,6 +128,23 @@ export interface BudgetStore {
    * `UPDATE … SET n = n + $1 RETURNING n` all satisfy this.
    */
   increment?(key: string, by: number, ttlSeconds: number): Promise<number>
+  /**
+   * The same primitive, signed, for a counter that goes down as well as up.
+   *
+   * Separate from `increment` rather than a flag on it because the two want
+   * opposite safety properties. `increment` clamps at zero so a nonsensical
+   * usage report cannot rewind the spend meter, and that clamp is exactly what a
+   * gauge cannot have — `server/security/concurrency.ts` releases a slot by
+   * adding −1.
+   *
+   * `ttlSeconds` is optional and, when omitted, leaves the key's expiry alone.
+   * That distinction is load-bearing for the in-flight limiter, which refreshes
+   * the lease only on an admitted acquire so a leaked counter can expire.
+   *
+   * Optional, and a deployment whose store lacks it simply has no concurrency
+   * ceiling: unlike the spend meter, this one has no useful approximation.
+   */
+  adjust?(key: string, by: number, ttlSeconds?: number): Promise<number>
 }
 
 export type BudgetStatus = 'unconfigured' | 'ready'
@@ -172,10 +189,15 @@ const secondsUntilUtcMidnight = (at = new Date()): number => {
  * Whether this user may make another paid call today.
  *
  * Checked before the call, because refusing after the tokens are spent would
- * meter nothing. The check is on tokens *already* recorded, so the request that
- * crosses the line is allowed and the next one is not — bounded overshoot of one
- * request rather than a reservation system that has to guess a call's size in
- * advance and would refuse legitimate work.
+ * meter nothing. The check is on tokens *already* recorded rather than reserved
+ * against a guess at the call's size, which would refuse legitimate work — so
+ * the request that crosses the line is allowed and the next one is not.
+ *
+ * That makes the overshoot one request *per caller in flight*, not one request:
+ * concurrent callers all read the same total, because the total only moves when
+ * `recordUsage` writes. The bound is therefore whatever bounds concurrency, and
+ * `server/security/concurrency.ts` is what supplies that number — without it the
+ * overshoot is however many requests the layer above happened to admit at once.
  */
 export async function checkBudget(userId: string, at = new Date()): Promise<BudgetVerdict> {
   const active = store

@@ -45,6 +45,11 @@ tagged release.
   uncacheable, into a trailing block with a rolling breakpoint before it. A
   tool-using leg now reads the accumulated transcript back instead of re-sending
   it.
+- A per-account in-flight ceiling on the paid routes, six requests at a time.
+  Neither the edge counter nor the token ceiling bounds a burst — one can be read
+  stale by every member of it, the other only sees completed calls — so it runs
+  on the Vercel handler where the spend meter's atomic Redis counter is already
+  reachable, rather than at the edge where Pages will not deploy one.
 - The spend ceiling counts all four token classes. `input_tokens` excludes cache
   reads and writes, so metering only it read a cached call as nearly free; a
   cache write now counts ×1.25 and a read ×0.1 against an ordinary input token.

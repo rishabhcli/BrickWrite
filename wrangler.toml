@@ -25,8 +25,13 @@ id = "57b3c96243a842dc8e3cb2254915fa60"
 # introduced it never reached the deploy job, the first deployment to actually
 # read this file was the one it broke.
 #
-# So the ceiling in production is the RATE_LIMIT_KV counter above, which
+# So the ceiling at the edge is the RATE_LIMIT_KV counter above, which
 # `functions/api/[[route]].ts` already implements as a supported mode: read,
 # modify, write, failing closed. It holds on average rather than exactly, and
-# the overshoot is bounded by concurrency. Restoring the atomic counter means
-# moving the API proxy to a Worker, not editing this file.
+# the overshoot is bounded by concurrency. Restoring an atomic counter *here*
+# means moving the API proxy to a Worker, not editing this file.
+#
+# Concurrency itself is bounded one layer further in, by
+# `server/security/concurrency.ts` on the Vercel handler, where an atomic
+# counter is already reachable. That is what turns "bounded by concurrency"
+# into a stated number without a Worker.

@@ -214,8 +214,10 @@ bounded by concurrency. Keep the KV namespace bound; nothing else is counting.
 
 The `API_RATE_LIMITER` branch stays in the Function and stays tested, so moving
 the proxy to a Worker later is a deployment change rather than a code change.
-That move is the only way to get the atomic counter; editing `wrangler.toml` is
-not.
+That move is the only way to get an atomic counter *at the edge*; editing
+`wrangler.toml` is not. It is no longer the only way to get one at all — see the
+in-flight ceiling below, which puts the atomic check one layer further in, where
+a counter already exists.
 
 **Failure direction: closed.** A limiter that cannot answer refuses the request.
 An unparseable KV counter reads as over-limit, not as a fresh allowance.
@@ -256,6 +258,39 @@ produced and paid for; the next call is the one that gets refused. Losing a writ
 undercounts by one call, losing a read would uncap the account.
 
 Verify: `curl -s https://brickwrite.tech/api/health | jq .metering`.
+
+### The per-account in-flight ceiling — what makes the other two mean something
+
+Neither control above bounds a burst. The edge counter can be read stale by
+every member of one, and the token ceiling reads what has already been
+*recorded*, so concurrent callers all see the same total and all pass. The token
+ceiling's overshoot is therefore one request *per caller in flight* — and the
+number of callers in flight is exactly what nothing was bounding.
+
+`server/security/concurrency.ts` bounds it, at six requests per Hexclave account.
+It runs on the Vercel handler, not at the edge, because that is where an atomic
+counter is already reachable: the same Upstash Redis, whose `INCRBY` is an
+indivisible add-and-return. No extra configuration — it reads the two variables
+above. A store without an atomic signed adjust leaves the ceiling **off** and
+`/api/health` says so, because a gauge built on read-modify-write would miscount
+in both directions and leak slots that never heal.
+
+It is a gauge rather than a rate on purpose. A per-minute ceiling would have to
+guess: one generation is a model call per candidate per phase, each its own
+request, so any rate low enough to bound spend is low enough to refuse a build
+somebody asked for. Sequential fan-out occupies one slot however long it runs.
+
+A slot is released when the request finishes, including when the spend ceiling
+refuses it. A slot that leaks — a killed invocation — expires after five
+minutes, and the lease is refreshed only on an *admitted* acquire, so an account
+whose slots have all leaked stops refreshing the key and recovers on its own
+rather than being refused for as long as it keeps retrying.
+
+**Failure direction: closed**, like the other two. A configured counter that
+cannot be adjusted refuses the request; a release that fails is silent, because
+the request it belonged to has already run and already cost what it cost.
+
+Verify: `curl -s https://brickwrite.tech/api/health | jq .concurrency`.
 
 ## Publication ownership
 
