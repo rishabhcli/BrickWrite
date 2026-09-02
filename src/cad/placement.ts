@@ -217,7 +217,7 @@ export function firstLegalSnap(
   return null
 }
 
-/** Connect-tool candidates that pass the same pose gate as a drag commit. */
+/** Best-score legal mates for drag / agent connect; not the spatial review list. */
 export function legalConnectCandidates(
   source: PartInstance,
   target: PartInstance,
@@ -229,7 +229,15 @@ export function legalConnectCandidates(
     maxCandidates?: number
   } = {},
 ): SnapCandidate[] {
-  return listConnectSolutions(source, target, document, options).solutions
+  const cap = options.maxCandidates ?? 24
+  return findSnapCandidates(source, document, source.transform, {
+    radiusLdu: options.radiusLdu ?? 400,
+    targetPartIds: [target.id],
+    maxCandidates: cap,
+    order: 'score',
+    ...(options.sourceFeatureId ? { movingFeatureId: options.sourceFeatureId } : {}),
+    ...(options.targetFeatureId ? { targetFeatureId: options.targetFeatureId } : {}),
+  }).filter((entry) => !poseRefusal(document, source.id, entry.transform))
 }
 
 /**
@@ -256,12 +264,14 @@ export function listConnectSolutions(
   const gathered = findSnapCandidates(source, document, source.transform, {
     radiusLdu: options.radiusLdu ?? 400,
     targetPartIds: [target.id],
-    maxCandidates: Math.max(cap + 1, 2048),
+    maxCandidates: Math.max(cap + 1, 8192),
     order: 'spatial',
     ...(options.sourceFeatureId ? { movingFeatureId: options.sourceFeatureId } : {}),
     ...(options.targetFeatureId ? { targetFeatureId: options.targetFeatureId } : {}),
   })
-  const legal = gathered.filter((entry) => !poseRefusal(document, source.id, entry.transform)).sort(compareSnapSpatially)
+  const legal = gathered
+    .filter((entry) => !poseRefusal(document, source.id, entry.transform))
+    .sort(compareSnapSpatially)
   return {
     solutions: legal.slice(0, cap),
     truncated: legal.length > cap,
