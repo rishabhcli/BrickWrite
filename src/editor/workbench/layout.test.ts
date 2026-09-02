@@ -3,6 +3,7 @@ import { resetPreferences } from './persistence'
 import {
   bottomHeight,
   clampLayout,
+  COLLAPSED_BAR,
   COLLAPSED_RAIL,
   defaultLayout,
   DEFAULT_SECTIONS,
@@ -161,7 +162,8 @@ describe('grid templates', () => {
   })
 
   it('shrinks the bottom dock to a bar when collapsed', () => {
-    expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBeLessThan(40)
+    expect(COLLAPSED_BAR).toBe(0)
+    expect(bottomHeight({ ...defaultLayout(), bottom: { size: 152, collapsed: true } })).toBe(0)
   })
 
   it('lets the inline timeline row follow bottomHeight instead of a locked 0', () => {

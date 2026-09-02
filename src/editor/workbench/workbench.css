@@ -5,9 +5,10 @@
      showing and the status bar row gets pushed off the bottom. */
   height: 100dvh;
   display: grid;
-  /* Four tracks matching Workbench.workspaceRows: topbar, unused toolrail (0),
-     viewport, timeline. StatusBar is unmounted. CSS is the fallback before React
-     paints; the inline style owns the timeline height, so this must never use
+  /* Four tracks matching Workbench.workspaceRows(): topbar, unused toolrail (0),
+     viewport, timeline. StatusBar is unmounted. This CSS is the pre-paint
+     fallback only; later chrome layers must not re-declare grid-template-rows.
+     The inline style owns the live timeline height, so this must never use
      !important or an open timeline collapses to 0. */
   grid-template-rows: 52px 0 minmax(0, 1fr) 0;
   grid-template-columns: 268px 4px minmax(0, 1fr) 4px 300px;
@@ -3480,9 +3481,6 @@
 }
 
 @media (max-height: 760px) {
-  .app-shell {
-    grid-template-rows: 52px 0 minmax(0, 1fr) 0;
-  }
   .part-card {
     height: 96px;
   }
@@ -4712,7 +4710,8 @@
   gap: 1px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  overflow: hidden;
+  /* Visible so the 2px :focus-visible ring on 32px buttons is not clipped. */
+  overflow: visible;
 }
 .palette-views button {
   width: 32px;
@@ -4724,6 +4723,12 @@
   color: var(--faint);
   cursor: pointer;
   transition: var(--t-control);
+}
+.palette-views button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.palette-views button:last-child {
+  border-radius: 0 3px 3px 0;
 }
 .palette-views button:hover {
   color: var(--ink);
@@ -7857,7 +7862,6 @@
 .app-shell {
   --display: var(--font-chrome);
   font-family: var(--font-chrome);
-  grid-template-rows: 52px 0 minmax(0, 1fr) 0;
 }
 .app-shell::before {
   display: none;
@@ -8127,7 +8131,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
    the quieter shell already gave to the model. Mode/Esc/preset live in TopBar
    and the toolbar island instead. */
 .dock-bar, .statusbar { display: none !important; }
-.app-shell { grid-template-rows: 52px 0 minmax(0, 1fr) 0; }
 .toolbar-island { margin-bottom: 12px; }
 .toolbar-island .tool-button,
 .toolbar-island .workspace-trigger { width: 38px; min-width: 38px; padding: 0; }
@@ -8438,9 +8441,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
  * This layer keeps the same bounded liquid material while making the software's
  * actual powers part of its silhouette.
  * ------------------------------------------------------------------------- */
-.app-shell {
-  grid-template-rows: 52px 0 minmax(0, 1fr) 0;
-}
 
 .topbar.glass-bar {
   min-height: 52px;
@@ -8823,9 +8823,6 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
 }
 
 @media (max-width: 1080px) {
-  .tool-mode em {
-    display: none;
-  }
   .brand-lockup strong {
     font-size: 13px;
   }
