@@ -3477,12 +3477,8 @@
   .brand-lockup {
     padding-left: 13px;
   }
-  .save-state {
-    display: none;
-  }
-  .tool-button {
-    min-width: 58px;
-  }
+  /* Save-state used to display:none here. The word already drops via the
+     topbar 1380px container; hiding the chip itself also hid Not saved. */
   .timeline {
     grid-template-columns: 170px minmax(0, 1fr) 180px;
   }
@@ -5341,6 +5337,8 @@
   padding: 8px 10px 10px;
   display: grid;
   gap: 8px;
+  container-type: inline-size;
+  container-name: selection-panel;
 }
 .selection-panel.is-empty {
   padding: 8px 12px 10px;
@@ -5367,6 +5365,13 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
+}
+/* Was @media 1300px. The inspector lives in a dock whose width is independent
+   of the window, so a laptop viewport was compacting modes that still had room. */
+@container selection-panel (max-width: 280px) {
+  .selection-modes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .selection-modes button {
   min-height: 26px;
@@ -6260,18 +6265,6 @@
     display: none;
   }
 }
-@media (max-width: 1300px) {
-  .tool-button {
-    min-width: 56px;
-  }
-  .tool-button kbd {
-    display: none;
-  }
-  .selection-modes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 .array-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6511,19 +6504,6 @@
 }
 .workspace-popover .export-panel::before {
   display: none;
-}
-
-@media (max-width: 1180px) {
-  .toolrail-simple .tool-button {
-    min-width: 64px;
-    padding-inline: 7px;
-  }
-  .toolrail-simple .tool-button kbd {
-    display: none;
-  }
-  .workspace-trigger span {
-    display: none;
-  }
 }
 
 /* Context dock: one sheet at a time, chosen from the compact header. */

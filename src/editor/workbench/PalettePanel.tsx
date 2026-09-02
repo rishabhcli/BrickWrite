@@ -376,6 +376,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
     [onAdd, remember],
   )
 
+  const clearSearch = useCallback(() => {
+    setQuery('')
+    searchRef.current?.focus()
+  }, [])
+
   const toggleFavourite = useCallback(
     (id: string) => {
       setFavourites((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]))
@@ -415,7 +420,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         else arm(record)
       } else if (event.key === 'Escape' && query) {
         event.preventDefault()
-        setQuery('')
+        clearSearch()
       } else if (event.key === 'PageDown' && !activeSet) {
         event.preventDefault()
         setOffset((value) => (value + PAGE_SIZE < page.total ? value + PAGE_SIZE : value))
@@ -424,7 +429,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
         setOffset((value) => Math.max(0, value - PAGE_SIZE))
       }
     },
-    [activeSet, add, arm, cursor, page.total, query, shownRecords],
+    [activeSet, add, arm, clearSearch, cursor, page.total, query, shownRecords],
   )
 
   useEffect(() => {
@@ -490,7 +495,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           data-catalog-search
         />
         {query ? (
-          <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}>
+          <button type="button" className="search-clear" aria-label="Clear search" onClick={clearSearch}>
             <X size={12} />
           </button>
         ) : null}
@@ -791,7 +796,7 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
               </button>
             )}
             {!activeSet && !!query && (
-              <button type="button" onClick={() => setQuery('')}>
+              <button type="button" onClick={clearSearch}>
                 Clear search
               </button>
             )}
