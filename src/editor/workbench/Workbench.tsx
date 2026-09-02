@@ -769,6 +769,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           gridTemplateRows: workspaceRows(layout),
         }}
         data-preset={layout.preset ?? 'custom'}
+        data-timeline={layout.bottom.collapsed ? undefined : 'open'}
       >
         {/* The editor's outline began at h2, so assistive technology had no
          * top-level heading for the route and no way to hear which document

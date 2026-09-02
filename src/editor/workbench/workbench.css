@@ -9,12 +9,19 @@
      viewport, timeline. StatusBar is unmounted. This CSS is the pre-paint
      fallback only; later chrome layers must not re-declare grid-template-rows.
      The inline style owns the live timeline height, so this must never use
-     !important or an open timeline collapses to 0. */
-  grid-template-rows: 52px 0 minmax(0, 1fr) 0;
+     !important or an open timeline collapses to 0.
+     Default presets collapse the timeline, so the fallback track is 0. When
+     the shell is marked open (persisted layout after first paint, or a class
+     that survived a missing inline style), do not stay pinned at 0. */
+  --timeline-track: 0px;
+  grid-template-rows: 52px 0 minmax(0, 1fr) var(--timeline-track);
   grid-template-columns: 268px 4px minmax(0, 1fr) 4px 300px;
   background: var(--void);
   position: relative;
   isolation: isolate;
+}
+.app-shell[data-timeline='open'] {
+  --timeline-track: 152px;
 }
 
 .app-shell::before {
@@ -49,6 +56,8 @@
   /* Material comes from the liquid primitive; see .dock above. */
   position: relative;
   z-index: 20;
+  container-type: inline-size;
+  container-name: topbar;
 }
 
 .brand-lockup {
@@ -8822,13 +8831,23 @@ body.part-dragging, body.part-dragging * { cursor: grabbing !important; user-sel
   }
 }
 
+/* Topbar width still tracks the window (it spans the shell). Keep the column
+   compacting on a viewport query; brand type follows the topbar container. */
 @media (max-width: 1080px) {
-  .brand-lockup strong {
-    font-size: 13px;
-  }
   .topbar {
     grid-template-columns: 164px auto minmax(130px, 1fr) auto;
   }
+}
+@container topbar (max-width: 1080px) {
+  .brand-lockup strong {
+    font-size: 13px;
+  }
+}
+
+/* Island icons follow the island, not the window. Docks already steal columns,
+   so a wide window can still host a tight island. 720px is about the island
+   width of a 1080px window with both default docks open. */
+@container toolbar-island (max-width: 720px) {
   .toolbar-island .rail-divider {
     margin-inline: 1px;
   }

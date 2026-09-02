@@ -39,4 +39,22 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).not.toMatch(/@media \(max-width:\s*1080px\)\s*\{\s*\.tool-mode em/)
     expect(withoutComments).toMatch(/\.toolbar-island \.toolrail\s*\{[^}]*flex-wrap:\s*wrap/)
   })
+
+  it('sizes island icons on the island container, not the window', () => {
+    expect(withoutComments).toMatch(/container-name:\s*topbar/)
+    expect(withoutComments).toMatch(/@container toolbar-island \(max-width: 720px\)/)
+    const media1080 = withoutComments.indexOf('@media (max-width: 1080px)')
+    expect(media1080).toBeGreaterThan(-1)
+    const mediaSlice = withoutComments.slice(media1080, media1080 + 220)
+    expect(mediaSlice).not.toContain('.icon-button')
+    expect(mediaSlice).not.toContain('.render-direct')
+    const islandQuery = withoutComments.indexOf('@container toolbar-island (max-width: 720px)')
+    expect(islandQuery).toBeGreaterThan(-1)
+    expect(withoutComments.slice(islandQuery, islandQuery + 320)).toContain('.icon-button')
+  })
+
+  it('opens the CSS timeline fallback when the shell is marked open', () => {
+    expect(withoutComments).toMatch(/\.app-shell\[data-timeline='open'\]/)
+    expect(withoutComments).toMatch(/--timeline-track:\s*152px/)
+  })
 })
