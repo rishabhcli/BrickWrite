@@ -183,7 +183,7 @@ export const remove = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'version.delete',
-      detail: { label: version.label, revision: version.revision },
+      detail: { versionId: version._id, revision: version.revision, labelLength: version.label.length },
     })
     // Scheduled for the same reason checkpoint pruning is: the chunks have to
     // be read to be deleted and a whole document does not fit alongside this.
@@ -400,7 +400,7 @@ export const createBranch = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'branch.create',
-      detail: { branch: name, from: parent.name, atRevision: at },
+      detail: { branchId, fromBranchId: parent._id, atRevision: at, nameLength: name.length },
     })
     const row = await ctx.db.get(branchId)
     if (!row) throw new Error('The branch vanished during creation.')
@@ -492,7 +492,7 @@ export const removeBranch = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'branch.delete',
-      detail: { branch: branch.name, headRevision: branch.headRevision },
+      detail: { branchId: branch._id, headRevision: branch.headRevision, nameLength: branch.name.length },
     })
     await ctx.scheduler.runAfter(0, internal.versions.pruneDeletedBranch, { branchId: branch._id })
     return { ok: true, value: { removed: true } }
@@ -576,7 +576,7 @@ export const proposeMerge = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: 'branch.propose',
-      detail: { branch: sourceResult.value.name, into: targetResult.value.name },
+      detail: { branchId: sourceResult.value._id, intoBranchId: targetResult.value._id },
     })
     const row = await ctx.db.get(sourceResult.value._id)
     if (!row) return cloudFailure('NOT_FOUND', 'That branch is gone.', 'Reload the branch list.')
@@ -637,7 +637,7 @@ export const decideMerge = mutation({
       projectId: project._id,
       actorSubject: identity.subject,
       action: `branch.${args.decision}`,
-      detail: { branch: branch.name, atRevision: branch.headRevision, decidedAt: iso(now) },
+      detail: { branchId: branch._id, atRevision: branch.headRevision, decidedAt: iso(now) },
     })
     const row = await ctx.db.get(branch._id)
     if (!row) return cloudFailure('NOT_FOUND', 'That branch is gone.', 'Reload the branch list.')

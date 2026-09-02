@@ -13,7 +13,16 @@
  * vanishing, so the log never quietly loses a field it was asked to write.
  */
 
-/** Identifiers, revisions, role names, timestamps, error codes — nothing free-form. */
+/**
+ * Identifiers, revisions, role names, timestamps, error codes — nothing
+ * free-form.
+ *
+ * Callers pass an id and a length where they mean a name, which is what
+ * `project.rename` has always done. Anything else is a field that survives for
+ * `main` and disappears the moment somebody names a branch with a space in it,
+ * leaving the reader a `redacted` marker where the subject of the entry should
+ * be. `convex/__tests__/audit.test.ts` asserts no mutation writes one.
+ */
 const IDENTIFIER = /^[A-Za-z0-9_.:\/|-]{1,64}$/
 
 export type AuditDetail = Record<string, string | number | boolean>

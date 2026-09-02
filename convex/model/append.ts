@@ -244,7 +244,7 @@ export async function appendTransactionBatch(
         fromRevision: firstRevision ?? headRevision,
         toRevision: headRevision,
         bytes: appendedBytes,
-        branch: branch.name,
+        branchId: branch._id,
       },
     })
     await ctx.db.patch(branch._id, { headRevision, updatedAt: now })
