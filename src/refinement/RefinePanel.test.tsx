@@ -548,6 +548,7 @@ describe('the objective reference dialog', () => {
     render(<ObjectivesDialog onClose={() => {}} />)
     const dialog = screen.getByRole('dialog', { name: /Objectives — what each weight buys/ })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog.closest('.bw-refine-dialog')).toHaveAttribute('role', 'presentation')
     for (const objective of objectiveList) {
       expect(within(dialog).getByRole('heading', { name: objective.label })).toBeInTheDocument()
     }

@@ -112,7 +112,7 @@ export function CommandPalette({
     }
     if (event.key === 'Tab') {
       const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
       ) ?? [])]
       if (!focusable.length) return
       const first = focusable[0]
@@ -239,6 +239,7 @@ export function CommandPalette({
                         id={optionDomId(command.id)}
                         type="button"
                         role="option"
+                        tabIndex={-1}
                         aria-selected={cursor === index}
                         aria-disabled={Boolean(reason)}
                         className={`${cursor === index ? 'cursor' : ''} ${reason ? 'unavailable' : ''}`}

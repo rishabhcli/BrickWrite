@@ -291,6 +291,8 @@ describe('gallery page', () => {
     render(<GalleryPage loadFeed={async () => ({ entries: [entry()], cursor: null })} onReport={onReport} />)
     await waitFor(() => expect(screen.getByTestId('report-rover-a')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('report-rover-a'))
+    expect(document.querySelector('.bw-gallery-dialog')).toHaveAttribute('role', 'presentation')
+    expect(screen.getByRole('dialog', { name: /Report Survey Rover/ })).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('report-submit'))
     await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1))
     expect(onReport.mock.calls[0][1]).toBe('infringement')

@@ -371,14 +371,14 @@ function ReportDialog({
   const dialog = useFocusTrap(true, { onEscape: onClose })
 
   return (
-    <div
-      ref={dialog as RefObject<HTMLDivElement>}
-      className="bw-gallery-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Report ${entry.title}`}
-    >
-      <div className="bw-gallery-dialog-panel">
+    <div className="bw-gallery-dialog" role="presentation">
+      <div
+        ref={dialog as RefObject<HTMLDivElement>}
+        className="bw-gallery-dialog-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Report ${entry.title}`}
+      >
         <h2>Report “{entry.title}”</h2>
         {state === 'sent' ? (
           <>
