@@ -254,7 +254,6 @@ describe('the beginner path through the shell', () => {
     })
   })
 
-
   it('announces persistence on the save chip instead of hiding a failure', () => {
     mount()
     const chip = control('.save-state')
@@ -288,5 +287,41 @@ describe('the beginner path through the shell', () => {
     // until the pointer crosses it, and costs a second click to finish.
     expect(document.querySelector('.placement-bar')).toBeNull()
     expect(cadEngine.getSnapshot().selection).toHaveLength(1)
+  })
+
+  // Search, arm, land and undo used to live only in the controller suite.
+  // This walks the same path through the assembled shell: the catalog field,
+  // the viewport's onPlace callback, and the toolbar undo control.
+  it('searches the catalog, places a brick, and undoes through the shell', () => {
+    cadEngine.replaceDocument(createEmptyDocument())
+    mount()
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+
+    const search = control('[data-catalog-search]')
+    fireEvent.change(search, { target: { value: '3001' } })
+    expect(document.querySelector('[data-part-id="3001"]')).not.toBeNull()
+
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(document.querySelector('.placement-bar')).not.toBeNull()
+    expect(document.querySelector('[data-part-id="3001"]')?.className).toMatch(/armed/)
+
+    const onPlace = viewport.props?.onPlace as (
+      transform: { position: readonly [number, number, number]; basis: typeof IDENTITY_BASIS },
+      legal?: boolean,
+      reason?: string,
+    ) => boolean
+    act(() => {
+      expect(onPlace({ position: [0, -24, 0], basis: IDENTITY_BASIS }, true, 'ground')).toBe(true)
+    })
+
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(1)
+    expect(cadEngine.getDocument().parts[Object.keys(cadEngine.getDocument().parts)[0]].definitionId).toBe('3001')
+    expect(cadEngine.getSnapshot().canUndo).toBe(true)
+    expect(document.querySelector('.placement-bar')).toBeNull()
+
+    fireEvent.click(control('button[aria-label^="Undo"]'))
+
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+    expect(cadEngine.getSnapshot().canUndo).toBe(false)
   })
 })
