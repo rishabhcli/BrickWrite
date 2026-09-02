@@ -272,24 +272,32 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
    * Reaching past the modelled library pulls the wider catalogue in once.
    *
    * It is seven megabytes, so it is not fetched on boot; asking for a tier that
-   * needs it is the signal that the session actually wants it.
+   * needs it is the signal that the session actually wants it. A failed fetch
+   * must be retryable from the panel: the loader already drops a poisoned
+   * promise, but without a control the operator has to leave the tier and come
+   * back, which reads as the index being gone rather than briefly unreachable.
    */
-  useEffect(() => {
-    if (tier !== 'catalogued' && tier !== 'all') return
-    if (catalog.catalogueLoaded || !externalCatalogueAvailable()) return
-    let cancelled = false
+  const catalogueRequest = useRef(0)
+  const reloadCatalogue = useCallback(() => {
+    if (catalog.catalogueLoaded || !externalCatalogueAvailable()) {
+      setCatalogueState(catalog.catalogueLoaded ? 'ready' : 'idle')
+      return
+    }
+    const request = ++catalogueRequest.current
     setCatalogueState('loading')
     loadExternalCatalogue()
       .then(() => {
-        if (!cancelled) setCatalogueState('ready')
+        if (catalogueRequest.current === request) setCatalogueState('ready')
       })
       .catch(() => {
-        if (!cancelled) setCatalogueState('failed')
+        if (catalogueRequest.current === request) setCatalogueState('failed')
       })
-    return () => {
-      cancelled = true
-    }
-  }, [tier])
+  }, [])
+
+  useEffect(() => {
+    if (tier !== 'catalogued' && tier !== 'all') return
+    reloadCatalogue()
+  }, [reloadCatalogue, tier])
 
   const sizeRange = SIZE_FACETS.find((entry) => entry.id === sizeFacet)
 
@@ -676,8 +684,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
           </span>
         )}
         {catalogueState === 'failed' && (
-          <span className="catalog-failed">
+          <span className="catalog-failed" role="alert">
             <CircleAlert size={10} /> catalogue index unavailable
+            <button type="button" className="catalog-retry" onClick={reloadCatalogue}>
+              Retry
+            </button>
           </span>
         )}
       </div>
@@ -764,6 +775,11 @@ export const PalettePanel = memo(function PalettePanel({ activeColor, armedId, o
             {!activeSet && tier !== 'all' && (
               <button type="button" onClick={() => setTier('all')}>
                 Search every identity
+              </button>
+            )}
+            {!activeSet && catalogueState === 'failed' && (
+              <button type="button" onClick={reloadCatalogue}>
+                Retry the catalogue
               </button>
             )}
             {!activeSet && !!query && (

@@ -47,18 +47,26 @@ function useStarters(): Starter[] {
 export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }) {
   const starters = useStarters()
   const [opening, setOpening] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const busy = useRef(false)
 
   const open = async (id: string) => {
     if (busy.current) return
     busy.current = true
     setOpening(id)
+    setError(null)
     try {
       const [{ getDemo }, { forkDemo }] = await Promise.all([import('../../demos'), import('../../demos/fork')])
       const demo = getDemo(id)
-      if (!demo) return
+      if (!demo) {
+        setError('That build is not in this copy of the library.')
+        return
+      }
       const outcome = await forkDemo(demo)
       if (outcome.ok) await session.openProject(outcome.projectId)
+      else setError(outcome.message)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not open that build.')
     } finally {
       busy.current = false
       setOpening(null)
@@ -69,12 +77,13 @@ export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }
     <div className="viewport-empty" data-state="empty">
       <div className="viewport-empty-mark" aria-hidden="true"><span /><span /><span /></div>
       <strong>Drag a part here</strong>
-      <button onClick={onPickStarter}>Start with a brick</button>
+      <button type="button" onClick={onPickStarter}>Start with a brick</button>
       {starters.length > 0 && (
         <div className="viewport-empty-starters">
           <span>or open a build</span>
           {starters.map((starter) => (
             <button
+              type="button"
               key={starter.id}
               className="viewport-empty-starter"
               disabled={opening !== null}
@@ -84,6 +93,11 @@ export function EmptyBuildState({ onPickStarter }: { onPickStarter: () => void }
               <small>{starter.parts.toLocaleString()} parts</small>
             </button>
           ))}
+        </div>
+      )}
+      {error && (
+        <div className="viewport-empty-error" role="alert">
+          {error}
         </div>
       )}
     </div>

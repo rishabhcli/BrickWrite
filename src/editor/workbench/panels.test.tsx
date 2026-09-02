@@ -1,12 +1,14 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import { catalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { IDENTITY_BASIS } from '../../cad/math'
 import { createEmptyDocument, createShowcaseDocument } from '../../cad/sample'
 import { CommandPalette } from './CommandPalette'
 import { PalettePanel } from './PalettePanel'
+import * as catalogLoader from '../../cad/catalog-loader'
 import { SelectionPanel } from './SelectionPanel'
 import { TransformPanel } from './TransformPanel'
 import { defaultShortcutMap, formatChord } from './shortcuts'
@@ -22,7 +24,10 @@ import { useWorkbench, type Workbench } from './useWorkbench'
  * slice of the compiled library, so the parts, connectors and colours are real.
  */
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 beforeEach(() => {
   resetPreferences()
   cadEngine.replaceDocument(createShowcaseDocument())
@@ -180,6 +185,21 @@ describe('palette', () => {
     fireEvent.change(screen.getByLabelText('Search parts'), { target: { value: 'zzzz-not-a-real-part' } })
     expect(screen.getByText(/Nothing matches/)).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Search every identity' })).not.toBeNull()
+  })
+
+  it('retries a failed wider-catalogue fetch from the panel', async () => {
+    vi.spyOn(catalog, 'catalogueLoaded', 'get').mockReturnValue(false)
+    vi.spyOn(catalogLoader, 'externalCatalogueAvailable').mockReturnValue(true)
+    const load = vi.spyOn(catalogLoader, 'loadExternalCatalogue')
+    load.mockRejectedValueOnce(new Error('offline'))
+    renderPalette()
+    fireEvent.click(screen.getByRole('button', { name: /FILTERS/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /CATALOGUED/ }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/unavailable/i))
+    load.mockResolvedValueOnce(5812)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(load).toHaveBeenCalledTimes(2)
   })
 })
 

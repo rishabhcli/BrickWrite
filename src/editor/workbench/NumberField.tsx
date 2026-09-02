@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** A draft is not a model edit. Enter/blur commit once; Escape and invalid input restore. */
+/** A draft is not a model edit. Enter/blur commit once; Escape restores. Invalid input stays put. */
 export function NumberField({
   label,
   value,
@@ -16,31 +16,59 @@ export function NumberField({
 }) {
   const display = Number(value.toFixed(4)).toString()
   const [draft, setDraft] = useState(display)
+  const [invalid, setInvalid] = useState(false)
   const dirty = useRef(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     setDraft(display)
     dirty.current = false
+    setInvalid(false)
   }, [display])
   const commit = () => {
     if (!dirty.current) return
+    if (inputRef.current?.validity.badInput) {
+      setInvalid(true)
+      return
+    }
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      dirty.current = false
+      setInvalid(false)
+      setDraft(display)
+      return
+    }
+    const next = Number(trimmed)
+    if (!Number.isFinite(next)) {
+      setInvalid(true)
+      return
+    }
     dirty.current = false
-    const next = draft.trim() ? Number(draft) : NaN
-    if (Number.isFinite(next) && Math.abs(next - value) > 0.00001) onCommit(next)
+    setInvalid(false)
+    if (Math.abs(next - value) > 0.00001) onCommit(next)
     setDraft(display)
   }
   return (
-    <label className={`number-field ${disabled ? 'disabled' : ''}`}>
+    <label className={`number-field ${disabled ? 'disabled' : ''} ${invalid ? 'invalid' : ''}`}>
       <span>{label}</span>
       <div>
         <input
+          ref={inputRef}
           type="number"
           step="any"
           value={draft}
           disabled={disabled}
+          aria-invalid={invalid || undefined}
           aria-label={`${label} ${suffix === '°' ? 'rotation in degrees' : 'in LDraw units'}`}
-          title={disabled ? `${label} is locked` : 'Enter to apply · Escape to cancel'}
+          title={
+            disabled
+              ? `${label} is locked`
+              : invalid
+                ? 'Not a number — fix it or press Escape'
+                : 'Enter to apply · Escape to cancel'
+          }
           onChange={(event) => {
             dirty.current = true
+            setInvalid(false)
             setDraft(event.target.value)
           }}
           onBlur={commit}
@@ -55,6 +83,7 @@ export function NumberField({
               event.preventDefault()
               event.stopPropagation()
               dirty.current = false
+              setInvalid(false)
               setDraft(display)
               event.currentTarget.blur()
             }
