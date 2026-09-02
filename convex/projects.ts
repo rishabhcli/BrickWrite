@@ -1,7 +1,8 @@
 import { v } from 'convex/values'
+import { internal } from './_generated/api'
 import { listOverflow } from './model/discovery'
 import type { Doc } from './_generated/dataModel'
-import { mutation, query, type QueryCtx } from './_generated/server'
+import { internalMutation, mutation, query, type QueryCtx } from './_generated/server'
 import { authoriseProject, iso, readIdentity, resolveBranch, UNAUTHENTICATED } from './model/auth'
 import { writeAuditEvent } from './model/audit'
 import {
@@ -13,7 +14,13 @@ import {
   type CloudSnapshotRecord,
 } from './model/protocol'
 import { auditRecord, branchRecord } from './model/records'
-import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/snapshots'
+import {
+  latestBranchCheckpoint,
+  pruneCheckpointChunks,
+  readSnapshot,
+  recordCheckpointGroup,
+  writeSnapshot,
+} from './model/snapshots'
 import { decodeSnapshotUpload } from './model/snapshotValidation'
 import { canonicalJson } from './model/checksum'
 import { isRevision } from './model/history'
@@ -235,6 +242,7 @@ export const create = mutation({
       // must throw so Convex rolls back every row, not commit a broken shell.
       if (!written.ok) throw new Error(`Initial checkpoint failed: ${written.error.code}`)
       initialSnapshotGroupId = written.value
+      await recordCheckpointGroup(ctx, branchId, written.value)
     }
     await ctx.db.patch(projectId, {
       creation: {
@@ -363,6 +371,7 @@ export const saveCheckpoint = mutation({
       createdBySubject: identity.subject,
     })
     if (!written.ok) return written
+    await recordCheckpointGroup(ctx, branch._id, written.value)
     await ctx.db.patch(project._id, { updatedAt: Date.now() })
     await writeAuditEvent(ctx, {
       projectId: project._id,
@@ -370,7 +379,35 @@ export const saveCheckpoint = mutation({
       action: 'project.checkpoint',
       detail: { revision: args.snapshot.revision, bytes: args.snapshot.bytes },
     })
+    // Scheduled rather than inline: a checkpoint group is up to 8 MiB and the
+    // rows have to be read to be deleted, which will not fit in the same
+    // transaction that just wrote one.
+    await ctx.scheduler.runAfter(0, internal.projects.pruneCheckpoints, { branchId: branch._id })
     return { ok: true, value: { groupId: written.value, revision: args.snapshot.revision } }
+  },
+})
+
+/**
+ * Removes checkpoint groups past the retention window, one pass at a time.
+ *
+ * Reschedules itself while there is more to do, so no single transaction reads
+ * a whole superseded document. Never touches a named version, nor the creation
+ * and recovery receipts, which are pinned by id.
+ */
+export const pruneCheckpoints = internalMutation({
+  args: { branchId: v.id('branches') },
+  handler: async (ctx, args): Promise<void> => {
+    const branch = await ctx.db.get(args.branchId)
+    if (!branch) return
+    const project = await ctx.db.get(branch.projectId)
+    const pinned = new Set(
+      [project?.creation?.snapshotGroupId, branch.recoverySnapshotGroupId].filter(
+        (groupId): groupId is string => typeof groupId === 'string',
+      ),
+    )
+    if (await pruneCheckpointChunks(ctx, args.branchId, pinned)) {
+      await ctx.scheduler.runAfter(0, internal.projects.pruneCheckpoints, { branchId: args.branchId })
+    }
   },
 })
 

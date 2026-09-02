@@ -219,7 +219,7 @@ export function ViewportStage({
                 type="button"
                 aria-label="Previous build step"
                 disabled={workbench.playbackStep === 0}
-                onClick={() => workbench.setPlaybackStep(Math.max(0, workbench.playbackStep - 1))}
+                onClick={() => workbench.setPlaybackStep(Math.max(0, (workbench.playbackStep ?? 0) - 1))}
               >
                 <ChevronLeft size={12} />
               </button>
@@ -235,7 +235,9 @@ export function ViewportStage({
                 aria-label="Next build step"
                 disabled={workbench.playbackStep >= state.document.steps.length - 1}
                 onClick={() =>
-                  workbench.setPlaybackStep(Math.min(state.document.steps.length - 1, workbench.playbackStep + 1))
+                  workbench.setPlaybackStep(
+                    Math.min(state.document.steps.length - 1, (workbench.playbackStep ?? 0) + 1),
+                  )
                 }
               >
                 <ChevronRight size={12} />

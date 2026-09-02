@@ -483,8 +483,8 @@ export function planTurnSelection(
   if (options.locks[(['x', 'y', 'z'] as const)[axis]]) return []
   const mixed = readSelectionAttitude(parts).mixed
   const frame: ReferenceFrame = mixed ? 'world' : options.frame
-  const vector: Vec3 = [0, 0, 0]
-  vector[axis] = 1
+  // Built rather than mutated: `Vec3` is a readonly tuple.
+  const vector: Vec3 = [axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0]
   const pivot = resolvePivot(parts, options.pivot)
   const lead = parts[0]
   const reference =

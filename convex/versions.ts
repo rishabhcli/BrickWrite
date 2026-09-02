@@ -12,7 +12,7 @@ import {
   type CloudVersionRecord,
 } from './model/protocol'
 import { branchRecord, versionRecord } from './model/records'
-import { latestBranchCheckpoint, readSnapshot, writeSnapshot } from './model/snapshots'
+import { latestBranchCheckpoint, readSnapshot, recordCheckpointGroup, writeSnapshot } from './model/snapshots'
 import { canonicalJson, checksumOfText, chunkText, utf8Bytes } from './model/checksum'
 import { isRevision } from './model/history'
 import { SNAPSHOT_CHUNK_BYTES } from './model/protocol'
@@ -298,6 +298,7 @@ export const createBranch = mutation({
       // Unexpected failures throw so branch, chunks and receipt roll back together.
       if (!seeded.ok) throw new Error(`Recovery checkpoint failed: ${seeded.error.code}`)
       await ctx.db.patch(branchId, { recoverySnapshotGroupId: seeded.value })
+      await recordCheckpointGroup(ctx, branchId, seeded.value)
     } else if (source.value) {
       const snapshot = source.value
       const text = canonicalJson(snapshot.document)
@@ -318,6 +319,7 @@ export const createBranch = mutation({
       // Unexpected write failure must roll back the new branch, not commit an
       // unopenable shell. Expected source errors were returned above, pre-write.
       if (!seeded.ok) throw new Error(`Branch checkpoint failed: ${seeded.error.code}`)
+      await recordCheckpointGroup(ctx, branchId, seeded.value)
     }
     await writeAuditEvent(ctx, {
       projectId: project._id,

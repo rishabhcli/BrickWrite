@@ -74,6 +74,15 @@ export default defineSchema({
     /** Immutable recovery receipt; retries never replace this seed or the head. */
     recoveryKey: v.optional(v.string()),
     recoverySnapshotGroupId: v.optional(v.string()),
+    /**
+     * Checkpoint groups on this branch, oldest first.
+     *
+     * Held here so pruning never has to scan the `snapshots` table: those rows
+     * carry the document itself, and a scan wide enough to find the oldest
+     * group would read far more bytes than a mutation may. Absent on rows
+     * written before retention existed, whose groups are simply not pruned.
+     */
+    checkpointGroupIds: v.optional(v.array(v.string())),
     createdAt: v.number(),
     updatedAt: v.number(),
     /**

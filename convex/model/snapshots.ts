@@ -188,6 +188,76 @@ export async function readSnapshot(
   }
 }
 
+/**
+ * Checkpoint groups kept per branch.
+ *
+ * A checkpoint is a whole document, up to `MAX_SNAPSHOT_BYTES`, and autosave
+ * writes one periodically. Keeping every one made a branch's storage grow
+ * without bound while only the newest is ever opened at head. Named versions
+ * (`kind: 'version'`) are never pruned; this window only covers the automatic
+ * ones, and it is what still allows opening a recent earlier revision.
+ */
+export const CHECKPOINT_RETENTION = 8
+
+/** Chunks removed per pruning pass, so one pass stays inside a mutation's read budget. */
+export const CHECKPOINT_PRUNE_CHUNKS = 8
+
+/** Appends a checkpoint group to the branch's window. */
+export async function recordCheckpointGroup(
+  ctx: MutationCtx,
+  branchId: Id<'branches'>,
+  groupId: string,
+): Promise<void> {
+  const branch = await ctx.db.get(branchId)
+  if (!branch) return
+  await ctx.db.patch(branchId, { checkpointGroupIds: [...(branch.checkpointGroupIds ?? []), groupId] })
+}
+
+/**
+ * Deletes part of one superseded checkpoint group, or reports there is nothing to do.
+ *
+ * Chunk zero goes first, and the group leaves the branch's window before any
+ * row is removed, so a pass that stops halfway leaves nothing reachable:
+ * `latestBranchCheckpoint` selects on chunk zero and finds none, and the only
+ * callers that read a group by id — a named version, a creation receipt, a
+ * recovery receipt — are pinned and never pruned.
+ *
+ * Returns whether another pass is needed, so the caller can reschedule rather
+ * than loop inside one transaction.
+ */
+export async function pruneCheckpointChunks(
+  ctx: MutationCtx,
+  branchId: Id<'branches'>,
+  pinned: ReadonlySet<string>,
+): Promise<boolean> {
+  const branch = await ctx.db.get(branchId)
+  const window = branch?.checkpointGroupIds
+  if (!branch || !window) return false
+
+  const live = window.filter((groupId) => !pinned.has(groupId))
+  if (live.length !== window.length) {
+    // A pinned group occupies no retention slot: it is kept for a receipt, not
+    // for scrubbing, and leaving it at the head of the queue would block every
+    // later prune.
+    await ctx.db.patch(branchId, { checkpointGroupIds: live })
+    return live.length > CHECKPOINT_RETENTION
+  }
+  if (live.length <= CHECKPOINT_RETENTION) return false
+
+  const [oldest, ...rest] = live
+  const chunks = await ctx.db
+    .query('snapshots')
+    .withIndex('by_group', (q) => q.eq('groupId', oldest))
+    .take(CHECKPOINT_PRUNE_CHUNKS)
+  if (!chunks.length) {
+    await ctx.db.patch(branchId, { checkpointGroupIds: rest })
+    return rest.length > CHECKPOINT_RETENTION
+  }
+  if (chunks[0].chunkIndex === 0) await ctx.db.patch(branchId, { checkpointGroupIds: rest })
+  for (const chunk of chunks) await ctx.db.delete(chunk._id)
+  return true
+}
+
 /** Index the selected branch before limiting, so busy siblings cannot hide it. */
 export async function latestBranchCheckpoint(
   ctx: QueryCtx,
