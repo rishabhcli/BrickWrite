@@ -1,12 +1,26 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import { createExtensionRegistry, ExtensionRegistryProvider, type WorkbenchApi } from './ExtensionRegistry'
 import { IDENTITY_BASIS } from '../../cad/math'
 import { createEmptyDocument } from '../../cad/sample'
 import type { EngineSnapshot, PartInstance } from '../../cad/types'
 import { validateDocument } from '../../cad/validation'
-import { InspectorPanel, inspectorKernelParts } from './InspectorPanel'
+import { InspectorPanel, inspectorKernelParts, inspectorSetSwatches, validateTabLabel } from './InspectorPanel'
+import { getColor } from '../../cad/catalog'
+import { IDLE_CONNECT } from './useWorkbench'
 
 afterEach(cleanup)
+
+function InspectorHost({ children }: { children: React.ReactNode }) {
+  const [registry] = useState(() => createExtensionRegistry())
+  const api = { snapshot: { selection: [] }, selection: [], tool: 'select' } as unknown as WorkbenchApi
+  return (
+    <ExtensionRegistryProvider registry={registry} api={api}>
+      {children}
+    </ExtensionRegistryProvider>
+  )
+}
 
 const part = (id: string, position: [number, number, number], color: number): PartInstance => ({
   id,
@@ -121,5 +135,51 @@ describe('inspector OBJECT / VALIDATE chrome', () => {
     expect(screen.queryByText('NO OBJECT SELECTED')).toBeNull()
     expect(screen.getByText('IDENTITY MISSING')).toBeVisible()
     expect(screen.getByText(/not-a-compiled-part is selected/)).toBeVisible()
+  })
+
+  it('does not call a kernel-clear document healthy until VALIDATE runs statics', () => {
+    const document = createEmptyDocument()
+    const state: EngineSnapshot = {
+      document,
+      transactions: [],
+      proposals: [],
+      canUndo: false,
+      canRedo: false,
+      autonomy: 'inspect',
+      validation: validateDocument(document),
+      selection: [],
+    }
+    expect(state.validation.healthy).toBe(true)
+    expect(validateTabLabel(state.validation)).toBe('Validate, kernel clear')
+    render(<InspectorPanel state={state} {...handlers} />)
+    expect(screen.getByRole('tab', { name: 'Validate, kernel clear' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Validate, kernel clear' }).querySelector('.kernel-dot')).not.toBeNull()
+  })
+
+  it('recolours a multi-selection from a set swatch instead of punting to the palette', () => {
+    const state = blockedSnapshot()
+    state.selection = ['allowed', 'wrong']
+    render(<InspectorPanel state={state} {...handlers} />)
+    expect(screen.queryByText(/from the palette/i)).toBeNull()
+    expect(document.querySelector('.inspector-set-swatches')).not.toBeNull()
+    expect(inspectorSetSwatches(Object.values(state.document.parts)).length).toBeGreaterThan(1)
+    const red = getColor(4)
+    fireEvent.click(screen.getByRole('button', { name: `${red.name}, LDraw colour 4` }))
+    expect(handlers.onRecolor).toHaveBeenCalledWith(4)
+  })
+
+  it('names the Connect target on the moving part instead of hiding it', () => {
+    const state = blockedSnapshot()
+    state.selection = ['allowed']
+    render(
+      <InspectorHost>
+        <InspectorPanel
+          state={state}
+          {...handlers}
+          connect={{ ...IDLE_CONNECT, stage: 'review', sourcePartId: 'allowed', targetPartId: 'wrong' }}
+        />
+      </InspectorHost>,
+    )
+    expect(document.querySelector('.connect-mate-note')?.textContent).toMatch(/→/)
   })
 })

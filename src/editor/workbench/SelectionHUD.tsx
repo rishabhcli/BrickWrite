@@ -1,3 +1,4 @@
+import { MoreHorizontal } from 'lucide-react'
 import type { EditorTool } from '../CadViewport'
 import { GlassIsland } from '../../ui/liquid'
 import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcons'
@@ -49,20 +50,31 @@ export function SelectionHUD({
 
   return (
     <GlassIsland className="selection-hud" radius="section" blur="control" role="toolbar" aria-label="Selection HUD">
+      <div className="selection-hud-identity" aria-label={label}>
+        <span className="selection-hud-count">{count}</span>
+        <span className="selection-hud-name">{label}</span>
+      </div>
       <button
         type="button"
-        className="selection-hud-identity"
+        className="selection-hud-more"
         aria-label={`More actions for ${label}`}
         title="More selection actions"
         onClick={(event) => onMore(event.currentTarget)}
       >
-        <span className="selection-hud-count">{count}</span>
-        <span className="selection-hud-name">{label}</span>
+        <MoreHorizontal size={14} />
       </button>
-      <div className="selection-hud-position" aria-label={`Position ${position.join(', ')} LDU`}>
+      <div
+        className="selection-hud-position"
+        data-position-frame="world"
+        aria-label={`World position ${position.join(', ')} LDU`}
+      >
+        <span className="selection-hud-frame" title="Typed values are world LDU, even when the gizmo is local">
+          WORLD
+        </span>
         {(['X', 'Y', 'Z'] as const).map((axis, index) => (
           <NumberField
             key={axis}
+            compact
             label={axis}
             value={position[index]}
             suffix="LDU"

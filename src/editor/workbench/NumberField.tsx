@@ -6,12 +6,15 @@ export function NumberField({
   value,
   suffix,
   disabled,
+  compact,
   onCommit,
 }: {
   label: string
   value: number
   suffix: string
   disabled?: boolean
+  /** HUD density: keep the unit visible without eating the island. */
+  compact?: boolean
   onCommit: (value: number) => unknown
 }) {
   const display = Number(value.toFixed(4)).toString()
@@ -48,7 +51,11 @@ export function NumberField({
     setDraft(display)
   }
   return (
-    <label className={`number-field ${disabled ? 'disabled' : ''} ${invalid ? 'invalid' : ''}`}>
+    <label
+      className={`number-field ${compact ? 'compact' : ''} ${disabled ? 'disabled' : ''} ${invalid ? 'invalid' : ''}`
+        .replace(/  +/g, ' ')
+        .trim()}
+    >
       <span>{label}</span>
       <div>
         <input

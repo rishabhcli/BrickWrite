@@ -318,6 +318,8 @@ export function useWorkbench() {
       setConnect(IDLE_CONNECT)
       return
     }
+    // Re-pressing Mate mid-flow must not dump a named target and restart.
+    if (connectRef.current.sourcePartId) return
     // Picking up Connect with one part already selected means "connect this" —
     // making the operator click the part they just selected is a stage that
     // asks a question already answered.
@@ -376,6 +378,9 @@ export function useWorkbench() {
   /** Region select. Additive by default, because it is reached by holding shift. */
   const handleSelectMany = useCallback(
     (partIds: string[], additive: boolean) => {
+      // Box-select during Connect would rewrite kernel selection without naming
+      // a source or target, and HUD/inspector would then disagree with the sheet.
+      if (tool === 'connect') return
       const snapshot = cadEngine.getSnapshot()
       const next = additive ? new Set([...snapshot.selection, ...partIds]) : new Set(partIds)
       cadEngine.setSelection([...next])
@@ -514,7 +519,12 @@ export function useWorkbench() {
     [commitTransforms, transformPrefs.frame, transformPrefs.locks],
   )
 
-  /** Commit a finished HUD coordinate as one kernel transaction. */
+  /** Commit a finished HUD coordinate as one kernel transaction.
+   *
+   * Always world LDU, matching the Transform panel's numeric fields. LOCAL/MATE
+   * only turn the gizmo and the steppers — typing a world X must not silently
+   * become a local X because the frame switch is elsewhere.
+   */
   const positionSelection = useCallback(
     (axis: 0 | 1 | 2, value: number) => {
       if (!Number.isFinite(value)) return false
