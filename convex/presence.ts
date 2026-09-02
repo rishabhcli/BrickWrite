@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import type { Id } from './_generated/dataModel'
+import { mutation, query, type MutationCtx } from './_generated/server'
 import { authoriseProject } from './model/auth'
 import { cloudFailure, PRESENCE_TTL_MS, type CloudPresenceRecord, type CloudResult } from './model/protocol'
 import { presenceRecord } from './model/records'
@@ -96,12 +97,41 @@ export const heartbeat = mutation({
     }
     const presenceId = existing ? existing._id : await ctx.db.insert('presence', fields)
     if (existing) await ctx.db.patch(existing._id, fields)
+    // Only when a session is new. A heartbeat patches a row that already
+    // exists and creates no garbage; a new session id is the one event that
+    // does, and it is rare next to the heartbeats themselves — so the sweep
+    // costs nothing on the interactive path and is exactly proportional to
+    // what it cleans up.
+    if (!existing) await reapExpiredPresence(ctx, project._id, now)
 
     const row = await ctx.db.get(presenceId)
     if (!row) return cloudFailure('NOT_FOUND', 'The presence row vanished.', 'Retry the heartbeat.')
     return { ok: true, value: presenceRecord(row) }
   },
 })
+
+/** Rows removed per new session, so one heartbeat's work stays bounded. */
+const MAX_REAPED_PRESENCE = 16
+
+/**
+ * Deletes presence rows whose lease has run out.
+ *
+ * `leave` covers a tab that closes cleanly. Nothing covered a tab that
+ * crashed, lost the network or was killed with the laptop lid — that row was
+ * filtered out of every read and then kept forever, and a row carries up to two
+ * hundred selected part ids. Reads were never wrong; the table just grew
+ * without bound.
+ *
+ * The index range holds only dead rows: `expiresAt` is the last index field, so
+ * an upper bound seeks straight past everything still live.
+ */
+async function reapExpiredPresence(ctx: MutationCtx, projectId: Id<'projects'>, now: number): Promise<void> {
+  const dead = await ctx.db
+    .query('presence')
+    .withIndex('by_project_expiry', (q) => q.eq('projectId', projectId).lte('expiresAt', now))
+    .take(MAX_REAPED_PRESENCE)
+  for (const row of dead) await ctx.db.delete(row._id)
+}
 
 export const list = query({
   args: { projectId: v.string() },

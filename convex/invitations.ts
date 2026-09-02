@@ -47,6 +47,18 @@ import { invitationRetryAt } from './model/invitationLifecycle'
  */
 const INVITATION_TTL_MS = 72 * 60 * 60 * 1000
 
+/**
+ * How long an expired invitation is kept before it is removed.
+ *
+ * Not zero: `list` reports an expired row as `expired`, which is how an owner
+ * learns an invitation lapsed rather than finding it silently absent. The grace
+ * period is what keeps that true while still bounding the table.
+ */
+const INVITATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Rows removed per `create`, so one mutation's work stays bounded. */
+const MAX_REAPED_INVITATIONS = 32
+
 /** Two UUIDs: guessing one is not a realistic attack on an invite link. */
 const mintToken = () => `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '')
 
@@ -107,8 +119,24 @@ export const create = mutation({
       .query('invitations')
       .withIndex('by_project', (q) => q.eq('projectId', project._id))
       .take(COLLECTION_LIMITS.invitationsPerProject)
+
+    /*
+     * Long-dead rows are removed here, using the read the ceiling below already
+     * needed.
+     *
+     * An invitation this old answers nothing: `accept` refuses it, the duplicate
+     * check skips it, the owner has had a week to see it lapse, and
+     * `auditEvents` holds what happened to it. Without this the ceiling counted
+     * every invitation a project had ever sent, so a project that had invited a
+     * hundred people over its life could never invite again — a limit on the
+     * collection's history rather than on its live size.
+     */
+    const stale = onProject.filter((row) => row.expiresAt + INVITATION_GRACE_MS <= now)
+    for (const row of stale.slice(0, MAX_REAPED_INVITATIONS)) await ctx.db.delete(row._id)
+
+    const live = onProject.length - Math.min(stale.length, MAX_REAPED_INVITATIONS)
     const invitationsFull = collectionFull(
-      onProject.length,
+      live,
       COLLECTION_LIMITS.invitationsPerProject,
       'invitations',
       'Revoke an invitation that was never accepted before sending another.',
