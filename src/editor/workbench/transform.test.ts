@@ -4,6 +4,7 @@ import type { Transform } from '../../cad/types'
 import {
   applyLocks,
   canonicalisePose,
+  gizmoAxisVisible,
   gizmoPose,
   numericPose,
   planRotateSelection,
@@ -146,6 +147,18 @@ describe('axis locks', () => {
     // 90° yaw sends local +X down document -Z, so a local X lock must freeze Z.
     expect(localLocked.position[0]).toBeCloseTo(20, 6)
     expect(localLocked.position[2]).toBeCloseTo(0, 6)
+  })
+
+  it('freezes a locked yaw instead of letting the rotation through', () => {
+    const yawed = rotateLocal(identity, [0, 1, 0], degreesToRadians(90))
+    const locked = applyLocks(identity, yawed, { x: false, y: true, z: false })
+    expect(poseKey(locked)).toBe(poseKey(identity))
+    const unlocked = applyLocks(identity, yawed, { x: true, y: false, z: false })
+    expect(poseKey(unlocked)).toBe(poseKey(yawed))
+  })
+
+  it('hides rotate rings on the same axes as translate arrows', () => {
+    expect(gizmoAxisVisible({ x: true, y: false, z: true })).toEqual({ showX: false, showY: true, showZ: false })
   })
 })
 

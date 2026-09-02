@@ -193,7 +193,7 @@ const readTools: ToolDefinition[] = [
     name: 'workspace_reveal',
     description:
       'Open a workbench dock section so a human can see what the agent is working on. '
-      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, timeline, review, feedback. '
+      + 'Surfaces: generation, refinement, agent, library, inspector, transform, selection, model, health, connect, timeline, review, feedback. '
       + 'For health and review, pass focusId to land on one issue or proposal; omit it for the most urgent. '
       + 'Does not mutate the CAD document. Call after generation_run / refinement_propose when the matching panel is collapsed.',
     inputSchema: jsonSchemaOf(WorkspaceRevealSchema),

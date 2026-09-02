@@ -163,6 +163,13 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).toMatch(/\.proposal-overlay\s*\{[^}]*min-width:\s*0/)
   })
 
+  it('compacts placement/proposal/timeline crowding on a short viewport', () => {
+    expect(withoutComments).toMatch(/container-name:\s*viewport-stage/)
+    expect(withoutComments).toMatch(/@container viewport-stage \(max-height: 520px\)/)
+    expect(withoutComments).toMatch(/\.app-shell\[data-timeline='open'\] \.viewport-bottom-stack/)
+    expect(withoutComments).toMatch(/\.connect-pending-banner/)
+  })
+
   it('keeps HUD world units on a laptop instead of hiding the fields', () => {
     const [laptop] = mediaBlocks(withoutComments, '1160px')
     expect(laptop).toContain('.selection-hud-name')

@@ -529,4 +529,42 @@ describe('the beginner path through the shell', () => {
     expect(chips?.querySelectorAll('[role="radio"]').length).toBeGreaterThan(12)
     expect(document.querySelector('.selection-hud-rotation')).not.toBeNull()
   })
+
+  it('keeps Connect armed when switching to Design instead of cancelling the mate', () => {
+    cadEngine.replaceDocument(twoBricks())
+    mount()
+    fireEvent.click(control(toolButton('Connect')))
+    clickPart('a')
+    expect(control('.connect-panel').getAttribute('data-stage')).toBe('target')
+    fireEvent.click(control('button[title="Generate a build"]'))
+    expect(control(toolButton('Connect'))).toHaveAttribute('aria-checked', 'true')
+    expect(document.querySelector('[data-connect-pending="true"]')).not.toBeNull()
+    expect(document.querySelector('.connect-panel')).toBeNull()
+    fireEvent.click(control('button[title="Object tools"]'))
+    expect(control('.connect-panel').getAttribute('data-stage')).toBe('target')
+  })
+
+  it('opens Inspect beside Move instead of exclusive-closing the transform sheet', () => {
+    cadEngine.replaceDocument(twoBricks())
+    mount()
+    act(() => cadEngine.setSelection(['a']))
+    fireEvent.click(control('.object-tool-switcher button[title="Exact transform tools"]'))
+    expect(sectionOpen('transform')).toBe('true')
+    fireEvent.click(control('.object-tool-switcher button[title="Inspect object properties"]'))
+    expect(sectionOpen('transform')).toBe('true')
+    expect(sectionOpen('inspector')).toBe('true')
+  })
+
+  it('labels Connect chips uniquely instead of repeating the family name', () => {
+    cadEngine.replaceDocument(twoBricks())
+    mount()
+    fireEvent.click(control(toolButton('Connect')))
+    clickPart('a')
+    const chips = [...document.querySelectorAll('[aria-label="Source connector"] [role="radio"]')].map(
+      (node) => node.textContent?.trim(),
+    )
+    const named = chips.filter((label) => label && label !== 'ANY')
+    expect(named.length).toBeGreaterThan(1)
+    expect(new Set(named).size).toBe(named.length)
+  })
 })

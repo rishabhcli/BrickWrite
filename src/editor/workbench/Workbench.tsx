@@ -119,9 +119,9 @@ const isDesignSection = (id: string) => (DESIGN_SECTION_IDS as readonly string[]
 const isObjectSection = (id: string) => (OBJECT_SECTION_IDS as readonly string[]).includes(id)
 
 /**
- * WebMCP still models the right dock as one exclusive stack. At the Workbench
- * seam we retain that focus behaviour for Object, while preserving the three
- * independently collapsible Design preferences for when the operator returns.
+ * Design sheets exclusive-focus each other. Object sheets are companions:
+ * opening Inspect does not blank Move, Map or Pick. Connect stays a companion
+ * too. Switching to Design no longer cancels an in-progress mate.
  */
 function applyWorkbenchReveal(layout: WorkbenchLayout, surface: ChromeSurface): WorkbenchLayout {
   const target = CHROME_SURFACE_TARGETS[surface]
@@ -237,6 +237,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       // because the coupling is invisible from here.
       if (surface === 'health') setInspectorView('validate')
       if (surface === 'inspector') setInspectorView('object')
+      if (surface === 'connect' && workbenchRef.current.tool !== 'connect') {
+        workbenchRef.current.setTool('connect')
+      }
       const next = applyWorkbenchReveal(layoutRef.current, surface)
       pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
       updateLayout(next)
@@ -248,6 +251,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         },
         sections: { ...next.sections },
         ...chromeViewRef.current,
+        connect:
+          workbenchRef.current.tool === 'connect'
+            ? {
+                stage: workbenchRef.current.connect.stage,
+                sourcePartId: workbenchRef.current.connect.sourcePartId,
+                targetPartId: workbenchRef.current.connect.targetPartId,
+              }
+            : null,
       })
     },
     [updateLayout],
@@ -390,8 +401,16 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       tool: workbench.tool,
       cameraView: workbench.cameraView,
       activeColor: workbench.activeColor,
+      connect:
+        workbench.tool === 'connect'
+          ? {
+              stage: workbench.connect.stage,
+              sourcePartId: workbench.connect.sourcePartId,
+              targetPartId: workbench.connect.targetPartId,
+            }
+          : null,
     })
-  }, [layout, workbench.activeColor, workbench.cameraView, workbench.tool])
+  }, [layout, workbench.activeColor, workbench.cameraView, workbench.connect, workbench.tool])
 
   useEffect(() => () => publishChrome(null), [])
 
@@ -716,13 +735,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const sections = layout.sections
   const { state } = workbench
   const connectActive = workbench.tool === 'connect'
-  const rightTab = connectActive ? 'object' : layout.rightTab
+  const rightTab = layout.rightTab
   const rightSectionOpen = (id: string) =>
     rightTab === 'object' && (id === 'connect' ? connectActive || sections.connect === true : sections[id] === true)
-  const activeObjectSurface = connectActive
-    ? 'connect'
-    : (OBJECT_SECTION_IDS.find((id) => sections[id] === true) ?? 'selection')
-
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
       {contributions.map((Contribution, index) => (
@@ -878,7 +893,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       }
                       className={selected ? 'active' : ''}
                       onClick={() => {
-                        if (workbench.tool === 'connect') workbench.setTool('select')
                         setActiveDesignSurface(surface.id)
                         updateLayout({
                           ...rawLayout,
@@ -929,6 +943,18 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
               aria-label={`${rightTab} tools`}
             >
               {rightTab === 'design' ? (
+                <>
+                {connectActive ? (
+                  <div className="connect-pending-banner" data-connect-pending="true" role="status">
+                    <span>Mate in progress — Object still holds the sheet.</span>
+                    <button type="button" onClick={() => updateLayout({ ...rawLayout, rightTab: 'object' })}>
+                      Continue mate
+                    </button>
+                    <button type="button" onClick={() => workbench.setTool('select')}>
+                      Abandon
+                    </button>
+                  </div>
+                ) : null}
                 <Slot
                   id="panel-right"
                   wrap={({ id, title, icon, content }) => (
@@ -946,6 +972,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                     </DockSection>
                   )}
                 />
+                </>
               ) : (
                 <>
                   <div className="object-tool-switcher" role="toolbar" aria-label="Object tools">
@@ -954,9 +981,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         key={id}
                         type="button"
                         className={
-                          (id === 'connect' ? connectActive : rightSectionOpen(id) || (!connectActive && activeObjectSurface === id))
-                            ? 'active'
-                            : ''
+                          (id === 'connect' ? connectActive : rightSectionOpen(id)) ? 'active' : ''
                         }
                         aria-pressed={id === 'connect' ? connectActive : rightSectionOpen(id)}
                         title={
@@ -975,6 +1000,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                             workbench.setTool(connectActive ? 'select' : 'connect')
                             return
                           }
+                          const open = rawLayout.sections[id] === true
                           updateLayout(
                             applyWorkbenchSectionFocus(
                               {
@@ -983,7 +1009,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                                 rightTab: 'object',
                               },
                               id,
-                              true,
+                              !open,
                             ),
                           )
                         }}

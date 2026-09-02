@@ -22,6 +22,7 @@ export const CHROME_SURFACES = [
   'selection',
   'model',
   'health',
+  'connect',
   'timeline',
   'review',
   'feedback',
@@ -39,6 +40,7 @@ export const CHROME_SURFACE_TARGETS: Record<ChromeSurface, { dock: 'left' | 'rig
   selection: { dock: 'right', section: 'selection' },
   model: { dock: 'right', section: 'model.explorer' },
   health: { dock: 'right', section: 'inspector' },
+  connect: { dock: 'right', section: 'connect' },
   timeline: { dock: 'bottom', section: null },
   review: { dock: 'bottom', section: null },
   feedback: { dock: 'bottom', section: null },
@@ -49,12 +51,20 @@ export interface ChromeDock {
   size: number
 }
 
+export interface ChromeConnect {
+  stage: 'source' | 'target' | 'review'
+  sourcePartId: string | null
+  targetPartId: string | null
+}
+
 export interface ChromeSnapshot {
   docks: { left: ChromeDock; right: ChromeDock; bottom: ChromeDock }
   sections: Record<string, boolean>
   tool: string
   cameraView: string
   activeColor: number
+  /** Named Connect pair. Absent or null when Mate is not armed. */
+  connect?: ChromeConnect | null
 }
 
 export interface ChromeReveal {
@@ -229,28 +239,32 @@ export function withChromeReveal<T extends object>(surface: ChromeSurface, paylo
 }
 
 /**
- * Right-dock sections that compete for the same 300px column. Opening one closes
- * the others — but see `applyWorkbenchReveal`, which deliberately exempts the
- * three Design sheets, because Generate, Refine and the design partner are one
- * intentional stack rather than rivals for the column.
- *
- * Connect is omitted on purpose: the mate sheet is a companion to inspector
- * and transform, not a rival that should blank the rest of the Object dock.
+ * Design sheets still exclusive-focus each other: Make / Tune / Ask share one
+ * column and one intent. Object sheets do not — inspector, transform, map,
+ * selection and Connect are companions, because a CAD dock that blanks the
+ * inspector when you open Move is a hole, not a feature.
  *
  * There was also an `applyExclusiveDock` here, collapsing a *restored* layout to
  * a single sheet. It was removed rather than kept: nothing called it, and it
  * folded over this whole list, so reviving it would have quietly closed two of
  * the three Design panels that the default layout deliberately opens.
  */
-export const DOCK_FOCUS_SECTIONS = [
-  'selection',
-  'model.explorer',
-  'transform',
-  'inspector',
+export const DESIGN_FOCUS_SECTIONS = [
   'generation.panel',
   'refinement.panel',
   'agent.workbench',
 ] as const
+
+export const OBJECT_COMPANION_SECTIONS = [
+  'selection',
+  'model.explorer',
+  'transform',
+  'inspector',
+  'connect',
+] as const
+
+/** @deprecated Use DESIGN_FOCUS_SECTIONS. Kept as the exclusive subset. */
+export const DOCK_FOCUS_SECTIONS = DESIGN_FOCUS_SECTIONS
 
 export function applyDockFocus<T extends { sections: Readonly<Record<string, boolean>> }>(
   layout: T,
@@ -258,9 +272,9 @@ export function applyDockFocus<T extends { sections: Readonly<Record<string, boo
   open: boolean,
 ): T {
   const sections = { ...layout.sections }
-  const focused = (DOCK_FOCUS_SECTIONS as readonly string[]).includes(id)
+  const focused = (DESIGN_FOCUS_SECTIONS as readonly string[]).includes(id)
   if (focused && open) {
-    for (const other of DOCK_FOCUS_SECTIONS) sections[other] = other === id
+    for (const other of DESIGN_FOCUS_SECTIONS) sections[other] = other === id
   } else {
     sections[id] = open
   }

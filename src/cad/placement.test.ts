@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { catalog, originForSurface, searchCatalog, STUD_LDU, surfaceAbove, underPlaneLdu } from './catalog'
 import { getPartBounds, nearbyParts } from './geometry'
 import { IDENTITY_BASIS } from './math'
-import { QUARTER_TURN_BASES, hitApproach, legalConnectCandidates, resolvePlacement, resolveQuickAdd, rotatedBasis, searchMateOnTarget } from './placement'
+import { QUARTER_TURN_BASES, hitApproach, legalConnectCandidates, listConnectSolutions, resolvePlacement, resolveQuickAdd, rotatedBasis, searchMateOnTarget } from './placement'
 import { partPoseCollides } from './collisionGate'
 import { bestSnapTransform } from './snapping'
 import { createBlankDocument, createEmptyDocument } from './sample'
@@ -295,6 +295,10 @@ describe('placement resolution', () => {
     const target = part('base', '3001')
     const legal = legalConnectCandidates(source, target, withParts(target, source))
     expect(legal.length).toBeGreaterThan(0)
+    const listed = listConnectSolutions(source, target, withParts(target, source), { maxCandidates: 2 })
+    expect(listed.solutions.length).toBeLessThanOrEqual(2)
+    if (listed.truncated) expect(listed.considered).toBeGreaterThan(2)
+    else expect(listed.considered).toBe(listed.solutions.length)
   })
 })
 

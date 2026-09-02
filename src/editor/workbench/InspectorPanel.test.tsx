@@ -209,4 +209,22 @@ describe('inspector OBJECT / VALIDATE chrome', () => {
     expect(next.position[0]).toBe(0)
     expect(next.position[1]).toBe(-8)
   })
+
+  it('locks OBJECT RX the same way as translation X', () => {
+    const state = blockedSnapshot()
+    state.selection = ['allowed']
+    render(
+      <InspectorHost>
+        <InspectorPanel
+          state={state}
+          selectedPart={state.document.parts.allowed}
+          {...handlers}
+          locks={{ x: true, y: false, z: false }}
+          frame="world"
+        />
+      </InspectorHost>,
+    )
+    expect(screen.getByRole('spinbutton', { name: 'RX rotation in degrees' })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'RY rotation in degrees' })).not.toBeDisabled()
+  })
 })

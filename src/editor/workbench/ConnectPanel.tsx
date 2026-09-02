@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { cadEngine } from '../../cad/engine'
 import { catalog } from '../../cad/catalog'
 import { getWorldConnectors, type WorldConnector } from '../../cad/snapping'
-import { legalConnectCandidates } from '../../cad/placement'
+import { listConnectSolutions } from '../../cad/placement'
 import { canonicalisePose } from './transform'
 import { IDLE_CONNECT, type ConnectFlow, type Workbench } from './useWorkbench'
 import type { ModelDocument, PartInstance } from '../../cad/types'
@@ -41,6 +41,21 @@ export function describeConnectHudLabel(
  * ranked results before anything commits. Every stage can be backed out of.
  */
 
+/**
+ * Chip text a person can tell apart.
+ *
+ * Family names repeat on every stud of a 2x4. Index within that family, plus
+ * gender, is the smallest unique label that is still a connector rather than a
+ * raw feature id.
+ */
+export function connectorChipLabel(connector: WorldConnector, siblings: readonly WorldConnector[]): string {
+  const family = siblings.filter((entry) => entry.family === connector.family)
+  const index = family.findIndex((entry) => entry.id === connector.id) + 1
+  const gender = connector.gender === 'male' ? 'M' : connector.gender === 'female' ? 'F' : 'N'
+  if (family.length <= 1) return `${connector.family} ${gender}`
+  return `${connector.family} ${gender}${index}`
+}
+
 function ConnectorChips({
   connectors,
   selectedId,
@@ -72,10 +87,10 @@ function ConnectorChips({
           aria-checked={selectedId === connector.id}
           className={selectedId === connector.id ? 'active' : ''}
           onClick={() => onSelect(connector.id)}
-          title={`${connector.family} · ${connector.gender}`}
+          title={`${connector.id} · ${connector.family} · ${connector.gender}`}
         >
           <CircleDot size={8} className={connector.gender === 'male' ? 'male' : 'female'} />
-          {connector.family}
+          {connectorChipLabel(connector, connectors)}
         </button>
       ))}
     </div>
@@ -94,15 +109,15 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
    * Ranked mates for the current pair, restricted to whichever connectors the
    * operator pinned. The solver is the same one the drag path and the agent use.
    */
-  const candidates = useMemo(() => {
-    if (!source || !target) return []
-    return legalConnectCandidates(source, target, state.document, {
+  const listed = useMemo(() => {
+    if (!source || !target) return { solutions: [], truncated: false, considered: 0 }
+    return listConnectSolutions(source, target, state.document, {
       radiusLdu: 400,
-      maxCandidates: 48,
       sourceFeatureId: connect.sourceFeatureId,
       targetFeatureId: connect.targetFeatureId,
     })
   }, [connect.sourceFeatureId, connect.targetFeatureId, source, state.document, target])
+  const candidates = listed.solutions
 
   const preview = candidates[connect.candidateIndex] ?? candidates[0]
 
@@ -234,7 +249,9 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
           <header>
             <span className="eyebrow">RESULTING MATE</span>
             <em>
-              {candidates.length} solution{candidates.length === 1 ? '' : 's'}
+              {listed.truncated
+                ? `${candidates.length} of ${listed.considered}+`
+                : `${candidates.length} solution${candidates.length === 1 ? '' : 's'}`}
             </em>
           </header>
           {preview ? (
@@ -266,9 +283,16 @@ export function ConnectPanel({ workbench }: { workbench: Workbench }) {
                   type="button"
                   onClick={cycle}
                   disabled={candidates.length < 2}
-                  title={candidates.length < 2 ? 'Only one solution' : 'Cycle to the next ranked mate'}
+                  title={
+                    listed.truncated
+                      ? `Ranked; showing the first ${candidates.length} of ${listed.considered} legal mates`
+                      : candidates.length < 2
+                        ? 'Only one solution'
+                        : 'Cycle to the next ranked mate'
+                  }
                 >
                   Solution {connect.candidateIndex + 1} of {candidates.length}
+                  {listed.truncated ? '+' : ''}
                 </button>
               </div>
             </>
