@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { announceGenerationPromptReady, claimGeneratePrompt, watchGeneratePrompt } from './promptFocus'
+import {
+  announceGenerationPromptReady,
+  claimGeneratePrompt,
+  watchGeneratePrompt,
+} from './promptFocus'
 
 function mountPrompt() {
   const wrap = document.createElement('div')
@@ -37,9 +41,8 @@ describe('generate prompt focus', () => {
   it('focuses when the field appears in the tree without an announcement', async () => {
     const stop = watchGeneratePrompt()
     const field = mountPrompt()
-    // jsdom delivers MutationObserver records as a microtask, not a 4s rAF poll.
-    await Promise.resolve()
-    await Promise.resolve()
+    // jsdom queues MutationObserver delivery; a macrotask is enough to see it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(document.activeElement).toBe(field)
     stop()
   })
