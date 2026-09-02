@@ -32,6 +32,7 @@ import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
 import { TransformPanel } from './TransformPanel'
 import { ViewportStage } from './ViewportStage'
+import { watchGeneratePrompt } from './promptFocus'
 import { OfflineState } from './states'
 import {
   clampLayout,
@@ -180,10 +181,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
    * Bumped every time something asks for Generate.
    *
    * The prompt cannot be focused from the reveal itself: Generate is a lazily
-   * imported contribution, so at that moment the textarea does not exist. It
-   * cannot be focused from the layout effect either — unrelated layout churn
-   * re-runs that effect and cancelled the wait — so the request gets its own
-   * token to hang off.
+   * imported contribution, so at that moment the textarea does not exist. The
+   * token is the wait key: when it bumps, `watchGeneratePrompt` claims the
+   * field as soon as the field announces itself (or appears in the tree).
    */
   const [promptFocusToken, setPromptFocusToken] = useState(0)
   const saveInput = useRef<HTMLInputElement>(null)
@@ -485,40 +485,15 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         // itself without racing that consumption.
         window.dispatchEvent(new CustomEvent('brickwright:intent-describe'))
         consumeSearchParams(['intent'])
-        focusGeneratePrompt()
       }
       syncAddressBar()
     }
-    /**
-     * Put the caret in the prompt, however late the prompt arrives.
-     *
-     * The shell owns this rather than the Generate panel, because the shell is
-     * the only party that knows the intent *before* the panel exists: revealing
-     * the surface is a state update, so a panel mounted as a consequence of this
-     * listener cannot have heard the event that caused it. That was the defect —
-     * the landing page's "describe a build" button delivered a workbench with no
-     * cursor in the field it had just promised.
-     *
-     * A bounded wait rather than a single frame, because the panel may itself
-     * defer its field, and bounded rather than open-ended so a route without a
-     * Generate surface cannot leave a poll running.
-     */
-    const focusGeneratePrompt = (attemptsLeft = 12) => {
-      const prompt = window.document.querySelector<HTMLTextAreaElement>(
-        'textarea[data-generation-prompt], .bw-gen textarea',
-      )
-      if (prompt) {
-        prompt.focus()
-        return
-      }
-      if (attemptsLeft > 0) requestAnimationFrame(() => focusGeneratePrompt(attemptsLeft - 1))
-    }
-
     // For anything that announces the intent without going through the query
     // parameter — the agent surface, a deep link handled elsewhere, a test.
+    // Focus is not claimed here: revealing Generate bumps `promptFocusToken`,
+    // and that effect waits for the field to announce itself (or appear).
     const describeIntent = () => {
       revealWorkbenchSurface('generation')
-      focusGeneratePrompt()
     }
     window.addEventListener('brickwright:intent-describe', describeIntent)
     void run()
@@ -601,29 +576,15 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const saveSetOpen = modal === 'core:save-selection'
   const anyCoreModal = deckOpen || paletteOpen || shortcutsOpen || welcomeOpen || saveSetOpen
 
-  // `?intent=describe` promises "just describe it", and it was arriving with the
-  // caret nowhere. Two races, not one: the panel it reveals is a lazily imported
-  // contribution that mounts a second or so later, and on a first run the
-  // reveal fires while the welcome dialog still holds focus inside its trap.
-  // So this waits for the field rather than guessing at a frame count, and it
-  // waits behind `anyCoreModal` rather than on a timer, because a person
-  // reading that dialog takes as long as they take. It never pulls focus out of
-  // somewhere the operator has since put it.
+  // `?intent=describe` promises "just describe it". Two races, not one: the
+  // panel it reveals is a lazily imported contribution, and on a first run a
+  // core modal may still hold focus. The field announces when it is in the
+  // document; this claims it then, and waits behind `anyCoreModal` rather than
+  // a timer, because a person reading that dialog takes as long as they take.
+  // It never pulls focus out of somewhere the operator has since put it.
   useEffect(() => {
     if (!promptFocusToken || anyCoreModal) return
-    let frame = 0
-    const deadline = Date.now() + 4000
-    const claim = () => {
-      const field = document.querySelector<HTMLTextAreaElement>('.bw-gen textarea')
-      if (field) {
-        if (document.activeElement === null || document.activeElement === document.body) field.focus()
-        return
-      }
-      if (Date.now() > deadline) return
-      frame = requestAnimationFrame(claim)
-    }
-    frame = requestAnimationFrame(claim)
-    return () => cancelAnimationFrame(frame)
+    return watchGeneratePrompt()
   }, [anyCoreModal, promptFocusToken])
 
   useEffect(() => {

@@ -36,6 +36,7 @@ const { createEmptyDocument } = await import('../../cad/sample')
 const { resetPreferences } = await import('./persistence')
 const { useRegisterContribution } = await import('./ExtensionRegistry')
 const { Workbench } = await import('./Workbench')
+const { announceGenerationPromptReady } = await import('./promptFocus')
 type PartInstance = import('../../cad/types').PartInstance
 
 /**
@@ -56,7 +57,19 @@ function LateGeneratePanel() {
     id: 'generation.panel',
     slot: 'panel-right',
     title: 'Generate',
-    render: () => <div className="bw-gen">{ready ? <textarea aria-label="What should be built" /> : null}</div>,
+    render: () =>
+      ready ? (
+        <div className="bw-gen">
+          <textarea
+            aria-label="What should be built"
+            ref={(node) => {
+              if (node) announceGenerationPromptReady()
+            }}
+          />
+        </div>
+      ) : (
+        <div className="bw-gen" />
+      ),
   })
   return null
 }
@@ -135,11 +148,6 @@ function clickPart(partId: string) {
 
 const swatch = (code: number) => `.swatches button[aria-label="${catalog.color(code).name}"]`
 const toolButton = (label: string) => `.tool-button[aria-label="${label}"]`
-/** Lets the queued timers and animation frames the shell schedules actually run. */
-const frames = () =>
-  act(async () => {
-    for (let index = 0; index < 6; index += 1) await new Promise((resolve) => setTimeout(resolve, 16))
-  })
 const partColors = () => Object.values(cadEngine.getDocument().parts).map((part) => part.color)
 const sectionOpen = (id: string) =>
   document.querySelector(`[data-section="${id}"] .dock-section-toggle`)?.getAttribute('aria-expanded')
@@ -252,6 +260,21 @@ describe('the beginner path through the shell', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(document.querySelector('.bw-gen textarea'))
     })
+  })
+
+  it('puts a brick down from catalog search with shift-enter', () => {
+    cadEngine.replaceDocument(createEmptyDocument())
+    mount()
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(0)
+
+    const search = control('[data-catalog-search]')
+    fireEvent.change(search, { target: { value: '3001' } })
+    fireEvent.keyDown(search, { key: 'Enter', shiftKey: true })
+
+    expect(Object.keys(cadEngine.getDocument().parts)).toHaveLength(1)
+    expect(cadEngine.getDocument().parts[Object.keys(cadEngine.getDocument().parts)[0]].definitionId).toBe('3001')
+    expect(document.querySelector('.placement-bar')).toBeNull()
+    expect(cadEngine.getSnapshot().selection).toHaveLength(1)
   })
 
   it('announces persistence on the save chip instead of hiding a failure', () => {

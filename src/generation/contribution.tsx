@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Sparkles } from 'lucide-react'
 import { useRegisterContribution } from '../editor/workbench'
+import { claimGeneratePrompt } from '../editor/workbench/promptFocus'
 import { CompareDialog } from './CompareDialog'
 import { COMPARE_MODAL_ID, GeneratePanel } from './GeneratePanel'
 import { GenerationStatus } from './GenerationStatus'
@@ -23,11 +24,10 @@ function useDescribeIntent(): void {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const focusPrompt = () => {
-      // After the reveal has had a frame to open the section. A focus call into
-      // a panel that is still collapsed lands on nothing.
-      requestAnimationFrame(() => {
-        window.document.querySelector<HTMLTextAreaElement>('textarea[data-generation-prompt]')?.focus()
-      })
+      // The field is already mounted here. The shell still owns the late-mount
+      // case (panel appearing because of the intent); this covers a panel that
+      // was already on the page when the event arrived.
+      claimGeneratePrompt()
     }
     // For a panel already mounted when the intent arrives. A panel that mounts
     // *because* of the intent cannot hear this — the shell focuses the prompt
