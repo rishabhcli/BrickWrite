@@ -5,7 +5,13 @@ import * as THREE from 'three'
 import { findSnapCandidates } from '../../cad/snapping'
 import { poseRefusal } from '../../cad/validation'
 import type { CadOperation, ModelDocument, PartInstance, Transform } from '../../cad/types'
-import { gizmoAxisVisible, gizmoSpace, manipulationPose, planGizmoTransforms, type ManipulationOptions } from '../workbench/transform'
+import {
+  gizmoAxisVisible,
+  gizmoSpace,
+  manipulationPose,
+  planGizmoTransforms,
+  type ManipulationOptions,
+} from '../workbench/transform'
 import { documentTransformOf, ROOT_MATRIX, ROOT_MATRIX_INVERSE, sceneMatrix } from './frame'
 import { pointerRouterFor } from './pointerRouter'
 
@@ -34,13 +40,23 @@ export function SelectionManipulator({
   const part = parts[0]
   const startPose = useMemo(() => manipulationPose(parts, preferences), [parts, preferences])
   const [proxy, setProxy] = useState<THREE.Object3D | null>(null)
-  const controls = useRef<({ getHelper?: () => THREE.Object3D; reset?: () => void; dragging: boolean; axis: string | null; size: number; pointerHover: (pointer: { x: number; y: number; button: number }) => void } & THREE.Object3D) | null>(null)
+  const controls = useRef<
+    | ({
+        getHelper?: () => THREE.Object3D
+        reset?: () => void
+        dragging: boolean
+        axis: string | null
+        size: number
+        pointerHover: (pointer: { x: number; y: number; button: number }) => void
+      } & THREE.Object3D)
+    | null
+  >(null)
   const dragging = useRef(false)
   const latest = useRef<CadOperation[]>([])
   const { camera, size, gl } = useThree()
   const router = pointerRouterFor(gl.domElement)
   const pending = useRef(false)
-  const probeRef = useRef<(() => {screenPixels: number}) | null>(null)
+  const probeRef = useRef<(() => { screenPixels: number }) | null>(null)
 
   useEffect(() => {
     const probe = () => {
@@ -79,16 +95,23 @@ export function SelectionManipulator({
     }
   }, [camera, proxy, size.height, size.width])
 
-  useEffect(() => router.hitTest((event) => {
-    const control = controls.current
-    if (!control || !proxy) return {}
-    const rect = gl.domElement.getBoundingClientRect()
-    // Native TransformControls exposes its hover classifier at runtime. Calling
-    // it with coordinates avoids any synthetic DOM event and stale hover axis.
-    control.pointerHover({ x: (event.clientX - rect.left) / rect.width * 2 - 1,
-      y: -(event.clientY - rect.top) / rect.height * 2 + 1, button: -1 })
-    return { gizmo: Boolean(control.axis) }
-  }), [router, gl, proxy])
+  useEffect(
+    () =>
+      router.hitTest((event) => {
+        const control = controls.current
+        if (!control || !proxy) return {}
+        const rect = gl.domElement.getBoundingClientRect()
+        // Native TransformControls exposes its hover classifier at runtime. Calling
+        // it with coordinates avoids any synthetic DOM event and stale hover axis.
+        control.pointerHover({
+          x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          y: (-(event.clientY - rect.top) / rect.height) * 2 + 1,
+          button: -1,
+        })
+        return { gizmo: Boolean(control.axis) }
+      }),
+    [router, gl, proxy],
+  )
 
   const resetProxy = useCallback(() => {
     if (!proxy) return
@@ -110,8 +133,13 @@ export function SelectionManipulator({
       pending.current = false
       try {
         controls.current?.reset?.()
-        if (controls.current) { controls.current.dragging = false; controls.current.axis = null }
-      } finally { router.release('gizmo') }
+        if (controls.current) {
+          controls.current.dragging = false
+          controls.current.axis = null
+        }
+      } finally {
+        router.release('gizmo')
+      }
       latest.current = []
       onPreview(null)
       resetProxy()
@@ -162,7 +190,7 @@ export function SelectionManipulator({
     pending.current = false
     const next = resolve()
     latest.current = next
-    onPreview(new Map(next.flatMap((op) => op.type === 'part.transform' ? [[op.partId, op.transform] as const] : [])))
+    onPreview(new Map(next.flatMap((op) => (op.type === 'part.transform' ? [[op.partId, op.transform] as const] : []))))
   })
 
   if (!proxy || !part) return <object3D ref={setProxy} />
@@ -208,9 +236,8 @@ export function SelectionManipulator({
   )
 }
 
-
 /** Screen-sized handles with bounded growth even in very small viewports. */
 export function adaptiveGizmoSize(size: number, projectedPixels: number): number {
   if (projectedPixels <= 0 || !Number.isFinite(projectedPixels)) return size
-  return THREE.MathUtils.clamp(size * 112 / projectedPixels, 0.6, 2.4)
+  return THREE.MathUtils.clamp((size * 112) / projectedPixels, 0.6, 2.4)
 }

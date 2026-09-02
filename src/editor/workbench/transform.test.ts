@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalTransform, degreesToRadians, IDENTITY_BASIS, isOrthonormal, rotateLocal, rotateWorld } from '../../cad/math'
+import {
+  canonicalTransform,
+  degreesToRadians,
+  IDENTITY_BASIS,
+  isOrthonormal,
+  rotateLocal,
+  rotateWorld,
+} from '../../cad/math'
 import type { Transform } from '../../cad/types'
 import {
   applyLocks,
@@ -7,9 +14,12 @@ import {
   gizmoAxisVisible,
   gizmoPose,
   gizmoSpace,
+  manipulationPose,
   numericPose,
   readSelectionAttitude,
   planRotateSelection,
+  planTurnSelection,
+  DEFAULT_MANIPULATION,
   planTranslateSelection,
   poseKey,
   posesEqual,
@@ -31,7 +41,10 @@ import {
  */
 
 const identity: Transform = { position: [0, 0, 0], basis: IDENTITY_BASIS }
-const tilted: Transform = { position: [37.5, -24, 11.25], basis: rotateLocal(identity, [0, 1, 0], degreesToRadians(30)).basis }
+const tilted: Transform = {
+  position: [37.5, -24, 11.25],
+  basis: rotateLocal(identity, [0, 1, 0], degreesToRadians(30)).basis,
+}
 
 describe('canonical pose', () => {
   it('normalises negative zero so two spellings of one pose compare equal', () => {
@@ -78,7 +91,9 @@ describe('numeric entry and gizmo manipulation agree', () => {
 
   it.each([90, 180, 270, 37, 5, -45])('a %s° numeric rotation equals the same gizmo rotation', (degrees) => {
     const fromFields = numericPose(identity, { rotationDegrees: [0, degrees, 0] })
-    const fromGizmo = gizmoPose(identity, rotateLocal(identity, [0, 1, 0], degreesToRadians(degrees)), { rotating: true })
+    const fromGizmo = gizmoPose(identity, rotateLocal(identity, [0, 1, 0], degreesToRadians(degrees)), {
+      rotating: true,
+    })
     expect(poseKey(fromFields)).toBe(poseKey(fromGizmo))
   })
 
@@ -112,11 +127,9 @@ describe('numeric entry and gizmo manipulation agree', () => {
   it('a world-frame turn about the part origin matches the gizmo world rotation', () => {
     const degrees = 45
     const viaPanel = rotatePose(tilted, [0, 1, 0], degrees, 'world', tilted.position)
-    const viaGizmo = gizmoPose(
-      tilted,
-      rotateWorld(tilted, [0, 1, 0], degreesToRadians(degrees), tilted.position),
-      { rotating: true },
-    )
+    const viaGizmo = gizmoPose(tilted, rotateWorld(tilted, [0, 1, 0], degreesToRadians(degrees), tilted.position), {
+      rotating: true,
+    })
     expect(poseKey(viaPanel)).toBe(poseKey(viaGizmo))
   })
 })
@@ -215,7 +228,9 @@ describe('planRotateSelection', () => {
     const operations = planRotateSelection(parts, 90)
     expect(operations).toHaveLength(2)
     const after = Object.fromEntries(
-      operations.flatMap((operation) => (operation.type === 'part.transform' ? [[operation.partId, operation.transform]] : [])),
+      operations.flatMap((operation) =>
+        operation.type === 'part.transform' ? [[operation.partId, operation.transform]] : [],
+      ),
     ) as Record<string, Transform>
     expect(after.a).toBeDefined()
     expect(after.b).toBeDefined()
@@ -247,7 +262,9 @@ describe('planTranslateSelection', () => {
     const operations = planTranslateSelection(parts, [40, 0, 20])
     expect(operations).toHaveLength(2)
     const after = Object.fromEntries(
-      operations.flatMap((operation) => (operation.type === 'part.transform' ? [[operation.partId, operation.transform.position]] : [])),
+      operations.flatMap((operation) =>
+        operation.type === 'part.transform' ? [[operation.partId, operation.transform.position]] : [],
+      ),
     ) as Record<string, [number, number, number]>
     expect(after.a).toEqual([40, 0, 20])
     expect(after.b).toEqual([40, -24, 20])
@@ -275,5 +292,48 @@ describe('selection attitude', () => {
     const shared = readSelectionAttitude([a, brick('c', IDENTITY_BASIS)])
     expect(shared.mixed).toBe(false)
     expect(shared.rotationDegrees?.[1]).toBeCloseTo(0, 6)
+  })
+})
+
+describe('mixed selection turns and WORLD proxy', () => {
+  const brick = (id: string, basis: Transform['basis'], position: [number, number, number] = [0, 0, 0]) => ({
+    id,
+    definitionId: '3001',
+    color: 72,
+    transform: { position, basis },
+    subassemblyId: 'hull',
+    stepId: 'step_1',
+    provenance: 'human' as const,
+    protected: false,
+  })
+
+  it('WORLD gizmo proxy stays identity even when members are rotated', () => {
+    const a = brick('a', IDENTITY_BASIS, [0, 0, 0])
+    const b = brick('b', rotateLocal(identity, [0, 1, 0], degreesToRadians(90)).basis, [40, 0, 0])
+    const pose = manipulationPose([a, b], { ...DEFAULT_MANIPULATION, frame: 'world', pivot: 'centre' })
+    expect(pose.basis).toEqual(IDENTITY_BASIS)
+    const mixedWorld = manipulationPose([a, b], { ...DEFAULT_MANIPULATION, frame: 'world', pivot: 'origin' })
+    expect(mixedWorld.basis).toEqual(IDENTITY_BASIS)
+    expect(mixedWorld.position).toEqual(a.transform.position)
+  })
+
+  it('mixed LOCAL turn uses WORLD axes rather than the lead brick local frame', () => {
+    const a = brick('a', IDENTITY_BASIS, [0, 0, 0])
+    const yawed = rotateLocal(identity, [0, 1, 0], degreesToRadians(90)).basis
+    const b = brick('b', yawed, [40, 0, 0])
+    const mixed = planTurnSelection([a, b], 1, 90, {
+      frame: 'local',
+      pivot: 'centre',
+      locks: { x: false, y: false, z: false },
+    })
+    const asLead = planTurnSelection([a, b], 1, 90, {
+      frame: 'world',
+      pivot: 'centre',
+      locks: { x: false, y: false, z: false },
+    })
+    expect(mixed).toEqual(asLead)
+    const leadLocal = rotatePose(a.transform, [0, 1, 0], 90, 'local')
+    const mixedA = mixed.find((operation) => operation.type === 'part.transform' && operation.partId === 'a')
+    expect(mixedA && mixedA.type === 'part.transform' ? mixedA.transform.basis : null).toEqual(leadLocal.basis)
   })
 })

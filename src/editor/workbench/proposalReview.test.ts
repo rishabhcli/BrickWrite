@@ -31,7 +31,9 @@ describe('proposal review summary', () => {
       collisionDelta: 0,
       groups: [{ id: 'appearance', label: 'Appearance and access', count: 1 }],
     })
-    expect(summary.selectablePartIds).toEqual([proposal.operations[0].type === 'part.recolor' ? proposal.operations[0].partId : ''])
+    expect(summary.selectablePartIds).toEqual([
+      proposal.operations[0].type === 'part.recolor' ? proposal.operations[0].partId : '',
+    ])
     expect(summary.blockers).toEqual([])
   })
 
@@ -64,5 +66,14 @@ describe('proposal review summary', () => {
     expect(summary.stale).toBe(true)
     expect(summary.ready).toBe(false)
     expect(summary.blockers[0]).toMatch(/Based on r0; the document is now r1/)
+  })
+
+  it('does not call a kernel-unhealthy preflight ready when collisions were stripped', () => {
+    const proposal = recolorProposal()
+    proposal.validation = { ...proposal.validation, healthy: false }
+
+    const summary = summariseProposal(proposal, cadEngine.getSnapshot())
+
+    expect(summary.ready).toBe(false)
   })
 })

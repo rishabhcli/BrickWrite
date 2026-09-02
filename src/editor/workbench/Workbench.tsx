@@ -988,34 +988,34 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             >
               {rightTab === 'design' ? (
                 <>
-                {connectActive ? (
-                  <div className="connect-pending-banner" data-connect-pending="true" role="status">
-                    <span>Mate in progress — Object still holds the sheet.</span>
-                    <button type="button" onClick={() => updateLayout({ ...rawLayout, rightTab: 'object' })}>
-                      Continue mate
-                    </button>
-                    <button type="button" onClick={() => workbench.setTool('select')}>
-                      Abandon
-                    </button>
-                  </div>
-                ) : null}
-                <Slot
-                  id="panel-right"
-                  wrap={({ id, title, icon, content }) => (
-                    <DockSection
-                      id={id}
-                      title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
-                      icon={icon}
-                      open={id === activeDesignSurface}
-                      grow={id === activeDesignSurface}
-                      onToggle={() => {
-                        if (isDesignSection(id)) setActiveDesignSurface(id as DesignSurfaceId)
-                      }}
-                    >
-                      {content}
-                    </DockSection>
-                  )}
-                />
+                  {connectActive ? (
+                    <div className="connect-pending-banner" data-connect-pending="true" role="status">
+                      <span>Mate in progress — Object still holds the sheet.</span>
+                      <button type="button" onClick={() => updateLayout({ ...rawLayout, rightTab: 'object' })}>
+                        Continue mate
+                      </button>
+                      <button type="button" onClick={() => workbench.setTool('select')}>
+                        Abandon
+                      </button>
+                    </div>
+                  ) : null}
+                  <Slot
+                    id="panel-right"
+                    wrap={({ id, title, icon, content }) => (
+                      <DockSection
+                        id={id}
+                        title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
+                        icon={icon}
+                        open={id === activeDesignSurface}
+                        grow={id === activeDesignSurface}
+                        onToggle={() => {
+                          if (isDesignSection(id)) setActiveDesignSurface(id as DesignSurfaceId)
+                        }}
+                      >
+                        {content}
+                      </DockSection>
+                    )}
+                  />
                 </>
               ) : (
                 <>
@@ -1024,9 +1024,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                       <button
                         key={id}
                         type="button"
-                        className={
-                          (id === 'connect' ? connectActive : rightSectionOpen(id)) ? 'active' : ''
-                        }
+                        className={(id === 'connect' ? connectActive : rightSectionOpen(id)) ? 'active' : ''}
                         aria-pressed={id === 'connect' ? connectActive : rightSectionOpen(id)}
                         title={
                           id === 'model.explorer'
@@ -1151,6 +1149,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             onSequence={workbench.regenerateBuildOrder}
             state={state}
             playbackStep={workbench.playbackStep}
+            playbackPlaying={workbench.playbackPlaying}
+            onPlayBuild={workbench.playBuild}
+            onPausePlayback={workbench.pausePlayback}
             view={timelineView}
             onViewChange={setTimelineView}
             activeProposalId={activeProposalId}

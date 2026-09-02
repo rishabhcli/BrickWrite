@@ -43,6 +43,7 @@ export {
   planAlign,
   planDistribute,
   planRotateSelection,
+  planTurnSelection,
   planTranslateSelection,
   poseKey,
   posesEqual,

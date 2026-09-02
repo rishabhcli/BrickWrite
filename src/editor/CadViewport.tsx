@@ -1,8 +1,4 @@
-import {
-  Grid,
-  OrthographicCamera,
-  PerspectiveCamera,
-} from '@react-three/drei'
+import { Grid, OrthographicCamera, PerspectiveCamera } from '@react-three/drei'
 import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -41,12 +37,7 @@ import { pointerRouterFor } from './render/pointerRouter'
 import { proposalDelta } from './render/proposalDelta'
 import { PlacementGhost } from './render/PlacementGhost'
 import type { RendererControlSurface } from './render/controlSurface'
-import {
-  MODEL_ROOT_ROTATION,
-  MODEL_ROOT_SCALE,
-  sceneMatrix,
-  sceneToLdu,
-} from './render/frame'
+import { MODEL_ROOT_ROTATION, MODEL_ROOT_SCALE, sceneMatrix, sceneToLdu } from './render/frame'
 import { registerPickable, unregisterPickable } from './render/idPass'
 import { PickRegistry } from './render/ids'
 import { MotionController, MOTION_DURATIONS, playbackStepAt, staggeredProgress, turntableAngle } from './render/motion'
@@ -54,10 +45,7 @@ import { edgeBudgetForTier, QUALITY_TIERS, type QualityTier } from './render/qua
 import type { SectionPlane } from './render/sectionPlanes'
 import type { SweepResult } from './render/sweep'
 import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
-import {
-  DEFAULT_MANIPULATION,
-  type ManipulationOptions,
-} from './workbench/transform'
+import { DEFAULT_MANIPULATION, type ManipulationOptions } from './workbench/transform'
 
 export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
 export type CameraView = 'isometric' | 'front' | 'rear' | 'left' | 'right' | 'top'
@@ -118,16 +106,24 @@ function PartObject({ part, appearance, displayTransform, interactive, idBase, f
       matrixAutoUpdate={false}
       matrix={sceneMatrix(rendered)}
       userData={{ partId: part.id }}
-      onPointerDown={interactive ? (event: ThreeEvent<PointerEvent>) => {
-        if (!interactive) return
-        event.stopPropagation()
-        onSelect(part.id, event.nativeEvent.shiftKey, event.nativeEvent.detail > 1)
-      } : undefined}
-      onDoubleClick={interactive ? (event) => {
-        if (!interactive) return
-        event.stopPropagation()
-        onSelect(part.id, false, true)
-      } : undefined}
+      onPointerDown={
+        interactive
+          ? (event: ThreeEvent<PointerEvent>) => {
+              if (!interactive) return
+              event.stopPropagation()
+              onSelect(part.id, event.nativeEvent.shiftKey, event.nativeEvent.detail > 1)
+            }
+          : undefined
+      }
+      onDoubleClick={
+        interactive
+          ? (event) => {
+              if (!interactive) return
+              event.stopPropagation()
+              onSelect(part.id, false, true)
+            }
+          : undefined
+      }
     >
       <PartVisual definition={definition} colorCode={part.color} appearance={appearance} fade={fade} />
     </group>
@@ -226,7 +222,11 @@ function PlacementController({
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       )
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; sample() })
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          sample()
+        })
     }
     const onMove = (event: PointerEvent) => {
       if (router.accepts(event)) updatePointer(event)
@@ -269,7 +269,9 @@ function PlacementController({
       if (resolved.current) onPlace(resolved.current.transform, resolved.current.legal, resolved.current.reason)
     }
 
-    const cancel = (event?: Event) => { if (!event || !('pointerId' in event) || router.accepts(event as PointerEvent)) pressedAt.current = null }
+    const cancel = (event?: Event) => {
+      if (!event || !('pointerId' in event) || router.accepts(event as PointerEvent)) pressedAt.current = null
+    }
     element.addEventListener('pointercancel', cancel)
     window.addEventListener('blur', cancel)
     element.addEventListener('pointermove', onMove)
@@ -460,7 +462,13 @@ function AnimationDriver({
       const offset = camera.position.clone().sub(target)
       const radius = Math.hypot(offset.x, offset.z)
       const angle = turntableAngle(elapsed)
-      void cameraControlsOf(controls)?.setLookAt(target.x + Math.cos(angle) * radius, camera.position.y, target.z + Math.sin(angle) * radius, ...target.toArray(), false)
+      void cameraControlsOf(controls)?.setLookAt(
+        target.x + Math.cos(angle) * radius,
+        camera.position.y,
+        target.z + Math.sin(angle) * radius,
+        ...target.toArray(),
+        false,
+      )
     }
   })
 
@@ -533,29 +541,65 @@ interface CadViewportProps {
 }
 
 type ViewportEventKey = Extract<keyof CadViewportProps, `on${string}`>
-const VIEWPORT_EVENTS: readonly ViewportEventKey[] = ['onPlacementPreview', 'onDropHandled', 'onSelect', 'onSelectMany',
-  'onClearSelection', 'onBeginPartDrag', 'onEndPartDrag', 'onTransform', 'onCommitTransforms', 'onNudgeSelection', 'onPlace', 'onJointNudge', 'onCanvasReady',
-  'onVisibilityChange', 'onSectionPlanesChange', 'onRendererReady', 'onSweep', 'onJoints']
+const VIEWPORT_EVENTS: readonly ViewportEventKey[] = [
+  'onPlacementPreview',
+  'onDropHandled',
+  'onSelect',
+  'onSelectMany',
+  'onClearSelection',
+  'onBeginPartDrag',
+  'onEndPartDrag',
+  'onTransform',
+  'onCommitTransforms',
+  'onNudgeSelection',
+  'onPlace',
+  'onJointNudge',
+  'onCanvasReady',
+  'onVisibilityChange',
+  'onSectionPlanesChange',
+  'onRendererReady',
+  'onSweep',
+  'onJoints',
+]
 
 /** Parent chrome may recreate closures; keep their implementations fresh without
  * invalidating the scene on a toast, status change or dock hover. */
 export function CadViewport(props: CadViewportProps) {
   const current = useRef(props)
-  useLayoutEffect(() => { current.current = props })
-  const present = VIEWPORT_EVENTS.map(key => typeof props[key] === 'function' ? '1' : '0').join('')
-  const events = useMemo(() => Object.fromEntries(VIEWPORT_EVENTS.map((key, index) => [key,
-    present[index] === '1' ? (...args: unknown[]) => {
-      const callback = current.current[key] as ((...values: unknown[]) => unknown) | undefined
-      return callback?.(...args)
-    } : undefined])) as Pick<CadViewportProps, ViewportEventKey>, [present])
+  useLayoutEffect(() => {
+    current.current = props
+  })
+  const present = VIEWPORT_EVENTS.map((key) => (typeof props[key] === 'function' ? '1' : '0')).join('')
+  const events = useMemo(
+    () =>
+      Object.fromEntries(
+        VIEWPORT_EVENTS.map((key, index) => [
+          key,
+          present[index] === '1'
+            ? (...args: unknown[]) => {
+                const callback = current.current[key] as ((...values: unknown[]) => unknown) | undefined
+                return callback?.(...args)
+              }
+            : undefined,
+        ]),
+      ) as Pick<CadViewportProps, ViewportEventKey>,
+    [present],
+  )
   return <MemoViewportScene {...props} {...events} />
 }
 const MemoViewportScene = memo(CadViewportScene, (previous, next) => {
   for (const key of Object.keys(next) as Array<keyof CadViewportProps>) {
-    const a = previous[key], b = next[key]
+    const a = previous[key],
+      b = next[key]
     if (a === b) continue
-    if ((key === 'selection' || key === 'proposals' || key === 'highlightIds') && Array.isArray(a) && Array.isArray(b) &&
-      a.length === b.length && a.every((value, index) => value === b[index])) continue
+    if (
+      (key === 'selection' || key === 'proposals' || key === 'highlightIds') &&
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((value, index) => value === b[index])
+    )
+      continue
     return false
   }
   return Object.keys(previous).length === Object.keys(next).length
@@ -600,7 +644,7 @@ function CadViewportScene({
   onSweep,
   onJoints,
 }: CadViewportProps) {
-  const kernelValidation = useCadSnapshot(snapshot => snapshot.document === document ? snapshot.validation : null)
+  const kernelValidation = useCadSnapshot((snapshot) => (snapshot.document === document ? snapshot.validation : null))
   const validation = useMemo(() => kernelValidation ?? validateDocument(document), [document, kernelValidation])
   const invalidIds = useMemo(
     () => new Set(validation.collisions.flatMap((issue) => [issue.partA, issue.partB])),
@@ -608,7 +652,10 @@ function CadViewportScene({
   )
   const subassemblyOrder = useMemo(() => Object.keys(document.subassemblies), [document.subassemblies])
   const selected = useMemo(() => new Set(selection), [selection])
-  const highlighted = useMemo(() => new Set((highlightIds ?? []).filter((id) => !selected.has(id))), [highlightIds, selected])
+  const highlighted = useMemo(
+    () => new Set((highlightIds ?? []).filter((id) => !selected.has(id))),
+    [highlightIds, selected],
+  )
   const root = useRef<THREE.Group>(null)
 
   /** Pose being dragged right now, shown live instead of waiting for the commit. */
@@ -955,11 +1002,14 @@ function CadViewportScene({
     [displayBounds],
   )
 
-  const baseAppearance = useCallback((partId: string): PartAppearance => {
-    if (partId === placement?.movingPartId) return 'ghost'
-    if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
-    return renderMode === 'silhouette' ? 'silhouette' : 'solid'
-  }, [placement?.movingPartId, renderMode, invalidIds])
+  const baseAppearance = useCallback(
+    (partId: string): PartAppearance => {
+      if (partId === placement?.movingPartId) return 'ghost'
+      if (renderMode === 'violations' && invalidIds.has(partId)) return 'invalid'
+      return renderMode === 'silhouette' ? 'silhouette' : 'solid'
+    },
+    [placement?.movingPartId, renderMode, invalidIds],
+  )
   const emptyExclusions = useMemo(() => new Set<string>(), [])
   const baseExclusions = overlaySelection && renderMode !== 'violations' ? emptyExclusions : excluded
   const planAppearance = overlaySelection ? baseAppearance : appearanceFor
@@ -968,14 +1018,32 @@ function CadViewportScene({
     [solidMembers, baseExclusions, planAppearance],
   )
   const selectionPlan = useMemo(() => {
-    const overlay = overlaySelection && renderMode !== 'silhouette'
-      ? solidMembers.filter(member => selected.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id))) : []
-    return planBatches(overlay, overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? selected : emptyExclusions, () => 'selected')
+    const overlay =
+      overlaySelection && renderMode !== 'silhouette'
+        ? solidMembers.filter(
+            (member) =>
+              selected.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id)),
+          )
+        : []
+    return planBatches(
+      overlay,
+      overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? selected : emptyExclusions,
+      () => 'selected',
+    )
   }, [overlaySelection, renderMode, solidMembers, selected, emptyExclusions, invalidIds])
   const targetPlan = useMemo(() => {
-    const overlay = overlaySelection && renderMode !== 'silhouette'
-      ? solidMembers.filter(member => highlighted.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id))) : []
-    return planBatches(overlay, overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? highlighted : emptyExclusions, () => 'target')
+    const overlay =
+      overlaySelection && renderMode !== 'silhouette'
+        ? solidMembers.filter(
+            (member) =>
+              highlighted.has(member.part.id) && !(renderMode === 'violations' && invalidIds.has(member.part.id)),
+          )
+        : []
+    return planBatches(
+      overlay,
+      overlay.length <= INDIVIDUAL_SELECTION_LIMIT ? highlighted : emptyExclusions,
+      () => 'target',
+    )
   }, [overlaySelection, renderMode, solidMembers, highlighted, emptyExclusions, invalidIds])
   const ghostPlan = useMemo(() => planBatches(ghostMembers, new Set<string>()), [ghostMembers])
 
@@ -1062,7 +1130,10 @@ function CadViewportScene({
 
   const placementDefinition = placement ? catalog.get(placement.definitionId) : undefined
 
-  const pendingProposal = useMemo(() => proposals.find((proposal) => proposal.status === 'pending'), [proposals])
+  const pendingProposal = useMemo(
+    () => proposals.find((proposal) => proposal.status === 'pending' && !proposal.id.startsWith('view:')),
+    [proposals],
+  )
   // The same delta the ghost draws, so the reveal counter and the reveal cannot
   // disagree about how many parts there are to reveal.
   const proposalPartCount = useMemo(
@@ -1206,88 +1277,125 @@ function CadViewportScene({
         <directionalLight position={[2, -8, -14]} intensity={0.22} color="#9fb6bd" />
 
         <EdgeLodProvider enabled={edgesEnabled && renderMode !== 'silhouette'} budget={edgeBudgetForTier(tier)}>
-        <group ref={root} rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
-          {/* The bulk of the model renders as instanced batches; only parts that
+          <group ref={root} rotation={MODEL_ROOT_ROTATION} scale={MODEL_ROOT_SCALE}>
+            {/* The bulk of the model renders as instanced batches; only parts that
             need individual treatment are drawn on their own. */}
-          {plan.batches.map((descriptor) => (
-            <PartBatch
-              key={descriptor.key}
-              descriptor={descriptor}
-              showEdges={edgesEnabled}
-              silhouette={renderMode === 'silhouette'}
-              interactive={false}
-              idBase={idBases.get(descriptor.key)}
-              onSelect={onSelect}
-            />
-          ))}
+            {plan.batches.map((descriptor) => (
+              <PartBatch
+                key={descriptor.key}
+                descriptor={descriptor}
+                showEdges={edgesEnabled}
+                silhouette={renderMode === 'silhouette'}
+                interactive={false}
+                idBase={idBases.get(descriptor.key)}
+                onSelect={onSelect}
+              />
+            ))}
 
-          {/* Context outside an isolation, drawn faintly and left out of picking. */}
-          {ghostPlan.batches.map((descriptor) => (
-            <PartBatch
-              key={`ghost:${descriptor.key}`}
-              descriptor={descriptor}
-              showEdges={false}
-              silhouette={false}
-              interactive={false}
-              ghostOpacity={resolvedVisibility.ghostOpacity}
-              onSelect={onSelect}
-            />
-          ))}
+            {/* Context outside an isolation, drawn faintly and left out of picking. */}
+            {ghostPlan.batches.map((descriptor) => (
+              <PartBatch
+                key={`ghost:${descriptor.key}`}
+                descriptor={descriptor}
+                showEdges={false}
+                silhouette={false}
+                interactive={false}
+                ghostOpacity={resolvedVisibility.ghostOpacity}
+                onSelect={onSelect}
+              />
+            ))}
 
-          {plan.individual.map((member) => (
-            <PartObject
-              key={member.part.id}
-              part={member.part}
-              appearance={appearanceFor(member.part.id)}
-              displayTransform={dragPreview?.get(member.part.id) ?? member.transform}
-              interactive={false}
-              idBase={idBases.get(`solo:${member.part.id}`)}
-              onSelect={onSelect}
-            />
-          ))}
+            {plan.individual.map((member) => (
+              <PartObject
+                key={member.part.id}
+                part={member.part}
+                appearance={appearanceFor(member.part.id)}
+                displayTransform={dragPreview?.get(member.part.id) ?? member.transform}
+                interactive={false}
+                idBase={idBases.get(`solo:${member.part.id}`)}
+                onSelect={onSelect}
+              />
+            ))}
 
-          <group renderOrder={1}>
-            {selectionPlan.batches.map(descriptor => <PartBatch key={`selection:${descriptor.key}`}
-              descriptor={descriptor} showEdges={true} silhouette={false} interactive={false} onSelect={onSelect} />)}
-            {selectionPlan.individual.map(member => <PartObject key={`selection:${member.part.id}`}
-              part={member.part} displayTransform={member.transform} appearance="selected" interactive={false} onSelect={onSelect} />)}
-            {targetPlan.batches.map(descriptor => <PartBatch key={`target:${descriptor.key}`}
-              descriptor={descriptor} showEdges={true} silhouette={false} interactive={false} onSelect={onSelect} />)}
-            {targetPlan.individual.map(member => <PartObject key={`target:${member.part.id}`}
-              part={member.part} displayTransform={member.transform} appearance="target" interactive={false} onSelect={onSelect} />)}
-          </group>
+            <group renderOrder={1}>
+              {selectionPlan.batches.map((descriptor) => (
+                <PartBatch
+                  key={`selection:${descriptor.key}`}
+                  descriptor={descriptor}
+                  showEdges={true}
+                  silhouette={false}
+                  interactive={false}
+                  onSelect={onSelect}
+                />
+              ))}
+              {selectionPlan.individual.map((member) => (
+                <PartObject
+                  key={`selection:${member.part.id}`}
+                  part={member.part}
+                  displayTransform={member.transform}
+                  appearance="selected"
+                  interactive={false}
+                  onSelect={onSelect}
+                />
+              ))}
+              {targetPlan.batches.map((descriptor) => (
+                <PartBatch
+                  key={`target:${descriptor.key}`}
+                  descriptor={descriptor}
+                  showEdges={true}
+                  silhouette={false}
+                  interactive={false}
+                  onSelect={onSelect}
+                />
+              ))}
+              {targetPlan.individual.map((member) => (
+                <PartObject
+                  key={`target:${member.part.id}`}
+                  part={member.part}
+                  displayTransform={member.transform}
+                  appearance="target"
+                  interactive={false}
+                  onSelect={onSelect}
+                />
+              ))}
+            </group>
 
-          {placement && placementDefinition && placementPreview && (
-            <PlacementGhost definition={placementDefinition} color={placement.color} placement={placementPreview} motion={motion} />
-          )}
-
-          {pendingProposal && (
-            <GhostProposal
-              key={pendingProposal.id}
-              proposal={pendingProposal}
-              current={document}
-              revealed={revealCount}
-            />
-          )}
-
-          {renderMode === 'connections' &&
-            Object.values(document.parts).flatMap((part) =>
-              getWorldConnectors(part).map((feature) => (
-                <mesh
-                  key={`${feature.partId}_${feature.id}`}
-                  position={feature.frame.position as unknown as [number, number, number]}
-                >
-                  <sphereGeometry args={[2.4, 10, 10]} />
-                  <meshBasicMaterial
-                    color={feature.gender === 'male' ? '#f4aa45' : '#7cefe7'}
-                    depthTest={false}
-                    transparent
-                    opacity={0.9}
-                  />
-                </mesh>
-              )),
+            {placement && placementDefinition && placementPreview && (
+              <PlacementGhost
+                definition={placementDefinition}
+                color={placement.color}
+                placement={placementPreview}
+                motion={motion}
+              />
             )}
-        </group>
+
+            {pendingProposal && (
+              <GhostProposal
+                key={pendingProposal.id}
+                proposal={pendingProposal}
+                current={document}
+                revealed={revealCount}
+              />
+            )}
+
+            {renderMode === 'connections' &&
+              Object.values(document.parts).flatMap((part) =>
+                getWorldConnectors(part).map((feature) => (
+                  <mesh
+                    key={`${feature.partId}_${feature.id}`}
+                    position={feature.frame.position as unknown as [number, number, number]}
+                  >
+                    <sphereGeometry args={[2.4, 10, 10]} />
+                    <meshBasicMaterial
+                      color={feature.gender === 'male' ? '#f4aa45' : '#7cefe7'}
+                      depthTest={false}
+                      transparent
+                      opacity={0.9}
+                    />
+                  </mesh>
+                )),
+              )}
+          </group>
         </EdgeLodProvider>
 
         <ViewportControls
