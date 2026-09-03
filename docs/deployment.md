@@ -394,9 +394,19 @@ bearer tokens and JWTs are matched by shape; the Convex one additionally strips
 anything email-shaped, because that deployment stores an address in exactly one
 table and a log line is a copy.
 
-**Nothing subscribes to any of these yet.** Configuring a drain, a Logpush job,
-a Convex log stream and a synthetic check against `/api/health` is the remaining
-work, and it is deployment configuration rather than code.
+Until recently the share surface reached none of them: `handleError` computed a
+redacted path and discarded it, so a `SHARE_KV` failure 500'd every share page
+and the gallery with no line anywhere. It logs now, under `functions/share`.
+
+**No drain subscribes to any of these yet.** Configuring a Vercel log drain, a
+Pages Logpush job and a Convex log stream is the remaining work, and it is
+deployment configuration rather than code.
+
+The synthetic check is no longer on that list: `.github/workflows/uptime.yml`
+asserts `metering` and `concurrency` are both `ready`, not just that the
+endpoint answers. Losing the Upstash binding turns both ceilings off while
+`/api/health` still returns `200 {"ok":true}`, so the probe used to stay green
+with nothing counting in front of the model key.
 
 ## Verifying a release
 
