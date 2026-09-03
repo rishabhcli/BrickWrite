@@ -441,19 +441,29 @@ domain list.
 ## Distribution budgets
 
 `npm run build` ends with `tools/check-dist-budget.mjs`. It fails before deploy
-when `dist/` exceeds 200 MiB total, 16,000 files, or 20 MiB for one file. The
+when `dist/` exceeds 320 MiB total, 16,000 files, or 24 MiB for one file. The
 file-count and single-file budgets deliberately retain headroom below
 Cloudflare Pages' current Free-plan limits of 20,000 files and 25 MiB per file;
 the total-size ceiling is Brickwright's own delivery/operability budget because
 Pages publishes no aggregate-byte limit. Override values only for a deliberate,
 reviewed migration using the `DIST_*` variables documented in `.env.example`.
 
-The total was raised from 160 MiB when all ten demos were rebuilt as complete
-scenes. Together they now carry more than 85,000 editable parts; their source
-assets occupy about 122 MiB and the complete production output is about 185 MiB.
-Nearly all of a set's bytes are its stored connection graph, so the cheapest
-future saving remains graph encoding rather than shrinking the collection back
-to sparse massing studies.
+The measured output today is **299.75 MiB across 1,953 files**, the largest of
+them `demos/saucer-freighter/document.json` at 22.84 MiB. That is close enough
+to the per-file ceiling to be worth watching: the single-file budget has only
+2.16 MiB of headroom left against Cloudflare's hard 25 MiB, so a demo that grows
+much further will fail the gate rather than the platform, which is the intent.
+
+The totals moved twice — 160 MiB to 200 MiB when the demos became complete
+scenes, then to 320 MiB when the collection was rebuilt as real models carrying
+112,000+ editable parts. Roughly four fifths of a demo's bytes are its stored
+`connections` map, and the kernel derives that map: `deriveConnectionEdges` runs
+over the parts, and `src/demos/manifest.test.ts` asserts the derived graph
+matches the published one edge for edge. Shipping it is therefore shipping a
+cache, and dropping it would take every demo under 6 MiB and the whole deploy
+under 150 MiB. It is not free — nothing on the demo-open path re-derives today,
+so that change belongs where a published document is loaded, not in the
+generator. Until it is made, growing a demo means re-reading these numbers.
 
 ## Rollback
 
