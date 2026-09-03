@@ -73,7 +73,11 @@ jobs:
       # split is learning about every regression in one run.
       fail-fast: false
       matrix:
-        suite: [landing, production, share]
+        # `webmcp` belongs on this matrix rather than the GPU one: it drives
+        # `document.modelContext` and one kernel write, and asserts nothing that
+        # a software rasteriser changes. It navigates the editor on `?doc=blank`
+        # so it never rasterises the seeded showcase.
+        suite: [landing, production, share, webmcp]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

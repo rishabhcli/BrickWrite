@@ -55,10 +55,17 @@ every browser suite.
 The browser suites under `tools/e2e/` then run one runner per suite, split across two jobs
 by a single question — **does this suite need a GPU?**
 
-`acceptance` holds `landing`, `production` and `share`. Nothing they assert
-changes with the machine: a byte budget, whether the built bundle executes,
-whether publication works. A red leg is a real regression, and `deploy` waits on
-it.
+`acceptance` holds `landing`, `production`, `share` and `webmcp`. Nothing they
+assert changes with the machine: a byte budget, whether the built bundle
+executes, whether publication works, whether the WebMCP tools reach
+`document.modelContext` on every route. A red leg is a real regression, and
+`deploy` waits on it.
+
+`webmcp` is on this matrix rather than the GPU one because it drives the tool
+surface and one kernel write, and opens the editor on `?doc=blank` so it never
+rasterises the seeded showcase. It is the gate on the property that the deployed
+origin's front page offers an agent anything at all — which was untrue and
+unnoticed until it was measured, precisely because nothing gated it.
 
 `acceptance-gpu` holds `e2e-smoke` and `renderer`, and is `continue-on-error`.
 A GitHub-hosted runner has no graphics hardware, so Chromium rasterises WebGL
