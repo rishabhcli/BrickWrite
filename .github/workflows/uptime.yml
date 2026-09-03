@@ -24,4 +24,15 @@ jobs:
           node -e '
             const value = JSON.parse(process.argv[1]);
             if (value.ok !== true) throw new Error(`health endpoint is not ok: ${process.argv[1]}`);
+            // The two ceilings in front of the model key are off until the
+            // deployment gives them somewhere to count, and the endpoint has
+            // always said which state it is in. Nothing read it: dropping the
+            // Upstash variables left the daily token ceiling and the in-flight
+            // ceiling both unconfigured, admitting every request, while this
+            // probe stayed green on "ok": true alone.
+            const off = [
+              value.metering === "ready" ? null : `metering is ${value.metering}`,
+              value.concurrency?.status === "ready" ? null : `concurrency is ${value.concurrency?.status}`,
+            ].filter(Boolean);
+            if (off.length) throw new Error(`spend controls are not armed: ${off.join(", ")}`);
           ' "$health"

@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { requestUrl } from '../http/lifecycle.js'
 import { createGenerationRoute, type RouteModule } from './index.js'
 import type { ProviderConfig } from './anthropic.js'
 
@@ -39,7 +40,7 @@ export function createGenerationServer(options: StandaloneOptions = {}): Promise
   const host = options.host ?? '127.0.0.1'
 
   const server = createServer((request, response) => {
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? host}`)
+    const url = requestUrl(request)
     if (url.pathname === '/api/health') {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ ok: true, routes: [route.prefix] }))

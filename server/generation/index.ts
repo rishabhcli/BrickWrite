@@ -380,13 +380,30 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
         const requestId = `gen_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
         writer.write({ type: 'accepted', requestId })
 
+        /*
+         * Settled on every exit, not just the one that returns a model.
+         *
+         * A generation fans out to a model call per candidate per phase, and
+         * metering only the success branch meant a timeout, a hangup, or a
+         * schema violation after two billed attempts all cost real money the
+         * daily ceiling never saw. `SchemaViolationError` now carries what its
+         * attempts spent for the same reason.
+         */
+        let spent: CompletionResult['usage'] | null = null
+        let metered = false
+        const meter = () => {
+          if (metered || !spent) return
+          metered = true
+          context?.reportUsage?.(spent)
+        }
+
         try {
           span.signal.throwIfAborted()
           if (isBrief) {
             const result = await awaitWithAbort(handleBrief(body, emit, span.signal, options), span.signal)
-            // Metered after the call, on what it actually cost. A reservation
-            // taken beforehand would have to guess a generation's size.
-            context?.reportUsage?.(result.usage)
+            // Metered on what it actually cost. A reservation taken beforehand
+            // would have to guess a generation's size.
+            spent = result.usage
             writer.write({
               type: 'result',
               requestId,
@@ -398,7 +415,7 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
             })
           } else {
             const result = await awaitWithAbort(handleGenerate(body, emit, span.signal, options), span.signal)
-            context?.reportUsage?.(result.usage)
+            spent = result.usage
             writer.write({
               type: 'result',
               requestId,
@@ -409,6 +426,9 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
             })
           }
         } catch (cause) {
+          // Two billed attempts happened before this was thrown; the error is
+          // the only thing still holding what they cost.
+          if (cause instanceof SchemaViolationError && cause.usage) spent = cause.usage
           if (span.reason === 'client') return true
           const wire =
             span.reason === 'timeout'
@@ -423,6 +443,9 @@ export function createGenerationRoute(options: HandlerOptions = {}): RouteModule
           process.stderr.write(`[api] /api generation ${requestId} failed: ${redact(String(cause))}\n`)
           writer.write({ type: 'error', requestId, error: wire.code, detail: wire.detail })
         } finally {
+          // Before the response settles, and on every path out — including the
+          // early `return` a client hangup takes.
+          meter()
           writer.close()
           if (!response.destroyed && !response.writableEnded) response.end()
         }

@@ -11,6 +11,7 @@ import { configureBudget } from '../server/security/budget.js'
 import { budgetStoreFromEnv } from '../server/security/budgetStore.js'
 import { configureConcurrency } from '../server/security/concurrency.js'
 import { gateStatus, isPaidRequest, openPaidGate } from '../server/security/gate.js'
+import { requestUrl } from '../server/http/lifecycle.js'
 import { logProcessEvent } from '../server/log.js'
 
 const routes = [createAssistantRoute(), createGenerationRoute()]
@@ -63,7 +64,7 @@ function proxyAccepted(request: IncomingMessage): boolean {
  * streaming, aborts and provider redaction after those two gates pass.
  */
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
-  const url = new URL(request.url ?? '/', `https://${request.headers.host ?? 'api.brickwrite.tech'}`)
+  const url = requestUrl(request)
 
   if (!proxyAccepted(request)) {
     json(response, 403, { error: 'proxy_required', detail: 'Use the Brickwright application API origin.' })

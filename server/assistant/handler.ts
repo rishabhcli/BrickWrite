@@ -258,6 +258,28 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
 
     emit({ type: 'start', requestId, model: provider.model, toolTurn: used, maxToolTurns: budget })
 
+    /*
+     * What the provider has billed so far, not what this request managed to
+     * return.
+     *
+     * Metering used to sit on the success path, after `finalMessage()`. Every
+     * other exit — a client that hung up, a deadline, an upstream 5xx — left
+     * the tokens spent and the counter unmoved, so aborting each request just
+     * before it resolved bought unmetered model calls at the rate the in-flight
+     * ceiling allows. The ceiling counts requests; only this counts money.
+     *
+     * Accumulated from the stream rather than the final message, because the
+     * final message is exactly what those exits do not produce.
+     */
+    const spent = { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 }
+    let metered = false
+    const meter = () => {
+      if (metered) return
+      metered = true
+      if (!spent.inputTokens && !spent.outputTokens && !spent.cacheWriteTokens && !spent.cacheReadTokens) return
+      context?.reportUsage?.({ ...spent })
+    }
+
     try {
       span.signal.throwIfAborted()
       const stream = provider.streamChat({
@@ -281,6 +303,15 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
             break
           }
           const event = next.value
+          // `message_start` carries the input classes, `message_delta` the
+          // running output count. Both arrive before anything that can throw.
+          if (event.type === 'message_start') {
+            spent.inputTokens = event.message.usage.input_tokens ?? 0
+            spent.cacheWriteTokens = event.message.usage.cache_creation_input_tokens ?? 0
+            spent.cacheReadTokens = event.message.usage.cache_read_input_tokens ?? 0
+          } else if (event.type === 'message_delta') {
+            spent.outputTokens = event.usage.output_tokens ?? 0
+          }
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta' && event.delta.text) {
             emit({ type: 'text', text: event.delta.text })
           }
@@ -310,17 +341,15 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
         ...(cacheReadTokens ? { cacheReadInputTokens: cacheReadTokens } : {}),
         ...(cacheWriteTokens ? { cacheCreationInputTokens: cacheWriteTokens } : {}),
       })
-      // Per turn, not per request: a tool-using conversation is several model
-      // calls and metering only the last one would undercount most of them.
-      // All four token classes, because `input_tokens` excludes both cache
-      // classes and this route now caches the transcript as well as the system
-      // prompt — reporting two of four would meter most of a leg as free.
-      context?.reportUsage?.({
-        inputTokens: message.usage.input_tokens,
-        outputTokens: message.usage.output_tokens,
-        cacheWriteTokens,
-        cacheReadTokens,
-      })
+      // The final message is the authoritative count, so it replaces what the
+      // stream accumulated. All four token classes, because `input_tokens`
+      // excludes both cache classes and this route caches the transcript as
+      // well as the system prompt — reporting two of four would meter most of
+      // a leg as free. The report itself happens in `finally`.
+      spent.inputTokens = message.usage.input_tokens
+      spent.outputTokens = message.usage.output_tokens
+      spent.cacheWriteTokens = cacheWriteTokens
+      spent.cacheReadTokens = cacheReadTokens
 
       const stop =
         message.stop_reason === 'tool_use'
@@ -373,6 +402,9 @@ export function createAssistantRoute(options: AssistantRouteOptions = {}) {
       })
       emit({ type: 'done', stop: 'error' })
     } finally {
+      // Before the response settles, and on every path out — including the
+      // early `return` a client hangup takes.
+      meter()
       writer.close()
       if (!response.writableEnded) response.end()
     }

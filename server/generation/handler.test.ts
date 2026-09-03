@@ -4,6 +4,7 @@
 // the right default for a library that reads a secret — and jsdom, the suite's
 // default environment, looks exactly like one. The server module is Node-only,
 // so it is tested in a Node environment rather than by disabling that guard.
+import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   BRIEF_SCHEMA as SHARED_BRIEF_SCHEMA,
@@ -11,6 +12,7 @@ import {
   ModelProviderUnavailableError,
 } from '../../src/platform/contracts.ts'
 import { AnthropicGenerationProvider, SchemaViolationError, configFromEnv, redact } from './anthropic.ts'
+import { createGenerationRoute } from './index.ts'
 import { kindForSchema, validatePayload } from './schema.ts'
 import { createGenerationServer, type StandaloneServer } from './serve.ts'
 
@@ -85,6 +87,29 @@ type InjectedProviderConfig = NonNullable<Parameters<typeof createGenerationServ
 async function start(providerConfig?: InjectedProviderConfig) {
   running = await createGenerationServer(providerConfig ? { providerConfig } : {})
   return running
+}
+
+/** The route with a metering context, which `createGenerationServer` has none of. */
+async function startMetered(providerConfig: InjectedProviderConfig, reported: Array<Record<string, number>>) {
+  const route = createGenerationRoute({ providerConfig })
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://request.invalid')
+    void route
+      .handle(request, response, url, { reportUsage: (usage) => reported.push(usage as Record<string, number>) })
+      .then((handled) => {
+        if (!handled) {
+          response.writeHead(404)
+          response.end()
+        }
+      })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('no port')
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  }
 }
 
 /** Reads a newline-delimited response into its events. */
@@ -453,5 +478,46 @@ describe('the route claims only what it serves', () => {
 
     const other = await fetch(`${server.url}/api/something-else`, { method: 'POST', body: '{}' })
     expect(other.status).toBe(404)
+  })
+})
+
+describe('the meter counts what the provider billed, not what the request returned', () => {
+  it('meters a generation the schema check refused after two attempts', async () => {
+    // Two completed model calls, both billed, and the old code discarded their
+    // counts with the locals that held them — so a prompt engineered to fail
+    // validation twice was free as far as the daily ceiling was concerned.
+    const reported: Array<Record<string, number>> = []
+    const { client, calls } = stubClient([message({ boxes: 'nope' }), message({ boxes: 'still nope' })])
+    const server = await startMetered({ client, model: 'claude-sonnet-5' }, reported)
+    try {
+      const response = await fetch(`${server.url}/api/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ system: 's', prompt: 'p', schema: MASSING_SCHEMA }),
+      })
+      const events = await ndjson(response)
+      expect(events.some((event) => event.type === 'error')).toBe(true)
+      expect(calls).toHaveLength(2)
+      expect(reported).toEqual([{ inputTokens: 200, outputTokens: 80, cacheWriteTokens: 0, cacheReadTokens: 0 }])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('still meters exactly once on the success path', async () => {
+    const reported: Array<Record<string, number>> = []
+    const { client } = stubClient([message(goodBoxes)])
+    const server = await startMetered({ client, model: 'claude-sonnet-5' }, reported)
+    try {
+      const response = await fetch(`${server.url}/api/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ system: 's', prompt: 'p', schema: MASSING_SCHEMA }),
+      })
+      await ndjson(response)
+      expect(reported).toEqual([{ inputTokens: 100, outputTokens: 40, cacheWriteTokens: 0, cacheReadTokens: 0 }])
+    } finally {
+      await server.close()
+    }
   })
 })

@@ -9,7 +9,7 @@
     "dev": "hexclave dev --config-file ./hexclave.config.ts -- npm run dev:inner",
     "dev:inner": "node tools/dev.mjs",
     "dev:vite": "vite --host 0.0.0.0",
-    "dev:api": "node server/index.ts",
+    "dev:api": "node --import ./tools/ts-resolve.mjs server/index.ts",
     "build": "tsc -b && vite build && node tools/check-dist-budget.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -32,7 +32,7 @@
     "check": "npm run lint && npm run test && npm run typecheck:convex && npm run typecheck:functions && npm run build",
     "verify:all": "npm run check && npm run demos:check && npm run test:e2e:all",
     "preview": "vite preview --host 0.0.0.0",
-    "serve:api": "node server/index.ts"
+    "serve:api": "node --import ./tools/ts-resolve.mjs server/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

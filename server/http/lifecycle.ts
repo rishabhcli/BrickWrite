@@ -1,5 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+/**
+ * The request URL, built without trusting the `Host` header.
+ *
+ * Every dispatcher used to interpolate `request.headers.host` into the base,
+ * which throws `ERR_INVALID_URL` for a header llhttp accepts but WHATWG does
+ * not — `Host: a b` is enough. That ran synchronously in the listener, outside
+ * any try, so it took the process down rather than answering 400; on the Vercel
+ * entry it ran before the proxy-secret check, so it did not even need the
+ * secret.
+ *
+ * A constant base is not a workaround. Nothing downstream reads `host`,
+ * `origin` or `protocol` off this URL — the routes only ever read
+ * `pathname` — so the header was load-bearing for nothing and trusted anyway.
+ */
+export function requestUrl(request: Pick<IncomingMessage, 'url'>): URL {
+  return new URL(request.url ?? '/', 'http://request.invalid')
+}
+
 /** One deadline covers upload, provider work, corrective retries and response assembly. */
 export function requestLifetime(request: IncomingMessage, response: ServerResponse, timeoutMs: number) {
   const controller = new AbortController()

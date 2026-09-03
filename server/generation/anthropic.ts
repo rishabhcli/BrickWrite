@@ -73,11 +73,22 @@ export class SchemaViolationError extends Error {
   // which rejects parameter properties outright because erasing one changes
   // runtime behaviour rather than just removing a type.
   readonly problems: string[]
+  /**
+   * What the attempts cost before this was thrown.
+   *
+   * Both throw sites come after one or two completed model calls, and the
+   * accumulated counts used to die with the locals holding them — so a prompt
+   * engineered to fail validation twice was two billed generations the daily
+   * ceiling never saw. Optional because a caller that constructs this without
+   * having called the model has nothing to report.
+   */
+  readonly usage?: CompletionResult['usage']
 
-  constructor(problems: string[]) {
+  constructor(problems: string[], usage?: CompletionResult['usage']) {
     super(`The model's answer did not satisfy the schema: ${problems.join('; ')}`)
     this.name = 'SchemaViolationError'
     this.problems = problems
+    this.usage = usage
   }
 }
 
@@ -169,9 +180,10 @@ export class AnthropicGenerationProvider {
       cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0
 
       if (message.stop_reason === 'refusal') {
-        throw new SchemaViolationError([
-          `the model declined this request (${message.stop_details?.category ?? 'unspecified'})`,
-        ])
+        throw new SchemaViolationError(
+          [`the model declined this request (${message.stop_details?.category ?? 'unspecified'})`],
+          { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens },
+        )
       }
 
       const text = (message.content ?? [])
@@ -207,7 +219,7 @@ export class AnthropicGenerationProvider {
       })
     }
 
-    throw new SchemaViolationError(problems)
+    throw new SchemaViolationError(problems, { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens })
   }
 
   private async call(

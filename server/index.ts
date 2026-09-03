@@ -58,6 +58,23 @@ if (shouldListen) {
   configureBudget(counter)
   configureConcurrency(counter)
 
+  /*
+   * A last line, not a licence to throw.
+   *
+   * Every known synchronous hazard in the listener is fixed where it lives —
+   * `requestUrl` is the one this was written for. But a route module is
+   * third-party from this file's point of view, and an in-flight request holds
+   * a concurrency slot whose lease runs for five minutes: dying takes the slot
+   * with it and refuses that account until the lease expires. Logging and
+   * staying up costs one bad response instead.
+   */
+  process.on('uncaughtException', (cause) => {
+    logProcessEvent({ level: 'error', service: 'api', message: 'uncaught exception', cause })
+  })
+  process.on('unhandledRejection', (cause) => {
+    logProcessEvent({ level: 'error', service: 'api', message: 'unhandled rejection', cause })
+  })
+
   const server = createServer(createRequestListener(routes))
   const port = Number(process.env.BRICKWRIGHT_API_PORT ?? 8787)
   server.listen(port, '127.0.0.1', () => {

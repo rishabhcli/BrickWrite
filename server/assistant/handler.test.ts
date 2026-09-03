@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createServer, type Server } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AnthropicModelProvider } from './provider.ts'
 import { buildChatMessages, createAssistantRoute, structuralCheck, toApiMessages, toolTurnsUsed } from './handler.ts'
 import { ASSISTANT_PROTOCOL, type AssistantEvent, type WireMessage } from './protocol.ts'
@@ -58,6 +58,10 @@ function fakeAnthropic(script: StreamScript) {
         }
         return {
           async *[Symbol.asyncIterator]() {
+            yield {
+              type: 'message_start',
+              message: { usage: { input_tokens: 11, cache_creation_input_tokens: 2, cache_read_input_tokens: 7 } },
+            }
             for (const text of script.deltas ?? []) {
               yield { type: 'content_block_delta', delta: { type: 'text_delta', text } }
             }
@@ -66,6 +70,7 @@ function fakeAnthropic(script: StreamScript) {
                 options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
               })
             }
+            yield { type: 'message_delta', usage: { output_tokens: 4 } }
           },
           async finalMessage() {
             return final
@@ -534,6 +539,55 @@ describe('prompt cache layout', () => {
       cacheReadInputTokens: 7000,
       cacheCreationInputTokens: 900,
     })
+  })
+
+  it('meters a request the client abandoned, because the provider still billed it', async () => {
+    // Metering used to sit after `finalMessage()`, so hanging up just before it
+    // resolved bought a model call the daily ceiling never saw. The in-flight
+    // ceiling does not help: it counts requests, and this one finished.
+    const reported: Array<Record<string, number>> = []
+    const client = fakeAnthropic({ deltas: ['par'], hang: true })
+    const route = createAssistantRoute({
+      provider: new AnthropicModelProvider({ apiKey: 'k', client: client as never }),
+    })
+    const base = await listen(route, { reportUsage: (usage) => reported.push(usage as Record<string, number>) })
+
+    const controller = new AbortController()
+    const response = await fetch(`${base}/api/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(chatBody()),
+      signal: controller.signal,
+    })
+    const reader = response.body!.getReader()
+    await reader.read()
+    controller.abort()
+    await reader.cancel().catch(() => {})
+
+    await vi.waitFor(() => expect(reported).toHaveLength(1))
+    // Input and both cache classes arrived on `message_start`, before the hang.
+    // Output is zero because the stream never reached `message_delta` — which
+    // is the honest count for a turn that was cut off, not an excuse to skip it.
+    expect(reported[0]).toEqual({ inputTokens: 11, outputTokens: 0, cacheWriteTokens: 2, cacheReadTokens: 7 })
+  })
+
+  it('meters a request the deadline cancelled', async () => {
+    const reported: Array<Record<string, number>> = []
+    const client = fakeAnthropic({ deltas: ['x'], hang: true })
+    const route = createAssistantRoute({
+      provider: new AnthropicModelProvider({ apiKey: 'k', client: client as never }),
+      timeoutMs: 60,
+    })
+    const base = await listen(route, { reportUsage: (usage) => reported.push(usage as Record<string, number>) })
+    const response = await fetch(`${base}/api/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(chatBody()),
+    })
+    const events = await readEvents(response)
+
+    expect(events.some((event) => event.type === 'error' && event.code === 'TIMEOUT')).toBe(true)
+    expect(reported).toEqual([{ inputTokens: 11, outputTokens: 0, cacheWriteTokens: 2, cacheReadTokens: 7 }])
   })
 })
 

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { connect } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createRequestListener, type RouteModule } from './dispatch.ts'
 import { configureBudget } from './security/budget.ts'
@@ -34,6 +35,31 @@ describe('API process dispatch', () => {
         metering: 'unconfigured',
         concurrency: { status: 'unconfigured', ceiling: DEFAULT_MAX_IN_FLIGHT },
       })
+    })
+  })
+
+  it('survives a Host header the URL parser refuses', async () => {
+    // `Host: a b` is accepted by llhttp and rejected by WHATWG, so building the
+    // base from it threw ERR_INVALID_URL synchronously in the listener — outside
+    // any try, with no uncaughtException handler, which killed the process and
+    // leaked every held concurrency slot for the length of its lease.
+    await withServer([{ prefix: '/api/assistant', handle: async () => false }], async (base) => {
+      const { port } = new URL(base)
+      const raw = await new Promise<string>((resolve, reject) => {
+        const socket = connect({ host: '127.0.0.1', port: Number(port) }, () => {
+          socket.write('GET /api/health HTTP/1.1\r\nHost: a b\r\nConnection: close\r\n\r\n')
+        })
+        let text = ''
+        socket.setEncoding('utf8')
+        socket.on('data', (chunk) => { text += chunk })
+        socket.on('end', () => resolve(text))
+        socket.on('error', reject)
+      })
+      expect(raw).toMatch(/^HTTP\/1\.1 200 /)
+
+      // Still serving afterwards is the actual property under test.
+      const after = await fetch(`${base}/api/health`)
+      expect(after.status).toBe(200)
     })
   })
 

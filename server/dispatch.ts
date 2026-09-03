@@ -5,6 +5,7 @@
  * port or discovering route modules from disk.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { requestUrl } from './http/lifecycle.js'
 import { logProcessEvent } from './log.js'
 import { gateStatus, isPaidRequest, openPaidGate } from './security/gate.js'
 
@@ -58,7 +59,7 @@ export const LOCAL_SUBJECT = '@local'
 
 export function createRequestListener(routes: RouteModule[], subject = LOCAL_SUBJECT) {
   return (request: IncomingMessage, response: ServerResponse) => {
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
+    const url = requestUrl(request)
 
     if (url.pathname === '/api/health') {
       response.writeHead(200, { 'content-type': 'application/json' })
