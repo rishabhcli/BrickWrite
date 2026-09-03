@@ -246,11 +246,18 @@ export async function recordCheckpointGroup(
 /**
  * Deletes part of one superseded checkpoint group, or reports there is nothing to do.
  *
- * Chunk zero goes first, and the group leaves the branch's window before any
- * row is removed, so a pass that stops halfway leaves nothing reachable:
+ * Chunk zero goes first, so a pass that stops halfway leaves nothing reachable:
  * `latestBranchCheckpoint` selects on chunk zero and finds none, and the only
  * callers that read a group by id — a named version, a creation receipt, a
  * recovery receipt — are pinned and never pruned.
+ *
+ * The group's pointer, however, stays in the window until the group is empty,
+ * because the window is this function's loop variable. Retiring it on the first
+ * pass made reachability true and completion false: only
+ * `CHECKPOINT_PRUNE_CHUNKS` rows go per pass, and the reschedule re-read a
+ * window the group had already left, so at `SNAPSHOT_CHUNK_BYTES` a document
+ * over ~3.2 MB abandoned every chunk past the eighth — unreachable, and with no
+ * cron in this deployment, unreclaimable.
  *
  * Returns whether another pass is needed, so the caller can reschedule rather
  * than loop inside one transaction.
@@ -280,10 +287,15 @@ export async function pruneCheckpointChunks(
     .withIndex('by_group', (q) => q.eq('groupId', oldest))
     .take(CHECKPOINT_PRUNE_CHUNKS)
   if (!chunks.length) {
+    // Empty, so the pointer has done its work and the window can lose it.
     await ctx.db.patch(branchId, { checkpointGroupIds: rest })
     return rest.length > CHECKPOINT_RETENTION
   }
-  if (chunks[0].chunkIndex === 0) await ctx.db.patch(branchId, { checkpointGroupIds: rest })
+  // `by_group` is keyed on `chunkIndex`, so chunk zero goes in the first pass
+  // and the group stops being reachable immediately — but the pointer stays
+  // until the group is actually empty. Retiring it here instead was the bug:
+  // the next pass re-read the window, no longer found the group, and every
+  // chunk past the eighth became a row nothing could reach or reclaim.
   for (const chunk of chunks) await ctx.db.delete(chunk._id)
   return true
 }

@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { CHECKPOINT_RETENTION } from '../model/snapshots'
+import { CHECKPOINT_PRUNE_CHUNKS, CHECKPOINT_RETENTION } from '../model/snapshots'
 import { codeOf, expectOk, harness, person, snapshotUpload, type Harness } from './harness'
 
 /**
@@ -23,7 +23,8 @@ const claim = (t: Harness, as: string) =>
     catalogVersion: 'fixture-1',
   })
 
-const upload = (revision: number) => snapshotUpload({ localProjectId: 'doc-1', revision })
+const upload = (revision: number, chunks = 1) =>
+  snapshotUpload({ localProjectId: 'doc-1', revision, chunks })
 
 /** Distinct checkpoint groups still stored. `t.run` may only return Convex types. */
 const checkpointGroups = (t: Harness, projectId: string): Promise<number> =>
@@ -40,7 +41,7 @@ const checkpointGroups = (t: Harness, projectId: string): Promise<number> =>
     return groups.size
   })
 
-const save = async (t: Harness, projectId: string, revision: number) => {
+const save = async (t: Harness, projectId: string, revision: number, chunks = 1) => {
   // A checkpoint may not run ahead of the branch head, so advance the head to
   // meet it rather than saving every checkpoint at revision zero.
   await t.run(async (ctx) => {
@@ -49,9 +50,22 @@ const save = async (t: Harness, projectId: string, revision: number) => {
   })
   return t.withIdentity(person('owner')).mutation(api.projects.saveCheckpoint, {
     projectId,
-    snapshot: upload(revision),
+    snapshot: upload(revision, chunks),
   })
 }
+
+/** Every stored chunk of every automatic checkpoint, pruned or not. */
+const checkpointChunks = (t: Harness, projectId: string): Promise<number> =>
+  t.run(async (ctx) =>
+    (
+      await ctx.db
+        .query('snapshots')
+        .withIndex('by_project_kind_revision', (q) =>
+          q.eq('projectId', projectId as Id<'projects'>).eq('kind', 'checkpoint'),
+        )
+        .collect()
+    ).length,
+  )
 
 describe('checkpoint retention', () => {
   test('keeps a bounded window of automatic checkpoints', async () => {
@@ -63,6 +77,27 @@ describe('checkpoint retention', () => {
     await t.finishAllScheduledFunctions(() => {})
 
     expect(await checkpointGroups(t, project.projectId)).toBeLessThanOrEqual(CHECKPOINT_RETENTION + 1)
+  })
+
+  test('prunes a checkpoint that needs more than one pass, to the last chunk', async () => {
+    // `CHECKPOINT_PRUNE_CHUNKS` rows go per pass. Every other fixture here is
+    // one chunk, so every prune finished in a single pass and the bug this
+    // covers was invisible: the group id used to leave the branch's window on
+    // that first pass, and the reschedule then re-read a window it was no
+    // longer in, abandoning every remaining chunk with nothing able to reach
+    // or reclaim it.
+    const chunks = CHECKPOINT_PRUNE_CHUNKS * 2 + 3
+    const t = harness()
+    const project = expectOk(await claim(t, 'owner'))
+    for (let revision = 1; revision <= CHECKPOINT_RETENTION + 2; revision += 1) {
+      expectOk(await save(t, project.projectId, revision, chunks))
+    }
+    await t.finishAllScheduledFunctions(() => {})
+
+    const groups = await checkpointGroups(t, project.projectId)
+    expect(groups).toBeLessThanOrEqual(CHECKPOINT_RETENTION + 1)
+    // No partly-deleted group survives: chunks must equal whole groups.
+    expect(await checkpointChunks(t, project.projectId)).toBe(groups * chunks)
   })
 
   test('the branch still opens at head after pruning', async () => {
