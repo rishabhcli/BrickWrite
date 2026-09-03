@@ -256,7 +256,7 @@ Every binding that existed is still bound, and all of them are now remappable.
 
 | Before | After |
 |---|---|
-| `⌘/` command deck | `project.command-deck` |
+| `⌘/` command deck | withdrawn — the deck folded into the palette on `⌘P` |
 | `⌘K` focus catalogue search | `panel.search` |
 | `?` shortcut guide (toggle) | `help.shortcuts` |
 | `Esc` cancel placement → stop playback → reject proposal → reset tool and render mode | reserved by the shell, same chain, **extended** with "back one Connect stage" and "clear hide/isolate/ghost" |
@@ -274,9 +274,13 @@ Every binding that existed is still bound, and all of them are now remappable.
 
 ## 3. Shortcut map
 
-47 commands, all rebindable from the palette's KEYS tab, persisted under
-`brickwright.workbench.shortcuts.v1`. `Mod` is ⌘ on Apple hardware and Ctrl
-elsewhere, so one saved map works on both.
+57 commands, all rebindable from the palette's KEYS tab, persisted under
+`brickwright.workbench.shortcuts.v1`. The palette's RUN tab also lists the
+shared mutating capabilities, which take arguments rather than a chord and open
+a form in place; that list is what the Command Deck used to be.
+
+`Mod` is ⌘ on Apple hardware and Ctrl elsewhere, so one saved map works on
+both.
 
 `Escape`, `Enter`, `Tab` and `Shift+Tab` are reserved by the shell — a rebind
 that claimed one would let an operator lock themselves inside a dialog, so the
@@ -386,11 +390,13 @@ Silently preferring one would make the other look broken.
 - **Limits**: left 208–460, right 240–520, bottom 108–360 px. The viewport is
   never allowed below 420 × 280; `clampLayout` reduces both docks
   proportionally, then collapses the right dock, rather than overflowing.
-- **Presets**: Laptop (1280-class), Desktop (1600-class), Ultrawide (2560+).
-  The first run picks one from the window width. They were chosen from the
-  status bar when that strip was mounted; it is not mounted today.
+- **Presets**: none. The screen-shape presets were removed — they asked the
+  operator to classify their monitor before seeing the editor, which
+  `clampLayout` does correctly without asking.
 - **Progressive disclosure**: every dock section is independently collapsible and
-  its open state is persisted.
+  its open state is persisted under `layout.v6`. Position opens the pose and
+  the steppers; Precision holds the reference frame, pivot, axis locks, array,
+  mirror, align/distribute and connector seats, and starts closed.
 - `help.reset-workspace` in the command palette restores every default. The
   model is never touched by it.
 

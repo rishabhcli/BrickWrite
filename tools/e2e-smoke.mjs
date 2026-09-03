@@ -73,6 +73,19 @@ const CHROME_SECTIONS = {
 }
 
 /** Open one quieter-dock sheet. Opening it closes the others. */
+/**
+ * Chooses an agent autonomy mode through the control an operator uses.
+ *
+ * The three radios moved behind the top bar's current-mode button, so this is
+ * open-then-pick rather than one click. Reaching past it into the kernel would
+ * stop testing the thing the assertion is about.
+ */
+async function setAutonomy(page, mode) {
+  const trigger = page.locator('.autonomy-switch .autonomy-current')
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click()
+  await page.locator('.autonomy-menu').getByRole('radio', { name: mode, exact: true }).click()
+}
+
 async function revealChrome(page, surface) {
   const revealed = await page.evaluate(
     async (name) => (await window.brickwright.invoke('workspace_reveal', { surface: name }))?.structuredContent,
@@ -613,12 +626,12 @@ try {
     'render_capture did not return viewport pixels',
   )
 
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  await setAutonomy(page, 'build')
   assert(
     await page.evaluate(() => window.brickwright.tools.has('build_apply')),
     'Build mode did not register write tools',
   )
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
+  await setAutonomy(page, 'propose')
   assert(
     !(await page.evaluate(() => window.brickwright.tools.has('build_apply'))),
     'Leaving Build mode did not revoke write tools',
@@ -1424,7 +1437,7 @@ try {
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
 
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  await setAutonomy(page, 'build')
   const agentParity = await page.evaluate(async () => {
     const model = window.brickwright.getDocument()
     const help = await window.brickwright.invoke('capabilities_help', { capability: 'rename_document' })
@@ -1462,7 +1475,7 @@ try {
     parityUndo.revision === beforeParity.revision + 4,
     'Human/agent edits and their undos did not remain monotonic',
   )
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
+  await setAutonomy(page, 'propose')
 
   // -- the collision kernel confirms against triangles, not just boxes -------
   // A 45°-rotated brick's axis-aligned box is far larger than the brick, so a
@@ -1555,7 +1568,7 @@ try {
   // mast, which has real dependency layers, and the section below then
   // articulates the same crane's luffing joint instead of raising a second
   // one.
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  await setAutonomy(page, 'build')
   const crane = await page.evaluate(() =>
     window.brickwright.invoke('action_mutate', {
       action: 'build_crane',
@@ -1732,7 +1745,7 @@ try {
   // a wall placed brick-by-brick by a language model has stacked seams and
   // unbonded courses. The generators do the bricklaying and the kernel checks
   // the result, so what is asserted here is the *quality* of what came back.
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'build' }).click()
+  await setAutonomy(page, 'build')
   const generated = await page.evaluate(async () => {
     const mutate = async (action, args) => {
       const r = await window.brickwright.invoke('action_mutate', {
@@ -1974,7 +1987,7 @@ try {
   )
   // Undo the stress batch so the reload check sees the real project.
   await page.evaluate(() => window.brickwright.invoke('undo_edit', {}))
-  await page.locator('.autonomy-switch').getByRole('radio', { name: 'propose' }).click()
+  await setAutonomy(page, 'propose')
 
   // -- the project survives a reload ---------------------------------------
   // Every committed transaction is appended to IndexedDB, so reopening the page

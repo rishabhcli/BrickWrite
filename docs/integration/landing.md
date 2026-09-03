@@ -172,7 +172,7 @@ mechanism planners (`planCrane`, `planLattice`, `planSnotHull`,
 column-placed against the compiled connectors. Every mate still goes through
 `bestSnapTransform`, the same 6-DOF solver a drag in the editor runs through.
 Those `plan*` functions are what `tools/build-demos.mjs` calls. The matching
-Command Deck / WebMCP capability ids are `build_crane`, `build_lattice`,
+Command palette / WebMCP capability ids are `build_crane`, `build_lattice`,
 `build_snot_hull` and `build_clock_faces`.
 
 ### The gates

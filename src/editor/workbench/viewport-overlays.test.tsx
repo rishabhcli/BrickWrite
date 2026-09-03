@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createExtensionRegistry, ExtensionRegistryProvider, type WorkbenchApi } from './ExtensionRegistry'
 import { SelectionHUD } from './SelectionHUD'
 import { ViewportNavigator } from './ViewportNavigator'
+import { WORKBENCH_COMMANDS } from './shortcuts'
 import { ViewportQuickControls } from './ViewportQuickControls'
 import { ViewportStage } from './ViewportStage'
 import { IDLE_CONNECT, type Workbench } from './useWorkbench'
@@ -27,7 +28,7 @@ function OverlayHost({ children }: { children: React.ReactNode }) {
 }
 
 describe('viewport orientation cube', () => {
-  it('keeps every canonical camera direction one click away', () => {
+  it('keeps the three drawable faces and home one click away', () => {
     const onView = vi.fn()
     render(<ViewportNavigator view="isometric" onView={onView} />)
 
@@ -36,12 +37,17 @@ describe('viewport orientation cube', () => {
       ['Top view', 'top'],
       ['Front view', 'front'],
       ['Right view', 'right'],
-      ['Left view', 'left'],
-      ['Back view', 'rear'],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name }))
       expect(onView).toHaveBeenLastCalledWith(view)
     }
+    // The opposites are an orbit-drag away and now carry alt+4 / alt+5, so the
+    // cube no longer spends two buttons of the model's corner on them.
+    expect(screen.queryByRole('button', { name: 'Left view' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Back view' })).toBeNull()
+    expect(WORKBENCH_COMMANDS.map((command) => command.id)).toEqual(
+      expect.arrayContaining(['view.left', 'view.rear']),
+    )
   })
 })
 

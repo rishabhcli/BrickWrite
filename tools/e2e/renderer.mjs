@@ -82,6 +82,19 @@ function assertTiming(condition, message) {
   console.log(`  not enforced (software rasteriser, no GPU to time): ${message}`)
 }
 
+/**
+ * Chooses an agent autonomy mode through the control an operator uses.
+ *
+ * The three radios moved behind the top bar's current-mode button, so this is
+ * open-then-pick rather than one click. Reaching past it into the kernel would
+ * stop testing the thing the assertion is about.
+ */
+async function setAutonomy(page, mode) {
+  const trigger = page.locator('.autonomy-switch .autonomy-current')
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click()
+  await page.locator('.autonomy-menu').getByRole('radio', { name: mode, exact: true }).click()
+}
+
 async function available() {
   try {
     return (await fetch(url)).ok
@@ -543,7 +556,7 @@ try {
   // real connection edge rather than an assertion about one. Applying a
   // proposal is a mutation, so the session is put into build autonomy first —
   // through the same control an operator uses, not by reaching past it.
-  await page.getByRole('radio', { name: 'build', exact: true }).click()
+  await setAutonomy(page, 'build')
   await page.waitForFunction(
     () => window.brickwright?.tools?.has?.('build_apply') ?? false,
     null,

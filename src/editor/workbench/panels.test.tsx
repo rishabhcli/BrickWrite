@@ -325,11 +325,11 @@ describe('palette', () => {
 // ---------------------------------------------------------------------------
 
 describe('transform controls', () => {
-  const renderTransform = () => render(<Harness>{(w) => <TransformPanel workbench={w} />}</Harness>)
+  const renderTransform = () => render(<Harness>{(w) => <TransformPanel workbench={w} shortcuts={defaultShortcutMap()} />}</Harness>)
   // Frames, pivots, locks, array, mirror, align and connector seats moved to
   // the Precision sheet, which the dock keeps closed until it is reached for.
   const renderPrecision = () =>
-    render(<Harness>{(w) => <TransformPanel workbench={w} variant="precision" />}</Harness>)
+    render(<Harness>{(w) => <TransformPanel workbench={w} shortcuts={defaultShortcutMap()} variant="precision" />}</Harness>)
   // Both sheets open at once, the way the dock shows them once Precision has
   // been reached for: the frame is chosen there, and the note explaining what
   // it does to typed coordinates sits beside the fields it qualifies.
@@ -338,8 +338,8 @@ describe('transform controls', () => {
       <Harness>
         {(w) => (
           <>
-            <TransformPanel workbench={w} />
-            <TransformPanel workbench={w} variant="precision" />
+            <TransformPanel workbench={w} shortcuts={defaultShortcutMap()} />
+            <TransformPanel workbench={w} shortcuts={defaultShortcutMap()} variant="precision" />
           </>
         )}
       </Harness>,
@@ -530,14 +530,22 @@ describe('transform controls', () => {
 // ---------------------------------------------------------------------------
 
 describe('selection modes', () => {
-  const renderSelection = () => render(<Harness>{(w) => <SelectionPanel workbench={w} />}</Harness>)
+  const renderSelection = () => render(<Harness>{(w) => <SelectionPanel workbench={w} shortcuts={defaultShortcutMap()} />}</Harness>)
+  /** Module, same part, visible, inverse and saved sets sit behind "More…". */
+  const openMore = () => act(() => { fireEvent.click(screen.getByRole('button', { name: 'More…' })) })
 
   it('keeps modes off-screen until something is selected', () => {
     renderSelection()
     expect(screen.queryByRole('button', { name: /^Colour/ })).toBeNull()
     select([showcasePartIds()[0]])
     expect((screen.getByRole('button', { name: /^Colour/ }) as HTMLButtonElement).disabled).toBe(false)
-    expect((screen.getByRole('button', { name: 'Visible' }) as HTMLButtonElement).disabled).toBe(false)
+    // Visible is one of the four the disclosure holds, so it is not on screen
+    // until it is asked for — and its chord is the real one, not a fake "6".
+    expect(screen.queryByRole('button', { name: 'Visible' })).toBeNull()
+    openMore()
+    const visible = screen.getByRole('button', { name: 'Visible' }) as HTMLButtonElement
+    expect(visible.disabled).toBe(false)
+    expect(visible.getAttribute('aria-keyshortcuts')).toBe(formatChord(defaultShortcutMap()['select.all']))
   })
 
   it('expands to every part sharing the selection’s colour', () => {
@@ -565,6 +573,7 @@ describe('selection modes', () => {
     const total = showcasePartIds().length
     renderSelection()
     select([showcasePartIds()[0]])
+    openMore()
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Inverse' }))
     })
@@ -590,6 +599,7 @@ describe('selection modes', () => {
     const ids = showcasePartIds().slice(0, 2)
     renderSelection()
     select(ids)
+    openMore()
     act(() => {
       fireEvent.change(screen.getByLabelText('Selection set name'), { target: { value: 'Rear hatch' } })
       fireEvent.click(screen.getByRole('button', { name: /SAVE/ }))
@@ -605,6 +615,7 @@ describe('selection modes', () => {
     const ids = showcasePartIds().slice(0, 2)
     renderSelection()
     select(ids)
+    openMore()
     act(() => {
       fireEvent.change(screen.getByLabelText('Selection set name'), { target: { value: 'Doomed' } })
       fireEvent.click(screen.getByRole('button', { name: /SAVE/ }))

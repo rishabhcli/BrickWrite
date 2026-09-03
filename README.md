@@ -307,7 +307,7 @@ operations, so the revision guard, protected regions, hard constraints and trian
 collision detection all still apply, a whole building previews as a ghost before it is
 accepted, and one `⌘Z` reverses it.
 
-The same generators are in the human Command Deck under **ASSEMBLE**, and the mechanism
+The same generators are in the command palette under **Build**, and the mechanism
 planners sit under **MECHANISM**, because parity between the two operators is an invariant
 of this project rather than a slogan.
 

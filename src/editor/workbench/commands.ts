@@ -139,6 +139,8 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'view.iso': () => run(() => w.setCameraView('isometric')),
     'view.front': () => run(() => w.setCameraView('front')),
     'view.top': () => run(() => w.setCameraView('top')),
+    'view.left': () => run(() => w.setCameraView('left')),
+    'view.rear': () => run(() => w.setCameraView('rear')),
     'view.beauty': () => run(() => w.setRenderMode('beauty')),
     'view.connections': () => run(() => w.setRenderMode('connections')),
     'view.violations': () => run(() => w.setRenderMode('violations')),

@@ -9,6 +9,7 @@ import { captureParts, planPaste } from './clipboard'
 import { createCommandHandlers } from './commands'
 import { NumberField } from './NumberField'
 import { resetPreferences } from './persistence'
+import { defaultShortcutMap } from './shortcuts'
 import { TransformPanel } from './TransformPanel'
 import {
   DEFAULT_MANIPULATION,
@@ -279,7 +280,7 @@ describe('editor transactions', () => {
   it('edits a group centre precisely as one reversible transaction', () => {
     function Harness() {
       const w = useWorkbench()
-      return <TransformPanel workbench={w} />
+      return <TransformPanel workbench={w} shortcuts={defaultShortcutMap()} />
     }
     render(<Harness />)
     act(() => cadEngine.setSelection(['a', 'b']))

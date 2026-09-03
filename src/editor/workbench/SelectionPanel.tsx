@@ -1,8 +1,9 @@
 import { Bookmark, Box, Crosshair, Eye, EyeOff, Ghost, Lock, Scan, Trash2, Unlock } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { describeSize, getColor } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { resolveSavedSelection, SELECTION_MODES, visibilityActive, type SelectionMode } from './selection'
+import { formatChord, type ShortcutMap } from './shortcuts'
 import type { Workbench } from './useWorkbench'
 
 /**
@@ -18,9 +19,10 @@ import type { Workbench } from './useWorkbench'
  * touch it. Its other half — position and rotation fields — is the Transform
  * block directly underneath, and having both was the duplication.
  */
-export function SelectionPanel({ workbench }: { workbench: Workbench }) {
+export function SelectionPanel({ workbench, shortcuts }: { workbench: Workbench; shortcuts: ShortcutMap }) {
   const { state, savedSelections, visibility, selectedPart, selectedDefinition } = workbench
   const [name, setName] = useState('')
+  const [moreOpen, setMoreOpen] = useState(false)
   const selected = state.selection.length
   const total = state.validation.partCount
   const parts = state.selection.map((id) => state.document.parts[id]).filter(Boolean)
@@ -30,6 +32,28 @@ export function SelectionPanel({ workbench }: { workbench: Workbench }) {
   const apply = useCallback((mode: SelectionMode) => {
     workbench.applySelectionMode(mode)
   }, [workbench])
+
+  const [inline, extra] = useMemo(
+    () => [SELECTION_MODES.filter((mode) => mode.primary), SELECTION_MODES.filter((mode) => !mode.primary)],
+    [],
+  )
+
+  const modeButton = (mode: (typeof SELECTION_MODES)[number]) => {
+    const chord = mode.commandId ? formatChord(shortcuts[mode.commandId]) : ''
+    return (
+      <button
+        key={mode.id}
+        type="button"
+        className={workbench.selectionMode === mode.id ? 'active' : ''}
+        title={chord ? `${mode.hint} (${chord})` : mode.hint}
+        aria-label={mode.label}
+        aria-keyshortcuts={chord || undefined}
+        onClick={() => apply(mode.id)}
+      >
+        {mode.label}
+      </button>
+    )
+  }
 
   return (
     <div className={`selection-panel ${selected ? '' : 'is-empty'}`}>
@@ -90,24 +114,23 @@ export function SelectionPanel({ workbench }: { workbench: Workbench }) {
       {selected > 0 && (
         <>
           <div className="selection-modes" role="group" aria-label="Selection modes">
-            {SELECTION_MODES.map((mode) => {
-              const blocked = mode.needsSeed && !selected
-              return (
-                <button
-                  key={mode.id}
-                  type="button"
-                  disabled={blocked}
-                  className={workbench.selectionMode === mode.id ? 'active' : ''}
-                  title={blocked ? `${mode.hint} — select at least one part first.` : mode.hint}
-                  aria-label={blocked ? `${mode.label} — select at least one part first` : mode.label}
-                  aria-keyshortcuts={mode.shortcut}
-                  onClick={() => apply(mode.id)}
-                >
-                  {mode.label}
-                </button>
-              )
-            })}
+            {inline.map(modeButton)}
+            <button
+              type="button"
+              className={`selection-more ${moreOpen ? 'active' : ''}`}
+              aria-expanded={moreOpen}
+              aria-controls="selection-more-ways"
+              title="Module, same part, visible, inverse, and saved sets"
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              More…
+            </button>
           </div>
+          {moreOpen && (
+            <div className="selection-modes selection-modes-extra" id="selection-more-ways" role="group" aria-label="More ways to select">
+              {extra.map(modeButton)}
+            </div>
+          )}
 
           <div className="selection-actions" role="group" aria-label="Visibility">
             <button
@@ -159,7 +182,7 @@ export function SelectionPanel({ workbench }: { workbench: Workbench }) {
         </div>
       )}
 
-      {(selected > 0 || savedSelections.length > 0) && (
+      {moreOpen && (selected > 0 || savedSelections.length > 0) && (
         <div className="selection-sets">
           {selected > 0 && (
             <>

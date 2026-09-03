@@ -85,7 +85,7 @@ describe('RefinePanelContribution', () => {
     expect(panel.priority).toBeGreaterThanOrEqual(100)
 
     // Nothing leaks into a slot this workstream did not ask for.
-    for (const slot of ['toolbar', 'panel-left', 'inspector', 'status'] as const) {
+    for (const slot of ['toolbar', 'panel-left', 'status'] as const) {
       expect(registry.list(slot)).toHaveLength(0)
     }
   })

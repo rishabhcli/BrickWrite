@@ -82,7 +82,7 @@ describe('cloud workbench contributions', () => {
     expect(registry.list('panel-left')[2].title).toBe('Here now')
     expect(registry.list('panel-left')[2].id).toBe('cloud.presence')
     // Nothing leaks into a slot this workstream does not own.
-    for (const slot of ['toolbar', 'panel-right', 'inspector', 'overlay'] as const) {
+    for (const slot of ['toolbar', 'panel-right', 'overlay'] as const) {
       expect(registry.list(slot)).toHaveLength(0)
     }
   })
@@ -121,15 +121,17 @@ describe('cloud workbench contributions', () => {
       )
     })
 
+    // The reason is stated once, on the surface that exists to state it.
+    // Builds, Share and Live no longer register: three left-dock tabs whose
+    // whole content is "there is no deployment" is three tabs of nothing, and
+    // the dock derives its tab strip from what is registered.
     expect(screen.getByTestId('cloud-sync-status')).toHaveAttribute('data-status', 'unconfigured')
-    expect(screen.getByTestId('cloud-projects-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('cloud-members-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('cloud-presence-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('cloud-projects-panel')).toBeNull()
+    expect(screen.queryByTestId('cloud-members-panel')).toBeNull()
+    expect(screen.queryByTestId('cloud-presence-panel')).toBeNull()
+    expect(document.body.textContent ?? '').toContain('VITE_CONVEX_URL')
+    // Version history is a modal reached from that status line, so it stays.
     expect(screen.getByTestId('cloud-version-history')).toBeInTheDocument()
-    // The reason is stated on every surface, not just one of them.
-    const text = document.body.textContent ?? ''
-    expect(text).toContain('VITE_CONVEX_URL')
-    expect(text).toContain('Local only')
     expect(screen.getByRole('dialog')).toHaveAccessibleName('Version history')
   })
 

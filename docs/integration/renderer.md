@@ -413,7 +413,7 @@ Screenshots and a machine-readable `measurements.json` land in
 The benchmark runs on its own page — an HTML shell served by intercepting a path
 on the dev server's origin, importing `src/editor/render/benchmarkEntry.ts` — so
 a frame time is attributable to the renderer rather than to the renderer plus a
-React tree, a catalogue panel and a command deck.
+React tree, a catalogue panel and a command palette.
 
 ---
 

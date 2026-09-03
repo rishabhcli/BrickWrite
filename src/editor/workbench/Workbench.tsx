@@ -16,6 +16,7 @@ import {
   ExtensionRegistryProvider,
   ModalSlot,
   Slot,
+  useContributions,
   useOnlineStatus,
   type WorkbenchApi,
   type WorkbenchNotice,
@@ -107,6 +108,15 @@ const DESIGN_SURFACES: readonly { id: DesignSurfaceId; label: string; icon: 'gen
  * these ids survive only because `workspace_reveal` names them.
  */
 const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'transform.precision', 'health', 'connect'] as const
+/**
+ * Label and icon for each left-dock tab.
+ *
+ * Which of them are *shown* is decided by `LeftSurfaceTabs` from the
+ * contributions actually registered, because `palette` is the only one this
+ * file renders itself. Hardcoding the list here is what used to give Builds,
+ * Share and Live a permanent tab on a browser with no deployment configured,
+ * each opening a paragraph explaining that there was nothing behind it.
+ */
 const LEFT_SURFACES = [
   { id: 'palette', label: 'Parts', icon: 'parts' },
   { id: 'cloud.projects', label: 'Builds', icon: 'projects' },
@@ -155,6 +165,38 @@ function applyWorkbenchSectionFocus(layout: WorkbenchLayout, id: string, open: b
     rightTab: 'object',
     sections: { ...next.sections, ...designSections },
   }
+}
+
+function LeftSurfaceTabs({
+  active,
+  onSelect,
+}: {
+  active: LeftSurfaceId
+  onSelect: (id: LeftSurfaceId) => void
+}) {
+  const registered = useContributions('panel-left')
+  const available = LEFT_SURFACES.filter(
+    (surface) => surface.id === 'palette' || registered.some((entry) => entry.id === surface.id),
+  )
+  return (
+    <div className="left-tool-switcher" role="tablist" aria-label="Library and collaboration tools">
+      {available.map((surface) => (
+        <button
+          key={surface.id}
+          type="button"
+          role="tab"
+          aria-selected={active === surface.id}
+          aria-controls="left-tool-panel"
+          className={active === surface.id ? 'active' : ''}
+          title={surface.label}
+          onClick={() => onSelect(surface.id)}
+        >
+          <WorkbenchIcon name={surface.icon} size={15} />
+          <span>{surface.label}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export function Workbench({ contributions = [] }: WorkbenchProps) {
@@ -819,23 +861,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         ) : (
           <GlassDock as="div" className="dock dock-left" role="region" aria-label="Palette dock">
             <div className="dock-head left-tool-head">
-              <div className="left-tool-switcher" role="tablist" aria-label="Library and collaboration tools">
-                {LEFT_SURFACES.map((surface) => (
-                  <button
-                    key={surface.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeLeftSurface === surface.id}
-                    aria-controls="left-tool-panel"
-                    className={activeLeftSurface === surface.id ? 'active' : ''}
-                    title={surface.label}
-                    onClick={() => setActiveLeftSurface(surface.id)}
-                  >
-                    <WorkbenchIcon name={surface.icon} size={15} />
-                    <span>{surface.label}</span>
-                  </button>
-                ))}
-              </div>
+              <LeftSurfaceTabs active={activeLeftSurface} onSelect={setActiveLeftSurface} />
               <DockCollapseButton dock="left" onCollapse={() => toggleDock('left')} />
             </div>
             <div
@@ -1024,7 +1050,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         open={rightSectionOpen('selection')}
                         onToggle={() => toggleSection('selection')}
                       >
-                        <SelectionPanel workbench={workbench} />
+                        <SelectionPanel workbench={workbench} shortcuts={shortcuts} />
                       </DockSection>
                       <DockSection
                         id="transform"
@@ -1034,7 +1060,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         grow={rightSectionOpen('transform')}
                         onToggle={() => toggleSection('transform')}
                       >
-                        <TransformPanel workbench={workbench} />
+                        <TransformPanel workbench={workbench} shortcuts={shortcuts} />
                       </DockSection>
                       {/* Closed on a casual click. Frames, pivots, axis locks,
                           array, mirror and the align grid are how a move is
@@ -1048,7 +1074,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         grow={rightSectionOpen('transform.precision')}
                         onToggle={() => toggleSection('transform.precision')}
                       >
-                        <TransformPanel workbench={workbench} variant="precision" />
+                        <TransformPanel workbench={workbench} shortcuts={shortcuts} variant="precision" />
                       </DockSection>
                     </>
                   ) : (

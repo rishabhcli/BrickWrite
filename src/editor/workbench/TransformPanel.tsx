@@ -40,6 +40,7 @@ import {
   type PivotMode,
   type ReferenceFrame,
 } from './transform'
+import { formatChord, type ShortcutMap } from './shortcuts'
 import type { Workbench } from './useWorkbench'
 import { NumberField } from './NumberField'
 
@@ -78,12 +79,15 @@ const ARRAY_AXES: Array<{ id: 'x' | 'y' | 'z'; label: string; unit: [number, num
 
 export function TransformPanel({
   workbench,
+  shortcuts,
   variant = 'position',
 }: {
   workbench: Workbench
+  shortcuts: ShortcutMap
   /** Which half of the sheet to draw. See the comment above the return. */
   variant?: 'position' | 'precision'
 }) {
+  const chord = (id: string) => formatChord(shortcuts[id])
   const { state, transformPrefs, setTransformPrefs } = workbench
   const [candidateIndex, setCandidateIndex] = useState(0)
   const [arrayOpen, setArrayOpen] = useState(false)
@@ -320,7 +324,7 @@ export function TransformPanel({
           <ActionButton
             icon={<Repeat2 size={12} />}
             label="Array"
-            shortcut="⇧A"
+            shortcut={chord('edit.array')}
             disabled={disabled}
             expanded={arrayOpen}
             reason="Select at least one part first."
@@ -329,7 +333,7 @@ export function TransformPanel({
           <ActionButton
             icon={<FlipHorizontal2 size={12} />}
             label="Mirror"
-            shortcut="⇧M"
+            shortcut={chord('edit.mirror')}
             disabled={disabled}
             expanded={mirrorOpen}
             reason="Select at least one part first."
@@ -689,7 +693,7 @@ export function TransformPanel({
         <ActionButton
           icon={<Hand size={12} />}
           label="Reposition"
-          shortcut="M"
+          shortcut={chord('edit.reposition')}
           disabled={single === undefined}
           reason="Select one part to pick it up."
           onClick={() => workbench.pickUpSelection()}
@@ -697,7 +701,7 @@ export function TransformPanel({
         <ActionButton
           icon={<ArrowDownToLine size={12} />}
           label="Ground"
-          shortcut="⇧D"
+          shortcut={chord('edit.ground')}
           disabled={disabled}
           reason="Select parts to rest on the ground."
           onClick={() => workbench.groundSelection()}
@@ -705,7 +709,7 @@ export function TransformPanel({
         <ActionButton
           icon={<Copy size={12} />}
           label="Clone"
-          shortcut="⌘D"
+          shortcut={chord('edit.clone')}
           disabled={disabled}
           reason="Select at least one part first."
           onClick={() => workbench.duplicateSelection()}
@@ -713,7 +717,7 @@ export function TransformPanel({
         <ActionButton
           icon={<Palette size={12} />}
           label="Paint"
-          shortcut="P"
+          shortcut={chord('edit.paint')}
           disabled={disabled}
           reason="Select at least one part first."
           onClick={() => workbench.recolorSelection(workbench.activeColor)}
@@ -722,7 +726,7 @@ export function TransformPanel({
         <ActionButton
           icon={<Pipette size={12} />}
           label="Pick"
-          shortcut="K"
+          shortcut={chord('edit.eyedropper')}
           disabled={disabled}
           reason="Select a part to sample its colour."
           onClick={() => workbench.pickColorFromSelection()}
@@ -730,7 +734,7 @@ export function TransformPanel({
         <ActionButton
           icon={<Crosshair size={12} />}
           label="Focus"
-          shortcut="⇧F"
+          shortcut={chord('visibility.focus')}
           disabled={disabled}
           reason="Select at least one part first."
           onClick={() => workbench.focusSelection()}

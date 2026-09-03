@@ -273,6 +273,8 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
   },
   { id: 'view.front', title: 'Front view', group: 'view', detail: 'Look along +Z.', defaultChord: 'alt+2' },
   { id: 'view.top', title: 'Top view', group: 'view', detail: 'Look straight down.', defaultChord: 'alt+3' },
+  { id: 'view.left', title: 'Left view', group: 'view', detail: 'Look along −X.', defaultChord: 'alt+4' },
+  { id: 'view.rear', title: 'Back view', group: 'view', detail: 'Look along −Z.', defaultChord: 'alt+5' },
   {
     id: 'view.beauty',
     title: 'Beauty render',

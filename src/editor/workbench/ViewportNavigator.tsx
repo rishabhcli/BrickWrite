@@ -11,9 +11,13 @@ type ViewportNavigatorProps = {
  * A compact CAD orientation cube.
  *
  * The old camera dropdown made every canonical view two actions away and hid
- * the available directions. The three visible faces now go directly to Top,
- * Front and Right; the back row exposes the opposite axes and the isometric
- * home view without spending model space on words.
+ * the available directions. The three visible faces go directly to Top, Front
+ * and Right, and one button returns to the isometric home.
+ *
+ * The −X and −Z opposites used to sit beside home. They are one orbit-drag
+ * away — the focused canvas orbits on the arrow keys — and both now have a
+ * chord and a palette entry, so the cube spends its corner of the model on the
+ * three faces it can actually draw.
  */
 export function ViewportNavigator({ view, onView }: ViewportNavigatorProps) {
   const viewButton = (next: CameraView, label: string, className: string, mark: React.ReactNode) => (
@@ -36,10 +40,8 @@ export function ViewportNavigator({ view, onView }: ViewportNavigatorProps) {
         {viewButton('front', 'Front', 'view-cube-face view-cube-front', <span>Z</span>)}
         {viewButton('right', 'Right', 'view-cube-face view-cube-right', <span>X</span>)}
       </div>
-      <div className="view-cube-opposites" role="group" aria-label="Opposite and home views">
-        {viewButton('left', 'Left', 'view-axis view-axis-x', <span>−X</span>)}
+      <div className="view-cube-opposites" role="group" aria-label="Home view">
         {viewButton('isometric', 'Isometric', 'view-home', <WorkbenchIcon name="iso" size={15} />)}
-        {viewButton('rear', 'Back', 'view-axis view-axis-z', <span>−Z</span>)}
       </div>
     </GlassIsland>
   )

@@ -561,7 +561,11 @@
   }
 }
 
+/* One button stating the current answer, and a menu that opens on demand.
+   Three radios in the top bar asked every first-time visitor to rule on how
+   much an agent may do before there was a model to be autonomous about. */
 .autonomy-switch {
+  position: relative;
   display: flex;
   gap: 2px;
   padding: 4px;
@@ -569,6 +573,40 @@
   background: rgba(8, 12, 14, 0.85);
   margin: 0 12px 0 0;
   border-radius: var(--r-control);
+}
+.autonomy-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: 268px;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-surface);
+  background: rgba(13, 19, 21, 0.98);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.7);
+}
+.autonomy-menu button {
+  width: 100%;
+  align-items: flex-start;
+  text-align: left;
+  padding: 8px 9px;
+}
+.autonomy-menu button span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.autonomy-menu button small {
+  color: var(--muted);
+  font-family: var(--sans, inherit);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
 }
 .autonomy-switch button {
   border: 0;
@@ -590,6 +628,7 @@
 .autonomy-switch button:hover {
   color: var(--ink);
 }
+.autonomy-switch .autonomy-current[aria-expanded='true'],
 .autonomy-switch button.active {
   background: #202b2f;
   color: #ffffff;
@@ -1040,7 +1079,8 @@
   transition: var(--t-control);
   cursor: pointer;
 }
-.part-card:hover .part-add {
+.part-card:hover .part-add,
+.part-add:focus-visible {
   opacity: 1;
   transform: none;
 }
@@ -5190,6 +5230,21 @@
   color: var(--cyan);
   border-color: rgba(131, 231, 238, 0.45);
   background: rgba(131, 231, 238, 0.1);
+}
+/* Three ways to select plus the door to the rest. The seven-across row it
+   replaced spent the panel's whole width on choices most builders never make,
+   and the four behind it keep their chords either way. */
+.selection-modes-extra {
+  margin-top: 4px;
+}
+.selection-modes .selection-more {
+  color: var(--muted-2, var(--muted));
+  border-style: dashed;
+}
+.selection-modes .selection-more.active {
+  color: var(--cyan);
+  border-style: solid;
+  border-color: rgba(131, 231, 238, 0.45);
 }
 .selection-modes button:disabled {
   opacity: 0.34;

@@ -21,7 +21,14 @@ export interface SelectionModeInfo {
   readonly hint: string
   /** True when the mode needs something already selected to work from. */
   readonly needsSeed: boolean
-  readonly shortcut?: string
+  /**
+   * The command this mode duplicates, so the chip can announce the chord that
+   * actually runs it. It used to carry the literals '1' through '7', which are
+   * bound to nothing — a screen reader was reading out keys that do not work.
+   */
+  readonly commandId?: string
+  /** True for the three offered inline; the rest sit behind a disclosure. */
+  readonly primary?: boolean
 }
 
 export const SELECTION_MODES: readonly SelectionModeInfo[] = [
@@ -30,44 +37,52 @@ export const SELECTION_MODES: readonly SelectionModeInfo[] = [
     label: 'Part',
     hint: 'Click one part. Shift-click adds, shift-drag boxes.',
     needsSeed: false,
-    shortcut: '1',
   },
   {
     id: 'colour',
     label: 'Colour',
     hint: 'Every part sharing a colour with the selection.',
     needsSeed: true,
-    shortcut: '2',
+    commandId: 'select.colour',
+    primary: true,
   },
   {
     id: 'connected',
     label: 'Connected',
     hint: 'The whole rigid island reachable through mated connectors.',
     needsSeed: true,
-    shortcut: '3',
+    commandId: 'select.connected',
+    primary: true,
   },
   {
     id: 'subassembly',
     label: 'Module',
     hint: 'Every part in the selection’s subassemblies.',
     needsSeed: true,
-    shortcut: '4',
+    commandId: 'select.subassembly',
   },
   {
     id: 'definition',
     label: 'Same part',
     hint: 'Every instance of the selected part numbers.',
     needsSeed: true,
-    shortcut: '5',
+    commandId: 'select.definition',
+    primary: true,
   },
   {
     id: 'visible',
     label: 'Visible',
     hint: 'Everything currently drawn, ignoring hidden and isolated parts.',
     needsSeed: false,
-    shortcut: '6',
+    commandId: 'select.all',
   },
-  { id: 'inverse', label: 'Inverse', hint: 'Everything except the current selection.', needsSeed: true, shortcut: '7' },
+  {
+    id: 'inverse',
+    label: 'Inverse',
+    hint: 'Everything except the current selection.',
+    needsSeed: true,
+    commandId: 'select.inverse',
+  },
 ]
 
 export interface SelectionContext {

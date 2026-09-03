@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -168,6 +168,34 @@ beforeEach(() => {
   cadEngine.replaceDocument(oneBrick())
 })
 afterEach(cleanup)
+
+describe('the first-load control budget', () => {
+  /**
+   * A ceiling on what a first load puts on screen.
+   *
+   * Every control here was defensible on its own; the editor still opened with
+   * roughly seventy of them, most unable to act on anything because there was
+   * no model and nothing selected. The number is a budget, not a target — it
+   * exists so the next defensible control has to displace one rather than join
+   * the pile. Raise it deliberately, with a reason, or don't.
+   */
+  it('opens with a countable amount of chrome, not a cockpit', () => {
+    mount()
+    const interactive = [
+      ...document.querySelectorAll<HTMLElement>(
+        'button, select, input:not([type="file"]), [role="tab"], [role="radio"], [role="separator"][tabindex]',
+      ),
+    ].filter((node) => !node.closest('.parts-grid, .swatches, [hidden], [aria-hidden="true"]'))
+
+    expect(interactive.length).toBeLessThanOrEqual(46)
+    // Controls whose subject is absent are the ones that used to make up the
+    // difference, so name a few explicitly rather than trusting the count.
+    for (const gone of ['Remove selection', 'Command deck', 'Frame selected parts', 'Left view', 'Back view']) {
+      expect(screen.queryByRole('button', { name: gone })).toBeNull()
+    }
+    expect(screen.queryByLabelText('Viewport render mode')).toBeNull()
+  })
+})
 
 describe('the beginner path through the shell', () => {
   it('paints the selection when a palette colour is clicked', () => {

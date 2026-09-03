@@ -71,10 +71,10 @@ function Register(props: { id: string; slot: 'panel-right' | 'toolbar' | 'modal'
 }
 
 describe('slot vocabulary', () => {
-  it('publishes exactly the seven documented slots', () => {
-    expect([...WORKBENCH_SLOTS]).toEqual([
-      'toolbar', 'panel-left', 'panel-right', 'inspector', 'status', 'modal', 'overlay',
-    ])
+  it('publishes exactly the six slots the shell actually mounts', () => {
+    // `inspector` was published and never rendered, so anything registering
+    // into it disappeared silently. `status` is mounted in the top bar.
+    expect([...WORKBENCH_SLOTS]).toEqual(['toolbar', 'panel-left', 'panel-right', 'status', 'modal', 'overlay'])
   })
 })
 

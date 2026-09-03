@@ -5,6 +5,7 @@ import { PRIMARY_NAV, routeById } from '../../platform/routes'
 import { GlassBar } from '../../ui/liquid'
 import { ProjectMenu } from '../ProjectMenu'
 import { AutonomySwitch } from './AutonomySwitch'
+import { Slot } from './ExtensionRegistry'
 import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcons'
 import type { Workbench } from './useWorkbench'
 
@@ -13,6 +14,13 @@ import type { Workbench } from './useWorkbench'
  *
  * Which document is open, whether work is actually being saved, and how much
  * the agent is currently allowed to do.
+ *
+ * The `status` slot lands here. It had no mount point at all — `layout.ts`
+ * zeroes `STATUSBAR_HEIGHT` deliberately, and nothing took the strip's place —
+ * so two contributions were registering into nothing. One of them,
+ * `cloud.sync-status`, is the only chrome that opens Version History, which
+ * meant version history was reachable only from a project row inside a panel.
+ * These sit beside the save state because they are the same kind of fact.
  */
 export function TopBar({ workbench }: { workbench: Workbench }) {
   const { state, sessionStatus } = workbench
@@ -83,6 +91,7 @@ export function TopBar({ workbench }: { workbench: Workbench }) {
           <span>{sessionStatus.error ? 'Not saved' : sessionStatus.durable ? 'Saved' : 'In memory'}</span>
           <em aria-hidden="true">r{state.document.revision}</em>
         </div>
+        <Slot id="status" />
         <AutonomySwitch
           value={state.autonomy}
           agentConnected={workbench.toolStatus.native}

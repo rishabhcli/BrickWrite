@@ -45,7 +45,6 @@ export type WorkbenchSlotId =
   | 'toolbar'
   | 'panel-left'
   | 'panel-right'
-  | 'inspector'
   | 'status'
   | 'modal'
   | 'overlay'
@@ -54,7 +53,6 @@ export const WORKBENCH_SLOTS: readonly WorkbenchSlotId[] = [
   'toolbar',
   'panel-left',
   'panel-right',
-  'inspector',
   'status',
   'modal',
   'overlay',

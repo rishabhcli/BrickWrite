@@ -63,6 +63,10 @@ export function CloudProjectsPanelContribution({ runtime }: { runtime?: CloudRun
   useRegisterContribution({
     id: 'cloud.projects',
     slot: 'panel-left',
+    // A tab that opens "no deployment is configured" is a tab nobody wanted.
+    // `cloud.sync-status` stays registered either way — being offline is
+    // exactly the thing it exists to say.
+    when: () => resolved.getSnapshot().configuration.status === 'ready',
     priority: 120,
     title: 'Projects',
     icon: <Cloud size={11} />,
@@ -80,6 +84,10 @@ export function CloudMembersPanelContribution({ runtime }: { runtime?: CloudRunt
   useRegisterContribution({
     id: 'cloud.members',
     slot: 'panel-left',
+    // A tab that opens "no deployment is configured" is a tab nobody wanted.
+    // `cloud.sync-status` stays registered either way — being offline is
+    // exactly the thing it exists to say.
+    when: () => resolved.getSnapshot().configuration.status === 'ready',
     priority: 121,
     title: 'Share',
     icon: <Users size={11} />,
@@ -97,6 +105,10 @@ export function CloudPresencePanelContribution({ runtime }: { runtime?: CloudRun
   useRegisterContribution({
     id: 'cloud.presence',
     slot: 'panel-left',
+    // A tab that opens "no deployment is configured" is a tab nobody wanted.
+    // `cloud.sync-status` stays registered either way — being offline is
+    // exactly the thing it exists to say.
+    when: () => resolved.getSnapshot().configuration.status === 'ready',
     priority: 122,
     title: 'Here now',
     icon: <Radio size={11} />,
