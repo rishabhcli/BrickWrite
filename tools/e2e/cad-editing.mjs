@@ -26,6 +26,8 @@ const check = (label) => {
   console.log(`PASS ${label}`)
 }
 const canvas = () => page.getByRole('application', { name: 'CAD viewport' })
+/** `GRID_PRESETS` in `src/editor/workbench/transform.ts`; alt+g wraps through them. */
+const GRID_PRESET_COUNT = 5
 const shortcut = async (key) => {
   await canvas().focus()
   await page.keyboard.press(key)
@@ -52,14 +54,26 @@ try {
   await page.getByRole('button', { name: 'Add Brick 2 x 4', exact: true }).click()
   assert.equal(await count(), 1)
   const original = Object.values((await model()).parts)[0]
-  await page.getByLabel('X in LDraw units', { exact: true }).waitFor()
+  // Scoped to the HUD, not the page.
+  //
+  // The exact-transform fields exist on two surfaces — the Selection HUD, which
+  // follows the selection, and the Object tools sheet in the right dock — so a
+  // page-wide `getByLabel('X in LDraw units')` is ambiguous as soon as both are
+  // open, and Playwright's strict mode fails the run rather than picking one.
+  // The HUD is the surface that is present whenever anything is selected, which
+  // makes it the stable one to drive. What this suite asserts is that typing a
+  // coordinate commits one transaction and moves the part; which of the two
+  // surfaces hosts the field is not part of that property. `tools/e2e-smoke.mjs`
+  // scopes the same lookup to `.dock-right` for the same reason.
+  const hud = page.getByRole('toolbar', { name: 'Selection HUD' })
+  await hud.getByLabel('X in LDraw units', { exact: true }).waitFor()
   check('quick-add places a brick and opens exact transform controls')
 
   let before = await revision()
-  const field = page.getByLabel('X in LDraw units', { exact: true })
+  const field = hud.getByLabel('X in LDraw units', { exact: true })
   await field.fill('40.5')
   await field.press('Enter')
-  await page.getByLabel('Z in LDraw units', { exact: true }).focus()
+  await hud.getByLabel('Z in LDraw units', { exact: true }).focus()
   assert.equal(await revision(), before + 1)
   assert.equal((await model()).parts[original.id].transform.position[0], 40.5)
   before = await revision()
@@ -99,7 +113,7 @@ try {
   await shortcut('Control+a')
   const positions = Object.values((await model()).parts).map((part) => part.transform.position)
   await page.getByRole('radio', { name: 'Move', exact: true }).click()
-  const z = page.getByLabel('Z in LDraw units', { exact: true })
+  const z = hud.getByLabel('Z in LDraw units', { exact: true })
   before = await revision()
   await z.fill('60')
   await z.press('Enter')
@@ -126,13 +140,20 @@ try {
   check('axis locks apply to keyboard nudges and numeric steppers')
 
   await page.getByRole('button', { name: 'Top view', exact: true }).click()
-  await page.getByRole('button', { name: 'Orthographic projection', exact: true }).click()
+  // Driven by chord, because the viewport chrome no longer carries these two.
+  //
+  // `Orthographic projection` and `Frame selected parts` were buttons on the
+  // viewport until the chrome stopped offering the same action in four places;
+  // `viewport-overlays.test.tsx` now asserts both are absent, and they are
+  // reached as commands instead — `alt+o` and `shift+f`, per `shortcuts.ts`.
+  // The property under test is unchanged: orthographic top view is still
+  // editable, and framing preserves the view direction. Render mode is read off
+  // `data-render-mode` on the viewport shell rather than from a button's
+  // `aria-pressed`, which is the state the button used to report anyway.
+  await shortcut('Alt+o')
   await page.waitForFunction(() => window.__brickwrightGizmo?.().attached)
-  assert.equal(
-    await page.getByRole('button', { name: 'Orthographic projection', exact: true }).getAttribute('aria-pressed'),
-    'true',
-  )
-  await page.getByRole('button', { name: 'Frame selected parts', exact: true }).click()
+  assert.equal(await page.locator('.viewport-shell').getAttribute('data-render-mode'), 'orthographic')
+  await shortcut('Shift+f')
   const camera = await page.evaluate(() => window.__brickwrightRenderer.cameraPose())
   assert(camera.pitchDeg > 89)
   check('orthographic top view stays editable and focus preserves the view direction')
@@ -150,7 +171,23 @@ try {
 
   // Centre handle dragged in a top view is a real X/Z plane gesture.
   await page.getByRole('button', { name: 'Connector snapping', exact: true }).click()
-  await page.getByRole('button', { name: 'Snap half stud', exact: true }).click()
+  // Half stud is reached by cycling, not by its own button.
+  //
+  // The viewport island used to carry all five snap increments; it now carries
+  // one button that cycles the coarse pair (1 stud ↔ 1 plate) and reports
+  // whatever increment is live, with the finer three reachable through the
+  // Precision sheet or `alt+g` — `GRID_PRESETS` in `transform.ts` is the list.
+  // Cycling until the label reads the wanted increment keeps this independent
+  // of which one the editor happened to open on.
+  let snapped = false
+  for (let attempt = 0; attempt < GRID_PRESET_COUNT; attempt += 1) {
+    if (await page.getByRole('button', { name: 'Snap half stud', exact: true }).count()) {
+      snapped = true
+      break
+    }
+    await shortcut('Alt+g')
+  }
+  assert(snapped, 'alt+g never reached the half-stud snap increment')
   before = await revision()
   let handle = await stableGizmo()
   await page.mouse.move(handle.x, handle.y)
@@ -171,21 +208,32 @@ try {
   assert.equal(await revision(), before)
   check('Escape cancels a live drag without a document transaction')
 
-  // Visibility selection is checked through buttons and shortcuts, not model writes.
+  // Visibility selection is checked through chrome and shortcuts, not model writes.
+  //
+  // Read off the Selection HUD rather than a `Remove selection` button. That
+  // button is gone — `shell.test.tsx` asserts a control with no subject is not
+  // in the opening chrome, and deleting a selection now lives in the HUD's own
+  // more-menu. The HUD is the better signal anyway: it renders exactly when
+  // something is selected, which is the property under test. Selecting all
+  // while everything is hidden must leave it absent.
   await shortcut('h')
   await shortcut('Control+a')
-  assert.equal(await page.getByRole('button', { name: 'Remove selection', exact: true }).count(), 0)
+  assert.equal(await hud.count(), 0)
   await shortcut('Shift+h')
   await shortcut('Control+a')
-  assert.equal(await page.getByRole('button', { name: 'Remove selection', exact: true }).count(), 1)
+  assert.equal(await hud.count(), 1)
+  assert(Number(await page.locator('.selection-hud-count').innerText()) > 0)
   check('select-all does not resurrect hidden parts')
 
   await page.getByRole('button', { name: 'Isometric view', exact: true }).click()
-  await page.getByRole('button', { name: 'Orthographic projection', exact: true }).click()
+  await shortcut('Alt+o')
   await page.getByRole('button', { name: 'Frame model', exact: true }).click()
   await page.screenshot({ path: `${artifacts}/desktop.png`, fullPage: true })
   await page.setViewportSize({ width: 1100, height: 760 })
-  assert(await page.getByRole('button', { name: 'Snap 1 stud', exact: true }).isVisible())
+  // Matched by prefix, not by a fixed increment. One button reports whichever
+  // increment is live — this run has already cycled it — and what a narrow
+  // viewport has to prove is that the control is still on screen.
+  assert(await page.getByRole('button', { name: /^Snap / }).isVisible())
   const dockBox = await page.getByRole('region', { name: 'Design and object dock' }).boundingBox()
   for (const label of ['Nudge Z positive', 'Turn Z positive']) {
     const box = await page.getByRole('button', { name: label, exact: true }).boundingBox()

@@ -7596,7 +7596,11 @@
 /* Modelling controls stay within reach, without covering the building surface. */
 .viewport-quick-controls {
   position: absolute;
-  top: 70px;
+  /* Clear of the top overlay stack, whose height `ViewportStage` measures.
+     `max` keeps the resting position when nothing is selected and the stack is
+     empty, so the controls do not jump upward; the stack's own `top` is 12px
+     and the trailing 12px is the gap below it. */
+  top: max(70px, calc(12px + var(--viewport-top-stack-height, 0px) + 12px));
   left: 14px;
   z-index: 5;
   display: grid;

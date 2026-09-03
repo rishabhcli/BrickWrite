@@ -34,6 +34,31 @@ import { checkCaptureSet } from '../../src/editor/render/capture.ts'
  */
 const url = process.env.BRICKWRIGHT_E2E_URL ?? process.env.BRICKWRIGHT_RENDERER_URL ?? 'http://127.0.0.1:4176'
 const OWNS_SERVER = !process.env.BRICKWRIGHT_E2E_URL
+/**
+ * Installs `window.__readSelection`: the live selection as the chrome reports it.
+ *
+ * `.viewport-title-block` used to carry "N parts selected" and is gone with the
+ * chrome rebuild — it survives only as a CSS rule. The Selection HUD is the
+ * readout now: it renders exactly when something is selected, with the count in
+ * `.selection-hud-count` and the subject in `.selection-hud-name`. Returning
+ * `null` for "nothing selected" keeps the distinction the old text carried
+ * between an empty selection and a missing element.
+ *
+ * Installed as an init script rather than kept as a Node function, because
+ * three of the four readers need it *inside* a larger `page.evaluate` that is
+ * already doing renderer work, and a Node-scope function is not in scope there.
+ */
+const INSTALL_SELECTION_READER = () => {
+  window.__readSelection = () => {
+    const count = document.querySelector('.selection-hud-count')
+    if (!count) return null
+    return {
+      count: Number(count.textContent) || 0,
+      label: (document.querySelector('.selection-hud-name')?.textContent ?? '').trim(),
+    }
+  }
+}
+
 const ARTIFACTS = 'artifacts/renderer'
 let server
 
@@ -317,6 +342,7 @@ try {
   // Editor page
   // =========================================================================
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
+  await page.addInitScript(INSTALL_SELECTION_READER)
   const errors = []
   page.on('console', (message) => {
     if (message.type() === 'error' && !isHarnessNoise(message.text())) errors.push(message.text())
@@ -368,11 +394,11 @@ try {
     canvas.dispatchEvent(new PointerEvent('pointerdown', options))
     window.dispatchEvent(new PointerEvent('pointerup', options))
     await new Promise((resolve) => requestAnimationFrame(resolve))
-    // The title block holds a <p> when nothing is selected and a <button>
-    // naming the part when something is, so the block itself is the stable
-    // place to read the selection from — a `p` selector finds nothing exactly
-    // when there *is* a selection.
-    return window.brickwright.getDocument() && document.querySelector('.viewport-title-block')?.textContent
+    // The Selection HUD only exists while something is selected, so its
+    // presence is the signal — no need to distinguish an empty-state <p> from
+    // a populated <button> the way the old title block required.
+    const hud = document.querySelector('.selection-hud-count')
+    return window.brickwright.getDocument() && hud ? hud.textContent : null
   }, { x: hit.x, y: hit.y })
   console.log(`Click selection reported: ${clickSelected}`)
 
@@ -449,19 +475,20 @@ try {
       y1: canvas.clientHeight * 0.8,
     })
     return {
-      label: document.querySelector('.viewport-title-block')?.textContent,
+      selection: window.__readSelection(),
       byPixels: region.partIds.length,
       byCentre: region.centreRuleWouldSelect.length,
     }
   })
   measured.boxSelect = boxSelection
   console.log(
-    `Box selection: "${boxSelection.label}"; over the same region the covered-pixel rule finds ` +
-      `${boxSelection.byPixels} parts and the old projected-centre rule ${boxSelection.byCentre}`,
+    `Box selection: ${boxSelection.selection?.count ?? 0} parts ("${boxSelection.selection?.label ?? 'none'}"); ` +
+      `over the same region the covered-pixel rule finds ${boxSelection.byPixels} parts ` +
+      `and the old projected-centre rule ${boxSelection.byCentre}`,
   )
   assert(
-    /\d+ parts selected/.test(boxSelection.label ?? ''),
-    `Box selection did not select a region, viewport reports "${boxSelection.label}"`,
+    (boxSelection.selection?.count ?? 0) > 0,
+    `Box selection did not select a region, the Selection HUD reports ${JSON.stringify(boxSelection.selection)}`,
   )
   assert(boxSelection.byPixels > 1, 'A box over most of the model covered at most one part')
 
@@ -482,11 +509,11 @@ try {
   await page.keyboard.up('Alt')
   await page.waitForTimeout(400)
   assert(lassoVisible === 1, 'Alt-dragging did not draw a lasso')
-  const lassoSelection = await page.evaluate(() => document.querySelector('.viewport-title-block')?.textContent)
-  console.log(`Lasso selection: ${lassoSelection}`)
+  const lassoSelection = await page.evaluate(() => window.__readSelection())
+  console.log(`Lasso selection: ${lassoSelection?.count ?? 0} parts ("${lassoSelection?.label ?? 'none'}")`)
   assert(
-    /\d+ parts selected/.test(lassoSelection ?? ''),
-    `Lasso selection selected nothing, viewport reports "${lassoSelection}"`,
+    (lassoSelection?.count ?? 0) > 0,
+    `Lasso selection selected nothing, the Selection HUD reports ${JSON.stringify(lassoSelection)}`,
   )
 
   // -- isolation by connection distance -------------------------------------
@@ -652,7 +679,7 @@ try {
       isolated,
       flap: ids.flap,
       mechanism: ids.added,
-      selection: document.querySelector('.viewport-title-block')?.textContent,
+      selection: window.__readSelection(),
     }
   }, hinge)
   measured.joints = jointList.joints

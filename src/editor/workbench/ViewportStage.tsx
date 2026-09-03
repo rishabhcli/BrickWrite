@@ -71,6 +71,35 @@ export function ViewportStage({
   const [preview, setPreview] = useState<ResolvedPlacement | null>(null)
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  const topStackRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * Publish the top overlay stack's measured height to CSS.
+   *
+   * The stack is the thing that changes size — the Selection HUD is a
+   * full-width bar that grows a rotation row, and build playback adds a
+   * transport — while the quick controls sit at a fixed offset underneath it.
+   * A literal offset can only be right for one of those states: at 1440×1000
+   * with three parts selected the HUD measured 133px tall against the 70px the
+   * controls assumed, so it covered them and, being the higher layer, swallowed
+   * their clicks. Nobody could reach Connector snapping with a group selected.
+   *
+   * So the offset is measured rather than guessed. This is a runtime
+   * measurement scoped to this element, not a design token: the shared token
+   * set is deliberately untouched, because editing it has broken the landing
+   * surface's contrast and geometry before.
+   */
+  useEffect(() => {
+    const stack = topStackRef.current
+    if (!stack) return
+    const shell = stack.closest('.viewport-shell')
+    if (!(shell instanceof HTMLElement)) return
+    const publish = () => shell.style.setProperty('--viewport-top-stack-height', `${stack.offsetHeight}px`)
+    publish()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(publish)
+    observer.observe(stack)
+    return () => observer.disconnect()
+  }, [])
   // The viewport stub (and a rotate that has not yet resampled) can leave the
   // last landing on the bar. A new yaw, a new part, or a committed revision
   // makes that preview a lie until the next sample.
@@ -207,7 +236,7 @@ export function ViewportStage({
         {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />
-      <div className="viewport-top-stack" data-overlay-stack="top">
+      <div className="viewport-top-stack" data-overlay-stack="top" ref={topStackRef}>
         {workbench.playbackStep !== null && (
           <div className="instruction-overlay" role="status" aria-label="Build playback">
             <span>{workbench.playbackPlaying ? 'PLAYING' : 'SCRUB'}</span>
