@@ -1,4 +1,5 @@
 import { cadEngine } from '../../cad/engine'
+import { revealChrome } from '../../webmcp/chrome'
 import type { DockId } from './layout'
 import { nextGridPreset } from './transform'
 import type { Workbench } from './useWorkbench'
@@ -60,6 +61,9 @@ export function disabledReason(commandId: string, workbench: Workbench): string 
     'visibility.hide',
     'visibility.isolate',
     'visibility.ghost',
+    // The Precision sheet is a selection sheet: with nothing picked the Object
+    // tab shows the model map instead, so revealing it would look like a no-op.
+    'panel.precision',
   ]
   if (needsSelection.includes(commandId) && !selected) return 'Select at least one part first.'
   if (commandId === 'edit.paste' && !workbench.clipboard) return 'Copy or cut parts in this editor first.'
@@ -163,6 +167,10 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'panel.left': () => run(() => host.toggleDock('left')),
     'panel.right': () => run(() => host.toggleDock('right')),
     'panel.bottom': () => run(() => host.toggleDock('bottom')),
+    'panel.precision': () =>
+      w.state.selection.length
+        ? run(() => revealChrome('precision'))
+        : refuse('Select at least one part first.'),
     'panel.search': () => run(() => host.focusSearch()),
 
     // Project --------------------------------------------------------------

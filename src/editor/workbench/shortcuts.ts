@@ -254,6 +254,7 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
     group: 'select',
     detail: 'Name the current selection so it can be recalled.',
     defaultChord: 'shift+mod+s',
+    keywords: 'saved sets named selection bookmark recall',
   },
 
   // View -------------------------------------------------------------------
@@ -385,6 +386,14 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
     group: 'panels',
     detail: 'Collapse or restore the bottom dock.',
     defaultChord: 'mod+j',
+  },
+  {
+    id: 'panel.precision',
+    title: 'Precision controls',
+    group: 'panels',
+    detail: 'Reference frame, pivot, axis locks, array, mirror, align and connector seats.',
+    defaultChord: null,
+    keywords: 'axis lock reference frame pivot local mate array mirror align distribute connector seat exact',
   },
   {
     id: 'panel.search',
