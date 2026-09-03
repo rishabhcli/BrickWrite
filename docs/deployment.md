@@ -438,6 +438,27 @@ curl -s  https://brickwrite.tech/assets/<entry>.js | grep -c convex.cloud   # en
 and one real sign-in, because it is the only thing that exercises the trusted
 domain list.
 
+## Regenerating demo assets
+
+`public/demos/**` is committed, and CI's `verify` job re-runs
+`npm run demos:check` to confirm a fresh build reproduces it byte for byte. PNG
+bytes come from whichever zlib the running Node was linked against, so **the
+platform is part of the pin, not just the version in `.nvmrc`**. A full rebuild
+on macOS arm64 was rejected by CI running the identical Node 24.19.0: all ten
+`document.json`, `preview.json` and `rough.json` files matched exactly, and all
+twenty PNGs plus the two manifests recording their hashes did not.
+
+Regenerate the way CI will read them:
+
+```bash
+docker run --rm --platform linux/amd64 -v "$PWD":/w -v /w/node_modules \
+  -w /w node:24.19.0 bash -c "npm ci && node tools/build-demos.mjs"
+```
+
+The anonymous `node_modules` volume keeps the container's Linux install out of
+the host tree. `--platform linux/amd64` matters on Apple Silicon: zlib-ng picks
+SIMD match finders per architecture, so linux/arm64 is not a stand-in for CI.
+
 ## Distribution budgets
 
 `npm run build` ends with `tools/check-dist-budget.mjs`. It fails before deploy

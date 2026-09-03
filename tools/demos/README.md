@@ -15,17 +15,28 @@ tools/demos/<demo-id>.mjs  one demo: its metadata and its author function
 
 ## Building
 
-The build **only runs on the Node in `.nvmrc`** — PNG bytes come from that
-version's zlib and the manifest records their hashes, so another major silently
-rewrites every asset. On this machine that is:
+Iterate locally on the Node in `.nvmrc`; on this machine that is:
 
 ```sh
 /opt/homebrew/opt/node@24/bin/node tools/build-demos.mjs --only=<demo-id>
 ```
 
 `--only` builds a subset and leaves the manifest alone, which is what you want
-while iterating — about ten seconds a demo. Drop it (and add `--check` to diff
-against the committed tree) for the full collection.
+while iterating — about ten seconds a demo.
+
+**Commit assets built the way CI reads them.** PNG bytes come from whichever
+zlib the running Node was linked against, and the manifests record their hashes,
+so the platform matters as much as the version — a full rebuild on macOS is
+rejected by `demos:check` on Linux even at the identical Node version. For the
+full collection, and for anything you intend to commit:
+
+```sh
+docker run --rm --platform linux/amd64 -v "$PWD":/w -v /w/node_modules \
+  -w /w node:24.19.0 bash -c "npm ci && node tools/build-demos.mjs"
+```
+
+Add `--check` to diff a fresh build against the committed tree instead of
+writing it.
 
 Then **look at the render**: `public/demos/<demo-id>/social.png` is 1200 × 630
 from the offline rasterizer, and it is what the landing page and the explorer

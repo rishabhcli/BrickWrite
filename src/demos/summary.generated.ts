@@ -70,8 +70,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/blue-whale-monument/thumb.png",
-          "bytes": 57158,
-          "sha256": "8b702b707151118e3bd07505f9c2e33d0ae1753b440a7d9ac5ca38ee1786f315",
+          "bytes": 57178,
+          "sha256": "0f7a85ccf8b77b41249fbb4c06ef0e89b2ffc1717e3c5c1d3f7335687c8a3b3b",
           "contentType": "image/png"
         }
       },
@@ -163,8 +163,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/sunline-suspension-bridge/thumb.png",
-          "bytes": 58513,
-          "sha256": "1179d4a9e412fcb043977033d9d20049c4b5d1f5ba87f7bb8e107dfd57a58146",
+          "bytes": 58298,
+          "sha256": "2d9f4958a3bca04a6d13be6b95d3f2949cec8378c95a1f7fb5e68f2f34ecfba4",
           "contentType": "image/png"
         }
       },
@@ -256,8 +256,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/copper-mammoth/thumb.png",
-          "bytes": 59125,
-          "sha256": "492cf5d7d68d295739121ff4311c59adc42345578954a96e4f25513142a2bd12",
+          "bytes": 59177,
+          "sha256": "6dbec77a9fb697d107c179d670cd416fbb130a6c81d41b9088edc5f57d946f28",
           "contentType": "image/png"
         }
       },
@@ -349,8 +349,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/colossal-duck/thumb.png",
-          "bytes": 47181,
-          "sha256": "e0bbad8fd532e6a0dd202ac5d532f519089ab1b9e041b054c34bbe1033acf73c",
+          "bytes": 47206,
+          "sha256": "405fd046250693218950bda2f97a4811021f03b3ce61d71e734a7c9c4bbd8c80",
           "contentType": "image/png"
         }
       },
@@ -442,8 +442,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/iron-lattice-lookout/thumb.png",
-          "bytes": 33204,
-          "sha256": "3b03f07488616bc8d4376311c4d2a8cff296d5a16e6f7b34c92cdd676954decc",
+          "bytes": 33238,
+          "sha256": "914536217f5e8dcc74ea342704fa5010ed48b652bdc2b8e5a96cfceb6f715663",
           "contentType": "image/png"
         }
       },
@@ -536,8 +536,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/harbour-control-tower/thumb.png",
-          "bytes": 32804,
-          "sha256": "89d517a0e422b8760415619d8eeaff0e1dc328e4340f871a30b74f2f99a04f53",
+          "bytes": 32821,
+          "sha256": "11c594ae8da6405616bb7925896fd8ddd2ce7f3ea9a7b6ca209cb5e2c89e6383",
           "contentType": "image/png"
         }
       },
@@ -629,8 +629,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/saucer-freighter/thumb.png",
-          "bytes": 45447,
-          "sha256": "d60b97d6b3af72f4fdabf327b3ee3de13cd04b2df5fa3b1247855da889511be0",
+          "bytes": 45466,
+          "sha256": "a8b68cf52c979ca10af253ac05f8acce5d50fdb6fd613f5193531f7c34ee2881",
           "contentType": "image/png"
         }
       },
@@ -723,8 +723,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/harbour-street/thumb.png",
-          "bytes": 38748,
-          "sha256": "3a4423989697e6f1589c9fcd59e6876ea7b46cc4faa8a0170e64fd37d4086573",
+          "bytes": 38770,
+          "sha256": "1878303fc79084a1ab7984d30eff47b5d829cdfb2ad9f16bf77bdf7ed0e5d572",
           "contentType": "image/png"
         }
       },
@@ -817,8 +817,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/meridian-tower/thumb.png",
-          "bytes": 19797,
-          "sha256": "849569348ba5fc1bf666a514774290d0bed8810bb271f505036a2de3b9d47bd0",
+          "bytes": 19802,
+          "sha256": "43df99c85c1da0c14dde1dbc8642d8f639fa30c2ca411a68fa2d48cde32f6e71",
           "contentType": "image/png"
         }
       },
@@ -912,8 +912,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/illinois-main-quad/thumb.png",
-          "bytes": 49901,
-          "sha256": "11af45b45f4fcdb4713087c44fc3e51470456b62124f505268b5dbecc472af17",
+          "bytes": 49906,
+          "sha256": "456da25e4e67dea733be18f1ff29f8e11a971ab4a722b1e8e169095206cbfcef",
           "contentType": "image/png"
         }
       },

@@ -29,12 +29,21 @@ export const CATALOG_ROOT = path.join(ROOT, 'public')
 export const AUTHORED_AT = '2026-07-01T00:00:00.000Z'
 
 /**
- * The build is only reproducible on the pinned Node.
+ * The build is only reproducible on the pinned Node — and on CI's platform.
  *
- * `encodePng` compresses through `node:zlib`, and zlib's output for the same
- * pixels is not stable across Node majors, so a render on the wrong runtime
- * rewrites the whole collection with visually identical assets that CI, which
- * builds on `.nvmrc`, will reject as non-deterministic.
+ * `encodePng` compresses through `node:zlib`, and deflate output for the same
+ * pixels follows whichever zlib the running Node was linked against. The Node
+ * version alone is not enough: on 2026-09-02 the whole collection was rebuilt on
+ * Homebrew's Node 24.19.0 and rejected by CI running Node 24.19.0, because
+ * macOS arm64 and Linux x64 disagree on every PNG while producing identical
+ * documents. `--platform linux/amd64` is not pedantry either; zlib-ng selects
+ * SIMD match finders per architecture.
+ *
+ * This guard can only see the major, so it is a floor, not a guarantee.
+ * Regenerate committed assets the way CI will read them:
+ *
+ *   docker run --rm --platform linux/amd64 -v "$PWD":/w -v /w/node_modules \
+ *     -w /w node:24.19.0 bash -c "npm ci && node tools/build-demos.mjs"
  */
 const PINNED_NODE = Number(readFileSync(path.join(ROOT, '.nvmrc'), 'utf8').trim())
 const RUNNING_NODE = Number(process.versions.node.split('.')[0])
