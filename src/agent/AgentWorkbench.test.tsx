@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { scriptedTransport, type ScriptedLeg } from './__fixtures__/scriptedTransport'
 import { AgentWorkbench } from './AgentWorkbench'
 import { AgentSession } from './session'
@@ -30,13 +30,13 @@ const send = async (text: string) => {
 
 describe('AgentWorkbench', () => {
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
     cadEngine.setSelection([])
   })
   afterEach(() => {
     cleanup()
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
   })
 
   it('renders an honest empty state that explains what it can do', () => {
@@ -256,7 +256,7 @@ describe('AgentWorkbench', () => {
 
 describe('AgentWorkbench accessibility', () => {
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
   })
   afterEach(cleanup)

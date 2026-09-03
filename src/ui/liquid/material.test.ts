@@ -16,10 +16,26 @@ import { BLUR_PX, LENS_DEFAULTS, RADIUS_PX } from './LiquidMaterial'
 const ROOT = path.resolve(__dirname, '..', '..', '..')
 const tokens = readFileSync(path.join(ROOT, 'src/ui/liquid/tokens.css'), 'utf8')
 
-function numericToken(name: string): number {
-  const match = new RegExp(`--${name}:\\s*([0-9.]+)`).exec(tokens)
-  if (!match) throw new Error(`--${name} is not declared as a number in tokens.css`)
-  return Number(match[1])
+/**
+ * Resolves a token to the number it actually paints.
+ *
+ * The radius scale is three values under seven names — `--r-panel` is
+ * `var(--r-surface)` — so a mirror check that only accepted a literal would
+ * have to be deleted the moment the aliases arrived. Following one level of
+ * indirection asserts the resolved value instead, which is the stronger claim.
+ */
+function numericToken(name: string, depth = 0): number {
+  const match = new RegExp(`--${name}:\\s*([^;]+);`).exec(tokens)
+  if (!match) throw new Error(`--${name} is not declared in tokens.css`)
+  const value = match[1].trim()
+  const alias = /^var\(--([a-z-]+)\)$/.exec(value)
+  if (alias) {
+    if (depth > 4) throw new Error(`--${name} resolves through a cycle of aliases`)
+    return numericToken(alias[1], depth + 1)
+  }
+  const numeric = /^([0-9.]+)/.exec(value)
+  if (!numeric) throw new Error(`--${name} is not a number in tokens.css`)
+  return Number(numeric[1])
 }
 
 describe('radius', () => {

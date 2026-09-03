@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import {
   describeScope,
   expandToConnectedIsland,
@@ -16,7 +16,7 @@ const context = () => {
 
 describe('reference tokens', () => {
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
   })
 
@@ -123,7 +123,7 @@ describe('reference tokens', () => {
 
 describe('scope measurement', () => {
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
   })
 
   it('measures bounds in LDraw units and studs from compiled geometry', () => {

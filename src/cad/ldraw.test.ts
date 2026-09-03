@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { exportLDraw, exportMpd, parseLDraw, describeLDrawImport } from './ldraw'
 import { basisFromAxisAngle, basisFromEulerDegrees, canonicalTransform, IDENTITY_BASIS, type Mat3 } from './math'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { ModelDocument, PartInstance, Transform } from './types'
 
 const place = (document: ModelDocument, transform: Transform, definitionId = '3001'): PartInstance => {
@@ -72,7 +73,7 @@ describe('LDraw interoperability', () => {
   })
 
   it('round-trips the showcase through MPD submodels without losing parts', () => {
-    const showcase = createShowcaseDocument()
+    const showcase = createRoverDocument()
     const imported = parseLDraw(exportMpd(showcase), createEmptyDocument())
     expect(imported.report.placed).toBe(Object.keys(showcase.parts).length)
     expect(imported.report.unknownParts).toEqual([])

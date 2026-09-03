@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildBom, exportBomCsv } from './bom'
-import { createShowcaseDocument } from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 
 describe('bill of materials', () => {
   it('aggregates exact part/color combinations and exports portable CSV', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const bom = buildBom(document)
     expect(bom.reduce((sum, line) => sum + line.quantity, 0)).toBe(Object.keys(document.parts).length)
     expect(new Set(bom.map((line) => `${line.definitionId}:${line.colorCode}`)).size).toBe(bom.length)

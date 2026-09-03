@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { catalog } from '../cad/catalog'
 import { cadEngine } from '../cad/engine'
 import { IDENTITY_BASIS } from '../cad/math'
-import { createBlankDocument, createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import {createBlankDocument, createEmptyDocument} from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { replayBrick } from '../generation/__fixtures__/run'
 import { disposeGenerationHost, getGenerationSession } from '../generation/host'
 import type { PartInstance } from '../cad/types'
@@ -33,13 +34,13 @@ function plateTileId(): string {
 
 describe('tool host', () => {
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
     cadEngine.setSelection(['part_0001'])
   })
 
   afterEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
   })
 
@@ -294,7 +295,7 @@ describe('generation through the Design Partner', () => {
 
   afterEach(() => {
     disposeGenerationHost()
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('propose')
   })
 

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { getPartBounds } from './geometry'
 import { computeBuildOrder, verifyBuildOrder } from './instructions'
 import { IDENTITY_BASIS } from './math'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import { deriveConnectionEdges } from './snapping'
 import type { ModelDocument, PartInstance } from './types'
 
@@ -114,14 +115,14 @@ describe('build order', () => {
   })
 
   it('assigns every part exactly once', () => {
-    const result = computeBuildOrder(createShowcaseDocument())
+    const result = computeBuildOrder(createRoverDocument())
     const assigned = result.steps.flatMap((step) => step.partIds)
     expect(new Set(assigned).size).toBe(assigned.length)
-    expect(assigned).toHaveLength(Object.keys(createShowcaseDocument().parts).length)
+    expect(assigned).toHaveLength(Object.keys(createRoverDocument().parts).length)
   })
 
   it('produces a verifiable sequence for the showcase', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const result = computeBuildOrder(document)
     const check = verifyBuildOrder(document, result.steps)
     expect(check.violations).toEqual([])
@@ -129,7 +130,7 @@ describe('build order', () => {
   })
 
   it('is deterministic', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const a = computeBuildOrder(document)
     const b = computeBuildOrder(document)
     expect(a.steps.map((step) => step.partIds.join(','))).toEqual(b.steps.map((step) => step.partIds.join(',')))

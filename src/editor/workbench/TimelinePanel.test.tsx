@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cadEngine } from '../../cad/engine'
-import { createShowcaseDocument } from '../../cad/sample'
+import { createRoverDocument } from '../../cad/__fixtures__/rover'
 import { TimelinePanel } from './TimelinePanel'
 import { resetPreferences } from './persistence'
 import { useWorkbench, type Workbench } from './useWorkbench'
@@ -10,7 +10,7 @@ afterEach(cleanup)
 
 beforeEach(() => {
   resetPreferences()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
 })
 
 function FeedbackHarness({ initialView = 'feedback' }: { initialView?: 'steps' | 'feedback' | 'history' }) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { SHARED_CAPABILITIES, SHARED_MUTATION_CAPABILITIES, planSharedMutation } from '../cad/capabilities'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { advertisedFields, capabilityJsonSchema, capabilitySchema, mutationSchema, parseCapabilityArgs } from './schemas'
 
 /**
@@ -103,7 +103,7 @@ describe('capability argument parsing', () => {
   })
 
   it('produces arguments the shared planner actually accepts', () => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     const state = cadEngine.getSnapshot()
     const parsed = parseCapabilityArgs('rename_document', { name: 'Parity check' })
     expect(parsed.ok).toBe(true)

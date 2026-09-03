@@ -6,7 +6,7 @@ import { LiquidLens } from './lens'
 import { fieldLuminance, isOverLight, lightnessOf } from './luminance'
 import { overlapFraction, useHostRect, OVERLAP_THRESHOLD } from './rect'
 
-export type LiquidRadius = 'control' | 'section' | 'panel' | 'island' | 'sheet'
+export type LiquidRadius = 'chip' | 'control' | 'surface' | 'section' | 'panel' | 'island' | 'sheet' | 'pill'
 export type LiquidBlur = 'nav' | 'control' | 'chip'
 
 /**
@@ -18,11 +18,18 @@ export type LiquidBlur = 'nav' | 'control' | 'chip'
  * acceptable.
  */
 export const RADIUS_PX: Record<LiquidRadius, number> = {
-  control: 14,
+  chip: 8,
+  control: 12,
+  // One surface corner under four role names, so a dock beside a sheet beside
+  // an island lines up whichever word the caller reached for.
+  surface: 20,
   section: 20,
   panel: 20,
   island: 20,
   sheet: 20,
+  // Clamped by the lens to half the shorter side, so this is "fully round"
+  // rather than a literal 999px fillet.
+  pill: 999,
 }
 
 export const BLUR_PX: Record<LiquidBlur, number> = {

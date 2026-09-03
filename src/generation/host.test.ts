@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createBlankDocument, createShowcaseDocument } from '../cad/sample'
+import {createBlankDocument} from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { ContractError } from '../webmcp/contract'
 import { replayBrick } from './__fixtures__/run'
 import { disposeGenerationHost, getGenerationHost, getGenerationSession, peekGenerationSession } from './host'
@@ -15,7 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
   disposeGenerationHost()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
 })
 
 const settle = (host = getGenerationHost()) => {

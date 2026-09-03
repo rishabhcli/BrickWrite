@@ -1,6 +1,4 @@
 import {
-  Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -20,6 +18,7 @@ import { catalog, getColor, searchCatalogPage } from '../../cad/catalog'
 import { geometryCache } from '../../cad/mesh'
 import { externalCatalogueAvailable, loadExternalCatalogue } from '../../cad/catalog-loader'
 import type { CatalogSearchPage, CatalogSearchRecord, CatalogTier, ConnectionFamily } from '../../cad/types'
+import { ColorDock } from './ColorDock'
 import { usePersistentState } from './persistence'
 import { UnavailablePartState } from './states'
 
@@ -928,42 +927,15 @@ export const PalettePanel = memo(function PalettePanel({
         </nav>
       )}
 
-      <div className={`palette-dock ${paletteOpen ? 'expanded' : ''}`}>
-        <div className="palette-label">
-          <span>{getColor(activeColor).name}</span>
-          <button
-            type="button"
-            aria-expanded={paletteOpen}
-            aria-label={paletteOpen ? 'Show the everyday palette' : `Show all ${catalog.colors().length} LDraw colours`}
-            title={paletteOpen ? 'Show the everyday palette' : `Show all ${catalog.colors().length} LDraw colours`}
-            onClick={() => setPaletteOpen((value) => !value)}
-          >
-            <ChevronDown size={12} />
-          </button>
-        </div>
-        <div className="swatches compact">
-          {paletteColours
-            .map((code) => getColor(code))
-            .map((color) => (
-              <button
-                key={color.code}
-                type="button"
-                className={`${activeColor === color.code ? 'selected' : ''} ${colourFavourites.includes(color.code) ? 'favourite' : ''}`}
-                style={{ '--swatch': color.hex } as React.CSSProperties}
-                onClick={() => onColorChange(color.code)}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  toggleColourFavourite(color.code)
-                }}
-                aria-label={color.name}
-                aria-pressed={activeColor === color.code}
-                title={`${color.name} · LDraw ${color.code} · right-click to ${colourFavourites.includes(color.code) ? 'unpin' : 'pin'}`}
-              >
-                {colourFavourites.includes(color.code) ? <Check size={8} /> : null}
-              </button>
-            ))}
-        </div>
-      </div>
+      <ColorDock
+        activeColor={activeColor}
+        colours={paletteColours}
+        expanded={paletteOpen}
+        favourites={colourFavourites}
+        onToggleExpanded={() => setPaletteOpen((value) => !value)}
+        onColorChange={onColorChange}
+        onToggleFavourite={toggleColourFavourite}
+      />
     </aside>
   )
 })

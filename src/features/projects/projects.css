@@ -42,7 +42,7 @@
 .bw-template-card {
   background: #0c1214;
   border: 1px solid var(--bw-line);
-  border-radius: 10px;
+  border-radius: var(--r-control);
   padding: 0;
   overflow: hidden;
   cursor: pointer;
@@ -126,7 +126,7 @@
 .bw-project-card {
   background: #0c1214;
   border: 1px solid var(--bw-line);
-  border-radius: 10px;
+  border-radius: var(--r-control);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -174,7 +174,7 @@
   text-align: center;
   padding: 64px 24px;
   border: 1px dashed var(--bw-line-hi);
-  border-radius: 10px;
+  border-radius: var(--r-control);
   display: flex;
   flex-direction: column;
   align-items: center;

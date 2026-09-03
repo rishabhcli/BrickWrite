@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { catalog, type CatalogPayload } from '../../../cad/catalog'
 import { decodeMesh } from '../../../cad/mesh'
 import { rgbFromHex } from '../../../cad/raster'
-import { createShowcaseDocument } from '../../../cad/sample'
+import { createRoverDocument } from '../../../cad/__fixtures__/rover'
 import { sha256Hex } from '../canonical'
 import { boxGeometry, noGeometry, privateDocument } from '../__fixtures__/model'
 import { serializePublishedDocument } from '../serialize'
@@ -69,7 +69,7 @@ async function realGeometry(definitionIds: Iterable<string>) {
 const palette = (code: number) => rgbFromHex(catalog.color(code).hex)
 
 const installed = await installRealCatalog()
-const showcase = installed ? createShowcaseDocument() : null
+const showcase = installed ? createRoverDocument() : null
 const published = showcase ? serializePublishedDocument(showcase) : null
 const geometry = showcase ? await realGeometry(Object.values(showcase.parts).map((part) => part.definitionId)) : null
 
@@ -182,7 +182,7 @@ describe('determinism', () => {
     // The same revision, serialised again from a freshly assembled document.
     // If anything in the pipeline depended on object identity, insertion order
     // or a clock, these two would differ.
-    const rebuilt = serializePublishedDocument(createShowcaseDocument())
+    const rebuilt = serializePublishedDocument(createRoverDocument())
     const a = renderCard(realInput(), 'opengraph')
     const b = renderCard({ ...realInput(), document: rebuilt }, 'opengraph')
     expect(await sha256Hex(a.bytes)).toBe(await sha256Hex(b.bytes))

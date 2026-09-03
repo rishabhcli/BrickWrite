@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cadEngine } from '../../cad/engine'
-import { createBlankDocument, createShowcaseDocument } from '../../cad/sample'
+import {createBlankDocument} from '../../cad/sample'
+import { createRoverDocument } from '../../cad/__fixtures__/rover'
 import { classifyRequest, nextAgentAction } from '../../agent/guidance'
 import { compileBriefDeterministically } from '../brief'
 import { runPipelineSync, strategyOrderFor } from '../phases'
@@ -94,7 +95,7 @@ describe('a design request never routes to a single brick', () => {
     expect(step.tool).toBe('generation_compile')
     expect(step.tool).not.toBe('preflight_placement')
     expect(step.tool).not.toBe('capability_search')
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
   })
 
   it('still lays a bare baseplate with build_field', () => {

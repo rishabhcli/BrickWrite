@@ -104,8 +104,10 @@ describe('the landing page', () => {
     render(<LandingPage />)
     const hero = getDemo('blue-whale-monument') ?? DEMOS[0]
     const facts = screen.getByTestId('hero-facts').textContent ?? ''
-    expect(facts).toContain(String(hero.validation.partCount))
-    expect(facts).toContain(String(hero.validation.connectionCount))
+    // Grouped as a reader sees them; what this pins is the provenance of the
+    // figure, not its digit separators.
+    expect(facts).toContain(hero.validation.partCount.toLocaleString())
+    expect(facts).toContain(hero.validation.connectionCount.toLocaleString())
     expect(facts).toContain(hero.validation.statics.massLabel)
     // The page must not carry social proof it cannot substantiate.
     const body = document.body.textContent ?? ''
@@ -138,7 +140,9 @@ describe('the landing page', () => {
     expect(container.querySelector('.bw-reticle')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1 }).querySelector('em')?.textContent).toBe('enormous.')
     const hero = getDemo('blue-whale-monument') ?? DEMOS[0]
-    expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(String(hero.validation.partCount))
+    expect(container.querySelector('.bw-stage-readout')?.textContent).toContain(
+      hero.validation.partCount.toLocaleString(),
+    )
     expect(container.querySelectorAll('.bw-stage-step')).toHaveLength(4)
     expect(container.querySelector('.bw-assembly-film')).toBeTruthy()
     expect(container.querySelectorAll('.bw-assembly-brick')).toHaveLength(96)
@@ -168,18 +172,18 @@ describe('the landing page', () => {
     expect(within(constellation).getByText('Colossal Duck Float')).toBeInTheDocument()
   })
 
-  it('opens still, and offers motion without hiding any content either way', () => {
+  it('opens moving, and offers stillness without hiding any content either way', () => {
     const { container } = render(<LandingPage />)
-    // The page now arrives paused rather than animating at a visitor.
+    // The front door for a toy arrives animating; the toggle is the escape hatch.
+    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'running')
+    expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause animations' }))
     expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
     expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume animations' }))
     expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'running')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pause animations' }))
-    expect(container.querySelector('.bw-studio')).toHaveAttribute('data-motion', 'paused')
-    expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
   })
 
   it('lets a visitor scrub the assembly reel without scrolling', () => {

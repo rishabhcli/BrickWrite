@@ -35,11 +35,13 @@ export const CHROME_SURFACE_TARGETS: Record<ChromeSurface, { dock: 'left' | 'rig
   refinement: { dock: 'right', section: 'refinement.panel' },
   agent: { dock: 'right', section: 'agent.workbench' },
   library: { dock: 'left', section: 'palette' },
-  inspector: { dock: 'right', section: 'inspector' },
+  // The five Object sheets are one contextual panel now. `inspector` kept its
+  // name in the tool contract and lands where its contents went.
+  inspector: { dock: 'right', section: 'selection' },
   transform: { dock: 'right', section: 'transform' },
   selection: { dock: 'right', section: 'selection' },
   model: { dock: 'right', section: 'model.explorer' },
-  health: { dock: 'right', section: 'inspector' },
+  health: { dock: 'right', section: 'health' },
   connect: { dock: 'right', section: 'connect' },
   timeline: { dock: 'bottom', section: null },
   review: { dock: 'bottom', section: null },

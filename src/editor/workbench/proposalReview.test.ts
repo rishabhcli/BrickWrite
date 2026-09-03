@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../../cad/engine'
-import { createShowcaseDocument } from '../../cad/sample'
+import { createRoverDocument } from '../../cad/__fixtures__/rover'
 import type { CollisionIssue, Proposal } from '../../cad/types'
 import { summariseProposal } from './proposalReview'
 
-beforeEach(() => cadEngine.replaceDocument(createShowcaseDocument()))
+beforeEach(() => cadEngine.replaceDocument(createRoverDocument()))
 
 function recolorProposal(): Proposal {
   const snapshot = cadEngine.getSnapshot()

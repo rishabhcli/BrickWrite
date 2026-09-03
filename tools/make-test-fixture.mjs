@@ -34,6 +34,19 @@ const IDS = [
   // carry `axial`, and only some of them, so this has to be chosen rather than
   // assumed.
   '60897',
+
+  // The starting document. `createShowcaseDocument` builds a whole site — deck,
+  // curtain wall, roof terrace, planting, people — and it throws on a part the
+  // pack does not carry, so every one of these is load-bearing for any test
+  // that opens the showcase at all.
+  '91405', '3036', '3958', '3006', '3007', '2456', '3062b', '3006',
+  '6636', '63864', '26603', '69729', '98138', '4150', '14719',
+  '3853', '57895', '59349', '30562',
+  '2417', '2423', '30176', '4728', '33291', '24866', '32607',
+  '3626b', '41879a', '3833', '3901', '62810', '87990', '3624', '11303', '98385',
+  '3837', '4449-f1', '3899', '30162', '24093',
+  '3633', '3185', '15332', '30374', '58176', '2569', '15210',
+  '95343', '30150', '2489',
 ]
 
 const [, , catalogRoot = 'public', version = '2026-07', out = 'src/cad/__fixtures__/catalog.fixture.json'] = process.argv

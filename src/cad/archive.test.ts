@@ -9,7 +9,8 @@ import {
 } from './archive'
 import { IDENTITY_BASIS } from './math'
 import { MemoryDriver, ProjectRepository, type StoredTransaction } from './persistence'
-import { createBlankDocument, createShowcaseDocument } from './sample'
+import {createBlankDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { BuilderNote, Constraint, ModelDocument, ModuleDefinition } from './types'
 import { validateDocument } from './validation'
 
@@ -32,7 +33,7 @@ const collidingDocument = (): ModelDocument => {
 
 describe('project archive', () => {
   it('round-trips connections, notes, constraints and modules', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const note: BuilderNote = {
       id: 'note_archive',
       anchorPartIds: [Object.keys(document.parts)[0]!],
@@ -86,7 +87,7 @@ describe('project archive', () => {
   })
 
   it('imports the checkpoint when the transaction log is broken', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     document.revision = 8
     const gap: StoredTransaction = {
       key: `${document.id}:${String(10).padStart(12, '0')}`,
@@ -127,7 +128,7 @@ describe('project archive', () => {
   })
 
   it('assigns a fresh project id on import', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const json = serializeArchive({
       checkpoint: {
         projectId: document.id,
@@ -149,7 +150,7 @@ describe('project archive', () => {
   })
 
   it('reports a catalog version mismatch instead of discarding', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const json = serializeArchive({
       checkpoint: {
         projectId: document.id,
@@ -197,7 +198,7 @@ describe('project archive', () => {
   })
 
   it('refuses an archive whose attestation or annex is missing', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const json = serializeArchive({
       checkpoint: {
         projectId: document.id,
@@ -220,7 +221,7 @@ describe('project archive', () => {
   })
 
   it('serialises the live document when the stored checkpoint is behind', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     document.revision = 3
     const repository = new ProjectRepository(new MemoryDriver())
     await repository.saveCheckpoint({ ...document, revision: 1 })

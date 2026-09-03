@@ -17,7 +17,7 @@ import {
   jointOverrideIndex,
   type MatedPair,
 } from './snapping'
-import { createBlankDocument, createEmptyDocument } from './sample'
+import { createBlankDocument, createEmptyDocument, createShowcaseDocument } from './sample'
 import { introducedCollisions } from './collisionGate'
 import {
   adjacencyFromRecordedEdges,
@@ -1200,7 +1200,18 @@ export class CadEngine {
   }
 }
 
-export const cadEngine = new CadEngine(createBlankDocument())
+/**
+ * The editor opens on the showcase.
+ *
+ * Built at module scope, which is why `AppShell` gates every kernel surface on
+ * the parts tier: this throws without the compiled pack. A first run that lands
+ * on an empty grid asks a newcomer to imagine what the application does; a
+ * finished site they can pull apart shows them.
+ *
+ * A *new project* is still blank — see `session.createProject`. Starting your
+ * own build by deleting someone else's model is the other failure.
+ */
+export const cadEngine = new CadEngine(createShowcaseDocument())
 
 export const commandBus = {
   dispatch: (label: string, operations: CadOperation[], actor: Actor, expectedRevision?: number, sourceTool?: string) =>

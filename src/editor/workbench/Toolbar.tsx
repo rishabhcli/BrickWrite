@@ -18,7 +18,7 @@ import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
 import { WorkbenchIcon } from './WorkbenchIcons'
-import { describeWorkbenchEscape, describeWorkbenchMode } from './StatusBar'
+import { describeWorkbenchEscape, describeWorkbenchMode } from './mode'
 import type { Workbench } from './useWorkbench'
 
 /**

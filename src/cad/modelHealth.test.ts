@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { IDENTITY_BASIS } from './math'
 import { inspectModelHealth } from './modelHealth'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { ModelDocument, PartInstance } from './types'
 import { validateDocument } from './validation'
 
@@ -30,7 +31,7 @@ function withParts(...parts: PartInstance[]): ModelDocument {
 
 describe('shared model health', () => {
   it('turns the real showcase kernel report into stable checks without inventing blockers', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const validation = validateDocument(document)
     const health = inspectModelHealth(document, validation)
 

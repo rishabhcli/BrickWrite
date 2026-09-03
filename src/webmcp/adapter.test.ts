@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { WebMcpAdapter } from './adapter'
 import { resetChrome, setChromeRevealHandler, setModelHealthHandler, setProposalReviewHandler } from './chrome'
 
@@ -8,13 +8,13 @@ describe('WebMCP adapter', () => {
   const adapter = new WebMcpAdapter()
   beforeEach(() => {
     adapter.stop()
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     cadEngine.setAutonomy('inspect')
   })
   afterEach(() => {
     adapter.stop()
     resetChrome()
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
   })
 
   it('dynamically changes the write surface with autonomy mode', async () => {
@@ -96,7 +96,7 @@ describe('WebMCP adapter', () => {
   })
 
   it('hands an agent validation scan to the exact human Model Health issue without mutating', async () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     document.constraints = [{
       id: 'health_palette',
       kind: 'palette',
@@ -134,7 +134,7 @@ describe('WebMCP adapter', () => {
       },
       focused: {
         activeIssueId: 'constraint:health_palette',
-        revealed: { surface: 'health', section: 'inspector' },
+        revealed: { surface: 'health', section: 'health' },
       },
     })
     expect(focused).toEqual(['constraint:health_palette'])

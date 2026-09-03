@@ -6,7 +6,6 @@ import { GlassBar } from '../../ui/liquid'
 import { ProjectMenu } from '../ProjectMenu'
 import { AutonomySwitch } from './AutonomySwitch'
 import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcons'
-import { LAYOUT_PRESETS, type LayoutPresetId } from './layout'
 import type { Workbench } from './useWorkbench'
 
 /**
@@ -15,15 +14,7 @@ import type { Workbench } from './useWorkbench'
  * Which document is open, whether work is actually being saved, and how much
  * the agent is currently allowed to do.
  */
-export function TopBar({
-  workbench,
-  preset,
-  onPreset,
-}: {
-  workbench: Workbench
-  preset: LayoutPresetId | null
-  onPreset: (preset: LayoutPresetId) => void
-}) {
+export function TopBar({ workbench }: { workbench: Workbench }) {
   const { state, sessionStatus } = workbench
   const navIcons: Partial<Record<(typeof PRIMARY_NAV)[number]['id'], WorkbenchIconName>> = {
     explore: 'explore',
@@ -97,22 +88,6 @@ export function TopBar({
           agentConnected={workbench.toolStatus.native}
           onChange={(mode) => cadEngine.setAutonomy(mode)}
         />
-        <label className="layout-preset">
-          <span className="visually-hidden">Layout preset</span>
-          <select
-            value={preset ?? 'custom'}
-            onChange={(event) => onPreset(event.target.value as LayoutPresetId)}
-            aria-label="Layout preset"
-            title="Dock sizes tuned for a screen shape"
-          >
-            {preset === null && <option value="custom">Custom layout</option>}
-            {(Object.keys(LAYOUT_PRESETS) as LayoutPresetId[]).map((id) => (
-              <option key={id} value={id}>
-                {LAYOUT_PRESETS[id].label}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
     </GlassBar>
   )

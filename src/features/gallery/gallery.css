@@ -53,7 +53,7 @@
   width: 100%;
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   color: var(--bw-ink);
   padding: 8px 10px;
   font: inherit;
@@ -82,7 +82,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   padding: 5px 10px;
   font: inherit;
   font-size: 12px;
@@ -134,7 +134,7 @@
 .bw-gallery-tile {
   border: 1px solid var(--bw-line);
   background: var(--bw-panel);
-  border-radius: 10px;
+  border-radius: var(--r-control);
   overflow: hidden;
   height: 100%;
   display: flex;
@@ -240,7 +240,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   padding: 9px 18px;
   font: inherit;
   font-size: 12px;
@@ -257,7 +257,7 @@
 .bw-gallery-state {
   border: 1px solid var(--bw-line);
   background: var(--bw-panel);
-  border-radius: 10px;
+  border-radius: var(--r-control);
   padding: 48px 26px;
   text-align: center;
   color: var(--bw-muted);
@@ -281,7 +281,7 @@
   border: 1px solid rgba(245, 163, 63, 0.5);
   background: rgba(245, 163, 63, 0.1);
   color: var(--bw-orange);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   padding: 8px 15px;
   font-family: var(--bw-display);
   font-size: 12px;
@@ -302,7 +302,7 @@
   width: min(440px, 100%);
   border: 1px solid var(--bw-line-hi);
   background: var(--bw-panel);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   padding: 18px 20px;
   display: grid;
   gap: 11px;
@@ -325,7 +325,7 @@
 .bw-gallery-dialog-panel textarea {
   background: var(--bw-void);
   border: 1px solid var(--bw-line-hi);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   color: var(--bw-ink);
   padding: 7px 9px;
   font: inherit;
@@ -343,7 +343,7 @@
   background: var(--bw-panel-2);
   border: 1px solid var(--bw-line-hi);
   color: var(--bw-muted);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   padding: 7px 13px;
   font: inherit;
   font-size: 12px;

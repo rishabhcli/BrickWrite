@@ -18,15 +18,12 @@ export interface DockGeometry {
   readonly collapsed: boolean
 }
 
-export type LayoutPresetId = 'laptop' | 'desktop' | 'ultrawide'
 export type RightDockTab = 'design' | 'object'
 
 export interface WorkbenchLayout {
   readonly left: DockGeometry
   readonly right: DockGeometry
   readonly bottom: DockGeometry
-  /** The preset this layout came from, or null once it has been dragged. */
-  readonly preset: LayoutPresetId | null
   /** Open/closed state of the collapsible sections inside the docks. */
   readonly sections: Readonly<Record<string, boolean>>
   /** The durable top-level view shown in the right dock. */
@@ -44,59 +41,31 @@ export const MIN_VIEWPORT_WIDTH = 420
 export const MIN_VIEWPORT_HEIGHT = 280
 
 /**
- * Presets, sized from the shapes people actually work on.
+ * The starting geometry.
  *
- * Laptop protects the viewport by shrinking both docks and shortening the
- * timeline; ultrawide spends the extra pixels on the palette and inspector
- * rather than on an ever-wider viewport nobody asked for.
+ * One arrangement rather than a menu of them. The screen-shape presets this
+ * replaced asked the operator to classify their own monitor before they had
+ * seen the editor, and then persisted whichever answer they guessed; the docks
+ * are draggable and `clampLayout` already fits them to any real window, which
+ * is the same job done without the question.
  */
-export const LAYOUT_PRESETS: Record<
-  LayoutPresetId,
-  { label: string; hint: string; layout: Omit<WorkbenchLayout, 'sections'> }
-> = {
-  laptop: {
-    label: 'Laptop',
-    hint: '13–14 inch. Narrow docks, short timeline, viewport first.',
-    layout: {
-      left: { size: 224, collapsed: false },
-      right: { size: 276, collapsed: false },
-      bottom: { size: 124, collapsed: true },
-      preset: 'laptop',
-      rightTab: 'design',
-    },
-  },
-  desktop: {
-    label: 'Desktop',
-    hint: '1600–1920 wide. The default balance.',
-    layout: {
-      left: { size: 268, collapsed: false },
-      right: { size: 316, collapsed: false },
-      bottom: { size: 152, collapsed: true },
-      preset: 'desktop',
-      rightTab: 'design',
-    },
-  },
-  ultrawide: {
-    label: 'Ultrawide',
-    hint: '2560 and wider. Both docks open at full width.',
-    layout: {
-      left: { size: 340, collapsed: false },
-      right: { size: 392, collapsed: false },
-      bottom: { size: 168, collapsed: true },
-      preset: 'ultrawide',
-      rightTab: 'design',
-    },
-  },
+const STARTING_LAYOUT: Omit<WorkbenchLayout, 'sections'> = {
+  left: { size: 268, collapsed: false },
+  right: { size: 316, collapsed: false },
+  bottom: { size: 152, collapsed: true },
+  rightTab: 'design',
 }
 
 export const DEFAULT_SECTIONS: Record<string, boolean> = {
   palette: true,
   colors: true,
   'model.explorer': false,
-  selection: false,
+  selection: true,
+  // Closed on a casual click. Reference frames, axis locks, pivots and align
+  // rows unfurling because a brick was clicked is how a viewport becomes a
+  // cockpit; reaching for Move or Rotate opens it.
   transform: false,
-  inspector: false,
-  validate: false,
+  health: false,
   connect: false,
   // Design is the first-run workspace. These remain independently
   // collapsible: Generate, Refine and Agent form one intentional stack rather
@@ -106,17 +75,10 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   'agent.workbench': true,
 }
 
-export const defaultLayout = (preset: LayoutPresetId = 'desktop'): WorkbenchLayout => ({
-  ...LAYOUT_PRESETS[preset].layout,
+export const defaultLayout = (): WorkbenchLayout => ({
+  ...STARTING_LAYOUT,
   sections: { ...DEFAULT_SECTIONS },
 })
-
-/** The preset that suits a viewport width, used for the first-run layout only. */
-export function recommendedPreset(width: number): LayoutPresetId {
-  if (width >= 2200) return 'ultrawide'
-  if (width <= 1450) return 'laptop'
-  return 'desktop'
-}
 
 const clampSize = (dock: DockId, size: number) =>
   Math.round(Math.min(DOCK_LIMITS[dock].max, Math.max(DOCK_LIMITS[dock].min, size)))
@@ -156,8 +118,8 @@ export function clampLayout(layout: WorkbenchLayout, viewport: { width: number; 
       }
     }
     // Still impossible: collapse the right dock, which is the one whose content
-    // has a home elsewhere — the inspector's sections are all reachable from
-    // the command palette.
+    // has a home elsewhere — every Object block is reachable from the command
+    // palette.
     const stillShort =
       viewport.width -
       MIN_VIEWPORT_WIDTH -
@@ -194,31 +156,29 @@ export const TOOLRAIL_HEIGHT = 0
 /**
  * Zero on purpose. The tools float as a viewport island, and remounting a
  * dedicated status strip would steal model pixels the quieter shell already
- * gave back. Mode, Esc and layout-preset live on that island and the top bar.
- * StatusBar.tsx is the full readout if a density option ever wants it back.
+ * gave back. Mode and Esc live on that island.
  */
 export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
-// v4 puts the creative surface back on screen and promotes the core tools out
-// of the old Workspace menu. Earlier geometry stays isolated so every operator
-// receives the discoverable layout rather than a persisted collapsed rail.
-const STORAGE_KEY = 'layout.v4'
+// v5 drops the screen-shape presets and folds the five Object sheets into one
+// contextual panel. Earlier geometry stays isolated so nobody inherits a dock
+// arrangement built for controls that no longer exist.
+const STORAGE_KEY = 'layout.v5'
 
-export function loadLayout(viewportWidth: number): WorkbenchLayout {
+export function loadLayout(): WorkbenchLayout {
   const stored = readPreference<WorkbenchLayout | null>(STORAGE_KEY, null)
   if (!stored || typeof stored !== 'object' || !stored.left || !stored.right || !stored.bottom) {
-    return defaultLayout(recommendedPreset(viewportWidth))
+    return defaultLayout()
   }
   return {
     left: { size: clampSize('left', Number(stored.left.size) || 268), collapsed: Boolean(stored.left.collapsed) },
-    right: { size: clampSize('right', Number(stored.right.size) || 300), collapsed: Boolean(stored.right.collapsed) },
+    right: { size: clampSize('right', Number(stored.right.size) || 316), collapsed: Boolean(stored.right.collapsed) },
     bottom: {
       size: clampSize('bottom', Number(stored.bottom.size) || 152),
       collapsed: Boolean(stored.bottom.collapsed),
     },
-    preset: stored.preset ?? null,
     sections: { ...DEFAULT_SECTIONS, ...(stored.sections ?? {}) },
     rightTab: stored.rightTab === 'object' ? 'object' : 'design',
   }
@@ -238,37 +198,7 @@ export function workspaceColumns(layout: WorkbenchLayout): string {
 export const bottomHeight = (layout: WorkbenchLayout): number =>
   layout.bottom.collapsed ? COLLAPSED_BAR : layout.bottom.size
 
-/** Four tracks: topbar, unused toolrail, viewport, timeline. StatusBar is unmounted. Inline style must win over CSS — never lock the last track to 0 with !important. */
+/** Four tracks: topbar, unused toolrail, viewport, timeline. Inline style must win over CSS — never lock the last track to 0 with !important. */
 export function workspaceRows(layout: WorkbenchLayout): string {
   return `${TOPBAR_HEIGHT}px ${TOOLRAIL_HEIGHT}px minmax(0, 1fr) ${bottomHeight(layout)}px`
-}
-
-/**
- * How tightly Object companions share the 300px column.
- *
- * Companions may all be open at once. Without a density clamp every open
- * sheet tries to grow, and five of them pack into unreadably thin bands.
- */
-export type ObjectDockDensity = 'roomy' | 'compact' | 'packed'
-
-export const OBJECT_GROW_PRIORITY = [
-  'connect',
-  'transform',
-  'inspector',
-  'selection',
-  'model.explorer',
-] as const
-
-export function objectDockDensity(openCount: number): ObjectDockDensity {
-  if (openCount <= 1) return 'roomy'
-  if (openCount === 2) return 'compact'
-  return 'packed'
-}
-
-/** Exactly one open companion absorbs spare height. */
-export function objectGrowId(openIds: readonly string[]): string | null {
-  for (const id of OBJECT_GROW_PRIORITY) {
-    if (openIds.includes(id)) return id
-  }
-  return openIds[0] ?? null
 }

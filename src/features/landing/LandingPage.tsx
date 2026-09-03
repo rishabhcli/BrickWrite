@@ -19,7 +19,8 @@ import { setKnownDemoIds, trackLanding } from './analytics'
 import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
 import { CountUp, PlateAtmosphere } from './plate'
-import { FILM_STAGES, useFilmStage, usePointerField, usePointerTilt, useReveal } from './reveal'
+import { FILM_STAGES, useFilmStage, usePointerField, usePointerTilt, useReveal, useSectionScroll } from './reveal'
+import { StudPlate } from './StudPlate'
 import { useReducedMotion } from '../explore/motion'
 import './landing.css'
 import './studio.css'
@@ -42,18 +43,21 @@ export function LandingPage() {
   const collectionParts = DEMOS.reduce((sum, demo) => sum + demo.validation.partCount, 0)
   const reduced = useReducedMotion()
   /**
-   * The page opens still.
+   * The page opens moving.
    *
-   * Six things loop for ever on this surface — a scroll cue, a float, two
-   * background drifts, a sheen and a 2.3s scan — and none of them carries
-   * information. The control and the animations are unchanged and one click
-   * starts them; what changed is which state a visitor is dropped into.
-   * `data-motion='paused'` reveals content rather than hiding it, so nothing
-   * is gated behind pressing play.
+   * This is a front door for a toy, and a still plate sells none of it. What
+   * moves is choreographed rather than merely looping: one spring-settled
+   * entrance, a pointer lamp over the studs, scroll-scrubbed chapters, and a
+   * plate a visitor can actually build on. The toggle stays, and
+   * `data-motion='paused'` still reveals every word and figure, so nothing on
+   * this page is gated behind an animation — a visitor who wants it quiet
+   * loses decoration, never content.
    */
-  const [paused, setPaused] = useState(true)
+  const [paused, setPaused] = useState(false)
   const motionPaused = reduced || paused
   const pointer = usePointerField<HTMLDivElement>(motionPaused)
+  // One scroll position, shared by everything in the hero. See useSectionScroll.
+  const heroScroll = useSectionScroll<HTMLElement>('--bw-hero-t', motionPaused)
 
   useEffect(() => {
     trackLanding({ name: 'landing.viewed' })
@@ -70,7 +74,7 @@ export function LandingPage() {
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div id="bw-main">
-        <section className="bw-studio-hero" aria-labelledby="bw-hero-title">
+        <section className="bw-studio-hero" ref={heroScroll} aria-labelledby="bw-hero-title">
           <div className="bw-studio-topline">
             <span>
               <i aria-hidden="true" /> {hero.validation.partCount.toLocaleString()} pieces · {hero.validation.steps}{' '}
@@ -128,6 +132,21 @@ export function LandingPage() {
             </a>
             <span>LANDMARKS. BUILDINGS. ANIMALS. WEIRD IDEAS.</span>
           </div>
+        </section>
+
+        <section className="bw-plate-section" aria-labelledby="bw-plate-title">
+          <div className="bw-plate-head">
+            <h2 id="bw-plate-title">
+              Go on.
+              <br />
+              <em>Place a brick.</em>
+            </h2>
+            <p>
+              The plate is building a small version of the whale on its own, one course at a time. Move onto it and it
+              hands over — click any column to drop a brick of your own.
+            </p>
+          </div>
+          <StudPlate paused={motionPaused} />
         </section>
 
         <section className="bw-campus-section" aria-labelledby="bw-collection-title">
@@ -529,7 +548,7 @@ function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
       <figure>
         <img
           src={demo.assets.thumbnail.url}
-          alt={`${demo.title}: ${demo.validation.partCount} parts, rendered offline from its compiled LDraw geometry.`}
+          alt={`${demo.title}: ${demo.validation.partCount.toLocaleString()} parts, rendered offline from its compiled LDraw geometry.`}
           width={720}
           height={450}
           loading={index === 0 ? 'eager' : 'lazy'}
@@ -543,10 +562,10 @@ function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
         <p>{demo.tagline}</p>
         <p className="bw-demo-stats">
           <span>
-            <b>{demo.validation.partCount}</b> parts
+            <b>{demo.validation.partCount.toLocaleString()}</b> parts
           </span>
           <span>
-            <b>{demo.validation.connectionCount}</b> mates
+            <b>{demo.validation.connectionCount.toLocaleString()}</b> mates
           </span>
           <span className="ok">verified</span>
         </p>

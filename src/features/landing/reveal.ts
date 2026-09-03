@@ -48,6 +48,54 @@ export function useReveal<T extends HTMLElement>(delayMs = 0) {
   }
 }
 
+/**
+ * Scroll progress for one section: 0 while it fills the frame, 1 once it has
+ * left it.
+ *
+ * Apple's pages read as continuous because one scroll drives everything on
+ * screen, rather than each element running a timer of its own. This is the
+ * cheap honest version: a single rAF-coalesced listener writing a single custom
+ * property, which CSS then spends however it likes. Nothing here animates on a
+ * clock, so there is nothing to pause — with reduced motion or the page-wide
+ * toggle the property is pinned at 0 and the section simply sits still.
+ */
+export function useSectionScroll<T extends HTMLElement>(property: string, paused = false) {
+  const ref = useRef<T | null>(null)
+  const reduced = useReducedMotion()
+
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    if (reduced || paused) {
+      element.style.setProperty(property, '0')
+      return
+    }
+    const scroller = document.getElementById('pf-main')
+    const target: HTMLElement | Window = scroller ?? window
+    let frame = 0
+    const paint = () => {
+      frame = 0
+      const box = element.getBoundingClientRect()
+      const top = scroller?.getBoundingClientRect().top ?? 0
+      const travelled = Math.max(0, top - box.top)
+      element.style.setProperty(property, Math.min(1, travelled / Math.max(1, box.height * 0.82)).toFixed(4))
+    }
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(paint)
+    }
+    target.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    paint()
+    return () => {
+      cancelAnimationFrame(frame)
+      target.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [property, reduced, paused])
+
+  return ref
+}
+
 export const FILM_STAGES = ['brief', 'candidate', 'refinement', 'validated'] as const
 export type FilmStage = (typeof FILM_STAGES)[number]
 

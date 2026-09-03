@@ -5,7 +5,8 @@ import { catalog } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { getPartBounds } from '../../cad/geometry'
 import { IDENTITY_BASIS } from '../../cad/math'
-import { createEmptyDocument, createShowcaseDocument } from '../../cad/sample'
+import {createEmptyDocument} from '../../cad/sample'
+import { createRoverDocument } from '../../cad/__fixtures__/rover'
 import { CommandPalette } from './CommandPalette'
 import { PalettePanel } from './PalettePanel'
 import * as catalogLoader from '../../cad/catalog-loader'
@@ -31,7 +32,7 @@ afterEach(() => {
 })
 beforeEach(() => {
   resetPreferences()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
   // The showcase declares a hard 10 x 14 stud envelope and a piece budget. Both
   // are real kernel gates — proved elsewhere — but they would refuse the large
   // deliberate moves these panel tests make, so they are lifted first.

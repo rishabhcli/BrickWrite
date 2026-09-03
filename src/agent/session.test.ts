@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cadEngine } from '../cad/engine'
 import { IDENTITY_BASIS } from '../cad/math'
-import { createBlankDocument, createEmptyDocument, createShowcaseDocument } from '../cad/sample'
+import {createBlankDocument, createEmptyDocument} from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import type { PartInstance } from '../cad/types'
 import { scriptedTransport, toolValue, type ScriptedLeg } from './__fixtures__/scriptedTransport'
 import { compileBrief } from './brief'
@@ -20,7 +21,7 @@ import type { AgentMode } from './modes'
  */
 
 const reset = (mode: AgentMode = 'propose') => {
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
   cadEngine.setAutonomy(mode)
   cadEngine.setSelection([])
 }

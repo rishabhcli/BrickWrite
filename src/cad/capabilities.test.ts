@@ -8,7 +8,8 @@ import {
 import { catalog } from './catalog'
 import { CadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { ModelDocument, PartInstance } from './types'
 import { floatingPartIds } from './validation'
 
@@ -217,7 +218,7 @@ describe('shared human/agent capabilities', () => {
   })
 
   it('keeps a human lock authoritative over the agent surface', () => {
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     engine.setAutonomy('build')
     const document = engine.getSnapshot().document
     const plan = planSharedMutation(

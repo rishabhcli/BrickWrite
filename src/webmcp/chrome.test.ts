@@ -25,9 +25,9 @@ afterEach(resetChrome)
 describe('chrome reveal', () => {
   it('opens the right dock and Generate section without touching the left dock', () => {
     const closed: WorkbenchLayout = {
-      ...defaultLayout('desktop'),
+      ...defaultLayout(),
       right: { size: 300, collapsed: true },
-      sections: { ...defaultLayout().sections, 'generation.panel': false },
+      sections: { ...defaultLayout().sections, 'generation.panel': false, selection: false },
     }
     const next = applyChromeReveal(closed, 'generation')
     expect(next.right.collapsed).toBe(false)
@@ -44,7 +44,7 @@ describe('chrome reveal', () => {
         ...defaultLayout().sections,
         selection: true,
         transform: true,
-        inspector: true,
+        health: true,
         'generation.panel': false,
       },
     }
@@ -53,7 +53,7 @@ describe('chrome reveal', () => {
     expect(next.sections['refinement.panel']).toBe(false)
     expect(next.sections.selection).toBe(true)
     expect(next.sections.transform).toBe(true)
-    expect(next.sections.inspector).toBe(true)
+    expect(next.sections.health).toBe(true)
     expect(next.sections.palette).toBe(true)
   })
 
@@ -83,15 +83,15 @@ describe('chrome reveal', () => {
     expect(next.sections.selection).toBe(true)
   })
 
-  it('opens Model Health inside the focused inspector sheet', () => {
+  it('opens Model Health as its own block in the Object panel', () => {
     const closed: WorkbenchLayout = {
       ...defaultLayout(),
       right: { size: 300, collapsed: true },
-      sections: { ...defaultLayout().sections, selection: true, inspector: false },
+      sections: { ...defaultLayout().sections, selection: true, health: false },
     }
     const next = applyChromeReveal(closed, 'health')
     expect(next.right.collapsed).toBe(false)
-    expect(next.sections.inspector).toBe(true)
+    expect(next.sections.health).toBe(true)
     expect(next.sections.selection).toBe(true)
   })
 
@@ -145,7 +145,7 @@ describe('chrome reveal', () => {
       found: true,
       revision: 7,
       selectedPartIds: ['part_a', 'part_b'],
-      revealed: { surface: 'health', dock: 'right', section: 'inspector' },
+      revealed: { surface: 'health', dock: 'right', section: 'health' },
     })
   })
 
@@ -207,24 +207,24 @@ describe('chrome reveal', () => {
     expect(readChrome()?.sections['generation.panel']).toBe(true)
   })
 
-  it('keeps Connect open beside inspector instead of exclusive-closing the mate', () => {
+  it('keeps Connect open beside health instead of exclusive-closing the mate', () => {
     const crowded: WorkbenchLayout = {
       ...defaultLayout(),
-      sections: { ...defaultLayout().sections, connect: true, inspector: false, transform: true },
+      sections: { ...defaultLayout().sections, connect: true, health: false, transform: true },
     }
-    const next = applyDockFocus(crowded, 'inspector', true)
-    expect(next.sections.inspector).toBe(true)
+    const next = applyDockFocus(crowded, 'health', true)
+    expect(next.sections.health).toBe(true)
     expect(next.sections.connect).toBe(true)
     expect(next.sections.transform).toBe(true)
   })
 
-  it('opens inspector beside transform instead of exclusive-closing Object sheets', () => {
+  it('opens health beside transform instead of exclusive-closing Object blocks', () => {
     const crowded: WorkbenchLayout = {
       ...defaultLayout(),
-      sections: { ...defaultLayout().sections, transform: true, inspector: false, selection: true, 'model.explorer': true },
+      sections: { ...defaultLayout().sections, transform: true, health: false, selection: true, 'model.explorer': true },
     }
-    const next = applyDockFocus(crowded, 'inspector', true)
-    expect(next.sections.inspector).toBe(true)
+    const next = applyDockFocus(crowded, 'health', true)
+    expect(next.sections.health).toBe(true)
     expect(next.sections.transform).toBe(true)
     expect(next.sections.selection).toBe(true)
     expect(next.sections['model.explorer']).toBe(true)
@@ -234,12 +234,12 @@ describe('chrome reveal', () => {
     const closed: WorkbenchLayout = {
       ...defaultLayout(),
       right: { size: 300, collapsed: true },
-      sections: { ...defaultLayout().sections, connect: false, inspector: true },
+      sections: { ...defaultLayout().sections, connect: false, health: true },
     }
     const next = applyChromeReveal(closed, 'connect')
     expect(next.right.collapsed).toBe(false)
     expect(next.sections.connect).toBe(true)
-    expect(next.sections.inspector).toBe(true)
+    expect(next.sections.health).toBe(true)
   })
 })
 

@@ -1,22 +1,31 @@
-import { Bookmark, Crosshair, Eye, EyeOff, Ghost, Scan, Trash2 } from 'lucide-react'
+import { Bookmark, Box, Crosshair, Eye, EyeOff, Ghost, Lock, Scan, Trash2, Unlock } from 'lucide-react'
 import { useCallback, useState } from 'react'
+import { describeSize, getColor } from '../../cad/catalog'
 import { cadEngine } from '../../cad/engine'
 import { resolveSavedSelection, SELECTION_MODES, visibilityActive, type SelectionMode } from './selection'
 import type { Workbench } from './useWorkbench'
 
 /**
- * Selection modes, saved sets and visibility.
+ * What is selected, and what can be done to it.
  *
  * Selection is the operation a large model spends most of its time on, and
  * clicking bricks one at a time does not scale past a few dozen. Each mode here
  * reads evidence the document already holds — colour, the connection graph,
  * subassembly membership — so none of it is a heuristic guess.
+ *
+ * The identity card at the top is the half the deleted Inspector was actually
+ * carrying: which part this is, in which colour, and whether the agent may
+ * touch it. Its other half — position and rotation fields — is the Transform
+ * block directly underneath, and having both was the duplication.
  */
 export function SelectionPanel({ workbench }: { workbench: Workbench }) {
-  const { state, savedSelections, visibility } = workbench
+  const { state, savedSelections, visibility, selectedPart, selectedDefinition } = workbench
   const [name, setName] = useState('')
   const selected = state.selection.length
   const total = state.validation.partCount
+  const parts = state.selection.map((id) => state.document.parts[id]).filter(Boolean)
+  const kinds = new Set(parts.map((part) => part.definitionId)).size
+  const allProtected = parts.length > 0 && parts.every((part) => part.protected)
 
   const apply = useCallback((mode: SelectionMode) => {
     workbench.applySelectionMode(mode)
@@ -24,6 +33,52 @@ export function SelectionPanel({ workbench }: { workbench: Workbench }) {
 
   return (
     <div className={`selection-panel ${selected ? '' : 'is-empty'}`}>
+      {selected > 0 && (
+        <section className="selection-identity">
+          <div
+            className="selected-glyph"
+            style={
+              selectedPart ? ({ '--swatch': getColor(selectedPart.color).hex } as React.CSSProperties) : undefined
+            }
+          >
+            <Box size={20} strokeWidth={1.4} />
+          </div>
+          <div className="selection-identity-text">
+            {selectedPart && selectedDefinition ? (
+              <>
+                <h3>{selectedDefinition.name}</h3>
+                <p>
+                  {selectedDefinition.canonicalId} · {describeSize(selectedDefinition)} ·{' '}
+                  {getColor(selectedPart.color).name}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3>
+                  {selected} parts selected
+                </h3>
+                <p>
+                  {kinds} kind{kinds === 1 ? '' : 's'} · {selected} of {total} in the model
+                </p>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            className={`selection-protect ${allProtected ? 'on' : ''}`}
+            aria-pressed={allProtected}
+            title={
+              allProtected
+                ? 'Protected. The agent will design around these parts.'
+                : 'Protect these parts from agent edits.'
+            }
+            aria-label={allProtected ? 'Unprotect the selection' : 'Protect the selection from agent edits'}
+            onClick={() => workbench.protectSelection(!allProtected)}
+          >
+            {allProtected ? <Lock size={12} /> : <Unlock size={12} />}
+          </button>
+        </section>
+      )}
       <div className="selection-summary" role="status">
         <strong>{selected ? `${selected} of ${total} selected` : 'Nothing selected'}</strong>
         {/* Only the empty state earns a sentence, because only the empty state

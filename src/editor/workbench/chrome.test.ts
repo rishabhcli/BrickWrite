@@ -122,15 +122,6 @@ describe('workbench chrome polish', () => {
     expect(withoutComments.slice(island720, island720 + 700)).toContain('.tool-button')
   })
 
-  it('keys the open-timeline CSS fallback to the preset already on the shell', () => {
-    expect(withoutComments).toMatch(
-      /\.app-shell\[data-preset='laptop'\]\[data-timeline='open'\]\s*\{[^}]*--timeline-track:\s*124px/,
-    )
-    expect(withoutComments).toMatch(
-      /\.app-shell\[data-preset='ultrawide'\]\[data-timeline='open'\]\s*\{[^}]*--timeline-track:\s*168px/,
-    )
-  })
-
   it('lets a custom open timeline read bottom.size already on the shell', () => {
     expect(withoutComments).toMatch(
       /\.app-shell\[data-timeline='open'\]\[data-bottom-size\]\s*\{[^}]*--timeline-track:\s*attr\(data-bottom-size px\)/,
@@ -167,13 +158,15 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).toMatch(/container-name:\s*viewport-stage/)
     expect(withoutComments).toMatch(/@container viewport-stage \(max-height: 520px\)/)
     expect(withoutComments).toMatch(/\.app-shell\[data-timeline='open'\] \.viewport-bottom-stack/)
-    expect(withoutComments).toMatch(/\.connect-pending-banner/)
   })
 
-  it('clamps Object companions when several are open in the 300px column', () => {
-    expect(withoutComments).toMatch(/\.right-dock-object\[data-object-density='packed'\]/)
-    expect(withoutComments).toMatch(/\.right-dock-object \.dock-section\.open:not\(\.grow\)/)
-    expect(withoutComments).toMatch(/max-height:\s*28%/)
+  // The density ladder is gone with the five-sheet Object dock: one block grows,
+  // the rest take their content height, and a closed one keeps its header so it
+  // stays findable.
+  it('lets one Object block grow and leaves closed blocks their header', () => {
+    expect(withoutComments).not.toMatch(/data-object-density/)
+    expect(withoutComments).toMatch(/\.right-dock-object \.dock-section\.open\.grow\s*\{[^}]*flex:\s*1 1 auto/)
+    expect(withoutComments).toMatch(/\.right-dock-object \.dock-section\.closed\s*\{[^}]*flex:\s*none/)
   })
 
   it('keeps four timeline tabs on one row at the laptop 124px strip', () => {

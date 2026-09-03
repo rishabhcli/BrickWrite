@@ -36,6 +36,8 @@ import { cameraControlsOf, cameraTarget } from './render/cameraControl'
 import { pointerRouterFor } from './render/pointerRouter'
 import { proposalDelta } from './render/proposalDelta'
 import { PlacementGhost } from './render/PlacementGhost'
+import { RenderGovernor } from './render/RenderGovernor'
+import { RenderPolicy } from './render/renderPolicy'
 import type { RendererControlSurface } from './render/controlSurface'
 import { MODEL_ROOT_ROTATION, MODEL_ROOT_SCALE, sceneMatrix, sceneToLdu } from './render/frame'
 import { registerPickable, unregisterPickable } from './render/idPass'
@@ -702,6 +704,16 @@ function CadViewportScene({
    */
   const reportPerformance = useLiquidPerformance()
 
+  /**
+   * Frame budget for the viewport.
+   *
+   * Held here rather than inside the Canvas because the adaptive quality
+   * governor also has to know: a frame delta measured across a demand-mode gap
+   * is a second long and reads as 1 fps, which would drop a perfectly idle
+   * viewport to its worst tier.
+   */
+  const renderPolicy = useMemo(() => new RenderPolicy(), [])
+
   // Read by the backdrop sampler below, which must not resubscribe every time
   // the renderer changes gear.
   const tierIndexRef = useRef<number | undefined>(undefined)
@@ -793,9 +805,14 @@ function CadViewportScene({
     let retired = false
     let taken = 0
     let overruns = 0
+    let sampledAtFrame = -1
 
     const sample = () => {
       if (retired || window.document.hidden || interactingRef.current) return
+      // Nothing has been repainted since the last look, so the readback would
+      // return the pixels already reported and stall the pipeline to do it.
+      if (renderPolicy.framesPainted === sampledAtFrame) return
+      sampledAtFrame = renderPolicy.framesPainted
       const tier = tierIndexRef.current
       if (tier !== undefined && tier > MAX_LENSED_QUALITY_INDEX) return
       const canvas = window.document.querySelector('canvas')
@@ -839,7 +856,7 @@ function CadViewportScene({
 
     const timer = setInterval(sample, SAMPLE_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [reportPerformance])
+  }, [renderPolicy, reportPerformance])
   // Environment, quality and transmission arrive as props but are also
   // reachable from the imperative surface, so the viewport keeps an override
   // and prefers it. A panel and an agent then drive the same state rather than
@@ -1143,6 +1160,14 @@ function CadViewportScene({
 
   const revealCount = animation?.proposalReveal === false ? proposalPartCount : revealed
 
+  // Everything that moves on the clock rather than on a commit. The placement
+  // ghost eases toward its resolved pose, so an armed part animates too.
+  const animating =
+    Boolean(animation?.turntable) ||
+    Boolean(animation?.instructionPlayback) ||
+    (proposalPartCount > 0 && revealCount < proposalPartCount) ||
+    Boolean(placement)
+
   const handleJointPreview = useCallback((preview: Map<string, Transform> | null, edgeId: string | null) => {
     setJointPreview(preview)
     setActiveJointEdge(edgeId)
@@ -1174,6 +1199,9 @@ function CadViewportScene({
   return (
     <>
       <Canvas
+        /* Frames are spent, not assumed: `render/RenderGovernor` promotes this
+         * to "always" while something actually moves. */
+        frameloop="demand"
         /* "soft" asks for PCFSoftShadowMap, which three 0.185 has deprecated
          * and silently swaps for PCFShadowMap — so the scene has been drawing
          * percentage-closer shadows all along while announcing the downgrade
@@ -1425,7 +1453,10 @@ function CadViewportScene({
           handleRef={controlsHandle}
           onJointsChange={handleJoints}
           onSweepChange={handleSweep}
+          renderPolicy={renderPolicy}
         />
+
+        <RenderGovernor policy={renderPolicy} animating={animating} />
 
         <AnimationDriver
           motion={motion}
@@ -1506,7 +1537,14 @@ function CadViewportScene({
           motion={motion}
         />
         <CanvasMetadata renderMode={renderMode} cameraView={cameraView} />
-        <fog attach="fog" args={['#0b1012', 90, 220]} />
+        {/* Depth cue, scaled to the model.
+          *
+          * Fixed at 90/220 this reads as atmosphere on a rover and as a black
+          * hole on a city block: a 64-stud site is wider than the near plane,
+          * so half of it faded into the background colour and the plaza looked
+          * unlit rather than distant. The near plane tracks the model the same
+          * way the shadow frustum does. */}
+        <fog attach="fog" args={['#0b1012', Math.max(90, shadowExtent * 4), Math.max(220, shadowExtent * 9)]} />
       </Canvas>
       {overlay.marquee && (
         <div

@@ -40,6 +40,7 @@ import { MotionController } from './motion'
 import { QualityController, type QualityTier } from './quality'
 import { centresInRegion, type RegionOptions, type RegionShape } from './regionSelect'
 import { rendererResources, type ResourceCounts } from './resources'
+import type { RenderPolicy } from './renderPolicy'
 import {
   bearingInPlane,
   intersectPlane,
@@ -126,6 +127,8 @@ export interface ViewportControlsProps {
   handleRef?: RefObject<ViewportControlsHandle | null>
   onJointsChange?: (joints: readonly ArticulatedJoint[]) => void
   onSweepChange?: (result: SweepResult | null) => void
+  /** Frame budget. Deltas are only meaningful while it is running continuously. */
+  renderPolicy?: RenderPolicy
 }
 
 /**
@@ -165,6 +168,7 @@ export function ViewportControls(props: ViewportControlsProps) {
     handleRef,
     onJointsChange,
     onSweepChange,
+    renderPolicy,
   } = props
 
   const { gl, scene, camera, size, controls } = useThree()
@@ -269,6 +273,10 @@ export function ViewportControls(props: ViewportControlsProps) {
     lastFrameAt.current = now
     if (!delta) return
     if (quality !== 'auto') return
+    // On-demand frames are seconds apart by design. Reading those as 1 fps
+    // would demote a still viewport to its worst tier for sitting still, so
+    // the governor is only fed while the loop is genuinely continuous.
+    if (renderPolicy && !renderPolicy.measurable(now)) return
     const decision = qualityController.sample(delta, now)
     stats.current.fps = decision.fps
     if (decision.changed) {

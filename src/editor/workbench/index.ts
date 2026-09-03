@@ -93,19 +93,15 @@ export {
   clampLayout,
   defaultLayout,
   DOCK_LIMITS,
-  LAYOUT_PRESETS,
   loadLayout,
-  recommendedPreset,
   workspaceColumns,
   type DockId,
-  type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
 
 export { readPreference, usePersistentState, writePreference } from './persistence'
 export { useWorkbench, type Workbench as WorkbenchController } from './useWorkbench'
 export { PalettePanel } from './PalettePanel'
-export { InspectorPanel, type ArticulationControl, type InspectorView } from './InspectorPanel'
 export { ModelHealthPanel, type ModelHealthPanelProps } from './ModelHealthPanel'
 export { TimelinePanel } from './TimelinePanel'
 export { AutonomySwitch, ColorLabel } from './AutonomySwitch'

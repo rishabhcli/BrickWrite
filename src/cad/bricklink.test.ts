@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildBom } from './bom'
 import { buildBrickLinkLines, describeBrickLinkExport, escapeXml, exportBrickLinkXml, BRICKLINK_REMARKS_MAX } from './bricklink'
 import { catalog } from './catalog'
-import { createBlankDocument, createShowcaseDocument } from './sample'
+import {createBlankDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { ModelDocument, PartInstance } from './types'
 import { IDENTITY_BASIS } from './math'
 
@@ -37,21 +38,21 @@ function withoutVerifiedBrickLink(definitionId: string) {
 describe('BrickLink wanted-list export', () => {
   afterEach(() => vi.restoreAllMocks())
   it('emits one ITEM per BOM line', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const xml = exportBrickLinkXml(document).xml
     const items = xml.match(/<ITEM>/g) ?? []
     expect(items).toHaveLength(buildBom(document).length)
   })
 
   it('MINQTY sums to the document part count', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const { report } = exportBrickLinkXml(document)
     expect(report.totalPieces).toBe(Object.keys(document.parts).length)
     expect(report.totalPieces).toBe(buildBom(document).reduce((sum, line) => sum + line.quantity, 0))
   })
 
   it('emits a well-formed document', () => {
-    const { xml } = exportBrickLinkXml(createShowcaseDocument())
+    const { xml } = exportBrickLinkXml(createRoverDocument())
     expect(xml.startsWith('<INVENTORY>')).toBe(true)
     expect(xml.trim().endsWith('</INVENTORY>')).toBe(true)
     expect(xml).toContain('<ITEMTYPE>P</ITEMTYPE>')
@@ -75,7 +76,7 @@ describe('BrickLink wanted-list export', () => {
   })
 
   it('reports unverified item numbers rather than claiming them', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     const { report } = exportBrickLinkXml(document)
     const lines = buildBrickLinkLines(document)
     const unverified = lines.filter((line) => line.idSource !== 'bricklink').length

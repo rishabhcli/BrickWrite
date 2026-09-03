@@ -1,5 +1,5 @@
 import './workbench.css'
-import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, SlidersHorizontal, X } from 'lucide-react'
+import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, X } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { exportLDraw, downloadText } from '../../cad/ldraw'
@@ -23,8 +23,8 @@ import {
 } from './ExtensionRegistry'
 import { CommandPalette } from './CommandPalette'
 import { ConnectPanel } from './ConnectPanel'
-import { InspectorPanel, type InspectorView } from './InspectorPanel'
 import { ModelExplorerPanel } from './ModelExplorerPanel'
+import { ModelHealthPanel } from './ModelHealthPanel'
 import { PalettePanel } from './PalettePanel'
 import { SelectionPanel } from './SelectionPanel'
 import { TimelinePanel, type TimelineView } from './TimelinePanel'
@@ -38,18 +38,13 @@ import { OfflineState } from './states'
 import {
   clampLayout,
   DOCK_LIMITS,
-  LAYOUT_PRESETS,
   defaultLayout,
   loadLayout,
-  recommendedPreset,
   saveLayout,
   workspaceColumns,
   workspaceRows,
   bottomHeight,
-  objectDockDensity,
-  objectGrowId,
   type DockId,
-  type LayoutPresetId,
   type WorkbenchLayout,
 } from './layout'
 import {
@@ -104,14 +99,15 @@ const DESIGN_SURFACES: readonly { id: DesignSurfaceId; label: string; icon: 'gen
   { id: 'refinement.panel', label: 'Tune', icon: 'refine' },
   { id: 'agent.workbench', label: 'Ask', icon: 'agent' },
 ]
-const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'inspector', 'connect'] as const
-const OBJECT_SURFACES = [
-  { id: 'model.explorer', label: 'Map', icon: Boxes },
-  { id: 'selection', label: 'Pick', icon: MousePointer2 },
-  { id: 'transform', label: 'Move', icon: Move3d },
-  { id: 'inspector', label: 'Inspect', icon: SlidersHorizontal },
-  { id: 'connect', label: 'Mate', icon: CircleDot },
-] as const
+/**
+ * Blocks inside the one Object panel.
+ *
+ * They used to be five independently openable sheets behind a second row of
+ * toggles, plus a density ladder to stop them crushing each other in a 316px
+ * column. They are now one contextual stack that follows the selection, and
+ * these ids survive only because `workspace_reveal` names them.
+ */
+const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'health', 'connect'] as const
 const LEFT_SURFACES = [
   { id: 'palette', label: 'Parts', icon: 'parts' },
   { id: 'cloud.projects', label: 'Builds', icon: 'projects' },
@@ -172,13 +168,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcutMap())
   const [rawLayout, setRawLayout] = useState<WorkbenchLayout>(() =>
-    loadLayout(typeof window === 'undefined' ? 1600 : window.innerWidth),
+    loadLayout(),
   )
   const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [savingSelection, setSavingSelection] = useState('')
   const [timelineView, setTimelineView] = useState<TimelineView>('steps')
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null)
-  const [inspectorView, setInspectorView] = useState<InspectorView>('object')
   const [activeHealthIssueId, setActiveHealthIssueId] = useState<string | null>(null)
   const [activeDesignSurface, setActiveDesignSurface] = useState<DesignSurfaceId>('generation.panel')
   const [activeLeftSurface, setActiveLeftSurface] = useState<LeftSurfaceId>('palette')
@@ -212,8 +207,21 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   workbenchRef.current = workbench
   const activeProposalRef = useRef(activeProposalId)
   activeProposalRef.current = activeProposalId
-  const inspectorViewRef = useRef(inspectorView)
-  inspectorViewRef.current = inspectorView
+
+  // Health issues name parts. Selecting them counts as a deliberate context
+  // change, so `previousContext` is told — otherwise the selection effect below
+  // reads it as a fresh pick and yanks the dock back to the Selection block.
+  const focusHealthIssue = useCallback(
+    (issue: ModelHealthIssue, mode: 'select' | 'frame' | 'isolate') => {
+      const ids = issue.partIds.filter((id) => Boolean(cadEngine.getDocument().parts[id]))
+      previousContext.current = { ...previousContext.current, selection: ids.length }
+      cadEngine.setSelection([...ids])
+      if (mode === 'frame' && ids.length) workbenchRef.current.focusSelection()
+      if (mode === 'isolate' && ids.length) workbenchRef.current.isolateSelection()
+      if (issue.kind === 'collision') workbenchRef.current.setRenderMode('violations')
+    },
+    [],
+  )
 
   const updateLayout = useCallback((next: WorkbenchLayout) => {
     setRawLayout(next)
@@ -239,13 +247,27 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       // for `.inspector-panel .selection-identity`, which only renders on the
       // Object tab. Remove this line and that wait times out. Worth knowing,
       // because the coupling is invisible from here.
-      if (surface === 'health') setInspectorView('validate')
-      if (surface === 'inspector') setInspectorView('object')
       if (surface === 'connect' && workbenchRef.current.tool !== 'connect') {
         workbenchRef.current.setTool('connect')
       }
+      // Mate owns the whole Object panel while it is armed, so asking for a
+      // different Object surface has to disarm it — otherwise the reveal
+      // reports `applied: true` and the caller is looking at Connect. Switching
+      // to a *Design* sheet still leaves the mate alone; that is a different tab
+      // and cancelling someone's half-finished connection to show them Generate
+      // is the behaviour this replaced.
+      const target = CHROME_SURFACE_TARGETS[surface]
+      if (
+        surface !== 'connect' &&
+        target.dock === 'right' &&
+        target.section !== null &&
+        isObjectSection(target.section) &&
+        workbenchRef.current.tool === 'connect'
+      ) {
+        workbenchRef.current.setTool('select')
+      }
       const next = applyWorkbenchReveal(layoutRef.current, surface)
-      pendingReveal.current = CHROME_SURFACE_TARGETS[surface].section
+      pendingReveal.current = target.section
       updateLayout(next)
       publishChrome({
         docks: {
@@ -281,7 +303,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     updateLayout({
       ...rawLayout,
       bottom: { ...rawLayout.bottom, size: 168 },
-      preset: null,
     })
   }, [rawLayout, timelineView, updateLayout])
 
@@ -308,7 +329,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       updateLayout({
         ...rawLayout,
         bottom: { ...rawLayout.bottom, collapsed: false, size: Math.max(220, rawLayout.bottom.size) },
-        preset: null,
       })
     }
   }, [rawLayout, timelineView, updateLayout, workbench.state.proposals])
@@ -316,7 +336,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const resizeDock = useCallback(
     (dock: DockId, size: number) => {
       const clamped = Math.min(DOCK_LIMITS[dock].max, Math.max(DOCK_LIMITS[dock].min, size))
-      updateLayout({ ...rawLayout, [dock]: { size: clamped, collapsed: false }, preset: null })
+      updateLayout({ ...rawLayout, [dock]: { size: clamped, collapsed: false } })
     },
     [rawLayout, updateLayout],
   )
@@ -326,20 +346,9 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       updateLayout({
         ...rawLayout,
         [dock]: { ...rawLayout[dock], collapsed: !rawLayout[dock].collapsed },
-        preset: null,
       })
     },
     [rawLayout, updateLayout],
-  )
-
-  const applyPreset = useCallback(
-    (id: LayoutPresetId) => {
-      updateLayout({
-        ...LAYOUT_PRESETS[id].layout,
-        sections: rawLayout.sections,
-      })
-    },
-    [rawLayout.sections, updateLayout],
   )
 
   const toggleSection = useCallback(
@@ -377,16 +386,10 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       workbench.toolPicks !== before.toolPicks
     previousContext.current = { selection, tool: workbench.tool, toolPicks: workbench.toolPicks }
     if (!enteredSelection && !enteredConnect && !askedForTransform) return
-    // Model Map is itself a selection workspace. Replacing it with the generic
-    // Selection sheet after its first row click would make browsing feel like
-    // navigation that closes itself.
-    if (
-      enteredSelection &&
-      !askedForTransform &&
-      (layoutRef.current.sections['model.explorer'] === true ||
-        (layoutRef.current.sections.inspector === true && inspectorViewRef.current === 'validate'))
-    )
-      return
+    // Model health is itself a selection workspace: clicking through its
+    // issues selects the parts they name. Swapping the dock to the generic
+    // Selection block on that click would close the list being worked through.
+    if (enteredSelection && !askedForTransform && layoutRef.current.sections.health === true) return
     const next = enteredConnect
       ? applyWorkbenchSectionFocus(
           { ...layoutRef.current, right: { ...layoutRef.current.right, collapsed: false } },
@@ -493,7 +496,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       const snapshot = cadEngine.getSnapshot()
       const health = inspectModelHealth(snapshot.document, snapshot.validation)
       const issue = issueId ? health.issues.find((candidate) => candidate.id === issueId) : health.issues[0]
-      setInspectorView('validate')
       setActiveHealthIssueId(issue?.id ?? null)
       const partIds = issue?.partIds.filter((id) => Boolean(snapshot.document.parts[id])) ?? []
       // Health is the intended selection workspace. Keep the generic selection
@@ -592,7 +594,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
 
   const resetWorkspace = useCallback(() => {
     resetPreferences()
-    const restored = defaultLayout(recommendedPreset(viewport.width))
+    const restored = defaultLayout()
     setRawLayout(restored)
     saveLayout(restored)
     setShortcuts(loadShortcutMap())
@@ -774,11 +776,14 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   const { state } = workbench
   const connectActive = workbench.tool === 'connect'
   const rightTab = layout.rightTab
+  const selectionCount = state.selection.length
   const rightSectionOpen = (id: string) =>
-    rightTab === 'object' && (id === 'connect' ? connectActive || sections.connect === true : sections[id] === true)
-  const openObjectIds = OBJECT_SECTION_IDS.filter((id) => rightSectionOpen(id))
-  const objectDensity = objectDockDensity(openObjectIds.length)
-  const objectGrow = objectGrowId(openObjectIds)
+    rightTab === 'object' && (id === 'connect' ? connectActive : sections[id] !== false)
+  // Cheap enough for a closed header: both are already on the snapshot, unlike
+  // the statics `inspectModelHealth` runs.
+  const blockers =
+    state.validation.collisions.filter((item) => item.certainty !== 'unknown').length +
+    state.validation.constraints.filter((item) => item.status === 'fail').length
   return (
     <ExtensionRegistryProvider registry={registry} api={api}>
       {contributions.map((Contribution, index) => (
@@ -793,7 +798,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           gridTemplateRows: workspaceRows(layout),
           ['--timeline-track' as string]: `${bottomHeight(layout)}px`,
         }}
-        data-preset={layout.preset ?? 'custom'}
         data-timeline={layout.bottom.collapsed ? undefined : 'open'}
         data-bottom-size={layout.bottom.size}
       >
@@ -802,7 +806,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
          * was open without reading the chrome. It is hidden because the
          * document name is already on screen in the title bar. */}
         <h1 className="visually-hidden">{workbench.state.document.name} — Brickwright editor</h1>
-        <TopBar workbench={workbench} preset={layout.preset} onPreset={applyPreset} />
+        <TopBar workbench={workbench} />
         <Toolbar
           workbench={workbench}
           shortcuts={shortcuts}
@@ -914,7 +918,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         {layout.right.collapsed ? (
           <CollapsedRail dock="right" label="Design and Object" onExpand={() => toggleDock('right')} />
         ) : (
-          <GlassDock as="div" className="dock dock-right" role="region" aria-label="Inspector dock">
+          <GlassDock as="div" className="dock dock-right" role="region" aria-label="Design and object dock">
             <div className="dock-head right-tool-head">
               <div className="right-tool-switcher" role="tablist" aria-label="Design and object tools">
                 {DESIGN_SURFACES.map((surface) => {
@@ -954,26 +958,19 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                   role="tab"
                   aria-selected={rightTab === 'object'}
                   aria-controls="right-tool-panel"
-                  title="Object tools"
+                  title="The selected brick"
                   className={rightTab === 'object' ? 'active' : ''}
-                  onClick={() => {
-                    const visibleObjectSurface =
-                      OBJECT_SECTION_IDS.find((id) => rawLayout.sections[id] === true) ?? 'selection'
-                    updateLayout(
-                      applyWorkbenchSectionFocus(
-                        {
-                          ...rawLayout,
-                          right: { ...rawLayout.right, collapsed: false },
-                          rightTab: 'object',
-                        },
-                        visibleObjectSurface,
-                        true,
-                      ),
-                    )
-                  }}
+                  onClick={() =>
+                    updateLayout({
+                      ...rawLayout,
+                      right: { ...rawLayout.right, collapsed: false },
+                      rightTab: 'object',
+                    })
+                  }
                 >
                   <WorkbenchIcon name="object" size={15} />
                   <span>Object</span>
+                  {selectionCount > 0 && <em className="tab-count">{selectionCount}</em>}
                 </button>
               </div>
               <DockCollapseButton dock="right" onCollapse={() => toggleDock('right')} />
@@ -981,161 +978,99 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
             <div
               id="right-tool-panel"
               className={`dock-scroll right-dock-${rightTab}`}
-              data-object-density={rightTab === 'object' ? objectDensity : undefined}
-              data-object-open={rightTab === 'object' ? String(openObjectIds.length) : undefined}
               role="tabpanel"
               aria-label={`${rightTab} tools`}
             >
               {rightTab === 'design' ? (
-                <>
-                  {connectActive ? (
-                    <div className="connect-pending-banner" data-connect-pending="true" role="status">
-                      <span>Mate in progress — Object still holds the sheet.</span>
-                      <button type="button" onClick={() => updateLayout({ ...rawLayout, rightTab: 'object' })}>
-                        Continue mate
-                      </button>
-                      <button type="button" onClick={() => workbench.setTool('select')}>
-                        Abandon
-                      </button>
-                    </div>
-                  ) : null}
-                  <Slot
-                    id="panel-right"
-                    wrap={({ id, title, icon, content }) => (
-                      <DockSection
-                        id={id}
-                        title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
-                        icon={icon}
-                        open={id === activeDesignSurface}
-                        grow={id === activeDesignSurface}
-                        onToggle={() => {
-                          if (isDesignSection(id)) setActiveDesignSurface(id as DesignSurfaceId)
-                        }}
-                      >
-                        {content}
-                      </DockSection>
-                    )}
-                  />
-                </>
+                <Slot
+                  id="panel-right"
+                  wrap={({ id, title, icon, content }) => (
+                    <DockSection
+                      id={id}
+                      title={id === 'agent.workbench' ? 'Agent' : (title ?? id)}
+                      icon={icon}
+                      open={id === activeDesignSurface}
+                      grow={id === activeDesignSurface}
+                      onToggle={() => {
+                        if (isDesignSection(id)) setActiveDesignSurface(id as DesignSurfaceId)
+                      }}
+                    >
+                      {content}
+                    </DockSection>
+                  )}
+                />
               ) : (
                 <>
-                  <div className="object-tool-switcher" role="toolbar" aria-label="Object tools">
-                    {OBJECT_SURFACES.map(({ id, label, icon: Icon }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={(id === 'connect' ? connectActive : rightSectionOpen(id)) ? 'active' : ''}
-                        aria-pressed={id === 'connect' ? connectActive : rightSectionOpen(id)}
-                        title={
-                          id === 'model.explorer'
-                            ? 'Browse the model map'
-                            : id === 'selection'
-                              ? 'Selection tools'
-                              : id === 'transform'
-                                ? 'Exact transform tools'
-                                : id === 'inspector'
-                                  ? 'Inspect object properties'
-                                  : 'Connect two parts'
-                        }
-                        onClick={() => {
-                          if (id === 'connect') {
-                            workbench.setTool(connectActive ? 'select' : 'connect')
-                            return
-                          }
-                          const open = rawLayout.sections[id] === true
-                          updateLayout(
-                            applyWorkbenchSectionFocus(
-                              {
-                                ...rawLayout,
-                                right: { ...rawLayout.right, collapsed: false },
-                                rightTab: 'object',
-                              },
-                              id,
-                              !open,
-                            ),
-                          )
-                        }}
+                  {/* Mate is a two-part flow with its own stage machine, so while
+                      it is armed it is the whole panel rather than one block
+                      among five competing for the same column. */}
+                  {connectActive ? (
+                    <DockSection
+                      id="connect"
+                      title="Connect two parts"
+                      icon={<CircleDot size={11} />}
+                      open
+                      grow
+                      onToggle={() => workbench.setTool('select')}
+                    >
+                      <ConnectPanel workbench={workbench} />
+                    </DockSection>
+                  ) : selectionCount > 0 ? (
+                    <>
+                      <DockSection
+                        id="selection"
+                        title="Selection"
+                        icon={<MousePointer2 size={11} />}
+                        badge={<em className="dock-badge">{selectionCount}</em>}
+                        open={rightSectionOpen('selection')}
+                        onToggle={() => toggleSection('selection')}
                       >
-                        <Icon size={14} />
-                        <span>{label}</span>
-                      </button>
-                    ))}
-                  </div>
+                        <SelectionPanel workbench={workbench} />
+                      </DockSection>
+                      <DockSection
+                        id="transform"
+                        title="Position"
+                        icon={<Move3d size={11} />}
+                        open={rightSectionOpen('transform')}
+                        grow={rightSectionOpen('transform')}
+                        onToggle={() => toggleSection('transform')}
+                      >
+                        <TransformPanel workbench={workbench} />
+                      </DockSection>
+                    </>
+                  ) : (
+                    /* Nothing picked. The model tree is the useful thing to
+                       offer, rather than four sheets of controls with no
+                       subject and an empty state in each. */
+                    <DockSection
+                      id="model.explorer"
+                      title="Model map"
+                      icon={<Boxes size={11} />}
+                      badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
+                      open
+                      grow
+                      onToggle={() => undefined}
+                    >
+                      <ModelExplorerPanel workbench={workbench} />
+                    </DockSection>
+                  )}
                   <DockSection
-                    id="connect"
-                    title="Connect"
-                    icon={<CircleDot size={11} />}
-                    open={connectActive}
-                    grow={objectGrow === 'connect'}
-                    onToggle={() => workbench.setTool(connectActive ? 'select' : 'connect')}
+                    id="health"
+                    title="Model health"
+                    icon={<CircleAlert size={11} />}
+                    badge={<em className={`dock-badge ${blockers ? 'alert' : ''}`}>{blockers || '\u2014'}</em>}
+                    open={rightSectionOpen('health')}
+                    grow={rightSectionOpen('health') && selectionCount === 0 && !connectActive}
+                    onToggle={() => toggleSection('health')}
                   >
-                    <ConnectPanel workbench={workbench} />
-                  </DockSection>
-                  <DockSection
-                    id="model.explorer"
-                    title="Model map"
-                    icon={<Boxes size={11} />}
-                    badge={<em className="dock-badge">{Object.keys(state.document.subassemblies).length}</em>}
-                    open={rightSectionOpen('model.explorer')}
-                    grow={objectGrow === 'model.explorer'}
-                    onToggle={() => toggleSection('model.explorer')}
-                  >
-                    <ModelExplorerPanel workbench={workbench} />
-                  </DockSection>
-                  <DockSection
-                    id="selection"
-                    title="Selection"
-                    icon={<MousePointer2 size={11} />}
-                    badge={<em className="dock-badge">{state.selection.length || '—'}</em>}
-                    open={rightSectionOpen('selection')}
-                    grow={objectGrow === 'selection'}
-                    onToggle={() => toggleSection('selection')}
-                  >
-                    <SelectionPanel workbench={workbench} />
-                  </DockSection>
-                  <DockSection
-                    id="transform"
-                    title="Transform"
-                    icon={<Move3d size={11} />}
-                    open={rightSectionOpen('transform')}
-                    grow={objectGrow === 'transform'}
-                    onToggle={() => toggleSection('transform')}
-                  >
-                    <TransformPanel workbench={workbench} />
-                  </DockSection>
-                  <DockSection
-                    id="inspector"
-                    title={inspectorView === 'validate' ? 'Model health' : 'Inspector'}
-                    icon={inspectorView === 'validate' ? <CircleAlert size={11} /> : <SlidersHorizontal size={11} />}
-                    open={rightSectionOpen('inspector')}
-                    grow={objectGrow === 'inspector'}
-                    onToggle={() => toggleSection('inspector')}
-                  >
-                    <InspectorPanel
+                    {/* Statics only run for a panel that is on screen: the
+                        DockSection body is unmounted while closed, and the
+                        badge above reads the counts the kernel already has. */}
+                    <ModelHealthPanel
                       state={state}
-                      selectedPart={workbench.selectedPart}
-                      definition={workbench.selectedDefinition}
-                      view={inspectorView}
-                      activeHealthIssueId={activeHealthIssueId}
-                      articulation={workbench.articulation}
-                      onViewChange={setInspectorView}
-                      onActiveHealthIssue={setActiveHealthIssueId}
-                      onFocusHealthIssue={(issue: ModelHealthIssue, mode) => {
-                        const ids = issue.partIds.filter((id) => Boolean(cadEngine.getDocument().parts[id]))
-                        previousContext.current = { ...previousContext.current, selection: ids.length }
-                        cadEngine.setSelection([...ids])
-                        if (mode === 'frame' && ids.length) workbench.focusSelection()
-                        if (mode === 'isolate' && ids.length) workbench.isolateSelection()
-                        if (issue.kind === 'collision') workbench.setRenderMode('violations')
-                      }}
-                      onArticulate={workbench.driveJoint}
-                      onTransform={(id, transform) => workbench.handleTransform(id, transform, true)}
-                      onRecolor={workbench.recolorSelection}
-                      onProtect={workbench.protectSelection}
-                      onSelectIds={(ids) => cadEngine.setSelection(ids)}
-                      connect={workbench.connect}
-                      locks={workbench.transformPrefs.locks}
-                      frame={workbench.transformPrefs.frame}
+                      activeIssueId={activeHealthIssueId}
+                      onActiveIssue={setActiveHealthIssueId}
+                      onFocusIssue={focusHealthIssue}
                     />
                   </DockSection>
                 </>
@@ -1254,7 +1189,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   )
 }
 
-export { LAYOUT_PRESETS }
 
 /**
  * A live region that exists before its message does, and a timeout that stops

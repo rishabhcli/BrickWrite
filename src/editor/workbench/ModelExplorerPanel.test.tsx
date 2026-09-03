@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../../cad/engine'
-import { createShowcaseDocument } from '../../cad/sample'
+import { createRoverDocument } from '../../cad/__fixtures__/rover'
 import { ModelExplorerPanel } from './ModelExplorerPanel'
 import { resetPreferences } from './persistence'
 import { useWorkbench } from './useWorkbench'
@@ -10,7 +10,7 @@ afterEach(cleanup)
 
 beforeEach(() => {
   resetPreferences()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
 })
 
 function Harness() {

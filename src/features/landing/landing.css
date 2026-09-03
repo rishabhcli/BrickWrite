@@ -48,7 +48,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-track {
 }
 body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, #f5a33f, #83e7ee);
-  border-radius: 10px;
+  border-radius: var(--r-control);
 }
 
 /* Film: sticky model, scrolling type --------------------------------------- */
@@ -80,9 +80,12 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 .bw-film-chapter[data-active='true'] {
   opacity: 1;
 }
+/* The last chapter needs runway so the sticky visual can finish its scrub, but
+   it was carrying 289px of visible void past the final line of copy. Enough to
+   reach t=1, not enough to read as an unfinished section. */
 .bw-film-chapter:last-child {
-  min-height: min(92vh, 900px);
-  padding-bottom: clamp(48px, 10vh, 120px);
+  min-height: min(72vh, 700px);
+  padding-bottom: clamp(32px, 5vh, 64px);
 }
 @media (min-width: 900px) {
   .bw-film {
@@ -120,7 +123,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   right: 0;
   bottom: 0.02em;
   height: 0.09em;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: linear-gradient(90deg, var(--bw-orange), var(--bw-cyan));
   box-shadow: 0 0 16px rgba(245, 163, 63, 0.45);
   transform: scaleX(0);
@@ -218,7 +221,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   backdrop-filter: blur(var(--glass-blur-control));
   color: var(--bw-muted);
   font-family: var(--bw-display);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -255,7 +258,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   letter-spacing: 0.18em;
   border: 1px solid var(--bw-line-hi);
   padding: 1px 6px;
-  font-size: 9px;
+  font-size: 11px;
 }
 @media (hover: none), (pointer: coarse) {
   .bw-stage-hint,
@@ -406,7 +409,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   color: inherit;
   border: 1px solid var(--bw-line);
   background: #0c1214;
-  border-radius: 10px;
+  border-radius: var(--r-control);
   overflow: hidden;
   position: relative;
   transform: perspective(920px) rotateX(var(--bw-tilt-y)) rotateY(var(--bw-tilt-x)) translate3d(0, var(--bw-lift), 0);
@@ -444,7 +447,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   top: 12px;
   z-index: 3;
   font-family: var(--bw-display);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -483,6 +486,12 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   font-size: 12px;
   color: var(--bw-faint);
   font-variant-numeric: tabular-nums;
+}
+/* Each figure wraps as a whole unit. Left to shrink, the flex items clipped
+   their own numbers at narrow widths once the counts carried separators. */
+.bw-demo-stats > * {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .bw-demo-stats b {
   color: var(--bw-ink);
@@ -657,7 +666,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   display: block;
   color: var(--bw-faint);
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -733,7 +742,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   background: rgba(7, 10, 11, 0.84);
   color: var(--bw-orange);
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -757,7 +766,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.015);
   color: var(--bw-faint);
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -870,7 +879,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   z-index: 4;
   color: #40545a;
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.18em;
 }
@@ -958,7 +967,10 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   width: var(--bw-brick-width);
   height: var(--bw-brick-height);
   border: 1px solid rgba(255, 201, 127, 0.42);
-  border-radius: 4px;
+  /* A brick is not a control. --r-control is 12px, which on a 12-17px tall
+     element is a full pill — these read as capsules, not bricks. The whole
+     point of the reel is that they are bricks, so the radius is literal. */
+  border-radius: 2px;
   opacity: 0.28;
   background:
     radial-gradient(circle at 16% 28%, rgba(255, 236, 198, 0.82) 0 6%, transparent 7%),
@@ -1071,9 +1083,9 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #465b60;
+  color: #8d9ea2;
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.13em;
 }
 .bw-assembly-origin span {
@@ -1100,7 +1112,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 .bw-assembly-hud span,
 .bw-assembly-figure span {
   color: #586b70;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.17em;
 }
@@ -1137,7 +1149,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   padding-left: 18px;
   color: #596d72;
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1161,7 +1173,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   color: #66797e;
   cursor: pointer;
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: left;
@@ -1215,7 +1227,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   background: rgba(152, 213, 109, 0.045);
   color: var(--bw-green);
   font-family: var(--bw-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1289,7 +1301,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     padding: 34px 28px;
     justify-content: center;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    border-radius: var(--r-control);
     background: rgba(5, 8, 9, 0.9);
     backdrop-filter: blur(var(--glass-blur-control));
   }
@@ -1325,13 +1337,13 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     text-align: center;
   }
   .bw-assembly-stagebar-buttons button span {
-    font-size: 9px;
+    font-size: 11px;
   }
   .bw-assembly-figure b {
     font-size: 20px;
   }
   .bw-assembly-hud strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .bw-assembly-chapter {
     width: calc(100% - 28px);

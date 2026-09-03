@@ -13,7 +13,8 @@ import {
 import { introducedCollisions } from './collisionGate'
 import { deriveConnectionEdges } from './snapping'
 import { IDENTITY_BASIS } from './math'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import type { ModelDocument, PartInstance, Transform } from './types'
 
 /**
@@ -86,7 +87,7 @@ const CASES: Array<{ name: string; document: ModelDocument }> = [
     name: 'a part with no compiled geometry',
     document: withParts(...stack(2), part('unknown', [60, -60, 60], 'not-a-real-part')),
   },
-  { name: 'the showcase model', document: createShowcaseDocument() },
+  { name: 'the showcase model', document: createRoverDocument() },
 ]
 
 describe('the scoped hovering verdict', () => {
@@ -211,7 +212,7 @@ function wholeDocumentRefusal(
 describe('the scoped pose gate', () => {
   const grounded = withParts(...stack(3))
   const tiled = withParts(part('tile', [0, 0, 0], '3070b'), part('loose', [400, 0, 0]))
-  const showcase = createShowcaseDocument()
+  const showcase = createRoverDocument()
   const showcaseId = Object.keys(showcase.parts)[0]
 
   const POSES: Array<{ name: string; document: ModelDocument; partId: string; transform: Transform }> = [

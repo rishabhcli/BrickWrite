@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from './engine'
 import { IDENTITY_BASIS } from './math'
-import { createBlankDocument, createShowcaseDocument } from './sample'
+import {createBlankDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import { session } from './session'
 import { bestSnapTransform } from './snapping'
 import { getDocumentBounds } from './geometry'
@@ -63,7 +64,7 @@ describe('session projects', () => {
   // is how a passing suite hides a real switching bug.
   beforeEach(async () => {
     sequence += 1
-    cadEngine.replaceDocument({ ...createShowcaseDocument(), id: `doc_test_${sequence}`, name: `Test ${sequence}` })
+    cadEngine.replaceDocument({ ...createRoverDocument(), id: `doc_test_${sequence}`, name: `Test ${sequence}` })
     for (const project of await session.listProjects()) {
       if (project.projectId !== session.currentProjectId) await session.deleteProject(project.projectId)
     }

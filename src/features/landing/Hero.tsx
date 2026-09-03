@@ -71,8 +71,7 @@ export function Hero({
   const [internalStage, setInternalStage] = useState<HeroStage>(initialStage)
   const stage = stageProp ?? internalStage
   const [wave, setWave] = useState(0)
-  const [previews, setPreviews] = useState<{ rough: DemoPreview; published: DemoPreview } | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [previews, setPreviews] = useState<{ rough: DemoPreview | null; published: DemoPreview | null } | null>(null)
   const [camera, setCamera] = useState(demo.camera)
   const [auto, setAuto] = useState(autoPlay)
   const [orbitLocked, setOrbitLocked] = useState(false)
@@ -103,15 +102,27 @@ export function Hero({
 
   // Preview geometry is fetched only once the stage is on screen. Two files,
   // together a few tens of kilobytes; the compiled catalog is never touched.
+  //
+  // The two variants settle independently, because each one is verified against
+  // the digest recorded when the manifest was generated. A single asset that
+  // has drifted out of step with this bundle — a stale deploy still on the
+  // edge, a CDN object cached across a rebuild — is a real condition, and it
+  // must not take the whole stage down with it: whichever variant verifies
+  // still draws, and `stageless` falls back to the thumbnail the manifest
+  // verified alongside it. The check itself stays strict; only the blast
+  // radius changes.
   useEffect(() => {
     if (!visible || previews) return
     const controller = new AbortController()
-    Promise.all([loadPreview(demo, 'rough', controller.signal), loadPreview(demo, 'published', controller.signal)])
-      .then(([rough, published]) => setPreviews({ rough, published }))
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return
-        setLoadError(cause instanceof Error ? cause.message : String(cause))
+    const settle = (variant: 'published' | 'rough') =>
+      loadPreview(demo, variant, controller.signal).catch((cause: unknown) => {
+        if (!controller.signal.aborted) console.warn(`[landing] ${demo.id} ${variant} preview unavailable`, cause)
+        return null
       })
+    void Promise.all([settle('rough'), settle('published')]).then(([rough, published]) => {
+      if (controller.signal.aborted) return
+      setPreviews({ rough, published })
+    })
     return () => controller.abort()
   }, [visible, previews, demo])
 
@@ -125,7 +136,7 @@ export function Hero({
   // the visitor has not taken over; every stage is reachable from the track
   // below either way, so the story is never locked behind an animation.
   useEffect(() => {
-    if (reduced || !auto || !autoPlay || !inView || !previews) return
+    if (reduced || !auto || !autoPlay || !inView || !previews?.published) return
     const timer = window.setTimeout(() => {
       commitStage((current) => STAGES[(STAGES.indexOf(current) + 1) % STAGES.length])
     }, DWELL[stage])
@@ -189,11 +200,14 @@ export function Hero({
     }
   }, [demo])
 
+  // The stage prefers the variant this beat is about, then settles for the one
+  // that verified. `stageless` means neither did.
   const activePreview = previews
-    ? stage === 'brief' || stage === 'candidate'
-      ? previews.rough
-      : previews.published
+    ? ((stage === 'brief' || stage === 'candidate' ? previews.rough : previews.published) ??
+      previews.published ??
+      previews.rough)
     : null
+  const stageless = Boolean(previews) && !activePreview
   const stageWave = stage === 'validated' ? undefined : wave
   const explode = reduced || typeof scrub !== 'number' ? 0 : explodeFromScrub(scrub)
   const displayCamera =
@@ -243,14 +257,19 @@ export function Hero({
             />
           </Suspense>
         ) : null}
-        {loadError ? (
-          <p
-            className="bw-note"
-            style={{ position: 'absolute', inset: 'auto 16px 16px', color: 'var(--bw-orange)' }}
-            role="status"
-          >
-            The demo preview could not be loaded: {loadError}
-          </p>
+        {stageless ? (
+          <div className="bw-stage-still">
+            <img
+              src={demo.assets.thumbnail.url}
+              alt={`${demo.title}, ${demo.validation.partCount.toLocaleString()} editable parts.`}
+              width={720}
+              height={450}
+              decoding="async"
+            />
+            <p className="bw-note" role="status">
+              Orbit is unavailable for this build right now. Open it to explore the full model.
+            </p>
+          </div>
         ) : null}
       </div>
 
@@ -260,7 +279,7 @@ export function Hero({
           {demo.title} · {copy[stage].label}
         </span>
         <span className="spacer" />
-        <span className="bw-stage-hint">Drag to orbit</span>
+        {stageless ? null : <span className="bw-stage-hint">Drag to orbit</span>}
         {typeof scrub === 'number' ? (
           <span className="bw-stage-keys" aria-hidden="true">
             1–4

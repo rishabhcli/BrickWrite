@@ -64,9 +64,12 @@ const CHROME_SECTIONS = {
   generation: 'generation.panel',
   refinement: 'refinement.panel',
   agent: 'agent.workbench',
-  inspector: 'inspector',
+  // `inspector` kept its name in the tool contract when the panel was folded
+  // into Selection, so it lands on the same block the two names now share.
+  inspector: 'selection',
   transform: 'transform',
   selection: 'selection',
+  health: 'health',
 }
 
 /** Open one quieter-dock sheet. Opening it closes the others. */
@@ -748,7 +751,10 @@ try {
   const canvasCentre = { x: canvasBox.width / 2, y: canvasBox.height / 2 }
   await page.locator('canvas').click({ position: canvasCentre })
   await revealChrome(page, 'inspector')
-  await page.locator('.inspector-panel .selection-identity').waitFor({ timeout: 5_000 })
+  // The Object panel names what is selected. `inspector` is still a chrome
+  // surface in the tool contract; it now lands on the Selection block, whose
+  // identity card is what the deleted InspectorPanel used to draw.
+  await page.locator('.selection-panel .selection-identity').waitFor({ timeout: 5_000 })
   await page.keyboard.press('g')
   await page.waitForFunction(() => Boolean(window.__brickwrightGizmo), null, { timeout: 5_000 })
   const beforePlaceParts = await page.evaluate(() => Object.keys(window.brickwright.getDocument().parts).length)
@@ -1529,8 +1535,7 @@ try {
   await page.locator('.export-panel > header').getByRole('button', { name: 'Close export' }).click()
   // Put the menu away again; left open it covers the docks the run drives next.
 
-  await revealChrome(page, 'inspector')
-  await page.getByRole('button', { name: /VALIDATE/ }).click()
+  await revealChrome(page, 'health')
   await page.screenshot({ path: 'artifacts/e2e-final.png', fullPage: true })
 
   // -- the build sequence is derived and verified, not authored -------------
@@ -2118,16 +2123,13 @@ try {
   await setRenderMode('beauty')
   await page.waitForTimeout(200)
 
-  // The inspector's validation report, which is also the last existing
-  // assertion's target — proven reachable rather than assumed.
-  await revealChrome(page, 'inspector')
-  await page.getByRole('button', { name: /VALIDATE/ }).click()
-  // `.validation-hero` renders nowhere — CSS only, at HEAD too. The VALIDATE tab
-  // draws `ModelHealthPanel`, whose root is `.model-health`, and which is
-  // labelled for assistive tech, so the role query is the durable one.
+  // Model health, which is also the last existing assertion's target — proven
+  // reachable rather than assumed. It is its own block in the Object panel now
+  // rather than a tab inside the inspector, and `ModelHealthPanel` is labelled
+  // for assistive tech, so the role query is the durable one.
+  await revealChrome(page, 'health')
   await page.getByRole('complementary', { name: 'Model health navigator' }).waitFor({ timeout: 10_000 })
   await shot('state-validate')
-  await page.getByRole('button', { name: /OBJECT/ }).click()
 
   // Collapsed docks are a first-class layout, not a degraded one.
   await page.locator('.dock-left .dock-collapse').click()

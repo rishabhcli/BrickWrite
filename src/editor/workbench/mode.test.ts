@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeWorkbenchEscape, describeWorkbenchMode } from './StatusBar'
+import { describeWorkbenchEscape, describeWorkbenchMode } from './mode'
 import type { Workbench } from './useWorkbench'
 
 const base = {

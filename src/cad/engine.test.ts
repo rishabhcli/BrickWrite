@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { catalog, originForSurface } from './catalog'
 import { CadEngine } from './engine'
 import { getPartBounds } from './geometry'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import { IDENTITY_BASIS } from './math'
 import type { CadOperation, PartInstance } from './types'
 
@@ -19,7 +20,7 @@ const makePart = (id: string, position: readonly [number, number, number] = [0, 
 
 describe('CadEngine', () => {
   it('keeps the showcase inside its hard design constraints', () => {
-    const report = new CadEngine(createShowcaseDocument()).getSnapshot().validation
+    const report = new CadEngine(createRoverDocument()).getSnapshot().validation
     expect(report.collisions).toHaveLength(0)
     expect(report.virtualColors).toHaveLength(0)
     expect(report.constraints.every((constraint) => constraint.status === 'pass')).toBe(true)
@@ -69,7 +70,7 @@ describe('CadEngine', () => {
   })
 
   it('keeps a constraint-refused ghost queued instead of silently dropping it', () => {
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     const stray = engine.preflight(
       'Place far out',
       [{ type: 'part.add', part: makePart('stray', [400, 0, 0]) }],
@@ -112,7 +113,7 @@ describe('hard design constraints', () => {
   const outside = (id: string) => [{ type: 'part.add', part: makePart(id, [400, 0, 0]) }] as CadOperation[]
 
   it('refuses a human edit that would newly break a hard constraint', () => {
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     const revision = engine.getSnapshot().document.revision
 
     const result = engine.execute('Place far out', outside('stray'), 'human')
@@ -126,14 +127,14 @@ describe('hard design constraints', () => {
   })
 
   it('refuses the same edit from an agent', () => {
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     engine.setAutonomy('build')
     const result = engine.execute('Place far out', outside('stray'), 'agent')
     expect(!result.ok && result.error.code).toBe('CONSTRAINT_VIOLATION')
   })
 
   it('reports but does not refuse when the constraint is advisory', () => {
-    const document = createShowcaseDocument()
+    const document = createRoverDocument()
     document.constraints = document.constraints.map((constraint) =>
       constraint.id === 'c_size' ? { ...constraint, hard: false } : constraint,
     )
@@ -151,7 +152,7 @@ describe('hard design constraints', () => {
     // Tightening the envelope below the current 8 × 12 footprint states intent.
     // Refusing it would make an aspirational budget impossible to express, and
     // would contradict the refusal message's own advice to soften the limit.
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     const result = engine.execute(
       'Tighten envelope',
       [
@@ -176,7 +177,7 @@ describe('hard design constraints', () => {
   it('does not lock the document once a hard constraint is already failing', () => {
     // Having gone over budget, an operator still has to be able to edit — not
     // least to edit their way back under it.
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     engine.execute(
       'Tighten envelope',
       [
@@ -203,7 +204,7 @@ describe('hard design constraints', () => {
   })
 
   it('releases the edit once the constraint is removed', () => {
-    const engine = new CadEngine(createShowcaseDocument())
+    const engine = new CadEngine(createRoverDocument())
     expect(engine.execute('Place far out', outside('stray'), 'human').ok).toBe(false)
 
     expect(engine.execute('Drop envelope', [{ type: 'constraint.remove', constraintId: 'c_size' }], 'human').ok).toBe(

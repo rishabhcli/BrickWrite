@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { basisFromEulerDegrees, composeTransform, IDENTITY_BASIS, type Mat3 } from './math'
-import { createEmptyDocument, createShowcaseDocument } from './sample'
+import {createEmptyDocument} from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import { catalog, originForSurface } from './catalog'
 import { getPartBounds } from './geometry'
 import { findWeakAttachments, floatingPartIds, airbornePartIds, poseRefusal, unclutchedRestPartIds, validateDocument } from './validation'
@@ -43,7 +44,7 @@ function plateTileId(): string {
 
 describe('validation', () => {
   it('reports the showcase as clean and fully connected', () => {
-    const report = validateDocument(createShowcaseDocument())
+    const report = validateDocument(createRoverDocument())
     expect(report.collisions).toEqual([])
     expect(report.componentCount).toBe(1)
     expect(report.disconnectedPartIds).toEqual([])
@@ -150,8 +151,8 @@ describe('validation', () => {
   })
 
   it('is invariant under a rigid transform of the whole model', () => {
-    const base = createShowcaseDocument()
-    const moved = createShowcaseDocument()
+    const base = createRoverDocument()
+    const moved = createRoverDocument()
     // A genuine rigid transform composes with each part's own pose; overwriting
     // the pose instead would change the model, not move it.
     const world = { position: [137, -41, 89] as const, basis: basisFromEulerDegrees([0, 90, 0]) }

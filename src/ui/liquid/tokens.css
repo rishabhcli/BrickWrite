@@ -35,16 +35,26 @@
   --glass-blur-control: 10px;
   --glass-blur-chip: 6px;
 
-  /* Two radii, not five. 14, 18, 22, 26 and 28 were close enough that no two
-   * surfaces looked deliberately different and far enough apart that a dock
-   * beside a sheet beside an island never lined up. Controls keep their own,
-   * smaller corner because they are small; every surface a control sits on
-   * shares one. */
-  --r-control: 14px;
-  --r-section: 20px;
-  --r-panel: 20px;
-  --r-island: 20px;
-  --r-sheet: 20px;
+  /*
+   * Three radii, and nothing between them.
+   *
+   * The editor had been drawing 2, 3, 4, 6, 7, 8, 9, 10, 13, 14, 15 and 20 —
+   * close enough that no two surfaces looked deliberately different, and
+   * numerous enough that a card beside a field beside a dock never lined up.
+   * There are only three sizes of thing on screen, so there are three corners:
+   * a chip you could fit on a fingertip, a control you click, and a surface
+   * controls sit on. Anything that needs a fourth is misclassified.
+   */
+  --r-chip: 8px;
+  --r-control: 12px;
+  --r-surface: 20px;
+
+  /* Role aliases. Same corner, named for what draws it. */
+  --r-section: var(--r-surface);
+  --r-panel: var(--r-surface);
+  --r-island: var(--r-surface);
+  --r-sheet: var(--r-surface);
+  --r-pill: 999px;
 
   /* #77898e has 5.13:1 contrast on #0d1315 and 5.47:1 on #06090a. */
   --faint: #77898e;

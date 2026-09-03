@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createShowcaseDocument } from './sample'
+import { createRoverDocument } from './__fixtures__/rover'
 import { validateDocument } from './validation'
 import { findArticulatedJoints } from './articulation'
 import { STUD_LDU } from './catalog'
 
 describe('showcase document', () => {
-  const document = createShowcaseDocument()
+  const document = createRoverDocument()
   const report = validateDocument(document)
 
   it('is built from real catalog parts at exact LDU transforms', () => {
@@ -34,7 +34,7 @@ describe('showcase document', () => {
 })
 
 describe('showcase mechanism', () => {
-  const document = createShowcaseDocument()
+  const document = createRoverDocument()
 
   it('contains a real articulated joint, not only rigid stud connections', () => {
     const hinge = Object.values(document.connections).find((edge) => edge.family === 'hinge')

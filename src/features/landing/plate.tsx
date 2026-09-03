@@ -59,7 +59,9 @@ export function CountUp({
     return () => cancelAnimationFrame(frame)
   }, [value, play, reduced, fromZero])
 
-  return <>{display}</>
+  // Grouped, because these are figures a person reads, not register values;
+  // below 1,000 this is the identity, so the percentage readouts are unchanged.
+  return <>{display.toLocaleString()}</>
 }
 
 export function StageHud({
@@ -97,21 +99,29 @@ export function StageHud({
         </div>
         <div data-muted={explode < 0.02 ? 'true' : 'false'}>
           <dt>Sep</dt>
-          <dd><CountUp value={Math.round(explode * 100)} />%</dd>
+          <dd>
+            <CountUp value={Math.round(explode * 100)} />%
+          </dd>
         </div>
       </dl>
       <dl className="bw-stage-readout" aria-hidden="true">
         <div>
           <dt>Parts</dt>
-          <dd><CountUp value={parts} /></dd>
+          <dd>
+            <CountUp value={parts} />
+          </dd>
         </div>
         <div>
           <dt>Mates</dt>
-          <dd><CountUp value={mates} /></dd>
+          <dd>
+            <CountUp value={mates} />
+          </dd>
         </div>
         <div>
           <dt>Bodies</dt>
-          <dd><CountUp value={bodies} /></dd>
+          <dd>
+            <CountUp value={bodies} />
+          </dd>
         </div>
       </dl>
     </>

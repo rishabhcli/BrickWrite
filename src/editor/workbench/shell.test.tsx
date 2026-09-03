@@ -148,7 +148,9 @@ function clickPart(partId: string) {
   act(() => onSelect(partId, false, false))
 }
 
-const swatch = (code: number) => `.swatches button[aria-label="${catalog.color(code).name}"]`
+// The swatch names its own outcome, so the selector has to as well.
+const paintSwatch = (code: number) => `.swatches button[aria-label="Paint the selection ${catalog.color(code).name}"]`
+const armSwatch = (code: number) => `.swatches button[aria-label="Use ${catalog.color(code).name} for the next brick"]`
 const toolButton = (label: string) => `.tool-button[aria-label="${label}"]`
 const partColors = () => Object.values(cadEngine.getDocument().parts).map((part) => part.color)
 const sectionOpen = (id: string) =>
@@ -172,8 +174,9 @@ describe('the beginner path through the shell', () => {
     mount()
     act(() => cadEngine.setSelection(['brick']))
     expect(partColors()).toEqual([GREY])
+    expect(control('.palette-target').textContent).toMatch(/Paints 1 selected/)
 
-    fireEvent.click(control(swatch(RED)))
+    fireEvent.click(control(paintSwatch(RED)))
 
     expect(partColors()).toEqual([RED])
   })
@@ -183,11 +186,13 @@ describe('the beginner path through the shell', () => {
     act(() => cadEngine.setSelection([]))
     const before = cadEngine.getDocument().revision
 
-    fireEvent.click(control(swatch(RED)))
+    expect(control('.palette-target').textContent).toMatch(/Colours the next brick/)
+
+    fireEvent.click(control(armSwatch(RED)))
 
     expect(partColors()).toEqual([GREY])
     expect(cadEngine.getDocument().revision).toBe(before)
-    expect(control('.palette-label span').textContent).toContain(catalog.color(RED).name)
+    expect(control('.palette-current strong').textContent).toBe(catalog.color(RED).name)
   })
 
   it('hands over the move handles as soon as a brick is clicked', () => {
@@ -288,16 +293,15 @@ describe('the beginner path through the shell', () => {
     expect(chip.querySelector('span')?.textContent).toMatch(/Saved|In memory|Not saved/)
   })
 
-  it('keeps mode, Esc and layout-preset affordances in the existing chrome', () => {
+  it('keeps mode and Esc on the tool island, and offers no screen-shape menu', () => {
     mount()
     const mode = control('[data-testid="tool-mode"]')
     expect(mode.textContent).toMatch(/SELECT/i)
     expect(mode.textContent).toMatch(/Esc returns to Select/)
-    expect(control('select[aria-label="Layout preset"]')).not.toBeNull()
+    // The docks are draggable and `clampLayout` fits them to the real window.
+    // Asking an operator to classify their own monitor first bought nothing.
+    expect(document.querySelector('select[aria-label="Layout preset"]')).toBeNull()
     expect(document.querySelector('.statusbar')).toBeNull()
-    fireEvent.change(control('select[aria-label="Layout preset"]'), { target: { value: 'laptop' } })
-    expect(document.querySelector('.app-shell')?.getAttribute('data-preset')).toBe('laptop')
-    expect(document.querySelector('.app-shell')?.getAttribute('data-bottom-size')).toBe('124')
   })
 
   it('puts a brick down from the empty viewport in one press', () => {
@@ -407,38 +411,40 @@ describe('the beginner path through the shell', () => {
     }
   })
 
-  it('reveals inspector object and health validate through the assembled shell', () => {
+  it('reveals model health as its own block without disturbing Selection', () => {
     mount()
     act(() => cadEngine.setSelection(['brick']))
-    expect(sectionOpen('inspector')).not.toBe('true')
+    expect(sectionOpen('health')).not.toBe('true')
 
     act(() => {
       revealChrome('health')
     })
-    expect(sectionOpen('inspector')).toBe('true')
-    expect(control('.inspector-tabs button.active').textContent).toMatch(/VALIDATE/i)
-    expect(document.querySelector('.inspector-panel .selection-identity')).toBeNull()
-
-    act(() => {
-      revealChrome('inspector')
-    })
-    expect(sectionOpen('inspector')).toBe('true')
-    expect(control('.inspector-tabs button.active').textContent).toMatch(/OBJECT/i)
-    expect(document.querySelector('.inspector-panel .selection-identity')).not.toBeNull()
+    expect(sectionOpen('health')).toBe('true')
+    expect(document.querySelector('.model-health')).not.toBeNull()
+    expect(sectionOpen('selection')).toBe('true')
   })
 
-  it('inspects the kernel selection, not a leftover empty state', () => {
+  // The statics pass is the expensive part of the health report, and a closed
+  // block must not pay for it. The header count comes off the kernel snapshot.
+  it('does not mount the health navigator while its block is shut', () => {
+    mount()
+    act(() => cadEngine.setSelection(['brick']))
+    expect(document.querySelector('.model-health')).toBeNull()
+    expect(document.querySelector('[data-section="health"] .dock-badge')).not.toBeNull()
+  })
+
+  it('offers the model map when nothing is selected, and the selection when something is', () => {
     cadEngine.replaceDocument(twoBricks())
     mount()
+    fireEvent.click(control('button[title="The selected brick"]'))
+
+    // Nothing picked: four sheets of controls with no subject help no one.
+    expect(document.querySelector('[data-section="model.explorer"]')).not.toBeNull()
+    expect(document.querySelector('[data-section="selection"]')).toBeNull()
+
     act(() => cadEngine.setSelection(['a', 'b']))
-    act(() => {
-      revealChrome('inspector')
-    })
-    expect(sectionOpen('inspector')).toBe('true')
-    expect(document.querySelector('.inspector-panel .selection-identity')).toBeNull()
-    expect(document.querySelector('.empty-inspector')?.getAttribute('data-selection-count')).toBe('2')
-    expect(document.querySelector('.empty-inspector')?.textContent).toMatch(/2 PARTS SELECTED/)
-    expect(document.querySelector('.empty-inspector')?.textContent).not.toMatch(/NO OBJECT SELECTED/)
+    expect(document.querySelector('[data-section="model.explorer"]')).toBeNull()
+    expect(control('[data-section="selection"] .dock-badge').textContent).toBe('2')
   })
 
   it('places, inspects, then undoes chrome back to the empty viewport', () => {
@@ -464,7 +470,7 @@ describe('the beginner path through the shell', () => {
     act(() => {
       revealChrome('inspector')
     })
-    expect(document.querySelector('.inspector-panel .selection-identity')?.textContent).toMatch(/3001/)
+    expect(control('[data-section="selection"]').textContent).toMatch(/3001/)
     expect(cadEngine.getSnapshot().selection).toEqual([partId])
 
     fireEvent.click(control('button[aria-label^="Undo"]'))
@@ -475,7 +481,8 @@ describe('the beginner path through the shell', () => {
     expect(document.querySelector('.selection-hud')).toBeNull()
     expect(document.querySelector('.placement-bar')).toBeNull()
     expect(control(toolButton('Select'))).toHaveAttribute('aria-checked', 'true')
-    expect(document.querySelector('.empty-inspector')?.textContent).toMatch(/NO OBJECT SELECTED/)
+    // Nothing selected any more, so Object falls back to the model map.
+    expect(document.querySelector('[data-section="model.explorer"]')).not.toBeNull()
   })
 
   it('names the Connect pair in the HUD the same way the Connect sheet does', () => {
@@ -495,33 +502,18 @@ describe('the beginner path through the shell', () => {
     expect(hud.querySelector('.selection-hud-identity')?.tagName).not.toBe('BUTTON')
   })
 
-  it('paints a multi-selection from the inspector set swatch', () => {
-    cadEngine.replaceDocument(twoBricks())
-    mount()
-    act(() => cadEngine.setSelection(['a', 'b']))
-    act(() => {
-      revealChrome('inspector')
-    })
-    expect(document.querySelector('.inspector-set-swatches')).not.toBeNull()
-    const red = control(`.inspector-set-swatches button[aria-label="${catalog.color(RED).name}, LDraw colour ${RED}"]`)
-    fireEvent.click(red)
-    expect(partColors()).toEqual([RED, RED])
-  })
-
-  it('keeps inspector open beside Connect and highlights the mate target', () => {
+  it('gives Connect the whole Object panel while a mate is armed', () => {
     cadEngine.replaceDocument(twoBricks())
     mount()
     act(() => cadEngine.setSelection(['a']))
-    act(() => {
-      revealChrome('inspector')
-    })
-    expect(sectionOpen('inspector')).toBe('true')
+    expect(sectionOpen('selection')).toBe('true')
     fireEvent.click(control(toolButton('Connect')))
     clickPart('a')
     clickPart('b')
     expect(control('.connect-panel').getAttribute('data-stage')).toBe('review')
-    expect(sectionOpen('inspector')).toBe('true')
     expect(sectionOpen('connect')).toBe('true')
+    // A two-stage flow with its own stage machine does not share the column.
+    expect(document.querySelector('[data-section="selection"]')).toBeNull()
     expect(viewport.props?.highlightIds).toEqual(['b'])
     expect(viewport.props?.selection).toEqual(['a'])
     const chips = document.querySelector('[aria-label="Source connector"]')
@@ -538,21 +530,28 @@ describe('the beginner path through the shell', () => {
     expect(control('.connect-panel').getAttribute('data-stage')).toBe('target')
     fireEvent.click(control('button[title="Generate a build"]'))
     expect(control(toolButton('Connect'))).toHaveAttribute('aria-checked', 'true')
-    expect(document.querySelector('[data-connect-pending="true"]')).not.toBeNull()
     expect(document.querySelector('.connect-panel')).toBeNull()
-    fireEvent.click(control('button[title="Object tools"]'))
+    fireEvent.click(control('button[title="The selected brick"]'))
     expect(control('.connect-panel').getAttribute('data-stage')).toBe('target')
   })
 
-  it('opens Inspect beside Move instead of exclusive-closing the transform sheet', () => {
+  // Mate owns the Object panel while it is armed, so a reveal of some other
+  // Object surface has to disarm it — otherwise `workspace_reveal` reports
+  // `applied: true` and the caller is looking at Connect.
+  it('disarms an in-progress mate when another Object surface is revealed', () => {
     cadEngine.replaceDocument(twoBricks())
     mount()
-    act(() => cadEngine.setSelection(['a']))
-    fireEvent.click(control('.object-tool-switcher button[title="Exact transform tools"]'))
+    fireEvent.click(control(toolButton('Connect')))
+    clickPart('a')
+    expect(control('.connect-panel').getAttribute('data-stage')).toBe('target')
+
+    act(() => {
+      revealChrome('transform')
+    })
+
+    expect(document.querySelector('.connect-panel')).toBeNull()
     expect(sectionOpen('transform')).toBe('true')
-    fireEvent.click(control('.object-tool-switcher button[title="Inspect object properties"]'))
-    expect(sectionOpen('transform')).toBe('true')
-    expect(sectionOpen('inspector')).toBe('true')
+    expect(control(toolButton('Connect'))).toHaveAttribute('aria-checked', 'false')
   })
 
   it('labels Connect chips uniquely instead of repeating the family name', () => {
@@ -570,19 +569,4 @@ describe('the beginner path through the shell', () => {
     expect(named.some((label) => /M\d+$/.test(label ?? ''))).toBe(false)
   })
 
-  it('marks the Object dock packed when every companion is open', () => {
-    cadEngine.replaceDocument(twoBricks())
-    mount()
-    act(() => cadEngine.setSelection(['a']))
-    fireEvent.click(control('button[title="Object tools"]'))
-    fireEvent.click(control('.object-tool-switcher button[title="Browse the model map"]'))
-    fireEvent.click(control('.object-tool-switcher button[title="Selection tools"]'))
-    fireEvent.click(control('.object-tool-switcher button[title="Exact transform tools"]'))
-    fireEvent.click(control('.object-tool-switcher button[title="Inspect object properties"]'))
-    fireEvent.click(control(toolButton('Connect')))
-    const objectDock = document.querySelector('.right-dock-object')
-    expect(objectDock?.getAttribute('data-object-density')).toBe('packed')
-    expect(Number(objectDock?.getAttribute('data-object-open'))).toBeGreaterThanOrEqual(3)
-    expect(document.querySelectorAll('.right-dock-object .dock-section.open.grow').length).toBe(1)
-  })
 })

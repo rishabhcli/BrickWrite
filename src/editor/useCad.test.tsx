@@ -2,10 +2,10 @@ import { StrictMode } from 'react'
 import { act, cleanup, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { useCadSelection, useCadSnapshot, useCadValidation } from './useCad'
 
-beforeEach(() => cadEngine.replaceDocument(createShowcaseDocument()))
+beforeEach(() => cadEngine.replaceDocument(createRoverDocument()))
 afterEach(cleanup)
 
 describe('CAD selector subscriptions', () => {

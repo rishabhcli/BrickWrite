@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
-import { createShowcaseDocument } from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import type { CadOperation } from '../cad/types'
 import { WaveLedger, capabilitiesFor, currentMode, setMode } from './modes'
 import { TraceLedger } from './trace'
@@ -13,14 +13,14 @@ describe('autonomy modes', () => {
   let waves: WaveLedger
 
   beforeEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     setMode('propose')
     trace = new TraceLedger()
     waves = new WaveLedger(trace)
   })
 
   afterEach(() => {
-    cadEngine.replaceDocument(createShowcaseDocument())
+    cadEngine.replaceDocument(createRoverDocument())
     setMode('propose')
   })
 

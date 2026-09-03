@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cadEngine } from '../cad/engine'
 import { IDENTITY_BASIS } from '../cad/math'
-import { createBlankDocument, createShowcaseDocument } from '../cad/sample'
+import {createBlankDocument} from '../cad/sample'
+import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { session } from '../cad/session'
 import type { CadOperation, PartInstance } from '../cad/types'
 import { getGenerationSession } from '../generation/mcpHost'
@@ -31,14 +32,14 @@ const adapter = new WebMcpAdapter()
 
 beforeEach(() => {
   adapter.stop()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
   cadEngine.setAutonomy('inspect')
 })
 
 afterEach(() => {
   adapter.stop()
   resetChrome()
-  cadEngine.replaceDocument(createShowcaseDocument())
+  cadEngine.replaceDocument(createRoverDocument())
 })
 
 const invoke = async (name: string, input: unknown = {}) => {
@@ -387,7 +388,7 @@ describe('WebMCP surface inventory', () => {
       applied: true,
       activeIssueId: 'collision:pair_a_b',
       selectedPartIds: ['part_0001', 'part_0002'],
-      revealed: { surface: 'health', dock: 'right', section: 'inspector' },
+      revealed: { surface: 'health', dock: 'right', section: 'health' },
     })
     expect(cadEngine.getDocument().revision).toBe(revision)
     expect(cadEngine.getSnapshot().transactions).toHaveLength(0)
@@ -425,7 +426,7 @@ describe('project tools', () => {
   beforeEach(async () => {
     sequence += 1
     cadEngine.replaceDocument({
-      ...createShowcaseDocument(),
+      ...createRoverDocument(),
       id: `doc_webmcp_${sequence}`,
       name: `WebMCP ${sequence}`,
     })
@@ -601,7 +602,7 @@ describe('share tools', () => {
     cadEngine.setAutonomy('build')
     const forked = await invoke('share_fork_to_project', { name: 'Forked from share' })
     expect(forked.projectId).toBe(session.currentProjectId)
-    expect(forked.projectId).not.toBe(createShowcaseDocument().id)
+    expect(forked.projectId).not.toBe(createRoverDocument().id)
     expect(cadEngine.getDocument().name).toBe('Forked from share')
     expect(forked.sourceSlug).toBe(prepared.slug)
     expect(forked.provenance).toMatchObject({ slug: prepared.slug })
