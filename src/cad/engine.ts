@@ -1040,12 +1040,22 @@ export class CadEngine {
         'Discard this proposal and preflight it again against the current document.',
       )
     }
-    if (proposal.validation.collisions.length) {
+    // A proposal is judged on what it *introduces*, which is the same standard
+    // `execute` applies through `introducedCollisions`. Counting the preview
+    // document's collisions instead makes every pre-existing overlap in the
+    // document a veto on all agent work: the opening showcase carries 121, so
+    // every proposal against it was refused before it was read, and no agent
+    // could edit the first model anybody sees. Collision ids are derived from
+    // the pair's part ids, so an overlap that survives the proposal keeps its
+    // id and cancels out.
+    const carriedOver = new Set(this.getSnapshot().validation.collisions.map((collision) => collision.id))
+    const introduced = proposal.validation.collisions.filter((collision) => !carriedOver.has(collision.id))
+    if (introduced.length) {
       return error(
         'COLLISION',
-        `${proposal.validation.collisions.length} collision${proposal.validation.collisions.length === 1 ? '' : 's'} found in proposal ${proposalId}.`,
+        `Proposal ${proposalId} would introduce ${introduced.length} collision${introduced.length === 1 ? '' : 's'}.`,
         'Choose another snap candidate or move the colliding part by at least 8 LDU. Call repair_suggest, then preflight_placement against a different face.',
-        proposal.validation.collisions,
+        introduced,
       )
     }
     const liveFloating = new Set(floatingPartIds(this.document))

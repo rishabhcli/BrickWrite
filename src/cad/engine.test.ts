@@ -69,6 +69,38 @@ describe('CadEngine', () => {
     expect(engine.getSnapshot().proposals.some((entry) => entry.id === proposal.value.id)).toBe(true)
   })
 
+  /**
+   * A document that already overlaps must not veto every proposal on it.
+   *
+   * `applyProposal` counted the preview document's collisions rather than the
+   * ones the proposal introduced, so any pre-existing overlap froze all agent
+   * work: the shipped showcase carries 121, and every proposal against it was
+   * refused before it was read. `execute` has always judged the delta.
+   */
+  it('applies a proposal that adds nothing to a document already colliding', () => {
+    // Placed directly, because the engine's own gate would refuse them — which
+    // is the case that matters: a document can arrive already overlapping from
+    // an import, a fork, or a shipped starting model.
+    const document = createEmptyDocument()
+    document.parts.a = makePart('a')
+    document.parts.b = makePart('b')
+    document.subassemblies.hull.partIds = ['a', 'b']
+    const engine = new CadEngine(document)
+    engine.setAutonomy('build')
+    const existing = engine.getSnapshot().validation.collisions
+    expect(existing.length).toBeGreaterThan(0)
+
+    const proposal = engine.preflight('Stack clear of the overlap', [{ type: 'part.add', part: makePart('c', [0, -24, 0]) }], 'agent', 0)
+    expect(proposal.ok).toBe(true)
+    if (!proposal.ok) return
+    // The preview still reports the overlap it inherited.
+    expect(proposal.value.validation.collisions.length).toBeGreaterThan(0)
+
+    const applied = engine.applyProposal(proposal.value.id, 'agent')
+    expect(applied.ok).toBe(true)
+    expect(engine.getSnapshot().document.parts.c).toBeDefined()
+  })
+
   it('keeps a constraint-refused ghost queued instead of silently dropping it', () => {
     const engine = new CadEngine(createRoverDocument())
     const stray = engine.preflight(
