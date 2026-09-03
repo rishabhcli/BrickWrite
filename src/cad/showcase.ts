@@ -95,12 +95,36 @@ function footprint(definitionId: string, rotationY = 0): { w: number; d: number 
  * *underneath* it means the next part is placed inside it. That is a cup
  * standing in a cafe table rather than on it, and 163 overlaps on the opening
  * document is not a rounding error.
+ *
+ * The stud plane wins wherever there is one, and it is *not* the same as the
+ * part's highest point: `bounds.min[1]` includes the studs, which stand 4 LDU
+ * proud and are meant to be swallowed by the anti-studs above them. Seating the
+ * next part clear of them instead unmates the entire model — measured, it took
+ * Meridian Green from 9,049 mated connectors to 0 and left 2,013 lone
+ * components. A part whose *body* rises past its stud plane is a real case, but
+ * bounds alone cannot tell that from a stud, so it is handled at the call site
+ * that knows — see {@link figure}.
  */
 function topOf(definition: PartDefinition, originY: number, fallback: number): number {
   const stud = surfaceAbove(definition, originY)
   if (stud !== null) return stud
   const min = definition.dimensions?.bounds?.min?.[1]
   return min === undefined ? fallback : originY + min
+}
+
+/**
+ * Where a part's origin goes so its own lowest geometry rests on `surfaceY`.
+ *
+ * `originForSurface` uses the compiled under-plane, which for an ordinary brick
+ * is its underside. `58176` is a light cover that slides *over* a bar, so its
+ * only connector is an internal clip 9 LDU up inside the part — surface-stacking
+ * it by that plane sank every lamp cover into its own post. Where the
+ * under-plane sits above the part's floor, seat it on the floor instead.
+ */
+function restingOrigin(definition: PartDefinition, surfaceY: number): number {
+  const byPlane = originForSurface(definition, surfaceY)
+  const floor = definition.dimensions?.bounds?.max?.[1]
+  return floor === undefined ? byPlane : Math.min(byPlane, surfaceY - floor)
 }
 
 class SiteBuilder {
@@ -146,7 +170,7 @@ class SiteBuilder {
     const definition = catalog.get(definitionId)
     if (!definition) throw new Error(`Showcase references ${definitionId}, which is not in the compiled catalog pack.`)
     const { w, d } = footprint(definitionId, options.rotationY)
-    const y = originForSurface(definition, surfaceY)
+    const y = restingOrigin(definition, surfaceY)
     this.push(definitionId, color, [edgeX(col) + (w * STUD) / 2, y, edgeZ(row) + (d * STUD) / 2], options)
     return topOf(definition, y, surfaceY)
   }
@@ -170,7 +194,7 @@ class SiteBuilder {
   centred(definitionId: string, color: number, col: number, row: number, surfaceY: number, options: PlaceOptions = {}): number {
     const definition = catalog.get(definitionId)
     if (!definition) throw new Error(`Showcase references ${definitionId}, which is not in the compiled catalog pack.`)
-    const y = originForSurface(definition, surfaceY)
+    const y = restingOrigin(definition, surfaceY)
     this.push(definitionId, color, [edgeX(col) + STUD / 2, y, edgeZ(row) + STUD / 2], options)
     return topOf(definition, y, surfaceY)
   }
@@ -471,7 +495,12 @@ function bench(build: SiteBuilder, col: number, row: number, surfaceY: number, r
 function lamp(build: SiteBuilder, col: number, row: number, surfaceY: number, courses = 4): void {
   let top = surfaceY
   for (let course = 0; course < courses; course += 1) top = build.centred('3062b', DARK_GREY, col, row, top)
-  build.centred('58176', 226, col, row, top)
+  // A light cover slides over a bar, so its only connector is an internal clip
+  // 9 LDU up inside it and it has no anti-stud to swallow the post's stud. Every
+  // one of the 18 lamps therefore reported a collision against its own column.
+  // Seat it on the stud tips instead of the stud plane.
+  const studTip = Math.min(0, catalog.get('3062b')?.dimensions?.bounds?.min?.[1] ?? 0)
+  build.centred('58176', 226, col, row, top + studTip)
 }
 
 /**
@@ -490,7 +519,12 @@ function figure(
   rotationY = 0,
 ): number {
   const hips = build.at('41879a', outfit.legs, col, row, surfaceY, { rotationY })
-  const shoulders = build.at('3004', outfit.torso, col, row, hips, { rotationY })
+  // The hips are not flat on top: `41879a` reaches 11 LDU *above* its own stud
+  // plane, so a torso seated on that plane runs through them — 12 of the crowd
+  // collided with their own chest. Lift the torso by the part's measured
+  // overhang rather than a guessed constant.
+  const flare = Math.min(0, catalog.get('41879a')?.dimensions?.bounds?.min?.[1] ?? 0)
+  const shoulders = build.at('3004', outfit.torso, col, row, hips + flare, { rotationY })
   // The head's neck socket is central and one stud wide, so it seats on the
   // torso's near stud rather than between the two.
   const crown = build.at('3626b', 14, col, row, shoulders, { rotationY })
