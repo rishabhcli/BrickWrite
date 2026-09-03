@@ -61,10 +61,11 @@ export const DEFAULT_SECTIONS: Record<string, boolean> = {
   colors: true,
   'model.explorer': false,
   selection: true,
-  // Closed on a casual click. Reference frames, axis locks, pivots and align
-  // rows unfurling because a brick was clicked is how a viewport becomes a
-  // cockpit; reaching for Move or Rotate opens it.
   transform: false,
+  // Reference frames, axis locks, pivots and align rows unfurling because a
+  // brick was clicked is how a viewport becomes a cockpit. They are still one
+  // click away, and every one of them is in the command palette by name.
+  'transform.precision': false,
   health: false,
   connect: false,
   // Design is the first-run workspace. These remain independently
@@ -162,10 +163,12 @@ export const STATUSBAR_HEIGHT = 0
 /** Top bar + tool rail + status bar, which the docks never overlap. */
 export const CHROME_HEIGHT = TOPBAR_HEIGHT + TOOLRAIL_HEIGHT + STATUSBAR_HEIGHT
 
-// v5 drops the screen-shape presets and folds the five Object sheets into one
-// contextual panel. Earlier geometry stays isolated so nobody inherits a dock
-// arrangement built for controls that no longer exist.
-const STORAGE_KEY = 'layout.v5'
+// v6 splits the Position sheet: exact pose and steppers stay open, the frame,
+// pivot, axis locks, array, mirror and align rows move to a Precision sheet
+// that starts closed. v5 drops the screen-shape presets and folds the five
+// Object sheets into one contextual panel. Earlier geometry stays isolated so
+// nobody inherits a dock arrangement built for controls that no longer exist.
+const STORAGE_KEY = 'layout.v6'
 
 export function loadLayout(): WorkbenchLayout {
   const stored = readPreference<WorkbenchLayout | null>(STORAGE_KEY, null)

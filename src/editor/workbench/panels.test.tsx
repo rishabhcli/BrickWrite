@@ -326,6 +326,24 @@ describe('palette', () => {
 
 describe('transform controls', () => {
   const renderTransform = () => render(<Harness>{(w) => <TransformPanel workbench={w} />}</Harness>)
+  // Frames, pivots, locks, array, mirror, align and connector seats moved to
+  // the Precision sheet, which the dock keeps closed until it is reached for.
+  const renderPrecision = () =>
+    render(<Harness>{(w) => <TransformPanel workbench={w} variant="precision" />}</Harness>)
+  // Both sheets open at once, the way the dock shows them once Precision has
+  // been reached for: the frame is chosen there, and the note explaining what
+  // it does to typed coordinates sits beside the fields it qualifies.
+  const renderBothSheets = () =>
+    render(
+      <Harness>
+        {(w) => (
+          <>
+            <TransformPanel workbench={w} />
+            <TransformPanel workbench={w} variant="precision" />
+          </>
+        )}
+      </Harness>,
+    )
 
   it('states its scope and disables the steppers with nothing selected', () => {
     renderTransform()
@@ -357,7 +375,7 @@ describe('transform controls', () => {
   })
 
   it('offers world, local and connector reference frames', () => {
-    renderTransform()
+    renderBothSheets()
     select([showcasePartIds()[0]])
     const group = screen.getByRole('radiogroup', { name: 'Reference frame' })
     const options = within(group).getAllByRole('radio')
@@ -376,14 +394,14 @@ describe('transform controls', () => {
   })
 
   it('offers a pivot choice for rotation', () => {
-    renderTransform()
+    renderPrecision()
     const options = within(screen.getByRole('radiogroup', { name: 'Rotation pivot' })).getAllByRole('radio')
     expect(options.map((option) => option.textContent)).toEqual(['ORIGIN', 'CENTRE', 'WORLD 0'])
   })
 
   it('locks an axis out of the numeric field', () => {
     const id = showcasePartIds()[0]
-    renderTransform()
+    renderBothSheets()
     select([id])
     expect((screen.getByLabelText('Y in LDraw units') as HTMLInputElement).disabled).toBe(false)
     fireEvent.click(screen.getByTitle('Lock Y translation and rotation'))
@@ -464,7 +482,7 @@ describe('transform controls', () => {
   })
 
   it('needs two parts to align and three to distribute', () => {
-    renderTransform()
+    renderPrecision()
     select(showcasePartIds().slice(0, 1))
     expect(
       screen
@@ -484,7 +502,7 @@ describe('transform controls', () => {
 
   it('aligns a selection from measured bounds, not from part origins', () => {
     const ids = spreadPartIds()
-    renderTransform()
+    renderPrecision()
     select(ids)
     const before = revision()
     act(() => {
@@ -501,7 +519,7 @@ describe('transform controls', () => {
   })
 
   it('lists alternative connector seats for a single part', () => {
-    renderTransform()
+    renderPrecision()
     select(showcasePartIds().slice(0, 1))
     expect(screen.getByText('CONNECTOR SEATS')).not.toBeNull()
   })

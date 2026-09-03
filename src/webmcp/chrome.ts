@@ -19,6 +19,7 @@ export const CHROME_SURFACES = [
   'library',
   'inspector',
   'transform',
+  'precision',
   'selection',
   'model',
   'health',
@@ -39,6 +40,7 @@ export const CHROME_SURFACE_TARGETS: Record<ChromeSurface, { dock: 'left' | 'rig
   // name in the tool contract and lands where its contents went.
   inspector: { dock: 'right', section: 'selection' },
   transform: { dock: 'right', section: 'transform' },
+  precision: { dock: 'right', section: 'transform.precision' },
   selection: { dock: 'right', section: 'selection' },
   model: { dock: 'right', section: 'model.explorer' },
   health: { dock: 'right', section: 'health' },
@@ -371,6 +373,7 @@ export const OBJECT_COMPANION_SECTIONS = [
   'selection',
   'model.explorer',
   'transform',
+  'transform.precision',
   'inspector',
   'connect',
 ] as const

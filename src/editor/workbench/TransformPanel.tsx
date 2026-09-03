@@ -76,7 +76,14 @@ const ARRAY_AXES: Array<{ id: 'x' | 'y' | 'z'; label: string; unit: [number, num
   { id: 'z', label: 'Z →', unit: [0, 0, 1] },
 ]
 
-export function TransformPanel({ workbench }: { workbench: Workbench }) {
+export function TransformPanel({
+  workbench,
+  variant = 'position',
+}: {
+  workbench: Workbench
+  /** Which half of the sheet to draw. See the comment above the return. */
+  variant?: 'position' | 'precision'
+}) {
   const { state, transformPrefs, setTransformPrefs } = workbench
   const [candidateIndex, setCandidateIndex] = useState(0)
   const [arrayOpen, setArrayOpen] = useState(false)
@@ -105,12 +112,12 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
    * when a part has several equally sensible seats.
    */
   const candidates = useMemo(() => {
-    if (!single) return []
+    if (!single || variant !== 'precision') return []
     return findSnapCandidates(single, state.document, single.transform, {
       radiusLdu: STUD_LDU * 1.5,
       maxCandidates: 8,
     }).filter((candidate) => !poseRefusal(state.document, single.id, candidate.transform))
-  }, [single, state.document])
+  }, [single, state.document, variant])
 
   const commit = useCallback(
     (label: string, operations: CadOperation[]) => {
@@ -225,6 +232,290 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
       ? `1 part · ${single?.definitionId}`
       : `${parts.length} parts`
 
+  // Two sheets from one panel. Everything below the fold here was the same
+  // list; what changed is which half a click on a brick unfurls. Position is
+  // where the part is and how to move it. Precision is how a move is computed —
+  // reference frame, pivot, axis locks — plus the parametric operations that
+  // need arguments before they mean anything.
+  if (variant === 'precision') {
+    return (
+      <div className="transform-panel precision-panel" data-scope={disabled ? 'empty' : 'selection'}>
+        <div className="transform-modes">
+          <div className="segmented" role="radiogroup" aria-label="Reference frame">
+            {FRAMES.map((frame) => (
+              <button
+                key={frame.id}
+                role="radio"
+                aria-checked={transformPrefs.frame === frame.id}
+                className={transformPrefs.frame === frame.id ? 'active' : ''}
+                title={frame.hint}
+                onClick={() => setTransformPrefs({ ...transformPrefs, frame: frame.id })}
+              >
+                {frame.icon}
+                {frame.label}
+              </button>
+            ))}
+          </div>
+          <div className="segmented" role="radiogroup" aria-label="Rotation pivot">
+            {PIVOTS.map((pivot) => (
+              <button
+                key={pivot.id}
+                role="radio"
+                aria-checked={transformPrefs.pivot === pivot.id}
+                className={transformPrefs.pivot === pivot.id ? 'active' : ''}
+                title={pivot.hint}
+                onClick={() => setTransformPrefs({ ...transformPrefs, pivot: pivot.id })}
+              >
+                {pivot.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="axis-locks" role="group" aria-label="Axis locks">
+          <span>LOCK</span>
+          {(['x', 'y', 'z'] as const).map((axis) => (
+            <button
+              key={axis}
+              type="button"
+              aria-pressed={transformPrefs.locks[axis]}
+              className={transformPrefs.locks[axis] ? 'locked' : ''}
+              title={
+                transformPrefs.locks[axis]
+                  ? `${axis.toUpperCase()} is locked; move and rotate cannot change it`
+                  : `Lock ${axis.toUpperCase()} translation and rotation`
+              }
+              onClick={() =>
+                setTransformPrefs({
+                  ...transformPrefs,
+                  locks: { ...transformPrefs.locks, [axis]: !transformPrefs.locks[axis] },
+                })
+              }
+            >
+              {transformPrefs.locks[axis] ? <Lock size={9} /> : <Unlock size={9} />}
+              {axis.toUpperCase()}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`snap-toggle ${transformPrefs.connectorSnap ? 'on' : ''}`}
+            aria-pressed={transformPrefs.connectorSnap}
+            title={
+              transformPrefs.connectorSnap
+                ? 'Committed poses are resolved onto real connectors'
+                : 'Committed poses are taken exactly as entered'
+            }
+            onClick={() => setTransformPrefs({ ...transformPrefs, connectorSnap: !transformPrefs.connectorSnap })}
+          >
+            <Magnet size={10} /> SNAP
+          </button>
+        </div>
+
+        <div className="transform-actions">
+          {/* Reposition was reachable only from the right-click menu and the `m`
+           * chord, while the toolbar's "Move" button selects a translate gizmo —
+           * so the one action named after what a person wants to do was the one
+           * thing that did not do it. It picks the part up onto the cursor and
+           * the next click reseats it, snapped, which is the same path the
+           * palette uses to place a new part. */}
+          <ActionButton
+            icon={<Repeat2 size={12} />}
+            label="Array"
+            shortcut="⇧A"
+            disabled={disabled}
+            expanded={arrayOpen}
+            reason="Select at least one part first."
+            onClick={() => setArrayOpen((value) => !value)}
+          />
+          <ActionButton
+            icon={<FlipHorizontal2 size={12} />}
+            label="Mirror"
+            shortcut="⇧M"
+            disabled={disabled}
+            expanded={mirrorOpen}
+            reason="Select at least one part first."
+            onClick={() => setMirrorOpen((value) => !value)}
+          />
+        </div>
+
+        {arrayOpen && !disabled && (
+          /* An array is a decision, not a guess: a hardcoded direction and count
+             is exactly what gets refused by a design envelope the operator never
+             saw. Spacing defaults to the selection's own measured extent, so the
+             copies sit edge to edge rather than overlapping. */
+          <div className="array-control" role="group" aria-label="Linear array">
+            <label>
+              <span>COPIES</span>
+              <input
+                type="number"
+                min={1}
+                max={24}
+                value={arrayCopies}
+                aria-label="Array copies"
+                onChange={(event) => setArrayCopies(Math.max(1, Math.min(24, Number(event.target.value) || 1)))}
+              />
+            </label>
+            <label>
+              <span>ALONG</span>
+              <select
+                value={arrayAxis}
+                onChange={(event) => setArrayAxis(event.target.value as 'x' | 'y' | 'z')}
+                aria-label="Array axis"
+              >
+                {ARRAY_AXES.map((axis) => (
+                  <option key={axis.id} value={axis.id}>
+                    {axis.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>SPACING</span>
+              <select
+                value={String(arraySpacing)}
+                aria-label="Array spacing"
+                onChange={(event) => setArraySpacing(event.target.value === 'auto' ? 'auto' : Number(event.target.value))}
+              >
+                <option value="auto">Its own size</option>
+                <option value={STUD_LDU}>1 stud</option>
+                <option value={STUD_LDU * 2}>2 studs</option>
+                <option value={24}>1 brick</option>
+                <option value={8}>1 plate</option>
+              </select>
+            </label>
+            <button type="button" className="array-run" onClick={() => runArray()}>
+              ARRAY
+            </button>
+          </div>
+        )}
+
+        {mirrorOpen && !disabled && (
+          /* Which plane, and where it sits, are both real decisions.
+             Builders mirror front-to-back as often as left-to-right, and the
+             command was X-only for as long as it existed. `About` matters just as
+             much: reflecting through the world origin throws a selection to the
+             other side of the model, which is occasionally what you want and
+             almost never what you meant, so the default plane is the selection's
+             own measured centre. */
+          <div className="array-control" role="group" aria-label="Mirror">
+            <label>
+              <span>ACROSS</span>
+              <select
+                value={mirrorAxis}
+                onChange={(event) => setMirrorAxis(event.target.value as 'x' | 'y' | 'z')}
+                aria-label="Mirror axis"
+              >
+                <option value="x">X — left / right</option>
+                <option value="z">Z — front / back</option>
+                <option value="y">Y — up / down</option>
+              </select>
+            </label>
+            <label>
+              <span>ABOUT</span>
+              <select
+                value={mirrorAbout}
+                onChange={(event) => setMirrorAbout(event.target.value as 'world' | 'selection')}
+                aria-label="Mirror plane"
+              >
+                <option value="selection">Its own centre</option>
+                <option value="world">World origin</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="array-run"
+              onClick={() => {
+                workbench.runSharedMutation('mirror_selection', { axis: mirrorAxis, about: mirrorAbout, axisLdu: 0 })
+                setMirrorOpen(false)
+              }}
+            >
+              MIRROR
+            </button>
+          </div>
+        )}
+
+        <div className="align-grid" role="group" aria-label="Align and distribute">
+          <span className="eyebrow">ALIGN</span>
+          {(['x', 'y', 'z'] as const).map((axis) => (
+            <div key={axis} className="align-row">
+              <em>{axis.toUpperCase()}</em>
+              {(['min', 'centre', 'max'] as const).map((edge) => (
+                <button
+                  key={edge}
+                  type="button"
+                  disabled={parts.length < 2}
+                  aria-label={`Align ${axis.toUpperCase()} ${edge}`}
+                  title={
+                    parts.length < 2 ? 'Select two or more parts to align.' : `Align ${edge} on ${axis.toUpperCase()}`
+                  }
+                  onClick={() => align(axis, edge)}
+                >
+                  {edge === 'min' ? '⟨' : edge === 'max' ? '⟩' : '·'}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={parts.length < 3}
+                aria-label={`Distribute ${axis.toUpperCase()}`}
+                title={
+                  parts.length < 3
+                    ? 'Select three or more parts to distribute.'
+                    : `Distribute evenly on ${axis.toUpperCase()}`
+                }
+                onClick={() => distribute(axis)}
+              >
+                {axis === 'y' ? (
+                  <AlignVerticalDistributeCenter size={11} />
+                ) : (
+                  <AlignHorizontalDistributeCenter size={11} />
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {single && (
+          <div className="snap-candidates">
+            <header>
+              <span className="eyebrow">CONNECTOR SEATS</span>
+              <em>{candidates.length || 'none'}</em>
+            </header>
+            {/* Two solutions can mate the same pair of connectors and differ only in
+                the freedom the joint retains, so the connector pair alone is not a
+                unique key — the rank is part of it. */}
+            {candidates.length ? (
+              <ul>
+                {candidates.slice(0, 5).map((candidate, index) => (
+                  <li
+                    key={`${index}:${candidate.movingFeatureId}:${candidate.targetPartId}:${candidate.targetFeatureId}`}
+                  >
+                    <button
+                      type="button"
+                      className={index === candidateIndex ? 'active' : ''}
+                      onClick={() => applyCandidate(index)}
+                      title={`Seat ${candidate.movingFeatureId} onto ${candidate.targetPartId}/${candidate.targetFeatureId}`}
+                    >
+                      <strong>
+                        {candidate.matches.length} mate{candidate.matches.length === 1 ? '' : 's'}
+                      </strong>
+                      <small>
+                        {candidate.targetPartId} · {candidate.certainty} · {candidate.cursorTranslationLdu.toFixed(1)} LDU
+                        away
+                      </small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="snap-empty">
+                No compatible unoccupied connector is within a stud and a half of where this part sits.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="transform-panel" data-scope={disabled ? 'empty' : 'selection'}>
       <div className="transform-scope">
@@ -236,77 +527,6 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
             {(extent.size[1] / 8).toFixed(1)} plates tall
           </small>
         )}
-      </div>
-
-      <div className="transform-modes">
-        <div className="segmented" role="radiogroup" aria-label="Reference frame">
-          {FRAMES.map((frame) => (
-            <button
-              key={frame.id}
-              role="radio"
-              aria-checked={transformPrefs.frame === frame.id}
-              className={transformPrefs.frame === frame.id ? 'active' : ''}
-              title={frame.hint}
-              onClick={() => setTransformPrefs({ ...transformPrefs, frame: frame.id })}
-            >
-              {frame.icon}
-              {frame.label}
-            </button>
-          ))}
-        </div>
-        <div className="segmented" role="radiogroup" aria-label="Rotation pivot">
-          {PIVOTS.map((pivot) => (
-            <button
-              key={pivot.id}
-              role="radio"
-              aria-checked={transformPrefs.pivot === pivot.id}
-              className={transformPrefs.pivot === pivot.id ? 'active' : ''}
-              title={pivot.hint}
-              onClick={() => setTransformPrefs({ ...transformPrefs, pivot: pivot.id })}
-            >
-              {pivot.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="axis-locks" role="group" aria-label="Axis locks">
-        <span>LOCK</span>
-        {(['x', 'y', 'z'] as const).map((axis) => (
-          <button
-            key={axis}
-            type="button"
-            aria-pressed={transformPrefs.locks[axis]}
-            className={transformPrefs.locks[axis] ? 'locked' : ''}
-            title={
-              transformPrefs.locks[axis]
-                ? `${axis.toUpperCase()} is locked; move and rotate cannot change it`
-                : `Lock ${axis.toUpperCase()} translation and rotation`
-            }
-            onClick={() =>
-              setTransformPrefs({
-                ...transformPrefs,
-                locks: { ...transformPrefs.locks, [axis]: !transformPrefs.locks[axis] },
-              })
-            }
-          >
-            {transformPrefs.locks[axis] ? <Lock size={9} /> : <Unlock size={9} />}
-            {axis.toUpperCase()}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`snap-toggle ${transformPrefs.connectorSnap ? 'on' : ''}`}
-          aria-pressed={transformPrefs.connectorSnap}
-          title={
-            transformPrefs.connectorSnap
-              ? 'Committed poses are resolved onto real connectors'
-              : 'Committed poses are taken exactly as entered'
-          }
-          onClick={() => setTransformPrefs({ ...transformPrefs, connectorSnap: !transformPrefs.connectorSnap })}
-        >
-          <Magnet size={10} /> SNAP
-        </button>
       </div>
 
       {!disabled ? (
@@ -491,24 +711,6 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           onClick={() => workbench.duplicateSelection()}
         />
         <ActionButton
-          icon={<Repeat2 size={12} />}
-          label="Array"
-          shortcut="⇧A"
-          disabled={disabled}
-          expanded={arrayOpen}
-          reason="Select at least one part first."
-          onClick={() => setArrayOpen((value) => !value)}
-        />
-        <ActionButton
-          icon={<FlipHorizontal2 size={12} />}
-          label="Mirror"
-          shortcut="⇧M"
-          disabled={disabled}
-          expanded={mirrorOpen}
-          reason="Select at least one part first."
-          onClick={() => setMirrorOpen((value) => !value)}
-        />
-        <ActionButton
           icon={<Palette size={12} />}
           label="Paint"
           shortcut="P"
@@ -534,182 +736,6 @@ export function TransformPanel({ workbench }: { workbench: Workbench }) {
           onClick={() => workbench.focusSelection()}
         />
       </div>
-
-      {arrayOpen && !disabled && (
-        /* An array is a decision, not a guess: a hardcoded direction and count
-           is exactly what gets refused by a design envelope the operator never
-           saw. Spacing defaults to the selection's own measured extent, so the
-           copies sit edge to edge rather than overlapping. */
-        <div className="array-control" role="group" aria-label="Linear array">
-          <label>
-            <span>COPIES</span>
-            <input
-              type="number"
-              min={1}
-              max={24}
-              value={arrayCopies}
-              aria-label="Array copies"
-              onChange={(event) => setArrayCopies(Math.max(1, Math.min(24, Number(event.target.value) || 1)))}
-            />
-          </label>
-          <label>
-            <span>ALONG</span>
-            <select
-              value={arrayAxis}
-              onChange={(event) => setArrayAxis(event.target.value as 'x' | 'y' | 'z')}
-              aria-label="Array axis"
-            >
-              {ARRAY_AXES.map((axis) => (
-                <option key={axis.id} value={axis.id}>
-                  {axis.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>SPACING</span>
-            <select
-              value={String(arraySpacing)}
-              aria-label="Array spacing"
-              onChange={(event) => setArraySpacing(event.target.value === 'auto' ? 'auto' : Number(event.target.value))}
-            >
-              <option value="auto">Its own size</option>
-              <option value={STUD_LDU}>1 stud</option>
-              <option value={STUD_LDU * 2}>2 studs</option>
-              <option value={24}>1 brick</option>
-              <option value={8}>1 plate</option>
-            </select>
-          </label>
-          <button type="button" className="array-run" onClick={() => runArray()}>
-            ARRAY
-          </button>
-        </div>
-      )}
-
-      {mirrorOpen && !disabled && (
-        /* Which plane, and where it sits, are both real decisions.
-           Builders mirror front-to-back as often as left-to-right, and the
-           command was X-only for as long as it existed. `About` matters just as
-           much: reflecting through the world origin throws a selection to the
-           other side of the model, which is occasionally what you want and
-           almost never what you meant, so the default plane is the selection's
-           own measured centre. */
-        <div className="array-control" role="group" aria-label="Mirror">
-          <label>
-            <span>ACROSS</span>
-            <select
-              value={mirrorAxis}
-              onChange={(event) => setMirrorAxis(event.target.value as 'x' | 'y' | 'z')}
-              aria-label="Mirror axis"
-            >
-              <option value="x">X — left / right</option>
-              <option value="z">Z — front / back</option>
-              <option value="y">Y — up / down</option>
-            </select>
-          </label>
-          <label>
-            <span>ABOUT</span>
-            <select
-              value={mirrorAbout}
-              onChange={(event) => setMirrorAbout(event.target.value as 'world' | 'selection')}
-              aria-label="Mirror plane"
-            >
-              <option value="selection">Its own centre</option>
-              <option value="world">World origin</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="array-run"
-            onClick={() => {
-              workbench.runSharedMutation('mirror_selection', { axis: mirrorAxis, about: mirrorAbout, axisLdu: 0 })
-              setMirrorOpen(false)
-            }}
-          >
-            MIRROR
-          </button>
-        </div>
-      )}
-
-      <div className="align-grid" role="group" aria-label="Align and distribute">
-        <span className="eyebrow">ALIGN</span>
-        {(['x', 'y', 'z'] as const).map((axis) => (
-          <div key={axis} className="align-row">
-            <em>{axis.toUpperCase()}</em>
-            {(['min', 'centre', 'max'] as const).map((edge) => (
-              <button
-                key={edge}
-                type="button"
-                disabled={parts.length < 2}
-                aria-label={`Align ${axis.toUpperCase()} ${edge}`}
-                title={
-                  parts.length < 2 ? 'Select two or more parts to align.' : `Align ${edge} on ${axis.toUpperCase()}`
-                }
-                onClick={() => align(axis, edge)}
-              >
-                {edge === 'min' ? '⟨' : edge === 'max' ? '⟩' : '·'}
-              </button>
-            ))}
-            <button
-              type="button"
-              disabled={parts.length < 3}
-              aria-label={`Distribute ${axis.toUpperCase()}`}
-              title={
-                parts.length < 3
-                  ? 'Select three or more parts to distribute.'
-                  : `Distribute evenly on ${axis.toUpperCase()}`
-              }
-              onClick={() => distribute(axis)}
-            >
-              {axis === 'y' ? (
-                <AlignVerticalDistributeCenter size={11} />
-              ) : (
-                <AlignHorizontalDistributeCenter size={11} />
-              )}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {single && (
-        <div className="snap-candidates">
-          <header>
-            <span className="eyebrow">CONNECTOR SEATS</span>
-            <em>{candidates.length || 'none'}</em>
-          </header>
-          {/* Two solutions can mate the same pair of connectors and differ only in
-              the freedom the joint retains, so the connector pair alone is not a
-              unique key — the rank is part of it. */}
-          {candidates.length ? (
-            <ul>
-              {candidates.slice(0, 5).map((candidate, index) => (
-                <li
-                  key={`${index}:${candidate.movingFeatureId}:${candidate.targetPartId}:${candidate.targetFeatureId}`}
-                >
-                  <button
-                    type="button"
-                    className={index === candidateIndex ? 'active' : ''}
-                    onClick={() => applyCandidate(index)}
-                    title={`Seat ${candidate.movingFeatureId} onto ${candidate.targetPartId}/${candidate.targetFeatureId}`}
-                  >
-                    <strong>
-                      {candidate.matches.length} mate{candidate.matches.length === 1 ? '' : 's'}
-                    </strong>
-                    <small>
-                      {candidate.targetPartId} · {candidate.certainty} · {candidate.cursorTranslationLdu.toFixed(1)} LDU
-                      away
-                    </small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="snap-empty">
-              No compatible unoccupied connector is within a stud and a half of where this part sits.
-            </p>
-          )}
-        </div>
-      )}
     </div>
   )
 }

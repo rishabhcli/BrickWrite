@@ -147,9 +147,11 @@ describe('chrome', () => {
     expect(DEFAULT_SECTIONS['generation.panel']).toBe(true)
     expect(DEFAULT_SECTIONS['refinement.panel']).toBe(true)
     expect(DEFAULT_SECTIONS['agent.workbench']).toBe(true)
-    // Selection answers the click; Transform waits to be reached for.
+    // Selection answers the click; Position waits to be reached for, and the
+    // frames, pivots and locks that made it a cockpit wait behind Precision.
     expect(DEFAULT_SECTIONS.selection).toBe(true)
     expect(DEFAULT_SECTIONS.transform).toBe(false)
+    expect(DEFAULT_SECTIONS['transform.precision']).toBe(false)
     expect(DEFAULT_SECTIONS.health).toBe(false)
     expect(DEFAULT_SECTIONS.connect).toBe(false)
     expect(defaultLayout().sections['generation.panel']).toBe(true)

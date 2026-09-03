@@ -108,6 +108,13 @@ try {
   assert(moved.every((part, index) => part.transform.position[2] === positions[index][2] + 60))
   check('multi-part numeric positioning moves the group in one transaction')
 
+  // Frames, pivots, locks, array, mirror and align live on the Precision sheet
+  // now, which stays shut until it is reached for. Reaching for it is part of
+  // the flow under test, not a detail to work around.
+  const precision = page.locator('[data-section="transform.precision"] .dock-section-toggle')
+  if ((await precision.getAttribute('aria-expanded')) !== 'true') await precision.click()
+  await page.getByRole('group', { name: 'Axis locks' }).waitFor()
+
   await page.getByRole('group', { name: 'Axis locks' }).getByRole('button', { name: 'X', exact: true }).click()
   before = await revision()
   await shortcut('ArrowRight')

@@ -1,5 +1,5 @@
 import './workbench.css'
-import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, X } from 'lucide-react'
+import { Blocks, Boxes, Check, CircleAlert, CircleDot, Move3d, MousePointer2, Ruler, X } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { exportLDraw, downloadText } from '../../cad/ldraw'
@@ -106,7 +106,7 @@ const DESIGN_SURFACES: readonly { id: DesignSurfaceId; label: string; icon: 'gen
  * column. They are now one contextual stack that follows the selection, and
  * these ids survive only because `workspace_reveal` names them.
  */
-const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'health', 'connect'] as const
+const OBJECT_SECTION_IDS = ['model.explorer', 'selection', 'transform', 'transform.precision', 'health', 'connect'] as const
 const LEFT_SURFACES = [
   { id: 'palette', label: 'Parts', icon: 'parts' },
   { id: 'cloud.projects', label: 'Builds', icon: 'projects' },
@@ -1035,6 +1035,20 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
                         onToggle={() => toggleSection('transform')}
                       >
                         <TransformPanel workbench={workbench} />
+                      </DockSection>
+                      {/* Closed on a casual click. Frames, pivots, axis locks,
+                          array, mirror and the align grid are how a move is
+                          computed rather than what is being moved, and every
+                          one of them is in the command palette by name. */}
+                      <DockSection
+                        id="transform.precision"
+                        title="Precision"
+                        icon={<Ruler size={11} />}
+                        open={rightSectionOpen('transform.precision')}
+                        grow={rightSectionOpen('transform.precision')}
+                        onToggle={() => toggleSection('transform.precision')}
+                      >
+                        <TransformPanel workbench={workbench} variant="precision" />
                       </DockSection>
                     </>
                   ) : (
