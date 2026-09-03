@@ -104,7 +104,9 @@ the windscreen land on the planes a physical build would use.
 | `src/editor/PartVisual.tsx` | Real compiled geometry, per-slice materials, LDraw hard edges |
 | `tools/ldraw-mesh.mjs` | Offline LDraw geometry compiler (BFC, colour inheritance, packing) |
 | `tools/catalog-compiler.mjs` | Offline LDraw/LDCad/Rebrickable canonical catalog compilation |
-| `tools/build-demos.mjs` | Authors, gates and rasters the published megabuild collection |
+| `tools/build-demos.mjs` | Gates, rasters and publishes the megabuild collection |
+| `tools/demos/<id>.mjs` | One published demo: its copy, camera, allowances and author function |
+| `tools/demos/kit.mjs`, `sculpt.mjs` | Demo authoring toolkit, and the voxel-solid brick compiler |
 
 ## Catalog: three tiers, explicit provenance
 

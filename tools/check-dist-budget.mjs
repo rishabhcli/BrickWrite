@@ -4,15 +4,23 @@ import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 
 const root = path.resolve(process.argv[2] ?? 'dist')
-// 200 MiB. Raised from 160 when every published demo was expanded into a full
-// scene: the ten sets now carry 85,000+ editable parts, with most of their bytes
-// in the stored connection graphs. Unlike the
+// 280 MiB. Raised from 200 when the ten demos were rebuilt as real models — the
+// collection now carries 112,000+ editable parts, and most of its bytes are the
+// stored connection graphs rather than the parts themselves. Unlike the
 // file-count and single-file ceilings below, this one tracks no platform limit —
 // Pages publishes no aggregate-byte limit — so it is ours to set against how big
 // a deploy we are willing to push and wait on.
-const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 200 * 1024 * 1024)
+const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 280 * 1024 * 1024)
 const fileBudget = Number(process.env.DIST_FILE_COUNT_BUDGET ?? 16_000)
-const largestBudget = Number(process.env.DIST_SINGLE_FILE_BUDGET_BYTES ?? 20 * 1024 * 1024)
+// 24 MiB, against a 25 MiB platform ceiling. The margin is thin and the reason
+// is worth stating plainly: roughly four fifths of a demo `document.json` is its
+// `connections` map, which the kernel *derives* — `deriveConnectionEdges` runs
+// over the parts on import, and `src/demos/manifest.test.ts` asserts the derived
+// graph matches the stored one edge for edge. Shipping it is therefore shipping
+// a cache. Dropping it from the published documents would take every demo back
+// under 6 MiB and make this ceiling irrelevant; until that is done, growing a
+// demo means checking this number.
+const largestBudget = Number(process.env.DIST_SINGLE_FILE_BUDGET_BYTES ?? 24 * 1024 * 1024)
 const shippedHeadBudget = Number(process.env.DIST_SHIPPED_HEAD_BUDGET_BYTES ?? 220 * 1024)
 
 const files = []

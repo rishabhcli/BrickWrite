@@ -142,8 +142,11 @@ projection maths: `cameraBasis`, `fitScene`, `project`, `visibleFaces`,
 
 ## 3. The demos
 
-Ten megabuilds, authored programmatically in `tools/build-demos.mjs` against
-catalog `2026-07` and the real assembly and mechanism planners. Counts are from
+Ten megabuilds, authored programmatically against catalog `2026-07` and the
+real assembly and mechanism planners. One demo is one module in `tools/demos/`,
+exporting its copy and its author function together so the two cannot drift;
+`tools/build-demos.mjs` is the pipeline that gates, renders and publishes them.
+See `tools/demos/README.md` for the authoring toolkit. Counts are from
 `public/demos/manifest.json` (the kernel's own validation of the committed
 documents). The six toy sets this table used to list are gone.
 
@@ -196,6 +199,9 @@ and the statics report from the committed documents and asserts the same
 properties, plus every asset's byte length and SHA-256 against the manifest.
 
 ### Rebuilding
+
+The build only runs on the Node in `.nvmrc` — PNG bytes come from that
+version's zlib and the manifests record their hashes.
 
 ```bash
 node tools/build-demos.mjs            # authors, gates, renders, writes

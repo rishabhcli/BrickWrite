@@ -28,20 +28,20 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Blue Whale Monument",
       "discipline": "Large animal sculpture",
       "category": "animals",
-      "tagline": "An eighty-four-stud blue whale with fins, flukes and foam rising from an illuminated ocean promenade.",
+      "tagline": "A 132-stud blue whale with raised flukes, projecting pectoral fins and a pale belly, breaking a lit ocean promenade.",
       "hero": false,
       "brief": {
-        "prompt": "A large brick-built blue whale monument with a readable body, broad flukes, side fins and white foam, mounted over an editable ocean mosaic.",
+        "prompt": "A large brick-built blue whale monument with a tapering body, flukes raised clear of the water, side fins, a pale belly and white foam, mounted over an editable ocean mosaic.",
         "envelopeStuds": [
-          84,
+          132,
           null,
-          42
+          56
         ],
         "palette": [
           "Medium Blue",
-          "Trans Light Blue",
+          "Blue",
           "White",
-          "Dark Bluish Grey"
+          "Trans Light Blue"
         ],
         "functions": [
           "Large animal figure",
@@ -50,70 +50,70 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ]
       },
       "camera": {
-        "yaw": 34,
-        "pitch": 48,
-        "zoom": 1.08
+        "yaw": 32,
+        "pitch": 34,
+        "zoom": 1.04
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/blue-whale-monument/preview.json",
-          "bytes": 662320,
-          "sha256": "d3576ef86cc6865af3ee4ddaab4f8d0882956f2a9aeb8fb8cb40fd3961ca0ee4",
+          "bytes": 496066,
+          "sha256": "b303bfa82e65fcc2eac17c7385e54479f0e22a4c922cc633cd3fba79266392a7",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/blue-whale-monument/rough-preview.json",
-          "bytes": 108756,
-          "sha256": "603a419cd120914f0f5ae36067278e00b5d016fcca362e21c64bb8efec0044f3",
+          "bytes": 257997,
+          "sha256": "924ad998862a439c161b0ae26efb501fec26397a6324a8573956e41650a21d12",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/blue-whale-monument/thumb.png",
-          "bytes": 40687,
-          "sha256": "b77a9eb894b70421ff96b0bd86bc68924242e8e4c94ec13c146836479a40f8b3",
+          "bytes": 57158,
+          "sha256": "8b702b707151118e3bd07505f9c2e33d0ae1753b440a7d9ac5ca38ee1786f315",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 12794,
-        "connectionCount": 16059,
+        "partCount": 9563,
+        "connectionCount": 28535,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          84,
-          42
+          132,
+          56
         ],
-        "steps": 135,
+        "steps": 103,
         "statics": {
-          "massLabel": "6.28 kg",
+          "massLabel": "9.24 kg",
           "stable": true,
-          "tippingMarginLdu": 413.19,
+          "tippingMarginLdu": 559.24,
           "unsupportedParts": 0
         }
       },
       "roughValidation": {
-        "partCount": 1976,
-        "connectionCount": 1937,
+        "partCount": 4781,
+        "connectionCount": 13530,
         "collisionCount": 0,
-        "componentCount": 39,
-        "disconnectedPartCount": 1824,
+        "componentCount": 70,
+        "disconnectedPartCount": 1921,
         "footprintStuds": [
-          42,
-          22
+          84,
+          42
         ],
-        "steps": 173,
+        "steps": 247,
         "statics": {
-          "massLabel": "840 g",
+          "massLabel": "5.09 kg",
           "stable": true,
-          "tippingMarginLdu": 214.2,
+          "tippingMarginLdu": 320.68,
           "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 10818,
-        "connectionsAdded": 14122
+        "partsAdded": 4782,
+        "connectionsAdded": 15005
       }
     },
     {
@@ -121,14 +121,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Sunline Suspension Bridge",
       "discipline": "Landmark infrastructure",
       "category": "landmarks",
-      "tagline": "Twin brick-red gateways carry a raised road and stepped golden hangers across a 120-stud river district.",
+      "tagline": "Twin portal towers carry a 160-stud road deck and two stepped golden catenaries across a 168-stud river district.",
       "hero": false,
       "brief": {
-        "prompt": "An original large suspension bridge with twin brick-red gateway towers, a long road deck, golden vertical hangers and a fully editable river beneath it.",
+        "prompt": "An original large suspension bridge with twin portal towers the road passes through, a long raised deck, stepped golden catenaries carried on hangers, and a fully editable river beneath it.",
         "envelopeStuds": [
-          120,
+          168,
           null,
-          50
+          64
         ],
         "palette": [
           "Dark Red",
@@ -143,47 +143,47 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ]
       },
       "camera": {
-        "yaw": 32,
-        "pitch": 42,
-        "zoom": 1.04
+        "yaw": 28,
+        "pitch": 22,
+        "zoom": 1.02
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/sunline-suspension-bridge/preview.json",
-          "bytes": 415746,
-          "sha256": "40dcac5f1d303ff39fd282429788d6af04af5a1ce144a29cf68f08931a4bea66",
+          "bytes": 781992,
+          "sha256": "89db85f5316fd007152ce9d568901a967bc8ac3f66eac11553a685c662993880",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/sunline-suspension-bridge/rough-preview.json",
-          "bytes": 71201,
-          "sha256": "f2f5f3533cdd25ba4a0bb954980e15250db0549bb91de3c62d06b0c9024ca252",
+          "bytes": 71345,
+          "sha256": "ea98e02d6bf0eee0b6f579f7d814b713e9bcddba4c85b7ead211c4597dd1d1c6",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/sunline-suspension-bridge/thumb.png",
-          "bytes": 49082,
-          "sha256": "376e69c6a92101c3474b5e677c2121947cd7ecb46e4408fa3e22848bc81391c1",
+          "bytes": 58513,
+          "sha256": "1179d4a9e412fcb043977033d9d20049c4b5d1f5ba87f7bb8e107dfd57a58146",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 8021,
-        "connectionCount": 16433,
+        "partCount": 14714,
+        "connectionCount": 41778,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          120,
-          50
+          168,
+          64
         ],
-        "steps": 87,
+        "steps": 158,
         "statics": {
-          "massLabel": "4.97 kg",
+          "massLabel": "13.62 kg",
           "stable": true,
-          "tippingMarginLdu": 499.97,
-          "unsupportedParts": 19
+          "tippingMarginLdu": 639.99,
+          "unsupportedParts": 171
         }
       },
       "roughValidation": {
@@ -205,8 +205,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         }
       },
       "delta": {
-        "partsAdded": 6745,
-        "connectionsAdded": 15201
+        "partsAdded": 13438,
+        "connectionsAdded": 40546
       }
     },
     {
@@ -214,14 +214,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Copper Canyon Mammoth",
       "discipline": "Large animal sculpture",
       "category": "animals",
-      "tagline": "A brick-built mammoth with a domed back, four legs, a long trunk, amber ears and paired ivory tusks.",
+      "tagline": "A 112-stud woolly mammoth standing on four legs, trunk down to the canyon floor and white tusks sweeping forward.",
       "hero": false,
       "brief": {
-        "prompt": "A large brick-built woolly mammoth with a massive rounded body, four grounded legs, a lowered trunk, amber ears and white tusks on a canyon display plinth.",
+        "prompt": "A large brick-built woolly mammoth standing on four legs with an open belly, a lowered trunk reaching the ground, amber ears and white tusks, on a canyon display plinth.",
         "envelopeStuds": [
-          68,
+          112,
           null,
-          44
+          64
         ],
         "palette": [
           "Reddish Brown",
@@ -236,70 +236,70 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ]
       },
       "camera": {
-        "yaw": 38,
-        "pitch": 45,
-        "zoom": 1.08
+        "yaw": 36,
+        "pitch": 30,
+        "zoom": 1.06
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/copper-mammoth/preview.json",
-          "bytes": 480080,
-          "sha256": "894e37ad4ec91f7d70efa9866137face76ef7fb2d22b5de7212f4d960470c372",
+          "bytes": 748790,
+          "sha256": "4ea40cc9d5a8456396f908423ab3041566b597245fceafc6fdd2c9b74d469277",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/copper-mammoth/rough-preview.json",
-          "bytes": 79349,
-          "sha256": "d9374932dd29e6e0e67f3471117846646d2e36e553201421610a4127bcb01e5a",
+          "bytes": 235978,
+          "sha256": "c52f0c386974aaafea32357564149433caec875560d1189b476ad857eab56824",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/copper-mammoth/thumb.png",
-          "bytes": 49369,
-          "sha256": "32d2879a2a3b24dcafa89d0c8bdcfa9c16a791eaf96296e7553e6c8b2369c38b",
+          "bytes": 59125,
+          "sha256": "492cf5d7d68d295739121ff4311c59adc42345578954a96e4f25513142a2bd12",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 9421,
-        "connectionCount": 12184,
+        "partCount": 14006,
+        "connectionCount": 40037,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          68,
-          44
+          112,
+          64
         ],
-        "steps": 101,
+        "steps": 150,
         "statics": {
-          "massLabel": "4.65 kg",
+          "massLabel": "14.51 kg",
           "stable": true,
-          "tippingMarginLdu": 434.11,
+          "tippingMarginLdu": 638.89,
           "unsupportedParts": 0
         }
       },
       "roughValidation": {
-        "partCount": 1439,
-        "connectionCount": 1406,
+        "partCount": 4287,
+        "connectionCount": 9797,
         "collisionCount": 0,
-        "componentCount": 33,
-        "disconnectedPartCount": 1288,
+        "componentCount": 88,
+        "disconnectedPartCount": 3320,
         "footprintStuds": [
-          34,
-          22
+          68,
+          44
         ],
-        "steps": 124,
+        "steps": 286,
         "statics": {
-          "massLabel": "602 g",
+          "massLabel": "3.81 kg",
           "stable": true,
-          "tippingMarginLdu": 214.74,
+          "tippingMarginLdu": 305.09,
           "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 7982,
-        "connectionsAdded": 10778
+        "partsAdded": 9719,
+        "connectionsAdded": 30240
       }
     },
     {
@@ -307,14 +307,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Colossal Duck Float",
       "discipline": "Playful public art",
       "category": "creative",
-      "tagline": "A giant yellow duck, orange bill and all, bobbing over a sixty-four-stud illuminated festival basin.",
+      "tagline": "A ninety-six-stud rubber duck: domed body, tall neck, cantilevered orange bill and a wake of lit moorings.",
       "hero": false,
       "brief": {
-        "prompt": "A funny large-scale yellow duck public-art float with a huge rounded body, tall head, orange bill and black eyes on an editable blue festival basin.",
+        "prompt": "A funny large-scale yellow duck public-art float with a huge rounded body, tall neck, an orange bill that juts forward and black eyes, on an editable blue festival basin.",
         "envelopeStuds": [
-          64,
+          96,
           null,
-          46
+          68
         ],
         "palette": [
           "Yellow",
@@ -330,69 +330,69 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       },
       "camera": {
         "yaw": 34,
-        "pitch": 46,
-        "zoom": 1.08
+        "pitch": 38,
+        "zoom": 1.04
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/colossal-duck/preview.json",
-          "bytes": 537450,
-          "sha256": "fceda9d7b20956a39acf61a91de27ff504dcca168e43d538e01dd9bca734a9b1",
+          "bytes": 481119,
+          "sha256": "b128bee3b537338f0df31826043d8b645196fbd6486c87718f2713408fecd5cc",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/colossal-duck/rough-preview.json",
-          "bytes": 82958,
-          "sha256": "0c79e4866786c8fd2e3af8be9cabc6eacde5e0982c7b95915adae24573b73453",
+          "bytes": 256298,
+          "sha256": "b86012247eb481b4eac922b5e1a61c0180682a6a22f653c8d1cc7593fed8e4f0",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/colossal-duck/thumb.png",
-          "bytes": 45528,
-          "sha256": "994f7ba8dae76accc4413e7dd34842c478b41547cf7f5c69f1f8649901de0eb4",
+          "bytes": 47181,
+          "sha256": "e0bbad8fd532e6a0dd202ac5d532f519089ab1b9e041b054c34bbe1033acf73c",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 10515,
-        "connectionCount": 13221,
+        "partCount": 9271,
+        "connectionCount": 35814,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          64,
-          46
+          96,
+          68
         ],
-        "steps": 112,
+        "steps": 100,
         "statics": {
-          "massLabel": "5.16 kg",
+          "massLabel": "11.95 kg",
           "stable": true,
-          "tippingMarginLdu": 454.52,
+          "tippingMarginLdu": 679.97,
           "unsupportedParts": 0
         }
       },
       "roughValidation": {
-        "partCount": 1485,
-        "connectionCount": 1449,
+        "partCount": 4818,
+        "connectionCount": 21767,
         "collisionCount": 0,
-        "componentCount": 36,
-        "disconnectedPartCount": 1338,
+        "componentCount": 57,
+        "disconnectedPartCount": 1344,
         "footprintStuds": [
-          32,
-          24
+          64,
+          46
         ],
-        "steps": 139,
+        "steps": 208,
         "statics": {
-          "massLabel": "621 g",
+          "massLabel": "7.94 kg",
           "stable": true,
-          "tippingMarginLdu": 235.54,
+          "tippingMarginLdu": 294.45,
           "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 9030,
-        "connectionsAdded": 11772
+        "partsAdded": 4453,
+        "connectionsAdded": 14047
       }
     },
     {
@@ -400,14 +400,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Iron Lattice Lookout",
       "discipline": "Landmark ironwork",
       "category": "landmarks",
-      "tagline": "Two tall tiers of open lattice rise from a landscaped civic garden to a clock stage and glazed lookout.",
+      "tagline": "Two tapering tiers of open ironwork rise fifty-eight courses from an arched plinth to a glazed lookout and a clock stage.",
       "hero": false,
       "brief": {
-        "prompt": "An ironwork lookout tower: an arched stone plinth, two tiers of open lattice stepping inward, and a clock stage near the top whose hands actually turn.",
+        "prompt": "An ironwork lookout tower you can see through: an arched stone plinth, two tiers of braced open lattice tapering as they rise, a glazed observation pavilion and a clock stage whose hands actually turn.",
         "envelopeStuds": [
-          56,
+          76,
           null,
-          56
+          76
         ],
         "palette": [
           "Sand",
@@ -423,69 +423,69 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       },
       "camera": {
         "yaw": 30,
-        "pitch": 24,
-        "zoom": 1.06
+        "pitch": 14,
+        "zoom": 1.02
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/iron-lattice-lookout/preview.json",
-          "bytes": 254188,
-          "sha256": "ceea95251cc1aae73a2e5784a42b7149db517b3f545d020dea0ffddcc7274b1d",
+          "bytes": 456415,
+          "sha256": "6a4478c48bd26021ce417d2e65beeea1696218cf3ea183dae0b6c80ab7671924",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/iron-lattice-lookout/rough-preview.json",
-          "bytes": 20344,
-          "sha256": "39657292d3c1b0215483417c08f7e3edb72d773452af30b3455fd2188e9adf3d",
+          "bytes": 434274,
+          "sha256": "d3e1980ad5077761605d70c12515f4258ab37593db64b6eeec1b35c9f5a7b096",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/iron-lattice-lookout/thumb.png",
-          "bytes": 22274,
-          "sha256": "68fa15633a5ed1a3e518cc355c6f499531a21944bf326468fdbec326a7933021",
+          "bytes": 33204,
+          "sha256": "3b03f07488616bc8d4376311c4d2a8cff296d5a16e6f7b34c92cdd676954decc",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 4734,
-        "connectionCount": 15522,
+        "partCount": 8604,
+        "connectionCount": 29402,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          56,
-          56
+          76,
+          76
         ],
-        "steps": 77,
+        "steps": 138,
         "statics": {
-          "massLabel": "4.56 kg",
+          "massLabel": "10.38 kg",
           "stable": true,
-          "tippingMarginLdu": 559.77,
-          "unsupportedParts": 62
+          "tippingMarginLdu": 757.68,
+          "unsupportedParts": 28
         }
       },
       "roughValidation": {
-        "partCount": 325,
-        "connectionCount": 1569,
+        "partCount": 7803,
+        "connectionCount": 21016,
         "collisionCount": 0,
-        "componentCount": 2,
-        "disconnectedPartCount": 94,
+        "componentCount": 159,
+        "disconnectedPartCount": 5686,
         "footprintStuds": [
-          16,
-          16
+          76,
+          76
         ],
-        "steps": 7,
+        "steps": 546,
         "statics": {
-          "massLabel": "454 g",
+          "massLabel": "8.07 kg",
           "stable": true,
-          "tippingMarginLdu": 156.35,
-          "unsupportedParts": 231
+          "tippingMarginLdu": 757.48,
+          "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 4409,
-        "connectionsAdded": 13953
+        "partsAdded": 801,
+        "connectionsAdded": 8386
       }
     },
     {
@@ -493,14 +493,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Harbour Control Tower",
       "discipline": "Play set",
       "category": "architecture",
-      "tagline": "An eighty-four-stud harbour district with drive-in bays, a metro platform, a glazed control shaft and a crane that luffs.",
+      "tagline": "A 108-stud quay: two drive-through bays, eight container stacks, bunded tanks, a helipad and a glazed control room that overhangs its shaft.",
       "hero": false,
       "brief": {
-        "prompt": "A quayside control tower with two drive-in vehicle bays under the podium, a metro platform along the water, a glazed control shaft with a control room on top, and a working crane on the podium roof.",
+        "prompt": "A quayside control tower with two drive-through vehicle bays under the podium, a helipad and working crane on the podium roof, container stacks and fuel tanks on the quay, and a glazed control room overhanging a tall shaft.",
         "envelopeStuds": [
-          84,
+          108,
           null,
-          56
+          76
         ],
         "palette": [
           "Sand",
@@ -511,76 +511,75 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ],
         "functions": [
           "Drive-in vehicle bays",
-          "Metro platform",
           "Luffing crane",
           "Verified build sequence"
         ]
       },
       "camera": {
         "yaw": 36,
-        "pitch": 28,
-        "zoom": 1.08
+        "pitch": 22,
+        "zoom": 1.04
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/harbour-control-tower/preview.json",
-          "bytes": 194498,
-          "sha256": "d7dd38b0955464dd3f3db6481e7916679d43de5373e07abf98e67fbd220cba31",
+          "bytes": 594111,
+          "sha256": "f250f1b9fbe8be5df042deab7e0469b323a82bf1d3d07f8f070bc4e3d0003567",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/harbour-control-tower/rough-preview.json",
-          "bytes": 21841,
-          "sha256": "92a16bf6d5ff7fcea9763bcd0923cd5abc573f8660357b14273a6e0fa554c397",
+          "bytes": 364322,
+          "sha256": "b39bfe1ebb283861ad352a3e4334782618412a2a16a42e756298c3776b238075",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/harbour-control-tower/thumb.png",
-          "bytes": 23587,
-          "sha256": "ca55f4a27979f2f7889f96efd9afe18b2946f9210354fd7d696e911e54d8d9cf",
+          "bytes": 32804,
+          "sha256": "89d517a0e422b8760415619d8eeaff0e1dc328e4340f871a30b74f2f99a04f53",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 3564,
-        "connectionCount": 22654,
+        "partCount": 11226,
+        "connectionCount": 34940,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          84,
-          56
+          108,
+          76
         ],
-        "steps": 52,
+        "steps": 161,
         "statics": {
-          "massLabel": "6.59 kg",
+          "massLabel": "11.81 kg",
           "stable": true,
-          "tippingMarginLdu": 476.65,
-          "unsupportedParts": 73
+          "tippingMarginLdu": 651.94,
+          "unsupportedParts": 11
         }
       },
       "roughValidation": {
-        "partCount": 312,
-        "connectionCount": 2674,
-        "collisionCount": 5,
-        "componentCount": 1,
-        "disconnectedPartCount": 0,
+        "partCount": 6702,
+        "connectionCount": 19575,
+        "collisionCount": 0,
+        "componentCount": 107,
+        "disconnectedPartCount": 3326,
         "footprintStuds": [
-          28,
-          20
+          84,
+          56
         ],
-        "steps": 8,
+        "steps": 384,
         "statics": {
-          "massLabel": "774 g",
+          "massLabel": "7.43 kg",
           "stable": true,
-          "tippingMarginLdu": 197.72,
-          "unsupportedParts": 7
+          "tippingMarginLdu": 538.45,
+          "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 3252,
-        "connectionsAdded": 19980
+        "partsAdded": 4524,
+        "connectionsAdded": 15365
       }
     },
     {
@@ -588,91 +587,92 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Saucer Freighter",
       "discipline": "Vehicle and mechanism",
       "category": "vehicles",
-      "tagline": "A faceted lozenge hull on a seventy-stud illuminated dock, with twin booms, a turning turret and opening ramp.",
+      "tagline": "A ninety-six-stud freighter on six landing legs: deep tapering hull, stepped upper deck, raised bridge and three lit engine bells.",
       "hero": false,
       "brief": {
-        "prompt": "An original saucer freighter with a stepped lozenge hull, sideways-stud skins, twin forward booms either side of a centred cockpit, a dorsal turret that turns and a boarding ramp that opens.",
+        "prompt": "An original saucer freighter standing on landing legs, with a deep tapering hull, a pointed bow, a stepped upper deck, a glazed bridge, three engine bells and two flaps that open.",
         "envelopeStuds": [
-          70,
+          96,
           null,
-          56
+          64
         ],
         "palette": [
           "Light Bluish Grey",
           "Dark Bluish Grey",
-          "Dark Tan"
+          "Dark Tan",
+          "Trans Neon Orange"
         ],
         "functions": [
-          "Hinged boarding ramp",
+          "Hinged boarding flap",
           "Hinged dorsal turret",
-          "Sideways-stud hull skin"
+          "Verified build sequence"
         ]
       },
       "camera": {
-        "yaw": 42,
-        "pitch": 30,
-        "zoom": 1.08
+        "yaw": 40,
+        "pitch": 26,
+        "zoom": 1.04
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/saucer-freighter/preview.json",
-          "bytes": 276515,
-          "sha256": "d7274a17f6372c3a3e8c6b02394bc2fb241b31e64fee9bc5fad2d7a3c9db5ac2",
+          "bytes": 548465,
+          "sha256": "0573d917ad4e01957e5b5a0752c2263bb5784f4a82e19da4c4d7d369ebd76587",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/saucer-freighter/rough-preview.json",
-          "bytes": 15305,
-          "sha256": "cae9a32a14fec6d97a17ffc9c515b2b70b0ef1c57ac49e8a01a824948fa1e083",
+          "bytes": 310710,
+          "sha256": "0d60b58817473cc11bf087c35a3241c62405e05dc81c21ec98a1fec85560410c",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/saucer-freighter/thumb.png",
-          "bytes": 46266,
-          "sha256": "acffa39fea657e90502e3806c952cde94a15d745b6bd07bd7de21be738e08de2",
+          "bytes": 45447,
+          "sha256": "d60b97d6b3af72f4fdabf327b3ee3de13cd04b2df5fa3b1247855da889511be0",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 5350,
-        "connectionCount": 16000,
+        "partCount": 10338,
+        "connectionCount": 52990,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          70,
-          56
+          96,
+          64
         ],
-        "steps": 90,
+        "steps": 165,
         "statics": {
-          "massLabel": "4.02 kg",
+          "massLabel": "18.36 kg",
           "stable": true,
-          "tippingMarginLdu": 559.72,
-          "unsupportedParts": 462
+          "tippingMarginLdu": 639.13,
+          "unsupportedParts": 8
         }
       },
       "roughValidation": {
-        "partCount": 229,
-        "connectionCount": 1299,
-        "collisionCount": 34,
-        "componentCount": 1,
-        "disconnectedPartCount": 0,
+        "partCount": 5594,
+        "connectionCount": 23852,
+        "collisionCount": 0,
+        "componentCount": 115,
+        "disconnectedPartCount": 3242,
         "footprintStuds": [
-          18,
-          14
+          70,
+          52
         ],
-        "steps": 11,
+        "steps": 383,
         "statics": {
-          "massLabel": "313 g",
+          "massLabel": "9.08 kg",
           "stable": true,
-          "tippingMarginLdu": 138.47,
-          "unsupportedParts": 48
+          "tippingMarginLdu": 425.75,
+          "unsupportedParts": 0
         }
       },
       "delta": {
-        "partsAdded": 5121,
-        "connectionsAdded": 14701
+        "partsAdded": 4744,
+        "connectionsAdded": 29138
       }
     },
     {
@@ -680,10 +680,10 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Harbour Street",
       "discipline": "Modular architecture",
       "category": "architecture",
-      "tagline": "Seven four-storey shopfronts, separated by alleys and finished with roof rooms, trees, lights and planted entries.",
+      "tagline": "Seven four-storey shopfronts under three different rooflines — pitched gables with chimneys, stepped parapets and flat roofs with roof rooms.",
       "hero": false,
       "brief": {
-        "prompt": "A street of seven four-storey modular shops with flats above, separate alleys, detailed roofs, trees, lights and planted thresholds, where every building and every floor can be lifted off separately.",
+        "prompt": "A street of seven four-storey modular shops with flats above, separate alleys, three different rooflines with chimneys and roof rooms, trees, lights and planted thresholds, where every building and every floor can be lifted off separately.",
         "envelopeStuds": [
           134,
           null,
@@ -711,26 +711,26 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "assets": {
         "preview": {
           "url": "/demos/harbour-street/preview.json",
-          "bytes": 430953,
-          "sha256": "dfe17dfa1eda5276843e38588546c5ca72a39a0723473d9f713e2ff37ec53019",
+          "bytes": 433393,
+          "sha256": "21e8a468f9bf2d37a7ece55f69596a4b61de727f6d1fae8f2e9cfabc9d504110",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/harbour-street/rough-preview.json",
-          "bytes": 60679,
-          "sha256": "256a885b13dc0b6d8ce5deb4b387170d3ca7bad67baa86fdc0122d6be22f6818",
+          "bytes": 62678,
+          "sha256": "d5760e2afecc6c5a60a7ffef4c7c4141b8d9a489cad636d05ca133ea7b594ea1",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/harbour-street/thumb.png",
-          "bytes": 40556,
-          "sha256": "d7408f2873f53c9a57fec2388240dbe8d05c660d49bd24069ee9d0651ed54f1f",
+          "bytes": 38748,
+          "sha256": "3a4423989697e6f1589c9fcd59e6876ea7b46cc4faa8a0170e64fd37d4086573",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 7913,
-        "connectionCount": 29204,
+        "partCount": 7947,
+        "connectionCount": 29697,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
@@ -740,15 +740,15 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ],
         "steps": 114,
         "statics": {
-          "massLabel": "9.56 kg",
+          "massLabel": "9.91 kg",
           "stable": true,
-          "tippingMarginLdu": 385.89,
-          "unsupportedParts": 154
+          "tippingMarginLdu": 383.79,
+          "unsupportedParts": 148
         }
       },
       "roughValidation": {
-        "partCount": 1095,
-        "connectionCount": 2496,
+        "partCount": 1121,
+        "connectionCount": 2678,
         "collisionCount": 0,
         "componentCount": 34,
         "disconnectedPartCount": 673,
@@ -758,15 +758,15 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ],
         "steps": 42,
         "statics": {
-          "massLabel": "980 g",
+          "massLabel": "1.08 kg",
           "stable": true,
-          "tippingMarginLdu": 278.54,
+          "tippingMarginLdu": 275.66,
           "unsupportedParts": 16
         }
       },
       "delta": {
-        "partsAdded": 6818,
-        "connectionsAdded": 26708
+        "partsAdded": 6826,
+        "connectionsAdded": 27019
       }
     },
     {
@@ -774,14 +774,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "title": "Meridian Tower",
       "discipline": "Modular architecture",
       "category": "architecture",
-      "tagline": "A twenty-eight-storey modular high-rise with two setbacks, a complete civic plaza and real seated glazing.",
+      "tagline": "A twenty-eight-storey modular high-rise with two setbacks, a seven-course crown and a 108-stud civic plaza.",
       "hero": false,
       "brief": {
-        "prompt": "A twenty-eight-storey modular tower on a landscaped plaza, where every floor lifts off separately, the elevations carry real windows, two upper volumes set back, and the crown rises to a mast.",
+        "prompt": "A twenty-eight-storey modular tower on a large landscaped civic plaza with a reflecting pool and a pavilion, where every floor lifts off separately, the elevations carry real windows, two upper volumes set back, and the crown rises to a banded mast.",
         "envelopeStuds": [
-          84,
+          108,
           null,
-          52
+          72
         ],
         "palette": [
           "Sand",
@@ -798,51 +798,51 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       },
       "camera": {
         "yaw": 38,
-        "pitch": 20,
-        "zoom": 1.1
+        "pitch": 30,
+        "zoom": 1.06
       },
       "catalogVersion": "2026-07",
       "assets": {
         "preview": {
           "url": "/demos/meridian-tower/preview.json",
-          "bytes": 496275,
-          "sha256": "407e4c29a9434438ce13616d5108ae5dc15820aac7c2aabb3af9f85aabfe7384",
+          "bytes": 704060,
+          "sha256": "9a026e0a7bf9e35f48c2b44662a04d4be71db82b461a96a499c96a55eefe9c6e",
           "contentType": "application/json"
         },
         "roughPreview": {
           "url": "/demos/meridian-tower/rough-preview.json",
-          "bytes": 116942,
-          "sha256": "80475383cf9d1dec69ce583811d537d8f4438c2ae20ed1ff17e4bc44139f2387",
+          "bytes": 119009,
+          "sha256": "703c6e37190d9597fed628d4cc4da8ce7da47b0e2383cc5b0d57159ba8d64705",
           "contentType": "application/json"
         },
         "thumbnail": {
           "url": "/demos/meridian-tower/thumb.png",
-          "bytes": 16940,
-          "sha256": "401605ea9b2bd0c4931ed35079e9dd43bee8e8b5b04eeef24dfdcccd7d8793ff",
+          "bytes": 19797,
+          "sha256": "849569348ba5fc1bf666a514774290d0bed8810bb271f505036a2de3b9d47bd0",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 8895,
-        "connectionCount": 47385,
+        "partCount": 12639,
+        "connectionCount": 55021,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
         "footprintStuds": [
-          84,
-          52
+          108,
+          72
         ],
-        "steps": 136,
+        "steps": 188,
         "statics": {
-          "massLabel": "16.18 kg",
+          "massLabel": "18.26 kg",
           "stable": true,
-          "tippingMarginLdu": 519.98,
+          "tippingMarginLdu": 719.95,
           "unsupportedParts": 855
         }
       },
       "roughValidation": {
-        "partCount": 2134,
-        "connectionCount": 7382,
+        "partCount": 2172,
+        "connectionCount": 7724,
         "collisionCount": 0,
         "componentCount": 53,
         "disconnectedPartCount": 1060,
@@ -850,17 +850,17 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
           58,
           30
         ],
-        "steps": 69,
+        "steps": 70,
         "statics": {
-          "massLabel": "2.71 kg",
+          "massLabel": "2.85 kg",
           "stable": true,
           "tippingMarginLdu": 299.97,
           "unsupportedParts": 90
         }
       },
       "delta": {
-        "partsAdded": 6761,
-        "connectionsAdded": 40003
+        "partsAdded": 10467,
+        "connectionsAdded": 47297
       }
     },
     {
@@ -871,7 +871,7 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "tagline": "A 128 × 88-stud university campus with nine landmark structures, a tiled quad, mature trees, path lights and 21 LEGO characters.",
       "hero": true,
       "brief": {
-        "prompt": "Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.",
+        "prompt": "Build a display-scale replica of the University of Illinois Main Quad with the Union and Foellinger on axis, Altgeld and Alma Mater, pitched-roof academic halls, Morrow Plots, trees, paths, and enough students to make it feel alive. It must exceed ten thousand real pieces and still pass the physical kernel.",
         "envelopeStuds": [
           128,
           null,
@@ -900,8 +900,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
       "assets": {
         "preview": {
           "url": "/demos/illinois-main-quad/preview.json",
-          "bytes": 746174,
-          "sha256": "e418b5f495c3e81c4ca8aaa82f1820de14a7f90c94664577d5545aedc708ba76",
+          "bytes": 745413,
+          "sha256": "ba571d4a173d0f565b658a0c059d22b724853977be476ed0bf80625bd1936fe3",
           "contentType": "application/json"
         },
         "roughPreview": {
@@ -912,14 +912,14 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         },
         "thumbnail": {
           "url": "/demos/illinois-main-quad/thumb.png",
-          "bytes": 48258,
-          "sha256": "2d52fa9763381e276cd5fc82c550bd1e81fe88bb2a8d523d278b5dd4b6da2849",
+          "bytes": 49901,
+          "sha256": "11af45b45f4fcdb4713087c44fc3e51470456b62124f505268b5dbecc472af17",
           "contentType": "image/png"
         }
       },
       "validation": {
-        "partCount": 13844,
-        "connectionCount": 32172,
+        "partCount": 13835,
+        "connectionCount": 31234,
         "collisionCount": 0,
         "componentCount": 1,
         "disconnectedPartCount": 0,
@@ -929,10 +929,10 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         ],
         "steps": 221,
         "statics": {
-          "massLabel": "9.75 kg",
+          "massLabel": "10.06 kg",
           "stable": true,
-          "tippingMarginLdu": 843.9,
-          "unsupportedParts": 68
+          "tippingMarginLdu": 837.66,
+          "unsupportedParts": 70
         }
       },
       "roughValidation": {
@@ -954,8 +954,8 @@ export const DEMO_SUMMARY_MANIFEST: DemoSummaryManifest = {
         }
       },
       "delta": {
-        "partsAdded": 13418,
-        "connectionsAdded": 31256
+        "partsAdded": 13409,
+        "connectionsAdded": 30318
       }
     }
   ]
