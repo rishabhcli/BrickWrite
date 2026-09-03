@@ -508,7 +508,7 @@ body:has(.bw-surface),
 .bw-metric dd small {
   display: block;
   margin-top: 6px;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-size: 12px;
   font-weight: 400;
   color: var(--bw-muted);

@@ -66,7 +66,7 @@ body:has(.bw-studio) #pf-main {
   min-height: 52px;
   padding: 15px 23px;
   border-radius: var(--r-control);
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0;
@@ -162,7 +162,7 @@ body:has(.bw-studio) #pf-main {
 }
 .bw-studio-copy h1 {
   margin: 0 0 30px;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-weight: 500;
   font-size: clamp(56px, 6.2vw, 100px);
   letter-spacing: -0.065em;
@@ -384,6 +384,7 @@ body:has(.bw-studio) #pf-main {
 .bw-constellation-card > strong {
   font:
     600 12px/1.2 'Manrope Variable',
+    'Manrope Metrics',
     sans-serif;
 }
 .bw-constellation-card > small {
@@ -437,7 +438,7 @@ body:has(.bw-studio) #pf-main {
   white-space: nowrap;
   text-transform: none;
   letter-spacing: 0.02em;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-size: 13px;
   color: #3f4639;
 }
@@ -545,6 +546,7 @@ body:has(.bw-studio) #pf-main {
 .bw-studio .bw-close-mark {
   font:
     500 clamp(36px, 4.5vw, 70px)/1.04 'Manrope Variable',
+    'Manrope Metrics',
     sans-serif;
   letter-spacing: -0.055em;
   text-transform: none;
@@ -637,6 +639,7 @@ body:has(.bw-studio) #pf-main {
   gap: 22px;
   font:
     500 96px/0.9 'Manrope Variable',
+    'Manrope Metrics',
     sans-serif;
   letter-spacing: -0.07em;
   margin: 0 0 25px;
@@ -669,6 +672,7 @@ body:has(.bw-studio) #pf-main {
   border-bottom: 1px solid #c9cabf;
   font:
     600 12px/1.35 'Manrope Variable',
+    'Manrope Metrics',
     sans-serif;
 }
 .bw-spotlight-picker button span {
@@ -778,7 +782,7 @@ body:has(.bw-studio) #pf-main {
   color: #899977;
 }
 .bw-studio .bw-assembly-chapter .bw-display {
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-size: clamp(36px, 4.2vw, 65px);
   font-weight: 500;
   text-transform: none;
@@ -910,7 +914,7 @@ body:has(.bw-studio) #pf-main {
 .bw-studio .bw-demo-body h3 {
   color: #293525;
   font-size: 22px;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   letter-spacing: -0.04em;
 }
 .bw-studio .bw-demo-body > p {
@@ -1003,6 +1007,7 @@ body:has(.bw-studio) #pf-main {
   width: 100%;
   font:
     600 clamp(44px, 9vw, 128px)/1.15 'Manrope Variable',
+    'Manrope Metrics',
     sans-serif;
   letter-spacing: -0.08em;
   color: #b1b8a340;
@@ -1297,7 +1302,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
     letter-spacing: 0;
   }
   .bw-studio .bw-assembly-figure b {
-    font-family: 'Manrope Variable', sans-serif;
+    font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
     font-size: 15px;
     letter-spacing: -0.025em;
     text-transform: none;
@@ -1331,7 +1336,7 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
 }
 .bw-plate-head h2 {
   margin: 0;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: 'Manrope Variable', 'Manrope Metrics', sans-serif;
   font-weight: 500;
   font-size: clamp(38px, 4.4vw, 68px);
   letter-spacing: -0.06em;
