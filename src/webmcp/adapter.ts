@@ -43,13 +43,15 @@ import {
   revealChrome,
   steerConnect,
 } from './chrome'
+import { hostAvailable, installBridge, registerModelContextTool, setWorkspaceBridge } from './register'
+import { setAutonomyGate } from './site'
 import { disposeSurfaces, surfaceSnapshot } from './surfaceSnapshot'
 import { generationBuildTools, generationProposeTools, generationReadTools } from './surfaces/generation'
 import { intelligenceReadTools } from './surfaces/intelligence'
 import { projectBuildTools, projectReadTools } from './surfaces/projects'
 import { refinementBuildTools, refinementProposeTools, refinementReadTools } from './surfaces/refinement'
 import { shareBuildTools, shareReadTools } from './surfaces/share'
-import type { CadOperation, ModelDocument } from '../cad/types'
+import type { AutonomyMode, CadOperation, ModelDocument } from '../cad/types'
 
 type ToolDefinition = ModelContextToolDefinition
 
@@ -911,6 +913,15 @@ const buildTools: ToolDefinition[] = [
 export class WebMcpAdapter {
   private baseController?: AbortController
   private modeController?: AbortController
+  /**
+   * The adapter's *own* tools.
+   *
+   * Kept separately from the shared registry in `register.ts` because
+   * `profileContext` hashes it: the profile an agent pins with
+   * `expectedToolProfileHash` describes this document's surface, and folding in
+   * the site's navigation tools would make the fingerprint answer a different
+   * question.
+   */
   private fallbackTools = new Map<string, ToolDefinition>()
   private unsubscribe?: () => void
   private lastMode?: string
@@ -918,31 +929,21 @@ export class WebMcpAdapter {
   private register(tool: ToolDefinition, signal?: AbortSignal) {
     this.fallbackTools.set(tool.name, tool)
     signal?.addEventListener('abort', () => this.fallbackTools.delete(tool.name), { once: true })
-    if (document.modelContext) {
-      try {
-        document.modelContext.registerTool(tool, signal ? { signal } : undefined)
-      } catch {
-        // The fallback bridge remains available in browsers without the exact draft signature.
-      }
-    }
+    registerModelContextTool(tool, signal)
   }
 
   start() {
     this.baseController?.abort()
     this.baseController = new AbortController()
+    installBridge()
+    setWorkspaceBridge({ getDocument: () => cadEngine.getDocument() })
+    setAutonomyGate({
+      get: () => cadEngine.getSnapshot().autonomy,
+      set: (mode) => cadEngine.setAutonomy(mode as AutonomyMode),
+    })
     for (const tool of readTools) this.register(tool, this.baseController.signal)
     this.refreshMode()
     this.unsubscribe = cadEngine.subscribe(() => this.refreshMode())
-    window.brickwright = {
-      tools: this.fallbackTools,
-      invoke: async (name, input = {}) => {
-        const tool = this.fallbackTools.get(name)
-        if (!tool)
-          throw new Error(`Brickwright tool ${name} is not registered in ${cadEngine.getSnapshot().autonomy} mode.`)
-        return tool.execute(input)
-      },
-      getDocument: () => cadEngine.getDocument(),
-    }
   }
 
   private refreshMode() {
@@ -966,12 +967,15 @@ export class WebMcpAdapter {
     this.fallbackTools.clear()
     this.lastMode = undefined
     disposeSurfaces()
-    delete window.brickwright
+    // The bridge itself outlives the editor — the site tools are still
+    // registered on it — so only this document's half is withdrawn.
+    setWorkspaceBridge(null)
+    setAutonomyGate(null)
   }
 
   getStatus() {
     return {
-      native: Boolean(document.modelContext),
+      native: hostAvailable(),
       toolCount: this.fallbackTools.size,
       mode: cadEngine.getSnapshot().autonomy,
     }

@@ -3,6 +3,8 @@ import { cadEngine } from '../cad/engine'
 import { createRoverDocument } from '../cad/__fixtures__/rover'
 import { WebMcpAdapter } from './adapter'
 import { resetChrome, setChromeRevealHandler, setModelHealthHandler, setProposalReviewHandler } from './chrome'
+import { resetRegistry } from './register'
+import { setAutonomyGate, startSiteTools } from './site'
 
 describe('WebMCP adapter', () => {
   const adapter = new WebMcpAdapter()
@@ -168,5 +170,81 @@ describe('WebMCP adapter', () => {
 
     expect(cadEngine.undo('human').ok).toBe(true)
     expect(cadEngine.getSnapshot().document.name).toBe('Survey rover')
+  })
+})
+
+/**
+ * Nothing used to assert the *native* path: the suite drove
+ * `window.brickwright`, which exists whether or not `document.modelContext`
+ * was ever called. So a regression in the one line that hands a tool to the
+ * browser would have left every test green and every agent toolless.
+ */
+describe('WebMCP adapter native host', () => {
+  const adapter = new WebMcpAdapter()
+  let registered: ModelContextToolDefinition[]
+
+  beforeEach(() => {
+    registered = []
+    document.modelContext = {
+      registerTool(tool, options) {
+        registered.push(tool)
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            registered = registered.filter((entry) => entry !== tool)
+          },
+          { once: true },
+        )
+        return Promise.resolve()
+      },
+    }
+    cadEngine.replaceDocument(createRoverDocument())
+    cadEngine.setAutonomy('inspect')
+  })
+
+  afterEach(() => {
+    adapter.stop()
+    setAutonomyGate(null)
+    resetRegistry()
+    delete document.modelContext
+  })
+
+  it('hands the CAD tools to document.modelContext and reports the host as native', () => {
+    adapter.start()
+    expect(adapter.getStatus().native).toBe(true)
+    expect(registered.map((tool) => tool.name)).toContain('workspace_get')
+    expect(registered.map((tool) => tool.name)).not.toContain('build_apply')
+  })
+
+  it('registers and withdraws the write surface at the host as autonomy changes', () => {
+    adapter.start()
+    cadEngine.setAutonomy('build')
+    expect(registered.map((tool) => tool.name)).toContain('build_apply')
+    cadEngine.setAutonomy('inspect')
+    expect(registered.map((tool) => tool.name)).not.toContain('build_apply')
+    expect(registered.map((tool) => tool.name)).toContain('workspace_get')
+  })
+
+  it('lets the site surface open the write gate, end to end', async () => {
+    adapter.start()
+    const stopSite = startSiteTools()
+    expect(window.brickwright?.tools.has('build_apply')).toBe(false)
+
+    const opened = await window.brickwright!.invoke('brickwright_autonomy', { mode: 'build' })
+    expect(cadEngine.getSnapshot().autonomy).toBe('build')
+    expect(opened.structuredContent).toMatchObject({ mode: 'build' })
+    expect(window.brickwright?.tools.has('build_apply')).toBe(true)
+    // A write tool reached through the bridge must be the real one, not a stub.
+    const preflight = await window.brickwright!.invoke('build_preflight', {
+      operations: [{ kind: 'delete_part', partId: 'nope' }],
+    })
+    expect(preflight.structuredContent).toBeDefined()
+
+    adapter.stop()
+    expect(window.brickwright?.tools.has('build_apply')).toBe(false)
+    // The site tools outlive the editor, so the front door still answers.
+    expect(window.brickwright?.tools.has('brickwright_overview')).toBe(true)
+    expect(() => window.brickwright!.getDocument()).toThrow(/brickwright_navigate/)
+    stopSite()
   })
 })

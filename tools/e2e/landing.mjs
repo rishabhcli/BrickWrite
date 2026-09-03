@@ -389,7 +389,12 @@ try {
       /\.bwmesh$/.test(url) ||
       /\/assets\/(?:geometry|thumb)\//.test(url) ||
       /\/src\/App\.tsx/.test(url) ||
-      /\/src\/(?:editor|webmcp)\//.test(url) ||
+      /\/src\/editor\//.test(url) ||
+      // `site.ts` and `register.ts` are the WebMCP surface the *shell* installs
+      // on every route — that is the point of them, and the delivery gate below
+      // measures what they cost. Everything else under `src/webmcp/` belongs to
+      // the editor's document adapter and must not reach this page.
+      /\/src\/webmcp\/(?!(?:site|register)\.ts)/.test(url) ||
       /\/src\/cad\/(?:catalog|catalog-loader|engine|session|collision|snapping|mesh)\.ts/.test(url) ||
       /node_modules\/\.vite\/deps\/three/.test(url) ||
       /\/(?:three|@react-three)\//.test(url),

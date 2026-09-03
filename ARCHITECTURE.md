@@ -23,7 +23,9 @@ batch produces exactly one revision and one transaction.
 4. Only parts with compiled geometry can be placed; catalog-only identities are refused
    with `GEOMETRY_UNAVAILABLE` rather than rendered as a guess.
 5. Preflight creates a preview document but does not replace the live document.
-6. Proposal application is rejected if its base revision changed or it contains collisions.
+6. Proposal application is rejected if its base revision changed or it *introduces* a
+   collision. Overlaps the live document already carried are not charged to it — the
+   acceptance path subtracts them by pair id, matching what `execute` has always done.
 7. The Three.js object tree is disposable; the CAD document can rebuild it at any time.
 8. There is no procedural fallback catalog. If the compiled assets are missing the
    application refuses to start.
@@ -91,7 +93,9 @@ the windscreen land on the planes a physical build would use.
 | `src/cad/bom.ts` | Exact part/colour aggregation and CSV export |
 | `src/cad/archive.ts` | Project archive pack/unpack: document, history, notes, constraints |
 | `src/cad/capabilities.ts` | Shared human/agent mutation vocabulary, including mechanism planners |
-| `src/webmcp/adapter.ts` | Dynamic native WebMCP registration and browser development bridge |
+| `src/webmcp/register.ts` | The only caller of `document.modelContext.registerTool`, plus the `window.brickwright` bridge |
+| `src/webmcp/site.ts` | Route-independent tools registered by the shell: orientation, navigation, tool census, demos, autonomy |
+| `src/webmcp/adapter.ts` | Dynamic native WebMCP registration of the document surface |
 | `src/agent` | Design partner: Inspect / Propose / Build, reviewable waves |
 | `src/generation` | Brief → build graph → kernel-realised candidate |
 | `src/refinement` | Region doctor: propose a healthier replacement and prove the delta |
@@ -298,18 +302,27 @@ is enforced in the kernel.
 
 ## WebMCP lifecycle
 
-Read tools remain registered for the page lifetime. A mode-specific `AbortController` owns
-proposal/write registrations. Inventories at `brickwright.tools/3`:
+Two registrars share `register.ts`, which is the only caller of
+`document.modelContext.registerTool`. `site.ts` registers from the shell, on every route
+including `/`, and stays for the page lifetime; `adapter.ts` layers the document surface on
+when the editor mounts. Measured inventories at `brickwright.tools/3`:
 
 ```text
-Inspect  = 24 read tools
-Propose  = 28 (read + preflight/proposal)
-Build    = 40 (read + preflight/proposal + mutation/history/project)
+any route  =  5 site tools (overview, navigate, tools_list, demos_list, autonomy)
+Inspect    = 25 read tools           +5 = 30
+Propose    = 29 (read + preflight/proposal)          +5 = 34
+Build      = 41 (read + preflight/proposal + mutation/history/project)  +5 = 46
 ```
 
+The site half is what makes the rest reachable: an agent handed the deployed origin lands on
+`/`, and `brickwright_navigate` moves it to `/editor` through the shell's router — a client
+transition, so the tools already registered survive — then blocks until the document surface
+has registered rather than reporting success onto an empty inventory. `brickwright_autonomy`
+moves the write gate the editor toolbar also shows.
+
 Changing autonomy aborts the old registrations before installing the new inventory. The
-fallback bridge mirrors this lifecycle so behaviour can be tested in Chromium before native
-Site Tools are available. Annotations are hints only — revision checks, protected-region
+fallback bridge at `window.brickwright` mirrors the union of both halves, so behaviour can be
+tested in Chromium before native Site Tools are available. Annotations are hints only — revision checks, protected-region
 enforcement, geometry availability, colour policy and collision rejection all live in the
 kernel.
 

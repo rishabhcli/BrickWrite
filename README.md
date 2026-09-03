@@ -9,8 +9,10 @@ viewport and undo stack.
 This repository is a working vertical slice, not a mock chat interface. You can search the
 real LDraw library, click a part into the viewport and watch it mate on real connectors, drag
 it with a transform gizmo, box-select a region, rotate, recolour, connect, protect, duplicate,
-validate, undo, export and replay the model manually. A WebMCP adapter exposes those same
-semantics as dynamic Site Tools.
+validate, undo, export and replay the model manually. WebMCP exposes those same semantics as
+Site Tools: five of them are registered on every route, so an agent handed the bare origin can
+orient itself and navigate into the workspace, where 25–41 more appear depending on the
+autonomy mode.
 
 ## Run it
 
@@ -165,8 +167,9 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
   attachments come from actual mated connectors.
 - **Preflight + ghost proposals** — dry-run edits stay visible without mutating the document;
   collision-free proposals apply atomically.
-- **Dynamic WebMCP surface** — Inspect, Propose and Build modes register different tool
-  inventories, revoked through `AbortSignal`.
+- **Dynamic WebMCP surface** — tools exist on every route, not just the editor; Inspect,
+  Propose and Build modes then register different document inventories, revoked through
+  `AbortSignal`.
 - **Agent perception** — `render_capture` returns live PNG pixels plus revision, camera,
   bounds, count and selection metadata.
 - **Colour honesty** — 322 real LDraw colours; part/colour pairings with no observed

@@ -31,9 +31,9 @@ export const resultOf = <T>(result: { ok: true; value: T } | { ok: false; error:
 export function tool(definition: ToolDefinition): ToolDefinition {
   return {
     ...definition,
-    execute: async (input) => {
+    execute: async (input, context) => {
       try {
-        return await definition.execute(input)
+        return await definition.execute(input, context)
       } catch (cause) {
         return json(toErrorEnvelope(cause, { currentRevision: cadEngine.getDocument().revision }))
       }

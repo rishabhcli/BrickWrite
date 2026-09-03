@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { BrowserRouter, Link, Route, Routes, useNavigate } from 'react-router-dom'
 import { setLandingNavigator } from '../features/landing/navigation'
+import { startSiteTools } from '../webmcp/site'
 import type { RouteModule } from './contracts'
 import { BootCancelledError, bootForRoute, bootPhaseMs, bootTo, resetBoot, type BootStage } from './boot'
 import { BootStageProvider } from './boot-context'
@@ -380,6 +381,7 @@ export function PlatformShell() {
   return (
     <PlatformErrorBoundary key={generation} onRecover={recover}>
       <LandingNavigationBridge />
+      <SiteToolHost />
       <AccountGate>
         <Suspense fallback={<LoadingState headline="Starting Brickwright" />}>
           <ShellRoutes />
@@ -405,6 +407,24 @@ function LandingNavigationBridge() {
       }),
     [routerNavigate],
   )
+  return null
+}
+
+/**
+ * The WebMCP site surface, registered for every route.
+ *
+ * It lives here rather than in `main.tsx` for one reason: `brickwright_navigate`
+ * has to reach the shell's *router*, and the only thing that owns a client-side
+ * transition is the bridge above. Registering earlier would mean the first
+ * navigation an agent made was a document load, which would immediately
+ * unregister every tool it had just discovered.
+ *
+ * `useEffect` rather than module scope so the registration is torn down with
+ * the tree, and so StrictMode's double mount aborts the first generation
+ * instead of leaving two hosts answering the same tool name.
+ */
+function SiteToolHost() {
+  useEffect(() => startSiteTools(), [])
   return null
 }
 

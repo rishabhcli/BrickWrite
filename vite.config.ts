@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 /**
@@ -41,8 +41,33 @@ if (process.env.VITEST) {
   }
 }
 
+/**
+ * Carry a WebMCP origin-trial token into the document, when one is configured.
+ *
+ * Three ways a browser can have WebMCP: the ChatGPT desktop app's in-app
+ * browser has it on, Chrome has it behind
+ * `chrome://flags/#enable-webmcp-testing`, and Chrome 149+ enables it for any
+ * origin that presents a valid origin-trial token. Only the third is something
+ * a deployment can decide, and it is worth deciding: it is what makes the tools
+ * work for a visitor in stock Chrome who has never heard of a flag.
+ *
+ * Injected rather than written into `index.html` because a token is bound to
+ * one origin and expires. A missing variable must emit no tag at all — an empty
+ * `content` is a malformed token, and Chrome reports it on every load.
+ */
+function webmcpOriginTrial(): Plugin {
+  const token = process.env.VITE_WEBMCP_ORIGIN_TRIAL?.trim()
+  return {
+    name: 'brickwright:webmcp-origin-trial',
+    transformIndexHtml: () =>
+      token
+        ? [{ tag: 'meta', attrs: { 'http-equiv': 'origin-trial', content: token }, injectTo: 'head-prepend' as const }]
+        : [],
+  }
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), webmcpOriginTrial()],
   envDir,
   // The assistant and generation routes hold the model API key, so they run in
   // a separate Node process rather than in Vite's module graph. Proxying keeps

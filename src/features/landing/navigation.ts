@@ -25,6 +25,14 @@ export type LandingTarget =
   | { kind: 'editor-project'; projectId: string }
   | { kind: 'describe' }
   | { kind: 'gallery' }
+  /**
+   * An already-built path. The escape hatch for callers that address the
+   * shell's routes rather than this module's vocabulary — the WebMCP site host
+   * navigates by `RouteId`, and reaching `/projects` or `/account` through the
+   * shell's soft navigator is the difference between a client transition and a
+   * full reload that drops every registered tool.
+   */
+  | { kind: 'path'; href: string }
 
 export type LandingNavigator = (target: LandingTarget, href: string, options?: { replace?: boolean }) => boolean
 
@@ -60,6 +68,8 @@ export function hrefFor(target: LandingTarget): string {
       return '/editor?doc=blank&intent=describe'
     case 'gallery':
       return '/gallery'
+    case 'path':
+      return target.href
   }
 }
 

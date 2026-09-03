@@ -109,3 +109,39 @@ describe('WebMCP adapter import graph', () => {
     expect(invented).toEqual(['./real'])
   })
 })
+
+/**
+ * The site host sits in the landing document's entry chunk — `AppShell` imports
+ * it so `brickwright_navigate` can reach the router — so its static graph is
+ * the one thing standing between "tools on every page" and putting the CAD
+ * kernel, the demo manifest and zod in front of the landing page's first paint.
+ */
+describe('WebMCP site host import graph', () => {
+  const graph = staticGraph('src/webmcp/site.ts')
+
+  it.each([
+    { pattern: /^src\/cad\//, why: 'the CAD kernel' },
+    { pattern: /^src\/editor\//, why: 'the editor' },
+    { pattern: /^src\/generation\//, why: 'the generation pipeline' },
+    { pattern: /^src\/refinement\//, why: 'the refinement search' },
+    { pattern: /^src\/demos\//, why: 'the demo manifest' },
+    { pattern: /^src\/webmcp\/adapter\.ts$/, why: 'the editor adapter' },
+  ])('does not statically reach $why', ({ pattern, why }) => {
+    const offenders = graph.filter((file) => pattern.test(file))
+    expect(offenders, `site.ts must not statically pull in ${why}. Reached:\n  ${offenders.join('\n  ')}`).toEqual([])
+  })
+
+  it('keeps zod out, because it ships in front of the landing page', () => {
+    const offenders = graph.filter((file) => {
+      if (!existsSync(path.join(ROOT, file))) return false
+      return staticSpecifiers(readFileSync(path.join(ROOT, file), 'utf8')).some((spec) => /^zod(\/|$)/.test(spec))
+    })
+    expect(offenders, `these put zod in the entry chunk: ${offenders.join(', ')}`).toEqual([])
+  })
+
+  it('reaches the shell router seam it navigates through', () => {
+    expect(graph).toContain('src/features/landing/navigation.ts')
+    expect(graph).toContain('src/platform/routes.ts')
+    expect(graph).toContain('src/webmcp/register.ts')
+  })
+})
