@@ -7,7 +7,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
-import { Link as RouterLink, useInRouterContext } from 'react-router-dom'
 import {
   DEMO_SUMMARIES as DEMOS,
   DEMO_SUMMARY_MANIFEST as DEMO_MANIFEST,
@@ -238,8 +237,43 @@ function diverseSpotlights(): DemoSummary[] {
   return preferred.length ? preferred : [...DEMOS].slice(0, 4)
 }
 
+/**
+ * True once the browser has actually painted.
+ *
+ * `useEffect` runs after React commits, which on a throttled main thread is
+ * still before the pixels land, so it is not a paint signal. Two nested frames
+ * are: the first callback runs before the paint this commit produced, the
+ * second after it.
+ */
+function usePainted(): boolean {
+  const [painted, setPainted] = useState(false)
+  useEffect(() => {
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setPainted(true))
+    })
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+    }
+  }, [])
+  return painted
+}
+
+/**
+ * A transparent 1×1 GIF, inline.
+ *
+ * Holds the `img` box until the real thumbnail is wanted. An `img` with no
+ * `src` renders its `alt` text and reflows when the image lands; `src=""`
+ * renders a broken-image icon. This does neither, costs no request, and lets
+ * `width`/`height` reserve the space, so deferring the fetch moves no layout.
+ */
+const HELD =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
 /** Four real generated assets, laid out plainly—not a mascot pretending to be the product. */
 function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
+  const painted = usePainted()
   return (
     <div className="bw-build-constellation" aria-label="A sample of editable large-scale builds">
       {demos.map((demo, index) => {
@@ -253,15 +287,20 @@ function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
             key={demo.id}
           >
             {/*
-              The first tile is above the fold on every viewport and is the
-              largest thing the page paints, so it is the LCP element. It was
-              being fetched `lazy` at `low` priority, which is the deferral the
-              browser applies to images it has been told are off screen. The
-              other three keep it — they are the same size and only one of them
-              can be the measurement.
+              The first tile is eager and high priority: it is above the fold on
+              every viewport and is the largest image the page paints.
+              (The LCP *element* is the h1, which beats it by about 4%.)
+
+              The other three are held behind first paint. `loading="lazy"` does
+              not defer them — all four are inside the viewport at 1440×900, so
+              the browser fetches 182,484 B of thumbnail before it has the font
+              the headline is set in. At the acceptance gate's 1.6 Mbit/s that
+              is most of a second spent ahead of the element being measured.
+              Three held tiles take 125,306 B out of that window, and `HELD`
+              keeps their boxes so nothing moves when they arrive.
             */}
             <img
-              src={demo.assets.thumbnail.url}
+              src={index === 0 || painted ? demo.assets.thumbnail.url : HELD}
               alt={`${demo.title}, ${demo.validation.partCount.toLocaleString()} editable parts.`}
               width={720}
               height={450}
@@ -713,29 +752,35 @@ interface LandingLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>,
   onFollow?: () => void
 }
 
-/** Uses the router in-app and keeps a real-anchor fallback for isolated rendering. */
-const LandingLink = forwardRef<HTMLAnchorElement, LandingLinkProps>(({ target, onFollow, children, ...props }, ref) => {
-  const inRouter = useInRouterContext()
-  const href = hrefFor(target)
-  const follow = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-    onFollow?.()
-  }
-
-  if (inRouter) {
-    return (
-      <RouterLink ref={ref} to={href} {...props} onClick={follow}>
-        {children}
-      </RouterLink>
-    )
-  }
-
-  return (
-    <a ref={ref} href={href} {...props} onClick={link(target, onFollow)}>
-      {children}
-    </a>
-  )
-})
+/**
+ * A real anchor, routed through the navigator the shell registers.
+ *
+ * There used to be a second branch here that rendered react-router's `Link`
+ * whenever `useInRouterContext()` was true. It was not load-bearing: the
+ * shell mounts `LandingNavigationBridge` (`AppShell.tsx:398`), which registers
+ * a navigator that calls `routerNavigate`, and `link()` below goes through
+ * `navigate()` and therefore through that navigator. Both branches produced the
+ * same client-side transition with one history entry.
+ *
+ * What the fork did cost: react-router-dom is 32,962 B of the standalone
+ * landing entry that `tools/e2e/landing.mjs` measures LCP against, and the h1
+ * cannot paint until that chunk has arrived, parsed and mounted. The router was
+ * paying for itself twice over on the one page that needs to be fast.
+ *
+ * It also made landing→explore links behave differently in and out of a router:
+ * `navigate()` dispatches `NAVIGATION_EVENT` after a claimed navigation, which
+ * an Explore-to-Explore query move needs because the component stays mounted
+ * (`navigation.ts:68-74`). `Link` never dispatched it. One path now, so they
+ * cannot disagree.
+ *
+ * Modifier and middle clicks still fall through to the real `href`, because
+ * `link()` returns before `preventDefault` for them.
+ */
+const LandingLink = forwardRef<HTMLAnchorElement, LandingLinkProps>(({ target, onFollow, children, ...props }, ref) => (
+  <a ref={ref} href={hrefFor(target)} {...props} onClick={link(target, onFollow)}>
+    {children}
+  </a>
+))
 
 LandingLink.displayName = 'LandingLink'
 
