@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { createExtensionRegistry, ExtensionRegistryProvider, type WorkbenchApi } from './ExtensionRegistry'
 import { SelectionHUD } from './SelectionHUD'
+import { AutonomySwitch } from './AutonomySwitch'
 import { ViewportNavigator } from './ViewportNavigator'
 import { WORKBENCH_COMMANDS } from './shortcuts'
 import { ViewportQuickControls } from './ViewportQuickControls'
@@ -331,5 +332,28 @@ describe('viewport overlay stacking', () => {
     expect(document.querySelector('.selection-hud')).toBeNull()
     expect(screen.getByRole('status', { name: 'Build playback' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Play build sequence' })).toBeVisible()
+  })
+})
+
+describe('autonomy switch', () => {
+  it('states the current mode and names each option exactly', () => {
+    const onChange = vi.fn()
+    render(<AutonomySwitch value="propose" onChange={onChange} />)
+
+    // One control on a first load, not three radios asking a question the
+    // operator has no model to answer yet.
+    expect(screen.queryByRole('radio')).toBeNull()
+    const trigger = screen.getByRole('button', { name: 'Agent autonomy: propose' })
+    fireEvent.click(trigger)
+
+    // The row also renders a sentence explaining the mode. Without an explicit
+    // label that sentence becomes part of the accessible name, and "build" no
+    // longer names the control.
+    for (const mode of ['inspect', 'propose', 'build'] as const) {
+      expect(screen.getByRole('radio', { name: mode })).toBeInTheDocument()
+    }
+    fireEvent.click(screen.getByRole('radio', { name: 'inspect' }))
+    expect(onChange).toHaveBeenCalledWith('inspect')
+    expect(screen.queryByRole('radio')).toBeNull()
   })
 })

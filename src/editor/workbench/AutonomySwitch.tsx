@@ -100,6 +100,7 @@ export function AutonomySwitch({
                 type="button"
                 role="radio"
                 aria-checked={value === mode}
+                aria-label={mode}
                 key={mode}
                 className={value === mode ? `active ${mode}` : ''}
                 title={MODE_HINT[mode]}
