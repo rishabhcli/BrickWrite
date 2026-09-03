@@ -4,11 +4,14 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.hexclave.com https://*.hexclave.com https://api.stripe.com https://m.stripe.com; img-src 'self' data: blob: https://*.stripe.com; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob: https://js.stripe.com https://*.js.stripe.com https://m.stripe.network https://static.cloudflareinsights.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network; style-src 'self' 'unsafe-inline'; font-src 'self' data:
+  X-Frame-Options: DENY
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.hexclave.com https://*.hexclave.com https://api.stripe.com https://m.stripe.com; img-src 'self' data: blob: https://*.stripe.com; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob: https://js.stripe.com https://*.js.stripe.com https://m.stripe.network https://static.cloudflareinsights.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network; style-src 'self' 'unsafe-inline'; font-src 'self' data:
 
+# Kept for a direct hit on the file itself. The application is reached at /,
+# /editor, /gallery and friends — request paths this rule does not match — so
+# the frame protection it used to carry lives in /* above, where it applies.
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
-  X-Frame-Options: DENY
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
@@ -21,3 +24,6 @@
 
 /demos/*
   Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/embed/*
+  ! X-Frame-Options
