@@ -2,7 +2,7 @@ import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 import { roleAllows, type Capability, type CloudRole } from './capabilities'
 import { identityFromClaims, type CloudIdentity } from './identity'
-import { cloudFailure, type CloudErrorShape, type CloudResult } from './protocol'
+import { cloudFailure, type CloudErrorShape, type CloudFailure, type CloudResult } from './protocol'
 
 export type { CloudIdentity } from './identity'
 
@@ -101,6 +101,40 @@ export async function authoriseProject(
     )
   }
   return { ok: true, value: { identity, project, role } }
+}
+
+/**
+ * Authorises acting on a row the caller created. Returns the refusal, or null.
+ *
+ * Four destructive mutations read `project.read` and then accepted a creator
+ * match *in place of* a capability. `viewer` holds `project.read`, and a
+ * public project hands an implicit `viewer` to any signed-in stranger — so a
+ * collaborator who had been removed from a public project, or demoted to
+ * viewer on a private one, kept the power to delete everything they had made.
+ * Deleting a branch cascades to its transactions and checkpoints.
+ *
+ * The right to remove came from having made the thing, and making it required
+ * a capability. Losing the role takes both. An owner still reaches anything
+ * through `escalated`.
+ */
+export function refuseUnlessOwnArtifact(
+  authorised: AuthorisedProject,
+  createdBySubject: string | undefined,
+  created: Capability,
+  escalated: Capability,
+): CloudFailure | null {
+  const { identity, role } = authorised
+  const mine = createdBySubject !== undefined && createdBySubject === identity.subject
+  const capability = mine ? created : escalated
+  if (roleAllows(role, capability)) return null
+  return cloudFailure(
+    'FORBIDDEN',
+    mine
+      ? `A ${role} may not ${capability.replace('.', ' ')} on this project, including what they created earlier.`
+      : `A ${role} may not ${capability.replace('.', ' ')} on this project.`,
+    'Ask an owner to raise your role on this project.',
+    { role, capability },
+  )
 }
 
 /**

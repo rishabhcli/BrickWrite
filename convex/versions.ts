@@ -4,7 +4,7 @@ import type { Id } from './_generated/dataModel'
 import { internal } from './_generated/api'
 import { internalMutation, mutation, query } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
-import { authoriseProject, iso, resolveBranch } from './model/auth'
+import { authoriseProject, iso, refuseUnlessOwnArtifact, resolveBranch } from './model/auth'
 import {
   cloudFailure,
   type CloudBranchRecord,
@@ -172,10 +172,8 @@ export const remove = mutation({
         'Reload the version list and choose again.',
       )
     }
-    if (version.createdBySubject !== identity.subject) {
-      const authorised = await authoriseProject(ctx, args.projectId, 'project.delete')
-      if (!authorised.ok) return authorised
-    }
+    const refusal = refuseUnlessOwnArtifact(reader.value, version.createdBySubject, 'version.create', 'project.delete')
+    if (refusal) return refusal
 
     // The row goes first, so nothing can follow it to a group being emptied.
     await ctx.db.delete(version._id)
@@ -481,10 +479,8 @@ export const removeBranch = mutation({
       )
     }
 
-    if (branch.createdBySubject !== identity.subject) {
-      const authorised = await authoriseProject(ctx, args.projectId, 'project.delete')
-      if (!authorised.ok) return authorised
-    }
+    const refusal = refuseUnlessOwnArtifact(reader.value, branch.createdBySubject, 'branch.create', 'project.delete')
+    if (refusal) return refusal
 
     // The row goes first, so nothing resolves a branch being emptied.
     await ctx.db.delete(branch._id)

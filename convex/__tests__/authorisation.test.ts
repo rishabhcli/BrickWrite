@@ -2,7 +2,8 @@
 import type { FunctionReference } from 'convex/server'
 import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
-import { CAPABILITIES, CAPABILITY_MATRIX, ROLES, type Capability } from '../model/capabilities'
+import type { Id } from '../_generated/dataModel'
+import { CAPABILITIES, CAPABILITY_MATRIX, ROLES, type Capability, type CloudRole } from '../model/capabilities'
 import {
   anonymous,
   codeOf,
@@ -299,5 +300,96 @@ describe('a token is not automatically a principal', () => {
       })
       .query(api.projects.get, { projectId: seed.projectId })
     expect(codeOf(result as never)).toBe('UNAUTHENTICATED')
+  })
+})
+
+/**
+ * Losing a role takes what the role earned with it.
+ *
+ * Four destructive mutations read `project.read` and then accepted a creator
+ * match in place of a capability. `viewer` holds `project.read`, and a public
+ * project hands an implicit `viewer` to any signed-in stranger — so removal
+ * from a public project revoked nothing, and demotion on a private one revoked
+ * nothing either. `versions.removeBranch` cascades to every transaction and
+ * checkpoint on the branch, so this was history a non-member could destroy.
+ */
+describe('a creator who lost the role that let them create', () => {
+  /** A branch and a named version on it, both authored by `actor`. */
+  async function seedOwnWork(t: ReturnType<typeof harness>, actor: string, role: CloudRole | null) {
+    const seed = await seedProject(t, {
+      owner: 'owner-account',
+      visibility: 'public',
+      members: role ? { [actor]: role } : {},
+    })
+    const branchId = await t.run(async (ctx) => {
+      const now = Date.now()
+      return ctx.db.insert('branches', {
+        projectId: seed.projectId as Id<'projects'>,
+        name: 'actor-work',
+        headRevision: 0,
+        baseRevision: 0,
+        kind: 'named',
+        createdBySubject: subjectOf(actor),
+        createdAt: now,
+        updatedAt: now,
+        forkedFromBranchId: seed.branchId as Id<'branches'>,
+      })
+    })
+    return { ...seed, ownBranchId: branchId }
+  }
+
+  test('a removed member of a public project may not delete the branch they made', async () => {
+    const t = harness()
+    // No membership row at all: the implicit viewer a public project grants is
+    // the whole of this caller's standing.
+    const seed = await seedOwnWork(t, 'ex-editor', null)
+    const result = await t
+      .withIdentity(person('ex-editor'))
+      .mutation(api.versions.removeBranch, { projectId: seed.projectId, branchId: seed.ownBranchId })
+    expect(codeOf(result as never)).toBe('FORBIDDEN')
+
+    const survived = await t.run(async (ctx) => ctx.db.get(seed.ownBranchId as Id<'branches'>))
+    expect(survived).not.toBeNull()
+  })
+
+  test('a member demoted to viewer may not delete the branch they made', async () => {
+    const t = harness()
+    const seed = await seedOwnWork(t, 'demoted', 'viewer')
+    const result = await t
+      .withIdentity(person('demoted'))
+      .mutation(api.versions.removeBranch, { projectId: seed.projectId, branchId: seed.ownBranchId })
+    expect(codeOf(result as never)).toBe('FORBIDDEN')
+  })
+
+  test('an editor who still holds branch.create may still delete their own branch', async () => {
+    const t = harness()
+    const seed = await seedOwnWork(t, 'editor-account', 'editor')
+    const result = await t
+      .withIdentity(person('editor-account'))
+      .mutation(api.versions.removeBranch, { projectId: seed.projectId, branchId: seed.ownBranchId })
+    expect(codeOf(result as never)).toBe('ok')
+  })
+
+  test('a commenter demoted to viewer may not resolve the thread they opened', async () => {
+    const t = harness()
+    const seed = await seedProject(t, { owner: 'owner-account', visibility: 'public', members: { demoted: 'viewer' } })
+    const commentId = await t.run(async (ctx) => {
+      const now = Date.now()
+      return ctx.db.insert('comments', {
+        projectId: seed.projectId as Id<'projects'>,
+        branchId: seed.branchId as Id<'branches'>,
+        authorSubject: subjectOf('demoted'),
+        authorDisplayName: 'demoted',
+        body: 'Mine',
+        anchor: { partId: 'part-1', revision: 0, poseChecksum: 'seed' },
+        status: 'open',
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+    const result = await t
+      .withIdentity(person('demoted'))
+      .mutation(api.comments.setStatus, { projectId: seed.projectId, commentId, status: 'resolved' })
+    expect(codeOf(result as never)).toBe('FORBIDDEN')
   })
 })

@@ -3,7 +3,7 @@ import { listOverflow } from './model/discovery'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { writeAuditEvent } from './model/audit'
-import { authoriseProject, resolveBranch } from './model/auth'
+import { authoriseProject, refuseUnlessOwnArtifact, resolveBranch } from './model/auth'
 import { utf8Bytes } from './model/checksum'
 import {
   cloudFailure,
@@ -193,10 +193,8 @@ export const setStatus = mutation({
         'Reload the comment list.',
       )
     }
-    if (comment.authorSubject !== identity.subject) {
-      const authorised = await authoriseProject(ctx, args.projectId, 'comment.resolve')
-      if (!authorised.ok) return authorised
-    }
+    const refusal = refuseUnlessOwnArtifact(reader.value, comment.authorSubject, 'comment.create', 'comment.resolve')
+    if (refusal) return refusal
 
     const now = Date.now()
     await ctx.db.patch(comment._id, {
@@ -244,10 +242,8 @@ export const remove = mutation({
     if (!comment || comment.projectId !== project._id) {
       return cloudFailure('NOT_FOUND', 'That comment is not in this project.', 'Reload the comment list.')
     }
-    if (comment.authorSubject !== identity.subject) {
-      const authorised = await authoriseProject(ctx, args.projectId, 'comment.resolve')
-      if (!authorised.ok) return authorised
-    }
+    const refusal = refuseUnlessOwnArtifact(reader.value, comment.authorSubject, 'comment.create', 'comment.resolve')
+    if (refusal) return refusal
 
     const replies = await ctx.db
       .query('comments')
