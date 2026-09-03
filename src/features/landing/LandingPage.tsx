@@ -19,7 +19,9 @@ import { setKnownDemoIds, trackLanding } from './analytics'
 import { Hero, type HeroStage } from './Hero'
 import { hrefFor, navigate } from './navigation'
 import { CountUp, PlateAtmosphere } from './plate'
-import { FILM_STAGES, useFilmStage, usePointerField, usePointerTilt, useReveal, useSectionScroll } from './reveal'
+import { FILM_STAGES, useFilmStage, usePointerField, useReveal } from './reveal'
+import { useScrollDriver, type ScrollTrack } from './scroll'
+import { StudField } from './stud-field'
 import { StudPlate } from './StudPlate'
 import { useReducedMotion } from '../explore/motion'
 import './landing.css'
@@ -56,8 +58,8 @@ export function LandingPage() {
   const [paused, setPaused] = useState(false)
   const motionPaused = reduced || paused
   const pointer = usePointerField<HTMLDivElement>(motionPaused)
-  // One scroll position, shared by everything in the hero. See useSectionScroll.
-  const heroScroll = useSectionScroll<HTMLElement>('--bw-hero-t', motionPaused)
+  // One scroll listener for the page; sections opt in by property. See scroll.ts.
+  const track = useScrollDriver(motionPaused)
 
   useEffect(() => {
     trackLanding({ name: 'landing.viewed' })
@@ -74,7 +76,7 @@ export function LandingPage() {
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
       <div id="bw-main">
-        <section className="bw-studio-hero" ref={heroScroll} aria-labelledby="bw-hero-title">
+        <section className="bw-studio-hero" ref={track('--bw-hero-t')} aria-labelledby="bw-hero-title">
           <div className="bw-studio-topline">
             <span>
               <i aria-hidden="true" /> {hero.validation.partCount.toLocaleString()} pieces · {hero.validation.steps}{' '}
@@ -168,6 +170,7 @@ export function LandingPage() {
                 key={spotlight.id}
                 demo={spotlight}
                 initialStage="validated"
+                buildOrder
                 autoPlay={!motionPaused}
                 motionPaused={motionPaused}
                 hideBrief
@@ -210,9 +213,9 @@ export function LandingPage() {
         </section>
 
         <ProofStrip demo={spotlight} />
-        <AssemblyFilm demo={spotlight} />
+        <AssemblyFilm demo={spotlight} paused={motionPaused} track={track} />
         <FeaturedBuilds />
-        <ClosingSection />
+        <ClosingSection track={track} />
       </div>
 
       <Colophon />
@@ -249,14 +252,22 @@ function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
             onFollow={() => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' })}
             key={demo.id}
           >
+            {/*
+              The first tile is above the fold on every viewport and is the
+              largest thing the page paints, so it is the LCP element. It was
+              being fetched `lazy` at `low` priority, which is the deferral the
+              browser applies to images it has been told are off screen. The
+              other three keep it — they are the same size and only one of them
+              can be the measurement.
+            */}
             <img
               src={demo.assets.thumbnail.url}
               alt={`${demo.title}, ${demo.validation.partCount.toLocaleString()} editable parts.`}
               width={720}
               height={450}
-              decoding="async"
-              loading="lazy"
-              fetchPriority="low"
+              decoding={index === 0 ? 'sync' : 'async'}
+              loading={index === 0 ? 'eager' : 'lazy'}
+              fetchPriority={index === 0 ? 'high' : 'low'}
             />
             <span>{demo.category}</span>
             <strong>{demo.title}</strong>
@@ -278,8 +289,8 @@ function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
  * advances alongside it. The DOM scene is deliberately lightweight; the live
  * LDraw envelope above remains the source of actual model geometry.
  */
-function AssemblyFilm({ demo }: { demo: DemoSummary }) {
-  const film = useFilmStage()
+function AssemblyFilm({ demo, paused, track }: { demo: DemoSummary; paused: boolean; track: ScrollTrack }) {
+  const film = useFilmStage(paused)
   const good = demo.validation
   const rough = demo.roughValidation
   const tippingMargin = good.statics.tippingMarginLdu
@@ -332,7 +343,7 @@ function AssemblyFilm({ demo }: { demo: DemoSummary }) {
   const active = chapters.find((chapter) => chapter.stage === film.stage) ?? chapters[0]
 
   return (
-    <section className="bw-assembly-section" aria-labelledby="bw-assembly-title">
+    <section className="bw-assembly-section" ref={track('--bw-film-t')} aria-labelledby="bw-assembly-title">
       <div className="bw-assembly-film bw-film" data-assembly-stage={film.stage}>
         <div className="bw-assembly-visual bw-film-stage" data-stage={film.stage}>
           <div
@@ -345,22 +356,35 @@ function AssemblyFilm({ demo }: { demo: DemoSummary }) {
             <i />
             <i />
             <div className="bw-assembly-grid" aria-hidden="true" />
-            <div className="bw-assembly-sweep" aria-hidden="true" />
+            <div className="bw-assembly-sweep" style={PICK_RECT} aria-hidden="true" />
             <div className="bw-assembly-brickfield" aria-hidden="true">
+              <svg className="bw-assembly-mates" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                {ASSEMBLY_MATES.map((mate) => (
+                  <line
+                    key={mate.id}
+                    x1={mate.x1}
+                    y1={mate.y1}
+                    x2={mate.x2}
+                    y2={mate.y2}
+                    pathLength={1}
+                    style={{ '--bw-phase': mate.phase } as CSSProperties}
+                  />
+                ))}
+              </svg>
               {ASSEMBLY_BRICKS.map((brick) => (
                 <span
                   className={`bw-assembly-brick ${brick.kind}`}
                   key={brick.id}
                   style={
                     {
-                      '--bw-scatter-left': `${brick.scatterLeft}%`,
-                      '--bw-scatter-top': `${brick.scatterTop}%`,
                       '--bw-target-left': `${brick.targetLeft}%`,
                       '--bw-target-top': `${brick.targetTop}%`,
+                      '--bw-dx': brick.scatterX,
+                      '--bw-dy': brick.scatterY,
+                      '--bw-spin': `${brick.spin}deg`,
+                      '--bw-phase': brick.phase,
                       '--bw-brick-width': `${brick.width}px`,
                       '--bw-brick-height': `${brick.height}px`,
-                      '--bw-brick-rotation': `${brick.rotation}deg`,
-                      '--bw-brick-delay': `${brick.delay}ms`,
                       '--bw-brick-lift': `${brick.lift}px`,
                     } as CSSProperties
                   }
@@ -439,54 +463,107 @@ function AssemblyFilm({ demo }: { demo: DemoSummary }) {
   )
 }
 
+const ROWS = 8
+const COLUMNS = 12
+
 interface AssemblyBrick {
   id: string
   kind: 'building' | 'path' | 'site'
-  scatterLeft: number
-  scatterTop: number
+  row: number
+  column: number
+  /** Where the brick ends up, as a percentage of the field. */
   targetLeft: number
   targetTop: number
+  /** How far from there it starts, in the same percentage points. */
+  scatterX: number
+  scatterY: number
+  spin: number
+  /** Where in the scroll this brick begins its own approach, 0 to 0.5. */
+  phase: number
   width: number
   height: number
-  rotation: number
-  delay: number
   lift: number
 }
 
 /** Deterministic, campus-shaped envelope masses — never random between paints. */
-const ASSEMBLY_BRICKS: AssemblyBrick[] = Array.from({ length: 8 * 12 }, (_, index) => {
-  const row = Math.floor(index / 12)
-  const column = index % 12
+const ASSEMBLY_BRICKS: AssemblyBrick[] = Array.from({ length: ROWS * COLUMNS }, (_, index) => {
+  const row = Math.floor(index / COLUMNS)
+  const column = index % COLUMNS
   const edge = row < 2 || row > 5 || column < 2 || column > 9
   const cross = (column === 5 || column === 6 || row === 3 || row === 4) && (row + column) % 2 === 0
   const kind: AssemblyBrick['kind'] = edge ? 'building' : cross ? 'path' : 'site'
+  const targetLeft = 8 + column * 6.85 + row * 0.75
+  const targetTop = 9 + row * 11.4 - column * 0.12
   return {
     id: `${row}-${column}`,
     kind,
-    scatterLeft: ((index * 37) % 126) - 13,
-    scatterTop: ((index * 53) % 132) - 16,
-    targetLeft: 8 + column * 6.85 + row * 0.75,
-    targetTop: 13 + row * 9.15 - column * 0.12,
+    row,
+    column,
+    targetLeft,
+    targetTop,
+    scatterX: ((index * 37) % 126) - 13 - targetLeft,
+    scatterY: ((index * 53) % 132) - 16 - targetTop,
+    spin: ((index * 29) % 130) - 65,
+    // A wave across the site rather than 96 bricks landing at once.
+    phase: ((row + column) / (ROWS + COLUMNS - 2)) * 0.5,
     width: kind === 'building' ? 46 + ((index * 11) % 3) * 10 : kind === 'path' ? 38 : 32,
     height: kind === 'building' ? 17 + ((index * 7) % 3) * 4 : 12,
-    rotation: ((index * 29) % 130) - 65,
-    delay: (index % 12) * 18 + row * 12,
     lift: kind === 'building' ? 5 + ((index * 17) % 4) * 6 : 0,
   }
+})
+
+/** The brick the last chapter selects, and the rect that closes onto it. */
+const PICKED = ASSEMBLY_BRICKS[3 * COLUMNS + 8]
+const PICK_RECT = {
+  '--bw-sel-l': PICKED.targetLeft - 8,
+  '--bw-sel-t': PICKED.targetTop - 7,
+  '--bw-sel-r': 100 - (PICKED.targetLeft + 8),
+  '--bw-sel-b': 100 - (PICKED.targetTop + 7),
+} as CSSProperties
+
+/**
+ * The connectors chapter two claims exist. One line per adjacent pair along the
+ * cross axes of the site, drawn between the two bricks' seated centres, struck in
+ * as the scrub passes the mating band.
+ */
+const ASSEMBLY_MATES = ASSEMBLY_BRICKS.flatMap((brick) => {
+  const at = (row: number, column: number) =>
+    row < ROWS && column < COLUMNS ? ASSEMBLY_BRICKS[row * COLUMNS + column] : undefined
+  const right = at(brick.row, brick.column + 1)
+  const down = at(brick.row + 1, brick.column)
+  const pairs = []
+  // Every other pair, so the mesh reads as structure rather than as graph paper.
+  if (right && (brick.row + brick.column) % 2 === 0) pairs.push(right)
+  if (down && (brick.row + brick.column) % 3 === 0) pairs.push(down)
+  return pairs.map((mate) => ({
+    id: `${brick.id}:${mate.id}`,
+    x1: brick.targetLeft,
+    y1: brick.targetTop,
+    x2: mate.targetLeft,
+    y2: mate.targetTop,
+    phase: Math.min(brick.phase, mate.phase) * 0.8,
+  }))
 })
 
 function ProofStrip({ demo }: { demo: DemoSummary }) {
   const validation = demo.validation
   return (
     <section className="bw-proof-strip" aria-label="Verified build measurements" data-testid="hero-facts">
-      <Proof label="Parts" value={<CountUp value={validation.partCount} fromZero />} />
-      <Proof label="Mated connections" value={<CountUp value={validation.connectionCount} fromZero />} />
-      <Proof
-        label="Stability"
-        value={validation.statics.stable ? 'Standing' : 'Review'}
-        good={validation.statics.stable}
+      <div className="bw-proof-figures">
+        <Proof label="Parts" value={<CountUp value={validation.partCount} fromZero />} />
+        <Proof label="Mated connections" value={<CountUp value={validation.connectionCount} fromZero />} />
+        <Proof
+          label="Stability"
+          value={validation.statics.stable ? 'Standing' : 'Review'}
+          good={validation.statics.stable}
+        />
+        <Proof label="Measured mass" value={validation.statics.massLabel} />
+      </div>
+      <StudField
+        count={validation.partCount}
+        label={`A field of ${validation.partCount.toLocaleString()} studs, one for every part in ${demo.title}.`}
       />
-      <Proof label="Measured mass" value={validation.statics.massLabel} />
+      <p className="bw-proof-caption">One stud for every part in {demo.title}. Not a sample — all of them.</p>
     </section>
   )
 }
@@ -534,13 +611,12 @@ function FeaturedBuilds() {
 
 function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
   const reveal = useReveal<HTMLAnchorElement>(index * 70)
-  usePointerTilt(reveal.ref)
   const target = { kind: 'explore' as const, demoId: demo.id }
   return (
     <LandingLink
       ref={reveal.ref}
       {...reveal.props}
-      className={`bw-demo-card bw-lit ${reveal.props.className}`}
+      className={`bw-demo-card ${reveal.props.className}`}
       data-flagship={demo.hero ? 'true' : 'false'}
       target={target}
       onFollow={() => trackLanding({ name: 'demo.viewed', demoId: demo.id, surface: 'landing' })}
@@ -574,13 +650,17 @@ function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
   )
 }
 
-function ClosingSection() {
+function ClosingSection({ track }: { track: ScrollTrack }) {
   return (
-    <section className="bw-section bw-section-close bw-simple-close" aria-labelledby="bw-close-title">
+    <section
+      className="bw-section bw-section-close bw-simple-close"
+      ref={track('--bw-close-t')}
+      aria-labelledby="bw-close-title"
+    >
       <div className="bw-shell bw-close">
         <span className="bw-studio-label">START FROM SOMETHING ALREADY WORTH ORBITING.</span>
         <h2 className="bw-display x1 bw-close-mark" id="bw-close-title">
-          Take a giant.
+          <span className="bw-close-line">Take a giant.</span>
           <br />
           <em>Make it yours.</em>
         </h2>

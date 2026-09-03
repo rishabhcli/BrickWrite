@@ -48,54 +48,6 @@ export function useReveal<T extends HTMLElement>(delayMs = 0) {
   }
 }
 
-/**
- * Scroll progress for one section: 0 while it fills the frame, 1 once it has
- * left it.
- *
- * Apple's pages read as continuous because one scroll drives everything on
- * screen, rather than each element running a timer of its own. This is the
- * cheap honest version: a single rAF-coalesced listener writing a single custom
- * property, which CSS then spends however it likes. Nothing here animates on a
- * clock, so there is nothing to pause — with reduced motion or the page-wide
- * toggle the property is pinned at 0 and the section simply sits still.
- */
-export function useSectionScroll<T extends HTMLElement>(property: string, paused = false) {
-  const ref = useRef<T | null>(null)
-  const reduced = useReducedMotion()
-
-  useEffect(() => {
-    const element = ref.current
-    if (!element) return
-    if (reduced || paused) {
-      element.style.setProperty(property, '0')
-      return
-    }
-    const scroller = document.getElementById('pf-main')
-    const target: HTMLElement | Window = scroller ?? window
-    let frame = 0
-    const paint = () => {
-      frame = 0
-      const box = element.getBoundingClientRect()
-      const top = scroller?.getBoundingClientRect().top ?? 0
-      const travelled = Math.max(0, top - box.top)
-      element.style.setProperty(property, Math.min(1, travelled / Math.max(1, box.height * 0.82)).toFixed(4))
-    }
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(paint)
-    }
-    target.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll, { passive: true })
-    paint()
-    return () => {
-      cancelAnimationFrame(frame)
-      target.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
-    }
-  }, [property, reduced, paused])
-
-  return ref
-}
-
 export const FILM_STAGES = ['brief', 'candidate', 'refinement', 'validated'] as const
 export type FilmStage = (typeof FILM_STAGES)[number]
 
@@ -151,10 +103,16 @@ function typingIn(target: EventTarget | null) {
  * The visitor's scroll is the timeline. Tabs on the stage still work because
  * the parent can call `setStage` directly; this hook only writes when a
  * chapter actually crosses the reading line.
+ *
+ * Which chapter is being read is information, not decoration, so this keeps
+ * working with motion paused — a reader who turned animation off should still
+ * not be shown "an idea arrives in pieces" beside a finished building. What
+ * `paused` changes is how the reel gets from one chapter to the next: the
+ * stylesheet zeroes the durations, and `--bw-film-t` settles at 0 so the stage
+ * floor alone decides the pose.
  */
-export function useFilmStage() {
+export function useFilmStage(paused = false) {
   const [stage, setStage] = useState<FilmStage>('brief')
-  const [progress, setProgress] = useState(0)
   const userLock = useRef(false)
   const stageRef = useRef<FilmStage>('brief')
   const jumpRef = useRef<(next: FilmStage, record: boolean) => void>(() => undefined)
@@ -165,7 +123,7 @@ export function useFilmStage() {
     setStage(next)
     if (record) writeBeat(next)
     document.querySelector<HTMLElement>(`[data-film-stage="${next}"]`)?.scrollIntoView?.({
-      behavior: reduced ? 'auto' : 'smooth',
+      behavior: reduced || paused ? 'auto' : 'smooth',
       block: window.matchMedia?.('(max-width: 899px)').matches ? 'start' : 'center',
       inline: 'nearest',
     })
@@ -173,8 +131,6 @@ export function useFilmStage() {
 
   useEffect(() => {
     const chapters = [...document.querySelectorAll<HTMLElement>('[data-film-stage]')]
-    const film = document.querySelector<HTMLElement>('.bw-film')
-    const landing = document.querySelector<HTMLElement>('.bw-landing')
     if (!chapters.length || typeof IntersectionObserver === 'undefined') return
     const scroller = document.getElementById('pf-main')
     const observer = new IntersectionObserver(
@@ -196,43 +152,17 @@ export function useFilmStage() {
     )
     for (const chapter of chapters) observer.observe(chapter)
 
-    let frame = 0
-    let last = -1
-    const paint = (t: number) => {
-      const packed = t.toFixed(4)
-      const accent = filmAccent(t)
-      film?.style.setProperty('--bw-film-t', packed)
-      film?.style.setProperty('--bw-film-accent', accent)
-      landing?.style.setProperty('--bw-film-t', packed)
-      landing?.style.setProperty('--bw-film-accent', accent)
-    }
-    const updateProgress = () => {
-      frame = 0
-      if (!film) return
-      const rootBox = scroller?.getBoundingClientRect()
-      const filmBox = film.getBoundingClientRect()
-      const top = rootBox ? rootBox.top : 0
-      const view = rootBox ? rootBox.height : window.innerHeight
-      const scrolled = top - filmBox.top
-      const range = Math.max(1, filmBox.height - view * 0.42)
-      const t = Math.min(1, Math.max(0, scrolled / range))
-      paint(t)
-      if (Math.abs(t - last) >= 0.003) {
-        last = t
-        setProgress(t)
-      }
-    }
-    const onScroll = () => {
+    // The chapter observer is suppressed while a tab click is scrolling the page;
+    // any real scroll releases it. `--bw-film-t` itself is written by the page's
+    // one scroll driver (scroll.ts), not from here.
+    const release = () => {
       userLock.current = false
-      if (!frame) frame = requestAnimationFrame(updateProgress)
     }
     const target: HTMLElement | Window = scroller ?? window
-    target.addEventListener('scroll', onScroll, { passive: true })
-    updateProgress()
+    target.addEventListener('scroll', release, { passive: true })
     return () => {
       observer.disconnect()
-      target.removeEventListener('scroll', onScroll)
-      cancelAnimationFrame(frame)
+      target.removeEventListener('scroll', release)
     }
   }, [])
 
@@ -269,7 +199,6 @@ export function useFilmStage() {
 
   return {
     stage,
-    progress,
     setStage: (next: FilmStage) => jumpRef.current(next, true),
   }
 }
@@ -316,7 +245,16 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
       root.style.setProperty('--bw-ptr-y', `${(currentY + offset).toFixed(1)}px`)
     }
 
-    const magnets = () => [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
+    let magnets: HTMLElement[] = [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
+    const recount = () => {
+      magnets = [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
+    }
+    const park = () => {
+      for (const magnet of magnets) {
+        magnet.style.setProperty('--bw-mag-x', '0px')
+        magnet.style.setProperty('--bw-mag-y', '0px')
+      }
+    }
 
     const tick = () => {
       running = false
@@ -324,7 +262,7 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
       currentY += (targetY - currentY) * 0.14
       root.style.setProperty('--bw-ptr-x', `${currentX.toFixed(1)}px`)
       paintScrollOffset()
-      for (const magnet of magnets()) {
+      for (const magnet of magnets) {
         const box = magnet.getBoundingClientRect()
         const cx = box.left + box.width / 2
         const cy = box.top + box.height / 2
@@ -336,8 +274,9 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
           magnet.style.setProperty('--bw-mag-y', '0px')
           continue
         }
-        magnet.style.setProperty('--bw-mag-x', `${((dx / box.width) * 8).toFixed(2)}px`)
-        magnet.style.setProperty('--bw-mag-y', `${((dy / box.height) * 6).toFixed(2)}px`)
+        const step = (value: number) => `${Math.round(value / 2) * 2}px`
+        magnet.style.setProperty('--bw-mag-x', step((dx / Math.max(1, box.width)) * 8))
+        magnet.style.setProperty('--bw-mag-y', step((dy / Math.max(1, box.height)) * 6))
       }
       if (Math.abs(targetX - currentX) > 0.4 || Math.abs(targetY - currentY) > 0.4) {
         running = true
@@ -361,57 +300,22 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
     const onLeave = () => {
       armed = false
       setLive(false)
-      for (const magnet of magnets()) {
-        magnet.style.setProperty('--bw-mag-x', '0px')
-        magnet.style.setProperty('--bw-mag-y', '0px')
-      }
+      park()
     }
 
     paintScrollOffset()
     window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('resize', recount, { passive: true })
     scroller?.addEventListener('scroll', paintScrollOffset, { passive: true })
     document.documentElement.addEventListener('mouseleave', onLeave)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('resize', recount)
       scroller?.removeEventListener('scroll', paintScrollOffset)
       document.documentElement.removeEventListener('mouseleave', onLeave)
     }
   }, [reduced, paused])
 
   return { ref, live }
-}
-
-/**
- * Apple / Linear card tilt: the tile leans a few degrees toward the pointer
- * and the thumbnail drifts with it. Reduced motion and coarse pointers skip it.
- */
-export function usePointerTilt(ref: { current: HTMLElement | null }, paused = false) {
-  const reduced = useReducedMotion()
-
-  useEffect(() => {
-    const element = ref.current
-    if (!element || reduced || paused || typeof window === 'undefined' || !window.matchMedia) return
-    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
-
-    const onMove = (event: PointerEvent) => {
-      const box = element.getBoundingClientRect()
-      const x = (event.clientX - box.left) / Math.max(1, box.width)
-      const y = (event.clientY - box.top) / Math.max(1, box.height)
-      element.style.setProperty('--bw-tilt-x', `${((x - 0.5) * 9).toFixed(2)}deg`)
-      element.style.setProperty('--bw-tilt-y', `${((0.5 - y) * 7).toFixed(2)}deg`)
-      element.style.setProperty('--bw-spot-x', `${(x * 100).toFixed(1)}%`)
-      element.style.setProperty('--bw-spot-y', `${(y * 100).toFixed(1)}%`)
-    }
-    const onLeave = () => {
-      element.style.setProperty('--bw-tilt-x', '0deg')
-      element.style.setProperty('--bw-tilt-y', '0deg')
-    }
-    element.addEventListener('pointermove', onMove)
-    element.addEventListener('pointerleave', onLeave)
-    return () => {
-      element.removeEventListener('pointermove', onMove)
-      element.removeEventListener('pointerleave', onLeave)
-    }
-  }, [reduced, ref, paused])
 }

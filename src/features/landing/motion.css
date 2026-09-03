@@ -1,0 +1,138 @@
+/**
+ * One motion system for the public surfaces, measured in the product's own units.
+ *
+ * A brick never fades and never drifts diagonally: it travels down one axis, meets
+ * the studs, and seats with a short damped click. So every arrival on these pages
+ * travels vertically, downward, onto something — and it travels a real brick
+ * dimension rather than a round number of pixels. The stud field is drawn at a
+ * 26px pitch and one LDraw stud is 20 LDU, which fixes the scale at 1.3px/LDU and
+ * makes `--brick` (24 LDU) land at 31.2px — close enough to the 30px that was
+ * guessed here before that nothing has to move, and derived rather than picked.
+ *
+ * `--ease-seat` is a real underdamped second-order step response sampled to
+ * `linear()`: zeta 0.667 for a 6% overshoot, natural frequency set so the tail is
+ * inside 0.5% by the end of the duration. The overshoot is what reads as weight;
+ * the clean landing is what keeps it from reading as a bounce.
+ */
+
+/* Registered so they can interpolate. Everything below composes its transform from
+ * custom properties rather than animating `transform` directly, because parallax,
+ * entrance and hover all want the same element and only one animation can own a
+ * property — see the note above `.bw-constellation-card` in studio.css. */
+@property --seat-y {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --hover-y {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --bw-hero-t {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+@property --bw-film-t {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+/* Settles at 1, not 0: without the driver the close headline must be readable,
+ * and this range's job is to withhold it only while the section is still below. */
+@property --bw-close-t {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+@property --bw-mag-x {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --bw-mag-y {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.bw-surface {
+  /* Distance, in LDraw units at this page's own stud pitch. */
+  --ldu: 1.3px;
+  --stud: calc(var(--ldu) * 20); /* 26px — the grid pitch itself */
+  --brick: calc(var(--ldu) * 24); /* 31.2px — something arrives */
+  --plate: calc(var(--ldu) * 8); /* 10.4px — a chapter shifts */
+  --lift: calc(var(--ldu) * 4); /* 5.2px — a hover */
+  --tap: var(--ldu); /* 1.3px — a press */
+
+  /* Three curves. */
+  --ease-seat: linear(
+    0,
+    0.026 3%,
+    0.12 7%,
+    0.235 10.5%,
+    0.599 20.5%,
+    0.793 27%,
+    0.921 33%,
+    1.001 39%,
+    1.046 45.5%,
+    1.06 53%,
+    1.008 83%,
+    1
+  );
+  --ease-press: cubic-bezier(0.3, 0, 0, 1);
+  --ease-glide: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Four durations, named for what the motion is doing. */
+  --t-press: 90ms; /* a control acknowledges the pointer */
+  --t-state: 200ms; /* something changes what it is */
+  --t-seat: 520ms; /* something arrives */
+  --t-turn: 900ms; /* a chapter turns */
+}
+
+/* The arrival. A box comes down onto its place and its top edge catches the light
+ * as it seats — the specular line off a stud row, which is the one thing on these
+ * pages that says "brick" without drawing one. */
+@keyframes bw-seat {
+  from {
+    --seat-y: calc(var(--seat-from, var(--brick)) * -1);
+    opacity: 0;
+  }
+  /* Opaque almost immediately: the travel is the motion, and a part that fades
+     for half a second is a slide, not a placement. It also keeps the hero's
+     largest image an eligible LCP candidate, which a transparent one is not. */
+  10% {
+    opacity: 1;
+  }
+  to {
+    --seat-y: 0px;
+    opacity: 1;
+  }
+}
+@keyframes bw-seat-flash {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+  70% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+/* Type does not travel — it clears. The line's own box uncovers it from the top
+ * down, the way a brick's face clears the stud row it is being lowered past. */
+@keyframes bw-clear {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 -0.18em 0);
+  }
+}

@@ -3,6 +3,7 @@ import { loadPreview, type DemoSummary } from '../../demos/summary'
 import type { DemoPreview } from '../../demos'
 import { useOnScreen, useReducedMotion } from '../explore/motion'
 import { trackLanding } from './analytics'
+import { BuildOrderTrack, useBuildOrder } from './build-order'
 import { StageHud } from './plate'
 
 const EnvelopeView = lazy(() => import('../explore/EnvelopeView'))
@@ -52,6 +53,11 @@ export interface HeroProps {
    * the explode, and the refinement sweep instead of the dwell timer.
    */
   scrub?: number
+  /**
+   * Show the verified build order under the stage and let the model be built
+   * course by course. Landing only: the explorer has its own step controls.
+   */
+  buildOrder?: boolean
 }
 
 export function Hero({
@@ -63,6 +69,7 @@ export function Hero({
   motionPaused = false,
   hideBrief = false,
   scrub,
+  buildOrder = false,
 }: HeroProps) {
   const prefersReduced = useReducedMotion()
   const reduced = prefersReduced || motionPaused
@@ -125,6 +132,12 @@ export function Hero({
     })
     return () => controller.abort()
   }, [visible, previews, demo])
+
+  const order = useBuildOrder(
+    buildOrder ? previews?.published?.steps : undefined,
+    Boolean(inView && previews?.published),
+    reduced,
+  )
 
   const commitStage = (next: HeroStage | ((current: HeroStage) => HeroStage)) => {
     const resolved = typeof next === 'function' ? next(stage) : next
@@ -253,6 +266,8 @@ export function Hero({
               }}
               wave={stageWave}
               explode={explode}
+              stepLimit={buildOrder && order.step > 0 ? order.step : undefined}
+              highlightStep={buildOrder && order.inspecting ? order.step : undefined}
               label={describeStage(demo, stage)}
             />
           </Suspense>
@@ -287,6 +302,8 @@ export function Hero({
         ) : null}
         <span>Envelope view · catalog {demo.catalogVersion}</span>
       </p>
+
+      {buildOrder ? <BuildOrderTrack order={order} /> : null}
 
       <div className="bw-stage-track" role="tablist" aria-label="Hero stages">
         {STAGES.map((entry, index) => (

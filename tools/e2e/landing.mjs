@@ -454,6 +454,53 @@ try {
   )
   check(motion.stage === motionAfter.stage, 'the hero does not auto-advance under prefers-reduced-motion')
   check(motionAfter.stages === 4, `all four hero stages are still selectable (saw ${motionAfter.stages})`)
+  /*
+   * The preference, measured rather than assumed.
+   *
+   * Everything above this asserts on markup, which is exactly what a landing page
+   * that honours the setting in its DOM and ignores it in its stylesheet would
+   * also pass. These read the settled computed values instead: no transition and
+   * no animation still owing time, the entrance choreography landed rather than
+   * held at its opening frame, and the scroll-driven reel pinned at assembled.
+   * The editor's smoke test has had this check for a while; the landing page has
+   * been shipping its reduce block unverified.
+   */
+  const settled = await reducedPage.evaluate(() => {
+    const seconds = (value) => value.split(',').reduce((worst, part) => Math.max(worst, Number.parseFloat(part) || 0), 0)
+    const of = (selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return null
+      const style = getComputedStyle(element)
+      return {
+        transition: seconds(style.transitionDuration),
+        animation: seconds(style.animationDuration),
+        opacity: Number.parseFloat(style.opacity),
+      }
+    }
+    return {
+      brick: of('.bw-assembly-brick'),
+      card: of('.bw-constellation-card'),
+      copy: of('.bw-studio-description'),
+      unsettled: document.getAnimations().filter((animation) => animation.playState === 'running').length,
+      looping: document.getAnimations().filter((animation) => {
+        try {
+          return animation.effect?.getTiming().iterations === Infinity
+        } catch {
+          return false
+        }
+      }).length,
+    }
+  })
+  const still = (name, seen) =>
+    check(
+      seen !== null && seen.transition <= 0.01 && seen.animation <= 0.01 && seen.opacity === 1,
+      `${name} is settled under prefers-reduced-motion (${JSON.stringify(seen)})`,
+    )
+  still('the assembly brick', settled.brick)
+  still('the hero card', settled.card)
+  still('the hero copy', settled.copy)
+  check(settled.unsettled === 0, `nothing is still animating (${settled.unsettled} running)`)
+  check(settled.looping === 0, `nothing loops for ever (${settled.looping} infinite animations)`)
   await reducedPage.screenshot({ path: path.join(ARTIFACTS, 'landing-reduced-motion.png'), fullPage: false })
   await reduced.close()
   pass('reduced-motion path')

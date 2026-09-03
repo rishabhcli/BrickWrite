@@ -313,6 +313,7 @@ export function StudPlate({ paused }: { paused: boolean }) {
   }
 
   const ghostHeight = cursor ? (heights.get(columnKey(cursor.x, cursor.z)) ?? 0) : 0
+  const tallest = heights.size ? Math.max(...heights.values()) : 0
   const sorted = [...bricks].sort(depth)
 
   return (
@@ -411,14 +412,23 @@ export function StudPlate({ paused }: { paused: boolean }) {
           </g>
         </svg>
 
-        <p className="bw-plate-prompt" data-lift={cursor ? 'true' : 'false'} aria-hidden="true">
-          {cursor ? `Column ${cursor.x + 1}, ${cursor.z + 1} · ${ghostHeight + 1} high` : 'Click the plate'}
+        <p
+          className="bw-plate-prompt"
+          data-lift={cursor ? 'true' : 'false'}
+          data-state={cursor ? 'aiming' : taken ? 'yours' : 'auto'}
+          aria-hidden="true"
+        >
+          {cursor
+            ? `Column ${cursor.x + 1}, ${cursor.z + 1} · ${ghostHeight + 1} high`
+            : taken
+              ? 'Your plate — click any column'
+              : 'Building itself · move onto the plate to take over'}
         </p>
       </div>
 
       <div className="bw-plate-readout">
         <span>
-          <b>{bricks.length}</b> bricks down
+          <b>{bricks.length}</b> bricks down · tallest <b>{tallest}</b> high
           {mine > 0 ? (
             <>
               {' · '}

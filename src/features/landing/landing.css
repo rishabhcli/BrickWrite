@@ -75,7 +75,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   gap: 22px;
   padding: clamp(36px, 6vh, 72px) 0;
   opacity: 0.4;
-  transition: opacity 0.5s var(--bw-spring);
+  transition: opacity var(--t-seat) var(--ease-glide);
 }
 .bw-film-chapter[data-active='true'] {
   opacity: 1;
@@ -116,26 +116,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   display: inline-block;
   padding-bottom: 0.04em;
 }
-.bw-landing .bw-display em::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0.02em;
-  height: 0.09em;
-  border-radius: var(--r-chip);
-  background: linear-gradient(90deg, var(--bw-orange), var(--bw-cyan));
-  box-shadow: 0 0 16px rgba(245, 163, 63, 0.45);
-  transform: scaleX(0);
-  transform-origin: left;
-  animation: bw-mark-draw 1s var(--bw-spring) 0.55s forwards;
-}
-@keyframes bw-mark-draw {
-  to {
-    transform: scaleX(1);
-  }
-}
-
 .bw-lede-short {
   max-width: 28ch;
   font-size: clamp(17px, 1.6vw, 22px);
@@ -155,11 +135,11 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   --bw-mag-y: 0px;
   transform: translate(var(--bw-mag-x), var(--bw-mag-y));
   transition:
-    transform 0.16s linear,
-    border-color 0.22s var(--bw-spring),
-    background 0.22s var(--bw-spring),
-    box-shadow 0.22s var(--bw-spring),
-    color 0.22s ease;
+    transform var(--t-press) linear,
+    border-color var(--t-state) var(--ease-glide),
+    background var(--t-state) var(--ease-glide),
+    box-shadow var(--t-state) var(--ease-glide),
+    color var(--t-state) ease;
 }
 .bw-landing .bw-magnet:hover:not(:disabled) {
   transform: translate(var(--bw-mag-x), calc(var(--bw-mag-y) - 2px));
@@ -188,7 +168,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   pointer-events: none;
   background: linear-gradient(105deg, transparent 36%, rgba(255, 255, 255, 0.2) 50%, transparent 64%);
   transform: translateX(-140%);
-  transition: transform 0.7s var(--bw-spring);
+  transition: transform var(--t-seat) var(--ease-glide);
 }
 .bw-landing .bw-button.primary:hover:not(:disabled)::after {
   transform: translateX(140%);
@@ -302,7 +282,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     background: var(--bw-film-accent, var(--bw-orange));
     box-shadow: 0 0 12px var(--bw-film-accent, var(--bw-orange));
     transform: translateX(calc(var(--bw-tab, 0) * 100%));
-    transition: transform 0.45s var(--bw-spring);
+    transition: transform var(--t-seat) var(--ease-glide);
     pointer-events: none;
     z-index: 2;
   }
@@ -321,8 +301,8 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   font: inherit;
   position: relative;
   transition:
-    background 0.2s var(--bw-spring),
-    color 0.2s ease;
+    background var(--t-state) var(--ease-glide),
+    color var(--t-state) ease;
 }
 .bw-stage-step:hover {
   background: rgba(20, 28, 32, 0.96);
@@ -368,31 +348,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   }
 }
 
-/* Cursor-lit cards (Linear / Raycast border lamp, clipped to the tile) ------ */
-.bw-lit {
-  isolation: isolate;
-}
-.bw-lit::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(
-    440px circle at var(--bw-ptr-x) var(--bw-ptr-y),
-    rgba(131, 231, 238, 0.2),
-    transparent 42%
-  );
-  background-attachment: fixed;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  mix-blend-mode: screen;
-}
-.bw-landing[data-pointer='live'] .bw-lit::before {
-  opacity: 1;
-}
-
 /* Demo grid ---------------------------------------------------------------- */
 .bw-demo-grid {
   display: grid;
@@ -400,9 +355,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   gap: clamp(16px, 2vw, 28px);
 }
 .bw-demo-card {
-  --bw-tilt-x: 0deg;
-  --bw-tilt-y: 0deg;
-  --bw-lift: 0px;
   display: flex;
   flex-direction: column;
   text-decoration: none;
@@ -412,17 +364,17 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   border-radius: var(--r-control);
   overflow: hidden;
   position: relative;
-  transform: perspective(920px) rotateX(var(--bw-tilt-y)) rotateY(var(--bw-tilt-x)) translate3d(0, var(--bw-lift), 0);
-  transform-style: preserve-3d;
   transition:
-    transform 0.16s linear,
-    border-color 0.2s ease,
-    box-shadow 0.28s var(--bw-spring);
+    border-color var(--t-state) ease,
+    box-shadow var(--t-state) var(--ease-press);
 }
-.bw-demo-card:hover {
-  --bw-lift: -7px;
-  border-color: rgba(245, 163, 63, 0.45);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+/* The tile is what lifts, not the whole card: the caption stays on its baseline,
+   and `.bw-reveal[data-shown]` already owns this element's `transform` — which is
+   why the tilt this replaces had been silently dead since it was written. */
+.bw-demo-card:hover,
+.bw-demo-card:focus-visible {
+  border-color: color-mix(in srgb, var(--bw-orange) 55%, transparent);
+  box-shadow: var(--lift) var(--lift) 0 -1px rgba(0, 0, 0, 0.42);
 }
 .bw-demo-card figure {
   margin: 0;
@@ -436,7 +388,7 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   height: auto;
   aspect-ratio: 720 / 450;
   object-fit: cover;
-  transition: transform 0.5s var(--bw-spring);
+  transition: transform var(--t-turn) var(--ease-glide);
 }
 .bw-demo-card:hover img {
   transform: scale(1.04);
@@ -529,24 +481,27 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 .bw-close .bw-display {
   max-width: 14ch;
 }
+/*
+ * The close used to sit at 28% ink behind a near-white 1.2px stroke and invert to
+ * `--bw-ink` on hover: 2.45:1 at rest and 2.24:1 hovered, on an orange that a
+ * solid `#232c20` clears at 5.37:1. No partial ink can pass on this surface —
+ * 80% still only reaches 3.91 — so the headline is solid the whole time and the
+ * motion is the page's own clear instead, driven by how far the section is in.
+ * A clipped glyph is either drawn or not; there is no half-contrast state.
+ */
 .bw-close-mark {
   font-size: clamp(52px, 10vw, 132px) !important;
-  color: color-mix(in srgb, var(--bw-ink) 28%, transparent);
-  -webkit-text-stroke: 1.2px #f0f5f6;
-  paint-order: stroke fill;
-  transition:
-    color 0.45s var(--bw-spring),
-    -webkit-text-stroke-color 0.45s ease;
 }
-.bw-section-close:hover .bw-close-mark {
-  color: var(--bw-ink);
-  -webkit-text-stroke-color: transparent;
+.bw-close-line,
+.bw-close-mark em {
+  display: inline-block;
+  clip-path: inset(0 -0.06em calc((1 - var(--bw-line-t, 1)) * 100% - 0.14em) -0.06em);
 }
-@media (hover: none) {
-  .bw-close-mark {
-    color: var(--bw-ink);
-    -webkit-text-stroke: 0;
-  }
+.bw-close-line {
+  --bw-line-t: clamp(0, var(--bw-close-t, 1) / 0.7, 1);
+}
+.bw-close-mark em {
+  --bw-line-t: clamp(0, (var(--bw-close-t, 1) - 0.22) / 0.7, 1);
 }
 .bw-close .bw-hero-actions {
   justify-content: center;
@@ -566,34 +521,13 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   line-height: 1.65;
 }
 
-@supports ((animation-timeline: view()) and (animation-range: entry)) {
-}
-
-@keyframes bw-film-in {
-  from {
-    opacity: 0.35;
-    transform: translateY(28px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .bw-film-chapter {
     opacity: 1;
   }
-  .bw-landing .bw-display em::after {
-    transform: scaleX(1);
-  }
   .bw-landing[data-pointer='live'],
   .bw-landing[data-pointer='live'] * {
     cursor: auto !important;
-  }
-  .bw-close-mark {
-    color: var(--bw-ink);
-    -webkit-text-stroke: 0;
   }
   .bw-landing .bw-button.primary::after {
     content: none;
@@ -646,20 +580,22 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 .bw-proof-strip {
   width: min(var(--bw-simple-max), calc(100% - (2 * var(--bw-gutter))));
   margin: 0 auto;
+  border-block: 1px solid var(--bw-line);
+  background: rgba(11, 16, 18, 0.78);
+}
+.bw-proof-figures {
   display: grid;
   /* Tracks the number of measurements rather than a fixed six, so dropping one
      re-flows instead of leaving a hole at the end of the row. */
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   grid-auto-flow: column;
-  border-block: 1px solid var(--bw-line);
-  background: rgba(11, 16, 18, 0.78);
 }
-.bw-proof-strip > div {
+.bw-proof-figures > div {
   min-width: 0;
   padding: 22px 24px;
   border-right: 1px solid var(--bw-line);
 }
-.bw-proof-strip > div:last-child {
+.bw-proof-figures > div:last-child {
   border-right: 0;
 }
 .bw-proof-strip span {
@@ -846,17 +782,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     flex-direction: column;
   }
 }
-@keyframes bw-fragment-drift {
-  0% {
-    translate: 0 -12px;
-    rotate: -8deg;
-  }
-  100% {
-    translate: 18px var(--bw-fragment-travel);
-    rotate: 14deg;
-  }
-}
-
 .bw-assembly-section {
   position: relative;
   margin-top: clamp(72px, 9vw, 150px);
@@ -914,15 +839,8 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   z-index: 1;
   pointer-events: none;
   background: linear-gradient(110deg, transparent 26%, rgba(255, 255, 255, 0.025) 48%, transparent 67%);
-  animation: bw-assembly-sheen 8s ease-in-out infinite alternate;
-}
-@keyframes bw-assembly-sheen {
-  from {
-    translate: -9% 0;
-  }
-  to {
-    translate: 9% 0;
-  }
+  /* Follows the scrub rather than sweeping for ever on an 8s loop. */
+  translate: calc(-9% + 18% * var(--bw-assembly-t, 0)) 0;
 }
 .bw-assembly-grid {
   position: absolute;
@@ -938,32 +856,57 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     32px 32px,
     16px 16px;
   mask-image: radial-gradient(ellipse, #000 30%, transparent 76%);
-  transition:
-    opacity 0.9s ease,
-    transform 1.1s var(--bw-spring);
-}
-.bw-assembly-film[data-assembly-stage='brief'] .bw-assembly-grid {
-  opacity: 0.03;
-  transform: perspective(800px) rotateX(72deg) rotateZ(-42deg) scale(1.25);
-}
-.bw-assembly-film[data-assembly-stage='candidate'] .bw-assembly-grid {
-  opacity: 0.12;
-}
-.bw-assembly-film[data-assembly-stage='refinement'] .bw-assembly-grid,
-.bw-assembly-film[data-assembly-stage='validated'] .bw-assembly-grid {
-  opacity: 0.27;
+  /* The ground resolves with the site standing on it. */
+  opacity: calc(0.03 + 0.24 * var(--bw-assembly-t, 0));
+  transform: perspective(800px) rotateX(calc(72deg - 13deg * var(--bw-assembly-t, 0)))
+    rotateZ(calc(-42deg + 11deg * var(--bw-assembly-t, 0))) scale(calc(1.25 - 0.35 * var(--bw-assembly-t, 0)));
 }
 
+/*
+ * The reel is one scrub, not four snaps.
+ *
+ * `--bw-film-t` (scroll.ts) runs 0 to 1 across this section and every brick reads
+ * it through a phase of its own, so the site assembles under the reader's thumb.
+ * The stage tabs still work: each stage sets a floor under the same number.
+ *
+ * Every brick now sits at its *seated* `left`/`top` for good and travels by
+ * `transform` alone. It used to transition `left` and `top` — 96 elements forcing
+ * layout for 1.2s each, which is the most expensive thing this page ever did. The
+ * scatter offset is carried in container-query units so a percentage of the field
+ * survives being expressed as a translation of the brick.
+ */
 .bw-assembly-brickfield {
   position: absolute;
   inset: 6% 4% 10%;
+  container-type: size;
   transform-style: preserve-3d;
-  transition: transform 1.1s var(--bw-spring);
+  /* Chapter three: the site takes the weight and settles onto it. */
+  scale: 1 calc(1 - 0.022 * var(--bw-load-t));
+  transition: scale var(--t-turn) var(--ease-glide);
+}
+.bw-assembly-mates {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.bw-assembly-mates line {
+  stroke: #cfe6c4;
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  opacity: calc(0.34 * var(--bw-mate-t));
+  stroke-dashoffset: calc(1 - var(--bw-mate-t));
 }
 .bw-assembly-brick {
+  --seat-t: clamp(0, (var(--bw-assembly-t, 0) - var(--bw-phase, 0)) / 0.42, 1);
+  --loose: calc(1 - var(--seat-t));
   position: absolute;
-  left: var(--bw-scatter-left);
-  top: var(--bw-scatter-top);
+  left: var(--bw-target-left);
+  top: var(--bw-target-top);
   width: var(--bw-brick-width);
   height: var(--bw-brick-height);
   border: 1px solid rgba(255, 201, 127, 0.42);
@@ -981,16 +924,14 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     inset 0 1px rgba(255, 255, 255, 0.38),
     0 5px 0 #65301e,
     0 12px 18px rgba(0, 0, 0, 0.35);
-  transform: translate(-50%, -50%) rotate(var(--bw-brick-rotation)) scale(0.54);
+  opacity: calc(0.28 + 0.72 * var(--seat-t));
+  transform: translate(-50%, -50%)
+    translate(calc(var(--bw-dx, 0) * 1cqw * var(--loose)), calc(var(--bw-dy, 0) * 1cqh * var(--loose)))
+    translateY(calc(var(--bw-brick-lift) * -1 * var(--seat-t))) perspective(800px)
+    rotateX(calc(50deg * var(--seat-t))) rotateZ(calc(var(--bw-spin, 0deg) * var(--loose) - 30deg * var(--seat-t)))
+    scale(calc(0.54 + 0.42 * var(--seat-t)));
   transform-style: preserve-3d;
-  transition:
-    left 1.2s var(--bw-spring) var(--bw-brick-delay),
-    top 1.2s var(--bw-spring) var(--bw-brick-delay),
-    transform 1.2s var(--bw-spring) var(--bw-brick-delay),
-    opacity 0.7s ease var(--bw-brick-delay),
-    filter 0.7s ease var(--bw-brick-delay),
-    box-shadow 0.7s ease var(--bw-brick-delay);
-  will-change: left, top, transform;
+  will-change: transform;
 }
 .bw-assembly-brick.path {
   border-color: rgba(131, 231, 238, 0.43);
@@ -1025,54 +966,73 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     0 12px 18px rgba(0, 0, 0, 0.35);
 }
 
-.bw-assembly-film[data-assembly-stage='candidate'] .bw-assembly-brick,
-.bw-assembly-film[data-assembly-stage='refinement'] .bw-assembly-brick,
-.bw-assembly-film[data-assembly-stage='validated'] .bw-assembly-brick {
-  left: var(--bw-target-left);
-  top: var(--bw-target-top);
-  opacity: 0.72;
-  transform: translate(-50%, -50%) rotate(-18deg) scale(0.72);
+/*
+ * One number, four bands.
+ *
+ * The scrub is the timeline; a stage tab puts a floor under it so the reel still
+ * answers a click with no scroll at all — which is the contract landing.test.tsx
+ * and the acceptance run both check. The bands are named for the chapters they
+ * belong to: mating strikes the connectors, load settles the site, pick shows
+ * that the result is selectable rather than rendered.
+ */
+.bw-assembly-film {
+  --bw-stage-floor: 0;
+  --bw-assembly-t: max(var(--bw-stage-floor), var(--bw-film-t, 0));
+  --bw-mate-t: clamp(0, (var(--bw-assembly-t) - 0.54) / 0.26, 1);
+  --bw-load-t: clamp(0, (var(--bw-assembly-t) - 0.6) / 0.22, 1);
+  --bw-pick-t: clamp(0, (var(--bw-assembly-t) - 0.78) / 0.22, 1);
 }
-.bw-assembly-film[data-assembly-stage='refinement'] .bw-assembly-brick {
-  opacity: 0.9;
-  transform: translate(-50%, calc(-50% - var(--bw-brick-lift))) perspective(800px) rotateX(50deg) rotateZ(-30deg)
-    scale(0.88);
+.bw-assembly-film[data-assembly-stage='candidate'] {
+  --bw-stage-floor: 0.42;
 }
-.bw-assembly-film[data-assembly-stage='validated'] .bw-assembly-brick {
-  opacity: 1;
-  filter: saturate(1.08) brightness(1.04);
-  transform: translate(-50%, calc(-50% - var(--bw-brick-lift))) perspective(800px) rotateX(50deg) rotateZ(-30deg)
-    scale(0.96);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.42),
-    0 6px 0 color-mix(in srgb, currentColor 20%, #2a1a12),
-    0 12px 24px rgba(0, 0, 0, 0.45),
-    0 0 20px rgba(245, 163, 63, 0.08);
+.bw-assembly-film[data-assembly-stage='refinement'] {
+  --bw-stage-floor: 0.74;
+}
+.bw-assembly-film[data-assembly-stage='validated'] {
+  --bw-stage-floor: 1;
+}
+.bw-assembly-brick {
+  filter: saturate(calc(1 + 0.08 * var(--seat-t))) brightness(calc(1 + 0.04 * var(--seat-t)));
 }
 
+/*
+ * The last chapter's claim is "not a render, a build you can edit", and what used
+ * to make it was a scan line looping every 2.3s for as long as the tab was open.
+ * A loop that never resolves is exactly the wrong figure for that sentence. This
+ * is a selection marquee instead: it closes from the whole site onto one brick as
+ * the scrub finishes, puts handles on it, and stops there.
+ */
 .bw-assembly-sweep {
+  --pick: var(--bw-pick-t, 0);
   position: absolute;
   z-index: 3;
-  left: -10%;
-  right: -10%;
-  top: 10%;
-  height: 2px;
-  opacity: 0;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--bw-cyan) 32%, #fff 50%, var(--bw-cyan) 68%, transparent);
-  box-shadow: 0 0 24px 7px rgba(131, 231, 238, 0.18);
+  opacity: calc(var(--pick) * 0.92);
+  /* From the whole field down onto the one brick PICK_RECT names. */
+  left: calc(2% + (var(--bw-sel-l, 60) - 2) * 1% * var(--pick));
+  top: calc(4% + (var(--bw-sel-t, 40) - 4) * 1% * var(--pick));
+  right: calc(2% + (var(--bw-sel-r, 30) - 2) * 1% * var(--pick));
+  bottom: calc(4% + (var(--bw-sel-b, 45) - 4) * 1% * var(--pick));
+  border: 1px dashed color-mix(in srgb, #cfe6c4 calc(52% - 8% * var(--pick)), transparent);
+  background: color-mix(in srgb, #cfe6c4 calc(5% * var(--pick)), transparent);
 }
-.bw-assembly-film[data-assembly-stage='refinement'] .bw-assembly-sweep {
-  opacity: 0.9;
-  animation: bw-assembly-scan 2.3s ease-in-out infinite;
+/* Two handles, because a selection you can act on has grips and a scan line does not. */
+.bw-assembly-sweep::before,
+.bw-assembly-sweep::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: #f3efe2;
+  opacity: calc(max(0, var(--pick) - 0.72) / 0.28);
 }
-@keyframes bw-assembly-scan {
-  from {
-    transform: translateY(20px);
-  }
-  to {
-    transform: translateY(430px);
-  }
+.bw-assembly-sweep::before {
+  top: -3px;
+  left: -3px;
+}
+.bw-assembly-sweep::after {
+  bottom: -3px;
+  right: -3px;
 }
 
 .bw-assembly-origin {
@@ -1179,8 +1139,8 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   text-align: left;
   text-transform: uppercase;
   transition:
-    background 0.2s ease,
-    color 0.2s ease;
+    background var(--t-state) ease,
+    color var(--t-state) ease;
 }
 .bw-assembly-stagebar-buttons button span {
   display: block;
@@ -1355,15 +1315,10 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   }
 }
 
+/* The reel is a function of scroll, so stillness is a value rather than a stopped
+   clock: pin the scrub at assembled and every band lands where it ends. */
 @media (prefers-reduced-motion: reduce) {
-  .bw-assembly-brick {
-    transition: none !important;
-  }
-  .bw-assembly-film .bw-assembly-brick {
-    left: var(--bw-target-left);
-    top: var(--bw-target-top);
-    opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--bw-brick-lift))) perspective(800px) rotateX(50deg) rotateZ(-30deg)
-      scale(0.96);
+  .bw-assembly-film {
+    --bw-stage-floor: 1;
   }
 }
