@@ -18,6 +18,27 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+/**
+ * Same list `tools/e2e/renderer.mjs` matches on.
+ *
+ * This suite asserts that the built bundle *executes*, which is host-independent
+ * — but how long it takes to execute is not. A hosted runner has no GPU, so the
+ * editor's WebGL boot goes through SwiftShader and the wait for
+ * `window.brickwright` blew a flat 30 s ceiling on every hosted run, skipping
+ * the deploy for a reason that has nothing to do with the bundle. The assertion
+ * is unchanged; only the patience is.
+ */
+const SOFTWARE_RASTERISER = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i
+
+async function rendererName(page) {
+  return page.evaluate(() => {
+    const gl = document.createElement('canvas').getContext('webgl2') ?? document.createElement('canvas').getContext('webgl')
+    if (!gl) return 'none'
+    const info = gl.getExtension('WEBGL_debug_renderer_info')
+    return (info && gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || 'unknown'
+  })
+}
+
 async function waitForServer() {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
@@ -53,10 +74,17 @@ try {
   await page.locator('.bw-landing').waitFor({ timeout: 15_000 })
   assert(errors.length === 0, `Production landing emitted browser errors:\n${errors.join('\n')}`)
 
+  const gpu = await rendererName(page)
+  const onCpu = SOFTWARE_RASTERISER.test(gpu)
+  // Six times, measured against the renderer suite's own figure: SwiftShader
+  // costs about 9.6 s a frame where a GPU costs milliseconds.
+  const bootTimeout = onCpu ? 180_000 : 30_000
+  process.stdout.write(`GPU reported by the browser: ${gpu}${onCpu ? ' — widening the editor boot wait, not the assertion' : ''}\n`)
+
   const editor = await page.goto(`${origin}/editor`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   assert(editor?.ok(), `Production editor returned ${editor?.status() ?? 'no response'}`)
-  await page.locator('canvas').first().waitFor({ timeout: 30_000 })
-  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: 30_000 })
+  await page.locator('canvas').first().waitFor({ timeout: bootTimeout })
+  await page.waitForFunction(() => Boolean(window.brickwright), null, { timeout: bootTimeout })
   assert(errors.length === 0, `Production editor emitted browser errors:\n${errors.join('\n')}`)
 
   process.stdout.write('production bundle executed landing and editor with no browser errors\n')
