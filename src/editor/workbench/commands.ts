@@ -1,5 +1,6 @@
 import { cadEngine } from '../../cad/engine'
 import type { DockId } from './layout'
+import { nextGridPreset } from './transform'
 import type { Workbench } from './useWorkbench'
 
 /**
@@ -118,7 +119,7 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     // rather than a second one. Reflecting through the world origin is still
     // reachable from the panel.
     'edit.mirror': () => editSelection(() => w.runSharedMutation('mirror_selection', { axis: 'x', about: 'selection' })),
-    'edit.array': () => run(() => w.setModal('core:command-deck:linear_array')),
+    'edit.array': () => run(() => w.setModal('core:capability:linear_array')),
     'edit.protect': () => editSelection(w.toggleProtectSelection),
     'edit.paint': () => editSelection(() => w.recolorSelection(w.activeColor)),
     'edit.eyedropper': () => (w.pickColorFromSelection() ? ok : refuse('Select a part to sample.')),
@@ -142,6 +143,12 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
     'view.connections': () => run(() => w.setRenderMode('connections')),
     'view.violations': () => run(() => w.setRenderMode('violations')),
     'view.exploded': () => run(() => w.setRenderMode('exploded')),
+    // Toggles rather than sets: the island button it replaced was a toggle, and
+    // a one-way "go orthographic" leaves no way back without a second chord.
+    'view.orthographic': () =>
+      run(() => w.setRenderMode(w.renderMode === 'orthographic' ? 'beauty' : 'orthographic')),
+    'view.silhouette': () => run(() => w.setRenderMode('silhouette')),
+    'view.snap-fine': () => run(() => w.setGridLdu(nextGridPreset(w.gridLdu))),
 
     // Visibility ----------------------------------------------------------
     'visibility.hide': () => (w.hideSelection() ? ok : refuse('Select at least one part first.')),
@@ -158,7 +165,6 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
 
     // Project --------------------------------------------------------------
     'project.command-palette': () => run(() => w.setModal('core:command-palette')),
-    'project.command-deck': () => run(() => w.setModal('core:command-deck')),
     'project.export': () => run(() => host.exportLdr()),
     'project.resequence': () => (w.regenerateBuildOrder() ? ok : refuse('Nothing to sequence.')),
 

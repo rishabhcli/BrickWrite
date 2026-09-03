@@ -98,7 +98,6 @@ describe('workbench chrome polish', () => {
     expect(at1380.length).toBeGreaterThan(0)
     for (const block of at1380) {
       expect(block).not.toContain('.toolbar-island')
-      expect(block).not.toContain('.selection-tools')
       expect(block).not.toContain('.history-tools')
       expect(block).not.toContain('.topbar-nav-link span')
       expect(block).not.toContain('.save-state span')
@@ -112,14 +111,18 @@ describe('workbench chrome polish', () => {
     const [island760] = atRuleBlocks(withoutComments, '@container toolbar-island (max-width: 760px)')
     expect(island760).toContain('.tool-mode em')
     expect(island760).not.toContain('.history-tools')
-    expect(island760).not.toContain('.selection-tools')
 
     const [island640] = atRuleBlocks(withoutComments, '@container toolbar-island (max-width: 640px)')
     expect(island640).toContain('.history-tools')
-    expect(island640).toContain('.selection-tools')
 
     const island720 = withoutComments.indexOf('@container toolbar-island (max-width: 720px)')
     expect(withoutComments.slice(island720, island720 + 700)).toContain('.tool-button')
+  })
+
+  it('keeps no styling for chrome that no longer renders', () => {
+    for (const dead of ['.selection-tools', '.selection-tool-count', '.selection-hud-action', '.render-direct']) {
+      expect(withoutComments).not.toContain(dead)
+    }
   })
 
   it('lets a custom open timeline read bottom.size already on the shell', () => {

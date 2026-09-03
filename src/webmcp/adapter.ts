@@ -581,7 +581,7 @@ const readTools: ToolDefinition[] = [
         title: definition.title,
         summary: definition.summary,
         parity: {
-          human: 'Command Deck or primary CAD control',
+          human: 'Command palette or primary CAD control',
           agent: definition.kind === 'read' ? 'action_read' : 'action_mutate',
         },
         call: definition.kind === 'read' ? 'action_read' : 'action_mutate',

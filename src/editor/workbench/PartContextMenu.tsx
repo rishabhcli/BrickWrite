@@ -96,7 +96,9 @@ export function PartContextMenu({
           {item('Rotate with gizmo', () => w.setTool('rotate'))}
           <div role="separator" />
           {item('Copy parts', () => w.copySelection())}
+          {item('Cut parts', () => w.copySelection(true))}
           {item('Duplicate selection', w.duplicateSelection)}
+          {item('Quarter turn', () => w.rotateSelection(90))}
         </>
       )}
       {item('Paste parts', w.pasteSelection, Boolean(w.clipboard))}

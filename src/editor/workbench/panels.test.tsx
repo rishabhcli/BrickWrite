@@ -605,11 +605,14 @@ describe('selection modes', () => {
 describe('command palette', () => {
   const renderPalette = (props: Partial<React.ComponentProps<typeof CommandPalette>> = {}) => {
     const onRun = vi.fn(() => ({ ran: true }))
+    const onRunCapability = vi.fn(() => true)
     const onClose = vi.fn()
     const onShortcuts = vi.fn()
     const view = render(
       <CommandPalette
         open
+        state={cadEngine.getSnapshot()}
+        onRunCapability={onRunCapability}
         shortcuts={defaultShortcutMap()}
         onShortcuts={onShortcuts}
         onRun={onRun}
@@ -618,7 +621,7 @@ describe('command palette', () => {
         {...props}
       />,
     )
-    return { ...view, onRun, onClose, onShortcuts }
+    return { ...view, onRun, onRunCapability, onClose, onShortcuts }
   }
 
   it('opens with the keyboard already in the search field', async () => {
@@ -641,6 +644,39 @@ describe('command palette', () => {
     expect(options[0].textContent).toContain('Isolate selection')
     fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'eyedropper' } })
     expect(screen.getAllByRole('option')[0].textContent).toContain('Pick colour')
+  })
+
+  it('finds a shared capability by name and opens its form', () => {
+    renderPalette()
+    fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'linear array' } })
+    // Both the chorded command and the capability match "linear array"; the
+    // capability row is the one offering to set arguments up.
+    const row = screen.getAllByRole('option').find((option) => option.textContent?.includes('SET UP'))
+    expect(row).toBeDefined()
+    fireEvent.click(row!)
+    // The form the Command Deck used to own, reached without a second modal.
+    expect(screen.getByRole('button', { name: /RUN COMMAND/ })).toBeInTheDocument()
+    expect(screen.getByText('action_mutate(linear_array)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'BACK' }))
+    expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
+  })
+
+  it('states human/agent parity where a human now reaches the vocabulary', () => {
+    renderPalette()
+    const parity = screen.getByLabelText('Human and agent capability parity')
+    expect(parity.textContent?.replace(/\s+/g, ' ')).toMatch(/HUMAN SAME KERNEL AGENT/)
+  })
+
+  it('walks the cursor from the last command onto the first capability', () => {
+    renderPalette()
+    // "wall" hits no chorded command and one capability, so the seam is the
+    // only thing under test rather than the ranking.
+    fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'wall' } })
+    const options = screen.getAllByRole('option')
+    expect(options.some((option) => option.textContent?.includes('Lay a wall'))).toBe(true)
+    expect(screen.getByRole('combobox', { name: 'Search commands' }).getAttribute('aria-activedescendant')).toBe(
+      options[0].id,
+    )
   })
 
   it('points the combobox at the highlighted option so arrows announce it', () => {

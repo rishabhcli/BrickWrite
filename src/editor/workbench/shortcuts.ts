@@ -301,6 +301,29 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
     detail: 'Push subassemblies apart. Display only.',
     defaultChord: 'alt+e',
   },
+  {
+    id: 'view.orthographic',
+    title: 'Orthographic projection',
+    group: 'view',
+    detail: 'Drop perspective so parallel edges stay parallel. Press again for beauty.',
+    defaultChord: 'alt+o',
+    keywords: 'parallel isometric ortho projection',
+  },
+  {
+    id: 'view.silhouette',
+    title: 'Silhouette render',
+    group: 'view',
+    detail: 'Flatten the model to one mass, to read its outline.',
+    defaultChord: 'alt+s',
+  },
+  {
+    id: 'view.snap-fine',
+    title: 'Cycle snap increment',
+    group: 'view',
+    detail: 'Step through 1 stud, half stud, 1 plate, 4 LDU and 1 LDU.',
+    defaultChord: 'alt+g',
+    keywords: 'grid snap stud plate ldu increment',
+  },
 
   // Visibility -------------------------------------------------------------
   {
@@ -376,13 +399,6 @@ export const WORKBENCH_COMMANDS: readonly CommandDefinition[] = [
     group: 'project',
     detail: 'Find and run any command by name.',
     defaultChord: 'mod+p',
-  },
-  {
-    id: 'project.command-deck',
-    title: 'Command deck',
-    group: 'project',
-    detail: 'The parameterised console for every shared capability.',
-    defaultChord: 'mod+/',
   },
   {
     id: 'project.export',

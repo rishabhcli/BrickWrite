@@ -266,11 +266,6 @@ export function ViewportStage({
             rotationMixed={workbench.selectionAttitude.mixed}
             locks={workbench.transformPrefs.locks}
             frame={workbench.transformPrefs.frame}
-            tool={workbench.tool}
-            onTool={workbench.setTool}
-            onFocus={workbench.focusSelection}
-            onGround={workbench.groundSelection}
-            onDuplicate={workbench.duplicateSelection}
             onPosition={workbench.positionSelection}
             onRotate={workbench.orientSelection}
             onMore={(anchor) => {

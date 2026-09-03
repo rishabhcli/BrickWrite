@@ -241,6 +241,30 @@ export function lockRotation(base: Mat3, next: Mat3, locks: AxisLocks, frame?: M
   return multiplyMat3(multiplyMat3(F, multiplyMat3(localOut, transposeMat3(F))), base)
 }
 
+/**
+ * The snap increments, coarsest first.
+ *
+ * One list, because the viewport island, the Position panel's STEP select and
+ * the snap-cycling command were each spelling the same five numbers and had
+ * already drifted on their labels.
+ */
+export const GRID_PRESETS = [
+  { value: 20, short: '1S', label: '1 stud' },
+  { value: 10, short: '½S', label: 'half stud' },
+  { value: 8, short: '1P', label: '1 plate' },
+  { value: 4, short: '4', label: '4 LDU' },
+  { value: 1, short: '1', label: '1 LDU' },
+] as const
+
+/** The two increments the viewport island offers directly. */
+export const COARSE_GRID = [20, 8] as const
+
+/** Next increment in the full list, wrapping. Drives the snap-cycling command. */
+export function nextGridPreset(current: number): number {
+  const index = GRID_PRESETS.findIndex((preset) => preset.value === current)
+  return GRID_PRESETS[(index + 1) % GRID_PRESETS.length].value
+}
+
 /** Snaps a position to a grid increment, leaving the basis untouched. */
 export function snapPosition(position: Vec3, gridLdu: number): Vec3 {
   if (gridLdu <= 0) return position

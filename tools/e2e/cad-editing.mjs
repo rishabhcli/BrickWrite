@@ -118,7 +118,7 @@ try {
   assert.equal(await revision(), before + 1)
   check('axis locks apply to keyboard nudges and numeric steppers')
 
-  await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('top')
+  await page.getByRole('button', { name: 'Top view', exact: true }).click()
   await page.getByRole('button', { name: 'Orthographic projection', exact: true }).click()
   await page.waitForFunction(() => window.__brickwrightGizmo?.().attached)
   assert.equal(
@@ -143,7 +143,7 @@ try {
 
   // Centre handle dragged in a top view is a real X/Z plane gesture.
   await page.getByRole('button', { name: 'Connector snapping', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Quick grid snap', exact: true }).selectOption('10')
+  await page.getByRole('button', { name: 'Snap half stud', exact: true }).click()
   before = await revision()
   let handle = await stableGizmo()
   await page.mouse.move(handle.x, handle.y)
@@ -173,13 +173,13 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Remove selection', exact: true }).count(), 1)
   check('select-all does not resurrect hidden parts')
 
-  await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('isometric')
+  await page.getByRole('button', { name: 'Isometric view', exact: true }).click()
   await page.getByRole('button', { name: 'Orthographic projection', exact: true }).click()
   await page.getByRole('button', { name: 'Frame model', exact: true }).click()
   await page.screenshot({ path: `${artifacts}/desktop.png`, fullPage: true })
   await page.setViewportSize({ width: 1100, height: 760 })
-  assert(await page.getByRole('combobox', { name: 'Quick grid snap' }).isVisible())
-  const dockBox = await page.getByRole('region', { name: 'Inspector dock' }).boundingBox()
+  assert(await page.getByRole('button', { name: 'Snap 1 stud', exact: true }).isVisible())
+  const dockBox = await page.getByRole('region', { name: 'Design and object dock' }).boundingBox()
   for (const label of ['Nudge Z positive', 'Turn Z positive']) {
     const box = await page.getByRole('button', { name: label, exact: true }).boundingBox()
     assert(box.x >= dockBox.x && box.x + box.width <= dockBox.x + dockBox.width, `${label} is clipped by the dock`)
@@ -204,7 +204,7 @@ try {
     await page.mouse.up()
   }
   await page.evaluate(() => window.__brickwrightRenderer.setReducedMotion(false))
-  await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('front')
+  await page.getByRole('button', { name: 'Front view', exact: true }).click()
   const flight = await page.evaluate(async () => {
     const samples = []
     for (let i = 0; i < 12; i++) {
@@ -267,7 +267,7 @@ try {
 
   // Placement exclusivity and Escape recovery use the real palette action.
   await page.evaluate(() => window.__brickwrightRenderer.setReducedMotion(true))
-  await page.getByRole('combobox', {name:'Camera view', exact:true}).selectOption('isometric')
+  await page.getByRole('button', { name: 'Isometric view', exact: true }).click()
   await page.getByRole('button', {name:'Frame model', exact:true}).click()
   rect = await canvas().boundingBox()
   await page.getByRole('textbox', { name: 'Search parts', exact: true }).fill('3001')
@@ -306,7 +306,7 @@ try {
     cadEngine.setSelection(Object.values(cadEngine.getSnapshot().document.parts).filter(p => p.definitionId === '3938').map(p => p.id))
   })
   await page.evaluate(() => window.__brickwrightRenderer.setReducedMotion(true))
-  await page.getByRole('combobox', {name: 'Camera view', exact: true}).selectOption('right')
+  await page.getByRole('button', { name: 'Right view', exact: true }).click()
   await page.getByRole('button', {name: 'Frame model', exact: true}).click()
   await page.waitForFunction(() => window.__brickwrightRenderer.listJoints().length > 0)
   const joint = await page.evaluate(() => window.__brickwrightRenderer.listJoints()[0])
@@ -336,7 +336,7 @@ try {
     cadEngine.replaceDocument({...document, id:'sol1-illinois-qa'})
     cadEngine.setSelection([])
   })
-  await page.getByRole('combobox', {name:'Camera view', exact:true}).selectOption('isometric')
+  await page.getByRole('button', { name: 'Isometric view', exact: true }).click()
   await page.getByRole('button', {name:'Frame model', exact:true}).click()
   await page.waitForFunction(() => window.__brickwrightRenderer.stats().batchEdgeVertices > 0)
   await page.waitForFunction(() => window.__brickwrightRenderer.stats().identityWarmupComplete)

@@ -34,7 +34,7 @@ describe('WebMCP adapter', () => {
     expect(result?.structuredContent).toMatchObject({ documentRevision: expect.any(Number) })
   })
 
-  it('discovers the same named capability and nested arguments used by the Command Deck', async () => {
+  it('discovers the same named capability and nested arguments used by the capability sheet', async () => {
     adapter.start()
     const search = await window.brickwright?.invoke('capabilities_search', { query: 'array' })
     expect(search?.structuredContent).toEqual(expect.arrayContaining([

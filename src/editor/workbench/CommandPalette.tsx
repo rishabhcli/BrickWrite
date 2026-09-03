@@ -1,4 +1,4 @@
-import { AlertTriangle, Command as CommandIcon, Keyboard, RotateCcw, Search, X } from 'lucide-react'
+import { AlertTriangle, Command as CommandIcon, Keyboard, RotateCcw, Search, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   COMMAND_GROUP_LABEL,
@@ -12,14 +12,26 @@ import {
   type ShortcutMap,
 } from './shortcuts'
 import type { CommandOutcome } from './commands'
+import { CapabilitySheet } from './CapabilitySheet'
+import { SHARED_MUTATION_CAPABILITIES, type SharedMutationId } from '../../cad/capabilities'
+import type { EngineSnapshot } from '../../cad/types'
+
+/** The mutating half of the shared vocabulary — what a human can commit. */
+const MUTATIONS = SHARED_MUTATION_CAPABILITIES.filter((entry) => entry.kind === 'mutate')
 
 /**
  * The command palette.
  *
- * Two surfaces in one modal, because they are two views of the same list: run a
- * command by name, or rebind it. Keeping the keymap editor here rather than in a
- * settings screen means the moment an operator notices a shortcut is wrong is
- * the moment they can fix it.
+ * Three surfaces in one modal, because they are three views of the same list:
+ * run a command by name, configure a shared capability, or rebind a chord.
+ * Keeping the keymap editor here rather than in a settings screen means the
+ * moment an operator notices a shortcut is wrong is the moment they can fix it.
+ *
+ * The capability rows are what the Command Deck used to be. It was a second
+ * modal with its own chord, its own focus trap and its own search box over a
+ * grouped list — this, spelled twice. Only its argument forms were unique, and
+ * those are `CapabilitySheet`. Parity with the agent is stated here now,
+ * because this is where a human reaches the same vocabulary.
  */
 
 function optionDomId(commandId: string) {
@@ -28,6 +40,11 @@ function optionDomId(commandId: string) {
 
 export interface CommandPaletteProps {
   open: boolean
+  state: EngineSnapshot
+  /** Commits a shared capability. Returns false when the kernel refused it. */
+  onRunCapability: (capability: SharedMutationId, args?: Record<string, unknown>) => boolean
+  /** Opens straight onto one capability's form, for `edit.array` and its kin. */
+  initialCapability?: SharedMutationId
   shortcuts: ShortcutMap
   onShortcuts: (map: ShortcutMap) => void
   onRun: (commandId: string) => CommandOutcome
@@ -39,6 +56,9 @@ export interface CommandPaletteProps {
 
 export function CommandPalette({
   open,
+  state,
+  onRunCapability,
+  initialCapability,
   shortcuts,
   onShortcuts,
   onRun,
@@ -50,6 +70,7 @@ export function CommandPalette({
   const [cursor, setCursor] = useState(0)
   const [tab, setTab] = useState<'run' | 'keys'>(initialTab)
   const [recording, setRecording] = useState<string | null>(null)
+  const [sheet, setSheet] = useState<SharedMutationId | null>(null)
   const [outcome, setOutcome] = useState<string | null>(null)
   const dialog = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -58,6 +79,7 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return
     setTab(initialTab)
+    setSheet(initialCapability ?? null)
     setQuery('')
     setCursor(0)
     setOutcome(null)
@@ -70,7 +92,7 @@ export function CommandPalette({
       returnFocus.current?.focus()
       returnFocus.current = null
     }
-  }, [initialTab, open])
+  }, [initialCapability, initialTab, open])
 
   const matches = useMemo(() => {
     const text = query.trim().toLowerCase()
@@ -87,6 +109,26 @@ export function CommandPalette({
     return scored.sort((a, b) => b.score - a.score).map((entry) => entry.command)
   }, [query])
 
+  const capabilityMatches = useMemo(() => {
+    const text = query.trim().toLowerCase()
+    if (!text) return MUTATIONS
+    return MUTATIONS.filter((entry) => {
+      const hay = `${entry.title} ${entry.summary} ${entry.group}`.toLowerCase()
+      return text.split(/\s+/).every((token) => hay.includes(token))
+    })
+  }, [query])
+
+  // One flat list so ArrowDown walks off the last command onto the first
+  // capability, rather than the cursor stopping at a seam the operator cannot
+  // see. Commands come first: they are the ones with chords.
+  const rows = useMemo(
+    () => [
+      ...matches.map((command) => ({ kind: 'command' as const, id: command.id })),
+      ...capabilityMatches.map((entry) => ({ kind: 'capability' as const, id: entry.id })),
+    ],
+    [capabilityMatches, matches],
+  )
+
   useEffect(() => setCursor(0), [query])
 
   const conflicts = useMemo(() => detectConflicts(shortcuts), [shortcuts])
@@ -100,6 +142,13 @@ export function CommandPalette({
     if (result.ran) onClose()
     else setOutcome(result.reason ?? 'That command is not available right now.')
   }, [onClose, onRun])
+
+  // A capability needs arguments, so choosing one opens its form rather than
+  // committing something the operator has not specified yet.
+  const activate = useCallback((row: { kind: 'command' | 'capability'; id: string }) => {
+    if (row.kind === 'capability') setSheet(row.id as SharedMutationId)
+    else run(row.id)
+  }, [run])
 
   /** Focus trap. A modal that lets Tab escape is a modal in name only. */
   const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -126,19 +175,19 @@ export function CommandPalette({
       }
       return
     }
-    if (tab !== 'run') return
+    if (tab !== 'run' || sheet) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setCursor((value) => Math.min(matches.length - 1, value + 1))
+      setCursor((value) => Math.min(rows.length - 1, value + 1))
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       setCursor((value) => Math.max(0, value - 1))
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      const command = matches[cursor]
-      if (command) run(command.id)
+      const row = rows[cursor]
+      if (row) activate(row)
     }
-  }, [cursor, matches, onClose, recording, run, tab])
+  }, [activate, cursor, onClose, recording, rows, sheet, tab])
 
   /** Chord capture. The next keystroke becomes the binding. */
   useEffect(() => {
@@ -165,7 +214,7 @@ export function CommandPalette({
     else grouped.set(command.group, [command])
   }
   let rowIndex = -1
-  const activeOptionId = matches[cursor] ? optionDomId(matches[cursor].id) : undefined
+  const activeOptionId = rows[cursor] ? optionDomId(rows[cursor].id) : undefined
 
   return (
     <div
@@ -196,10 +245,24 @@ export function CommandPalette({
               {conflicts.length > 0 && <em className="conflict-count">{conflicts.length}</em>}
             </button>
           </div>
+          <div className="operator-parity" aria-label="Human and agent capability parity">
+            <span><i className="human-lane" /> HUMAN</span>
+            <b><Sparkles size={11} /> SAME KERNEL</b>
+            <span><i className="agent-lane" /> AGENT</span>
+          </div>
           <button type="button" className="command-close" onClick={onClose} aria-label="Close the command palette"><X size={15} /></button>
         </header>
 
-        {tab === 'run' ? (
+        {tab === 'run' && sheet ? (
+          <div className="command-palette-sheet">
+            <CapabilitySheet
+              state={state}
+              active={sheet}
+              onRun={onRunCapability}
+              onCancel={() => setSheet(null)}
+            />
+          </div>
+        ) : tab === 'run' ? (
           <>
             <label className="command-palette-search">
               <Search size={13} />
@@ -219,7 +282,7 @@ export function CommandPalette({
               <kbd>↑↓ ↵</kbd>
             </label>
             <div className="command-palette-results" id="command-palette-results" role="listbox" aria-label="Commands">
-              {matches.length === 0 && (
+              {rows.length === 0 && (
                 <div className="command-empty">
                   <Search size={18} />
                   <strong>No command matches “{query}”</strong>
@@ -257,6 +320,35 @@ export function CommandPalette({
                   })}
                 </section>
               ))}
+              {capabilityMatches.length > 0 && (
+                <section>
+                  <h3>Build</h3>
+                  {capabilityMatches.map((entry) => {
+                    rowIndex += 1
+                    const index = rowIndex
+                    return (
+                      <button
+                        key={entry.id}
+                        id={optionDomId(entry.id)}
+                        type="button"
+                        role="option"
+                        tabIndex={-1}
+                        aria-selected={cursor === index}
+                        className={cursor === index ? 'cursor' : ''}
+                        onMouseEnter={() => setCursor(index)}
+                        onClick={() => setSheet(entry.id)}
+                        title={entry.summary}
+                      >
+                        <div>
+                          <strong>{entry.title}</strong>
+                          <small>{entry.summary}</small>
+                        </div>
+                        <kbd>SET UP</kbd>
+                      </button>
+                    )
+                  })}
+                </section>
+              )}
             </div>
             {outcome && <p className="command-palette-outcome" role="alert">{outcome}</p>}
           </>

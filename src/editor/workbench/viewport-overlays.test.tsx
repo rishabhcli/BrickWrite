@@ -68,18 +68,18 @@ describe('visible snap presets', () => {
     )
 
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Snap 1 stud' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Snap 1 plate' }))
+    // One button showing the live increment, not five competing presets. The
+    // finer three moved to Precision and to alt+G; the coarse pair cycles here.
+    fireEvent.click(screen.getByRole('button', { name: 'Snap 1 stud' }))
     expect(setGridLdu).toHaveBeenCalledWith(8)
+    expect(screen.queryByRole('button', { name: 'Snap 4 LDU' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Frame selected parts' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Orthographic projection' })).not.toBeInTheDocument()
   })
 })
 
 describe('selection HUD', () => {
   it('exposes the main modelling actions beside a live position', () => {
-    const onTool = vi.fn()
-    const onFocus = vi.fn()
-    const onGround = vi.fn()
-    const onDuplicate = vi.fn()
     const onPosition = vi.fn()
     const onRotate = vi.fn()
     const onMore = vi.fn()
@@ -91,11 +91,6 @@ describe('selection HUD', () => {
         locks={{ x: false, y: false, z: false }}
         frame="world"
         rotation={[0, 90, 0]}
-        tool="move"
-        onTool={onTool}
-        onFocus={onFocus}
-        onGround={onGround}
-        onDuplicate={onDuplicate}
         onPosition={onPosition}
         onRotate={onRotate}
         onMore={onMore}
@@ -113,17 +108,12 @@ describe('selection HUD', () => {
     fireEvent.change(x, { target: { value: '40' } })
     fireEvent.keyDown(x, { key: 'Enter' })
     expect(onPosition).toHaveBeenCalledWith(0, 40)
-    expect(screen.getByRole('button', { name: 'Move selection' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Rotate selection' }))
-    expect(onTool).toHaveBeenCalledWith('rotate')
-    fireEvent.click(screen.getByRole('button', { name: 'Mate selection' }))
-    expect(onTool).toHaveBeenCalledWith('connect')
-    fireEvent.click(screen.getByRole('button', { name: 'Focus selection' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Ground selection' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate selection' }))
-    expect(onFocus).toHaveBeenCalledOnce()
-    expect(onGround).toHaveBeenCalledOnce()
-    expect(onDuplicate).toHaveBeenCalledOnce()
+    // Move, Rotate and Mate live on the toolbar radiogroup; Focus, Ground and
+    // Duplicate are in the menu the More-actions button opens. The HUD keeps
+    // only what it alone can say: which part, and where it is.
+    for (const gone of ['Move selection', 'Rotate selection', 'Mate selection', 'Ground selection']) {
+      expect(screen.queryByRole('button', { name: gone })).not.toBeInTheDocument()
+    }
   })
 
   it('shows Euler fields for a multi-part selection', () => {
@@ -135,11 +125,6 @@ describe('selection HUD', () => {
         rotation={[0, 0, 0]}
         locks={{ x: true, y: false, z: false }}
         frame="world"
-        tool="move"
-        onTool={vi.fn()}
-        onFocus={vi.fn()}
-        onGround={vi.fn()}
-        onDuplicate={vi.fn()}
         onPosition={vi.fn()}
         onRotate={vi.fn()}
         onMore={vi.fn()}
@@ -159,11 +144,6 @@ describe('selection HUD', () => {
         position={[0, 0, 0]}
         locks={{ x: true, y: false, z: false }}
         frame="world"
-        tool="connect"
-        onTool={vi.fn()}
-        onFocus={vi.fn()}
-        onGround={vi.fn()}
-        onDuplicate={vi.fn()}
         onPosition={vi.fn()}
         onMore={onMore}
       />,
@@ -325,11 +305,6 @@ describe('viewport overlay stacking', () => {
         rotationMixed
         locks={{ x: false, y: false, z: false }}
         frame="world"
-        tool="move"
-        onTool={vi.fn()}
-        onFocus={vi.fn()}
-        onGround={vi.fn()}
-        onDuplicate={vi.fn()}
         onPosition={vi.fn()}
         onRotate={vi.fn()}
         onMore={vi.fn()}

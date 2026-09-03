@@ -1,7 +1,5 @@
 import { MoreHorizontal } from 'lucide-react'
-import type { EditorTool } from '../CadViewport'
 import { GlassIsland } from '../../ui/liquid'
-import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcons'
 import { NumberField } from './NumberField'
 import type { AxisLocks, ReferenceFrame } from './transform'
 
@@ -15,11 +13,6 @@ type SelectionHUDProps = {
   rotationMixed?: boolean
   locks: AxisLocks
   frame: ReferenceFrame
-  tool: EditorTool
-  onTool: (tool: EditorTool) => void
-  onFocus: () => void
-  onGround: () => void
-  onDuplicate: () => void
   onPosition: (axis: 0 | 1 | 2, value: number) => unknown
   onRotate?: (axis: 0 | 1 | 2, value: number) => unknown
   onMore: (anchor: HTMLElement) => void
@@ -34,28 +27,10 @@ export function SelectionHUD({
   rotationMixed = false,
   locks,
   frame,
-  tool,
-  onTool,
-  onFocus,
-  onGround,
-  onDuplicate,
   onPosition,
   onRotate,
   onMore,
 }: SelectionHUDProps) {
-  const action = (labelText: string, icon: WorkbenchIconName, onClick: () => void, pressed?: boolean) => (
-    <button
-      type="button"
-      className="selection-hud-action"
-      aria-label={labelText}
-      aria-pressed={pressed}
-      title={labelText}
-      onClick={onClick}
-    >
-      <WorkbenchIcon name={icon} size={16} />
-    </button>
-  )
-
   return (
     <GlassIsland className="selection-hud" radius="section" blur="control" role="toolbar" aria-label="Selection HUD">
       <div className="selection-hud-identity" aria-label={label}>
@@ -118,15 +93,6 @@ export function SelectionHUD({
           ))}
         </div>
       ) : null}
-      <span className="selection-hud-divider" />
-      <div className="selection-hud-tools" role="toolbar" aria-label="Selection tools">
-        {action('Move selection', 'move', () => onTool('move'), tool === 'move')}
-        {action('Rotate selection', 'rotate', () => onTool('rotate'), tool === 'rotate')}
-        {action('Mate selection', 'connect', () => onTool('connect'), tool === 'connect')}
-        {action('Focus selection', 'focus', onFocus)}
-        {action('Ground selection', 'ground', onGround)}
-        {action('Duplicate selection', 'duplicate', onDuplicate)}
-      </div>
     </GlassIsland>
   )
 }

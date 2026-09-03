@@ -8,7 +8,6 @@ import type { SharedMutationId } from '../../cad/capabilities'
 import { inspectModelHealth, type ModelHealthIssue } from '../../cad/modelHealth'
 import { applyEditorQuery, consumeSearchParams } from '../../platform/boot'
 import { GlassDock } from '../../ui/liquid'
-import { CommandDeck } from '../CommandDeck'
 import { ShortcutGuide } from '../ShortcutGuide'
 import { markWelcomeSeen, WelcomeGuide } from '../WelcomeGuide'
 import { CollapsedRail, DockCollapseButton, DockSection, DockSplitter, useViewportSize } from './Dock'
@@ -633,12 +632,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
   }, [])
 
   const modal = workbench.modal
-  const deckOpen = Boolean(modal?.startsWith('core:command-deck'))
-  const paletteOpen = modal === 'core:command-palette' || modal === 'core:keymap'
+  const capabilityModal = Boolean(modal?.startsWith('core:capability'))
+  const paletteOpen = modal === 'core:command-palette' || modal === 'core:keymap' || capabilityModal
   const shortcutsOpen = modal === 'core:shortcuts'
   const welcomeOpen = modal === 'core:welcome'
   const saveSetOpen = modal === 'core:save-selection'
-  const anyCoreModal = deckOpen || paletteOpen || shortcutsOpen || welcomeOpen || saveSetOpen
+  const anyCoreModal = paletteOpen || shortcutsOpen || welcomeOpen || saveSetOpen
 
   // `?intent=describe` promises "just describe it". Two races, not one: the
   // panel it reveals is a lazily imported contribution, and on a first run a
@@ -673,7 +672,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           workbench.setModal(null)
           return
         }
-        if (deckOpen && chord === shortcuts['project.command-deck']) {
+        if (paletteOpen && chord === shortcuts['project.command-palette']) {
           event.preventDefault()
           workbench.setModal(null)
         }
@@ -737,7 +736,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [anyCoreModal, deckOpen, runCommand, shortcuts, shortcutsOpen, welcomeOpen, workbench])
+  }, [anyCoreModal, paletteOpen, runCommand, shortcuts, shortcutsOpen, welcomeOpen, workbench])
 
   const updateShortcuts = useCallback((map: ShortcutMap) => {
     setShortcuts(map)
@@ -1102,17 +1101,6 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
           />
         )}
 
-        <CommandDeck
-          open={deckOpen}
-          state={state}
-          initialCapability={
-            modal?.startsWith('core:command-deck:')
-              ? (modal.slice('core:command-deck:'.length) as SharedMutationId)
-              : undefined
-          }
-          onClose={() => workbench.setModal(null)}
-          onRun={workbench.runSharedMutation}
-        />
         <ShortcutGuide
           open={shortcutsOpen}
           shortcuts={shortcuts}
@@ -1128,6 +1116,13 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         />
         <CommandPalette
           open={paletteOpen}
+          state={state}
+          onRunCapability={workbench.runSharedMutation}
+          initialCapability={
+            modal?.startsWith('core:capability:')
+              ? (modal.slice('core:capability:'.length) as SharedMutationId)
+              : undefined
+          }
           initialTab={modal === 'core:keymap' ? 'keys' : 'run'}
           shortcuts={shortcuts}
           onShortcuts={updateShortcuts}

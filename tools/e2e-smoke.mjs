@@ -511,53 +511,60 @@ try {
   await page.keyboard.press('?')
   await shortcutDialog.waitFor({ state: 'hidden' })
 
-  // -- the Command Deck is the human face of the WebMCP capability registry -
+  // -- the command palette is the human face of the WebMCP capability registry
   const toolBeforeCommand = await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')
-  const commandTrigger = page.getByRole('button', { name: 'Command deck' })
+  const commandTrigger = page.getByRole('button', { name: 'Command palette' })
   await commandTrigger.click()
-  const commandDialog = page.getByRole('dialog', { name: 'Command Deck' })
+  const commandDialog = page.getByRole('dialog', { name: 'Command palette' })
   await commandDialog.waitFor()
-  // Parity is the Command Deck's entire claim, so it is checked against the
-  // registry the agent actually queries rather than against a literal that has
-  // to be remembered whenever a capability is added. `capabilities_search`
-  // advertises `parity: { human: true, agent: true }` on every entry; this is
-  // what makes that advertisement true rather than decorative.
+  // Parity used to be the Command Deck's claim. The deck is gone — it was a
+  // second modal over the same list this one already searches — so the claim
+  // moved here with its check. Still measured against the registry the agent
+  // queries rather than a literal that has to be remembered when a capability
+  // is added: `capabilities_search` advertises `parity: { human, agent }` on
+  // every entry, and this is what makes that advertisement true.
   const agentMutations = await page.evaluate(async () => {
     const found = await window.brickwright.invoke('capabilities_search', { query: '' })
     return found.structuredContent.filter((entry) => entry.kind === 'mutate').map((entry) => entry.id)
   })
-  const deckCommands = await commandDialog.locator('.command-list section > button').count()
+  const capabilityRows = await commandDialog.locator('.command-palette-results section:last-child > button').count()
   assert(
-    deckCommands === agentMutations.length,
-    `The human Command Deck exposes ${deckCommands} commands but the agent registry advertises ${agentMutations.length} mutations`,
+    capabilityRows === agentMutations.length,
+    `The palette exposes ${capabilityRows} capabilities but the agent registry advertises ${agentMutations.length} mutations`,
   )
   assert(
     /HUMAN\s+SAME KERNEL\s+AGENT/.test(
       (await commandDialog.locator('.operator-parity').innerText()).replace(/\s+/g, ' '),
     ),
-    'The Command Deck does not communicate its shared-kernel parity boundary',
+    'The command palette does not communicate its shared-kernel parity boundary',
   )
   assert(
-    await commandDialog.getByPlaceholder('Find a command…').evaluate((node) => document.activeElement === node),
-    'Opening the Command Deck did not move focus into command search',
+    await commandDialog.getByLabel('Search commands').evaluate((node) => document.activeElement === node),
+    'Opening the command palette did not move focus into command search',
   )
   await page.keyboard.press('g')
   assert(
     (await page.locator('.primary-tools .tool-button[aria-checked="true"]').getAttribute('aria-label')) === toolBeforeCommand,
-    'A viewport shortcut leaked through the modal Command Deck',
+    'A viewport shortcut leaked through the modal command palette',
   )
-  await commandDialog.getByPlaceholder('Find a command…').fill('project')
+  // One capability, reached and configured without a second modal.
+  await commandDialog.getByLabel('Search commands').fill('lay a wall')
+  const wallRow = commandDialog.getByRole('option').filter({ hasText: 'SET UP' }).first()
+  await wallRow.waitFor()
+  await wallRow.click()
+  await commandDialog.getByRole('button', { name: /RUN COMMAND/ }).waitFor()
   assert(
-    (await commandDialog.locator('.command-list section > button').count()) === 1,
-    'Command Deck search did not deterministically filter the shared registry',
+    (await commandDialog.locator('.command-actions code').innerText()) === 'action_mutate(build_wall)',
+    'The capability sheet did not name the agent equivalent it commits through',
   )
-  await commandDialog.getByPlaceholder('Find a command…').fill('')
-  await page.screenshot({ path: 'artifacts/e2e-command-deck.png', fullPage: true })
+  await commandDialog.getByRole('button', { name: 'BACK' }).click()
+  await commandDialog.getByLabel('Search commands').fill('')
+  await page.screenshot({ path: 'artifacts/e2e-command-palette.png', fullPage: true })
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
   assert(
     await commandTrigger.evaluate((node) => document.activeElement === node),
-    'Closing the Command Deck did not restore focus to the control that opened it',
+    'Closing the command palette did not restore focus to the control that opened it',
   )
 
   // -- dynamic WebMCP surface ------------------------------------------------
@@ -1390,15 +1397,16 @@ try {
   )
 
   // -- one named capability is operated by human and agent alike ------------
-  // The human invokes it from the Command Deck; WebMCP discovers and invokes
-  // the same registry id. Both land in the same monotonic transaction history,
+  // The human invokes it from the palette's capability sheet; WebMCP discovers
+  // and invokes the same registry id. Both land in the same monotonic transaction history,
   // and shared undo restores the exact prior document name.
   const beforeParity = await page.evaluate(() => ({
     revision: window.brickwright.getDocument().revision,
     name: window.brickwright.getDocument().name,
   }))
-  await page.getByRole('button', { name: 'Command deck' }).click()
-  await commandDialog.getByRole('button', { name: /Rename project/ }).click()
+  await page.getByRole('button', { name: 'Command palette' }).click()
+  await commandDialog.getByLabel('Search commands').fill('rename project')
+  await commandDialog.getByRole('option').filter({ hasText: 'SET UP' }).first().click()
   await commandDialog.getByLabel('Project name').fill('Human + Agent Survey Rover')
   await commandDialog.getByRole('button', { name: 'RUN COMMAND' }).click()
   await page.waitForFunction(
@@ -1411,7 +1419,7 @@ try {
   }))
   assert(
     humanParity.name === 'Human + Agent Survey Rover',
-    'The human Command Deck did not commit its shared capability',
+    'The human capability sheet did not commit its shared capability',
   )
   await page.keyboard.press('Escape')
   await commandDialog.waitFor({ state: 'hidden' })
@@ -2556,8 +2564,8 @@ try {
           viewportPlacement: { parts: afterPlace.parts, revision: afterPlace.revision },
           buildStepsVisibleAfterEdit: stepCards,
           boxSelection: marqueeSelected,
-          commandDeckCapabilities: 13,
-          commandDeckScreenshot: 'artifacts/e2e-command-deck.png',
+          paletteCapabilities: capabilityRows,
+          commandPaletteScreenshot: 'artifacts/e2e-command-palette.png',
           sharedCapabilityParity: {
             humanRevision: humanParity.revision,
             agentRevision: agentParity.result?.resultRevision,

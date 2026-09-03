@@ -1,19 +1,6 @@
-import {
-  Copy,
-  CopyPlus,
-  ClipboardPaste,
-  Scissors,
-  Lock,
-  Hand,
-  Redo2,
-  Rotate3d,
-  Search,
-  Trash2,
-  Undo2,
-} from 'lucide-react'
+import { ClipboardPaste, Redo2, Search, Undo2 } from 'lucide-react'
 import { type ReactElement } from 'react'
 import { GlassIsland } from '../../ui/liquid'
-import type { RenderMode } from '../CadViewport'
 import { ExportCenter } from '../ExportCenter'
 import { Slot } from './ExtensionRegistry'
 import { formatChord, type ShortcutMap } from './shortcuts'
@@ -24,10 +11,17 @@ import type { Workbench } from './useWorkbench'
 /**
  * The always-reachable tool shelf.
  *
- * Modelling modes stay at the left, contextual actions appear only when they can
- * do something, and the durable tools stay at the right. Nothing essential is
- * hidden under a generic gear: render, build order, command tools, help and
- * delivery each have a first-class control with an honest accessible name.
+ * Modelling modes at the left, the durable tools at the right, and nothing in
+ * between that the model itself already answers. The seven selection buttons
+ * that used to appear here on every click — reposition, duplicate, copy, cut,
+ * quarter turn, protect, remove — were the fourth on-screen copy of actions the
+ * right-click menu, the palette and a chord all already carried; the render
+ * `select` was a sixth copy of four `view.*` commands.
+ *
+ * Nothing essential is hidden under a generic gear. The palette is not a gear:
+ * it lists every command under the control's own accessible name with its live
+ * chord, which is the same argument `layout.ts` already makes when it collapses
+ * the right dock on a narrow window.
  */
 export function Toolbar({
   workbench,
@@ -43,7 +37,6 @@ export function Toolbar({
   onToggleTimeline?: () => void
 }) {
   const { state, tool, setTool } = workbench
-  const selected = state.selection.length
   const chord = (id: string) => formatChord(shortcuts[id])
 
   return (
@@ -84,65 +77,6 @@ export function Toolbar({
           <em>{describeWorkbenchEscape(workbench)}</em>
         </span>
 
-        {selected > 0 && (
-          <>
-            <div className="rail-divider" />
-            <div className="toolgroup compact-tools selection-tools" aria-label={`${selected} selected`}>
-              <span className="selection-tool-count">{selected}</span>
-              {/* First, because moving the thing you just selected is the most
-               * common next action — and until now the only always-visible
-               * control named after it was the Move *tool*, which arms a
-               * translate gizmo rather than picking the part up. Someone
-               * hunting for how to move a brick found that button, dragged,
-               * got nothing, and concluded the editor could not do it. */}
-              <IconButton
-                icon={<Hand />}
-                label="Reposition"
-                shortcut={chord('edit.reposition')}
-                disabled={selected !== 1}
-                disabledReason="select one part"
-                onClick={() => workbench.pickUpSelection()}
-              />
-              <IconButton
-                icon={<CopyPlus />}
-                label="Duplicate selection"
-                shortcut={chord('edit.clone')}
-                onClick={() => workbench.duplicateSelection()}
-              />
-              <IconButton
-                icon={<Copy />}
-                label="Copy parts"
-                shortcut={chord('edit.copy')}
-                onClick={() => workbench.copySelection()}
-              />
-              <IconButton
-                icon={<Scissors />}
-                label="Cut parts"
-                shortcut={chord('edit.cut')}
-                onClick={() => workbench.copySelection(true)}
-              />
-              <IconButton
-                icon={<Rotate3d />}
-                label="Quarter turn"
-                shortcut={chord('edit.quarter-turn')}
-                onClick={() => workbench.rotateSelection(90)}
-              />
-              <IconButton
-                icon={<Lock />}
-                label="Protect selection from agent edits"
-                shortcut={chord('edit.protect')}
-                onClick={() => workbench.protectSelection(true)}
-              />
-              <IconButton
-                icon={<Trash2 />}
-                label="Remove selection"
-                shortcut={chord('edit.delete')}
-                onClick={() => workbench.deleteSelection()}
-              />
-            </div>
-          </>
-        )}
-
         <div className="rail-spacer" />
 
         <div className="toolgroup compact-tools history-tools">
@@ -181,22 +115,6 @@ export function Toolbar({
         <div className="rail-divider" />
 
         <div className="toolgroup compact-tools direct-tools" aria-label="Workspace tools">
-          <label className="render-direct" title={`Render mode: ${workbench.renderMode}`}>
-            <WorkbenchIcon name="render" size={16} />
-            <span className="visually-hidden">Viewport render mode</span>
-            <select
-              value={workbench.renderMode}
-              onChange={(event) => workbench.setRenderMode(event.target.value as RenderMode)}
-              aria-label="Viewport render mode"
-            >
-              <option value="beauty">Beauty</option>
-              <option value="orthographic">Orthographic</option>
-              <option value="connections">Connections</option>
-              <option value="violations">Violations</option>
-              <option value="silhouette">Silhouette</option>
-              <option value="exploded">Exploded</option>
-            </select>
-          </label>
           {onToggleTimeline && (
             <IconButton
               icon={<WorkbenchIcon name="timeline" />}
@@ -205,12 +123,6 @@ export function Toolbar({
               onClick={onToggleTimeline}
             />
           )}
-          <IconButton
-            icon={<WorkbenchIcon name="commands" />}
-            label="Command deck"
-            shortcut={chord('project.command-deck')}
-            onClick={() => workbench.setModal('core:command-deck')}
-          />
           <IconButton
             icon={<WorkbenchIcon name="help" />}
             label="Keyboard shortcuts"
