@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { handleScale } from './Manipulators'
+import { adaptiveGizmoSize, HANDLE_DEAD_BAND } from './SelectionManipulator'
 
 /**
  * A handle scaled by eye distance is supposed to keep one apparent size. The
@@ -37,5 +38,43 @@ describe('joint handle scaling', () => {
   it('still clamps a degenerate camera', () => {
     expect(handleScale(0)).toBe(0.01)
     expect(handleScale(1e9)).toBe(60)
+  })
+})
+
+/**
+ * The move/rotate gizmo's own sizing, which is a feedback loop rather than a
+ * function of distance: the correction changes the size, the new size changes
+ * the measurement, and the next frame corrects again. Without a band to settle
+ * in, the handle hunts around its target every frame a gizmo is on screen —
+ * which is most of them, because a click hands over the Move tool.
+ */
+describe('transform gizmo sizing', () => {
+  const TARGET = 112
+
+  it('leaves a size alone once it is close enough to the target', () => {
+    expect(adaptiveGizmoSize(1.05, TARGET)).toBe(1.05)
+    expect(adaptiveGizmoSize(1.05, TARGET * (1 + HANDLE_DEAD_BAND * 0.9))).toBe(1.05)
+    expect(adaptiveGizmoSize(1.05, TARGET * (1 - HANDLE_DEAD_BAND * 0.9))).toBe(1.05)
+  })
+
+  it('settles instead of hunting when the measurement follows the size', () => {
+    // The loop the dead band exists for: a projected extent proportional to the
+    // handle's own size, sampled and corrected once per frame.
+    const projected = (size: number) => (TARGET * 0.62 * size) / 1.05
+    let size = 1.05
+    const history: number[] = []
+    for (let frame = 0; frame < 30; frame += 1) {
+      size = adaptiveGizmoSize(size, projected(size))
+      history.push(size)
+    }
+    expect(history.at(-1)).toBe(history.at(-5))
+    expect(projected(history.at(-1)!)).toBeGreaterThan(96)
+  })
+
+  it('still corrects a handle that is genuinely the wrong size', () => {
+    expect(adaptiveGizmoSize(1.05, 20)).toBeGreaterThan(1.05)
+    expect(adaptiveGizmoSize(1.05, 400)).toBeLessThan(1.05)
+    expect(adaptiveGizmoSize(1.05, 0)).toBe(1.05)
+    expect(adaptiveGizmoSize(1.05, Number.NaN)).toBe(1.05)
   })
 })

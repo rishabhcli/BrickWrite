@@ -7,7 +7,7 @@ import type { PartDefinition, PartInstance, Transform } from '../cad/types'
 import { useEdgeLodRegistration } from './render/EdgeLod'
 import { usePartGeometry } from './render/usePartGeometry'
 import { registerPickable, unregisterPickable } from './render/idPass'
-import { surfaceMaterialFor, type PartAppearance } from './PartVisual'
+import { NO_RAYCAST, surfaceMaterialFor, type PartAppearance } from './PartVisual'
 
 /**
  * Instanced rendering for the bulk of a model.
@@ -385,7 +385,15 @@ function BatchEdges({
   useEffect(() => () => merged?.dispose(), [merged])
 
   if (!merged) return null
-  return <lineSegments ref={lines} geometry={merged} material={material} userData={{ partBatchEdges: true }} />
+  return (
+    <lineSegments
+      ref={lines}
+      geometry={merged}
+      material={material}
+      raycast={NO_RAYCAST}
+      userData={{ partBatchEdges: true }}
+    />
+  )
 }
 
 /**

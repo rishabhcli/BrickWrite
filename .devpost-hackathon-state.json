@@ -1,0 +1,22 @@
+{
+  "hackathon": {
+    "name": "The WebMCP Challenge",
+    "url": "https://webmcp.devpost.com/"
+  },
+  "current_stage": "prepare-submission",
+  "completed_stages": [],
+  "rules_acknowledged": false,
+  "project_brief": "Browser-based brick CAD where people and agents share a revisioned document, real-part catalog, previews, validation, and undo through WebMCP.",
+  "documents": {
+    "submission_draft": "devpost-submission.md"
+  },
+  "submission": {
+    "status": "needs-work",
+    "submit_authorized": false,
+    "video": "Placeholder requested by the builder; real public YouTube URL pending.",
+    "tested_client": "Codex macOS application, confirmed by the builder.",
+    "security_scan": "review: no high-confidence secret patterns; generic assignments in seven test fixtures; .env.local is ignored by git.",
+    "notes": "Draft text and judge-only answers saved and read back. Country is still blank and public video URL is intentionally pending. Devpost publishes the portfolio page when updating project details; the challenge entry remains a draft. No final submit action or terms acceptance. Record explicit rules acknowledgment before final readiness."
+  },
+  "next_command": "prepare-submission"
+}

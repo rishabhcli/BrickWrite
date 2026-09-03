@@ -51,6 +51,20 @@ export function Toolbar({
             onClick={() => setTool('select')}
           />
           <ToolButton
+            active={tool === 'pan'}
+            icon={<WorkbenchIcon name="pan" />}
+            label="Pan"
+            shortcut={chord('tool.pan')}
+            onClick={() => setTool('pan')}
+          />
+          <ToolButton
+            active={tool === 'orbit'}
+            icon={<WorkbenchIcon name="orbit" />}
+            label="Orbit"
+            shortcut={chord('tool.orbit')}
+            onClick={() => setTool('orbit')}
+          />
+          <ToolButton
             active={tool === 'move'}
             icon={<WorkbenchIcon name="move" />}
             label="Move"

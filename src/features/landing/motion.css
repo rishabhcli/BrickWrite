@@ -125,14 +125,3 @@
     transform: scaleX(1);
   }
 }
-
-/* Type does not travel — it clears. The line's own box uncovers it from the top
- * down, the way a brick's face clears the stud row it is being lowered past. */
-@keyframes bw-clear {
-  from {
-    clip-path: inset(0 0 100% 0);
-  }
-  to {
-    clip-path: inset(0 0 -0.18em 0);
-  }
-}

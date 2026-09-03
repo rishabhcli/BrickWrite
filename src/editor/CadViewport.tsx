@@ -49,7 +49,15 @@ import type { SweepResult } from './render/sweep'
 import { DEFAULT_VISIBILITY, resolveVisibility, type VisibilityState } from './render/visibility'
 import { DEFAULT_MANIPULATION, type ManipulationOptions } from './workbench/transform'
 
-export type EditorTool = 'select' | 'move' | 'rotate' | 'connect'
+/**
+ * What the left mouse button means.
+ *
+ * `pan` and `orbit` are camera tools rather than edit tools, and they sit in
+ * the same list on purpose: the button is one resource, so the thing that
+ * decides what a drag does has to be one choice. Splitting them into a second
+ * mode would leave two settings competing for the same gesture.
+ */
+export type EditorTool = 'select' | 'pan' | 'orbit' | 'move' | 'rotate' | 'connect'
 export type CameraView = 'isometric' | 'front' | 'rear' | 'left' | 'right' | 'top'
 export type RenderMode = 'beauty' | 'orthographic' | 'silhouette' | 'connections' | 'violations' | 'exploded'
 export type { PlacementRequest }
@@ -809,6 +817,12 @@ function CadViewportScene({
 
     const sample = () => {
       if (retired || window.document.hidden || interactingRef.current) return
+      // Anything holding the loop continuous — a drag, an orbit, a wheel burst,
+      // an animation — is moving the picture right now, which is exactly when a
+      // pipeline stall is felt. `interactingRef` alone did not cover this: the
+      // wheel handler reports the interaction and clears it in the same tick, so
+      // a zoom stalled the GPU twice a second while it ran.
+      if (renderPolicy.held.length > 0) return
       // Nothing has been repainted since the last look, so the readback would
       // return the pixels already reported and stall the pipeline to do it.
       if (renderPolicy.framesPainted === sampledAtFrame) return
@@ -967,7 +981,7 @@ function CadViewportScene({
 
   // A selection overlay does not change the source batches or their identity
   // ranges. Only move/rotate tools pull parts out for a live transform preview.
-  const overlaySelection = tool === 'select' || tool === 'connect'
+  const overlaySelection = tool !== 'move' && tool !== 'rotate'
   const excluded = useMemo(() => {
     const ids = new Set(!overlaySelection && selection.length <= INDIVIDUAL_SELECTION_LIMIT ? selection : [])
     if (renderMode === 'violations' && invalidIds.size <= INDIVIDUAL_SELECTION_LIMIT) {
@@ -1533,6 +1547,7 @@ function CadViewportScene({
           exploded={renderMode === 'exploded'}
           view={cameraView}
           placing={placing}
+          tool={tool}
           resetKey={cameraResetKey + captureFrameKey}
           motion={motion}
         />

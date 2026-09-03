@@ -81,7 +81,7 @@ export interface ActCommand {
   readonly kind: 'act'
 }
 
-export function viewportMode(tool: 'select' | 'move' | 'rotate' | 'connect', selectionCount: number): ViewportKeyMode {
+export function viewportMode(tool: 'select' | 'pan' | 'orbit' | 'move' | 'rotate' | 'connect', selectionCount: number): ViewportKeyMode {
   return (tool === 'move' || tool === 'rotate') && selectionCount > 0 ? 'nudge' : 'orbit'
 }
 

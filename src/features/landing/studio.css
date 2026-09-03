@@ -816,10 +816,6 @@ body:has(.bw-studio) #pf-main {
   border-color: #78955a66;
   color: #c3d7ae;
 }
-.bw-studio .bw-assembly-brick {
-  will-change: auto;
-}
-
 /*
  * The two paper sections re-point the ink tokens, they do not merely set
  * `color`.
@@ -1551,4 +1547,182 @@ body:has(.bw-studio[data-motion='paused']) #pf-main {
 .bw-stage-still .bw-note {
   font-size: 12px;
   max-width: 42ch;
+}
+
+/* -------------------------------------------------------------------------
+ * The page as a stack of plates.
+ *
+ * A brick meets the plate below it with a bold, obvious edge, so the page does
+ * the same at page scale: every colour run is a slab with a large top radius
+ * and a gap above it, and the plate colour showing through the two corner
+ * notches is what makes the run read as a separate piece resting on the last
+ * one rather than as a band of paint.
+ *
+ * `--r-plate` is a fourth radius, and tokens.css allows three on purpose. It is
+ * not a fourth control size — it is a page-structure radius, it exists only on
+ * the front door, and it lives here rather than in the shared sheet so that
+ * explore, gallery and projects never see it.
+ * ------------------------------------------------------------------------- */
+.bw-studio {
+  --r-plate: clamp(28px, 3.6vw, 64px);
+  --bw-focus-h: clamp(56px, 10svh, 132px);
+}
+/* Margin rather than padding: the slab keeps every responsive padding rule it
+   already had, and the gap is exactly what the radius needs to read. */
+.bw-studio .bw-plate-edge {
+  position: relative;
+  margin-top: var(--r-plate);
+  border-start-start-radius: var(--r-plate);
+  border-start-end-radius: var(--r-plate);
+  box-shadow:
+    0 -24px 56px -22px #00000059,
+    inset 0 1px 0 #ffffff1c;
+}
+/* Paper takes a darker hairline; a white one on #ede9df is invisible. */
+.bw-studio :is(.bw-campus-section, .bw-featured, .bw-simple-close).bw-plate-edge {
+  box-shadow:
+    0 -24px 56px -22px #00000038,
+    inset 0 1px 0 #ffffff8c;
+}
+
+/* -------------------------------------------------------------------------
+ * Focus curtains.
+ *
+ * The cinematic part is not a blur on the content, it is a depth-of-field ramp
+ * at the edges of the frame that content dissolves into as it leaves the
+ * reading zone. Three stacked backdrop passes at 2/6/14px, each masked to a
+ * shorter reach than the last, so the falloff is a gradient rather than a step.
+ *
+ * They start invisible and are faded in by the scroll itself: at rest the top
+ * strip would sit over the hero topline and the motion toggle, and softening a
+ * control nobody has touched yet is not atmosphere, it is a bug. It also keeps
+ * anything experimental away from the first paint, which is the LCP one.
+ * ------------------------------------------------------------------------- */
+.bw-studio > .bw-focus,
+.bw-studio > .bw-progress {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Compound, not just `animation-timeline`: an engine mid-rollout can parse
+     `view()` while `animation-range` is still off, and every range would
+     silently fall back to the full timeline. */
+  @supports ((animation-timeline: view()) and (animation-range: entry 0% entry 55%)) {
+    .bw-studio > .bw-focus {
+      display: block;
+      position: sticky;
+      z-index: 5;
+      height: var(--bw-focus-h);
+      pointer-events: none;
+      opacity: 0;
+      animation-name: bw-focus-lead;
+      animation-duration: auto;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: scroll();
+    }
+    .bw-studio > .bw-focus-lead {
+      top: 0;
+      margin-bottom: calc(var(--bw-focus-h) * -1);
+    }
+    .bw-studio > .bw-focus-trail {
+      bottom: 0;
+      margin-top: calc(var(--bw-focus-h) * -1);
+      animation-name: bw-focus-trail;
+    }
+    .bw-studio > .bw-focus > i {
+      position: absolute;
+      inset: 0;
+      -webkit-backdrop-filter: blur(var(--b));
+      backdrop-filter: blur(var(--b));
+      mask-image: linear-gradient(to var(--edge), #000 0%, #000 calc(var(--m) * 0.34), transparent var(--m));
+    }
+    .bw-focus-lead > i {
+      --edge: bottom;
+    }
+    .bw-focus-trail > i {
+      --edge: top;
+    }
+    .bw-studio > .bw-focus > i:nth-child(1) {
+      --b: 2px;
+      --m: 100%;
+    }
+    .bw-studio > .bw-focus > i:nth-child(2) {
+      --b: 6px;
+      --m: 62%;
+    }
+    .bw-studio > .bw-focus > i:nth-child(3) {
+      --b: 14px;
+      --m: 30%;
+    }
+    @media (max-width: 760px) {
+      /* Two passes, not three: the third is a full-width GPU blur for about
+         eight pixels of ramp on a phone. */
+      .bw-studio > .bw-focus > i:nth-child(3) {
+        display: none;
+      }
+    }
+
+    /* One course mark for the whole page. */
+    .bw-studio > .bw-progress {
+      display: block;
+      position: sticky;
+      top: 0;
+      z-index: 7;
+      height: 2px;
+      margin-bottom: -2px;
+      pointer-events: none;
+    }
+    .bw-studio > .bw-progress > i {
+      display: block;
+      height: 100%;
+      background: var(--studio-orange);
+      transform-origin: 0 50%;
+      scale: 0 1;
+      animation-name: bw-progress-fill;
+      animation-duration: auto;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: scroll();
+    }
+
+    /* Duration-zeroing does nothing to a scroll-driven animation, so the pause
+       toggle has to remove the elements instead — which also takes them out of
+       `document.getAnimations()`. */
+    .bw-studio[data-motion='paused'] > .bw-focus,
+    .bw-studio[data-motion='paused'] > .bw-progress {
+      display: none;
+    }
+  }
+}
+
+@keyframes bw-focus-lead {
+  from {
+    opacity: 0;
+  }
+  2.5% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bw-focus-trail {
+  from {
+    opacity: 0;
+  }
+  2.5% {
+    opacity: 1;
+  }
+  96% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes bw-progress-fill {
+  to {
+    scale: 1 1;
+  }
 }

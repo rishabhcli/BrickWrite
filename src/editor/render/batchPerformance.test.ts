@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { buildMergedEdgeGeometry, instanceCapacity, writeInstanceMatrices, type BatchMember } from '../PartBatch'
+import { NO_RAYCAST } from '../PartVisual'
 import { IDENTITY_BASIS } from '../../cad/math'
 import { allocateEdgeVertexCounts } from './quality'
 
@@ -226,4 +227,62 @@ it('selected overlay materials win coplanar surface depth', async () => {
   expect(selected.polygonOffsetFactor).toBe(-1)
   expect(selected.polygonOffsetUnits).toBe(-1)
   expect(surfaceMaterialFor(4, 'solid').polygonOffset).toBe(false)
+})
+
+/**
+ * What the placement raycaster is allowed to hit.
+ *
+ * `PlacementController.sample()` raycasts the whole model root on every
+ * animation frame while a part is armed. The merged edge buffers live in that
+ * root and carry over two million vertices at five thousand parts, and three's
+ * `Line.raycast` tests every segment in the buffer: leaving them hittable cost
+ * roughly a million segment-distance tests per sample, for a surface nothing
+ * can ever be placed on. The opt-out is a prop, so the property worth asserting
+ * is the one a missing prop would break — a ray straight down the edges of a
+ * brick returns the surface and nothing else.
+ */
+describe('edges are drawn, not hit', () => {
+  const scene = () => {
+    const box = new THREE.BoxGeometry(20, 24, 40)
+    const edges = new THREE.EdgesGeometry(box)
+    const root = new THREE.Object3D()
+    const surface = new THREE.Mesh(box, new THREE.MeshBasicMaterial())
+    const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial())
+    root.add(surface, lines)
+    root.updateMatrixWorld(true)
+    return { root, surface, lines, dispose: () => { box.dispose(); edges.dispose() } }
+  }
+
+  /** Straight down a corner edge, so a hittable line reports distance zero. */
+  const alongAnEdge = () => {
+    const raycaster = new THREE.Raycaster()
+    raycaster.params.Line = { threshold: 1 }
+    raycaster.set(new THREE.Vector3(10, 12, 200), new THREE.Vector3(0, 0, -1))
+    return raycaster
+  }
+
+  it('would be hit without the opt-out', () => {
+    const { root, lines, dispose } = scene()
+    const hits = alongAnEdge().intersectObject(root, true)
+    expect(hits.some((hit) => hit.object === lines)).toBe(true)
+    dispose()
+  })
+
+  it('reports no line hits once the opt-out is applied', () => {
+    const { root, lines, dispose } = scene()
+    lines.raycast = NO_RAYCAST
+    expect(alongAnEdge().intersectObject(root, true).some((hit) => hit.object === lines)).toBe(false)
+    dispose()
+  })
+
+  it('still hits the surface the placement ghost actually lands on', () => {
+    const { root, surface, lines, dispose } = scene()
+    lines.raycast = NO_RAYCAST
+    const raycaster = new THREE.Raycaster()
+    raycaster.set(new THREE.Vector3(0, 0, 200), new THREE.Vector3(0, 0, -1))
+    const hits = raycaster.intersectObject(root, true)
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits.every((hit) => hit.object === surface)).toBe(true)
+    dispose()
+  })
 })

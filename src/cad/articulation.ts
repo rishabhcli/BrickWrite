@@ -100,14 +100,17 @@ export function rigidGroup(document: ModelDocument, seed: string): string[] {
 }
 
 function walkRigid(adjacency: Map<string, Set<string>>, seed: string): string[] {
+  // Moving cursor, not `queue.shift()`, for the reason `validation.components`
+  // spells out: a shift is a memmove of the remaining frontier, so a rigid group
+  // that is most of the model walks quadratically. Selecting a part runs this
+  // once per seed through `findArticulatedJoints`, on every click.
   const seen = new Set<string>([seed])
-  const queue = [seed]
-  while (queue.length) {
-    const current = queue.shift()!
-    for (const neighbour of adjacency.get(current) ?? []) {
+  const frontier = [seed]
+  for (let head = 0; head < frontier.length; head += 1) {
+    for (const neighbour of adjacency.get(frontier[head]!) ?? []) {
       if (seen.has(neighbour)) continue
       seen.add(neighbour)
-      queue.push(neighbour)
+      frontier.push(neighbour)
     }
   }
   return [...seen]

@@ -7,6 +7,17 @@ import type { PartDefinition } from '../cad/types'
 
 export type PartAppearance = 'solid' | 'selected' | 'target' | 'ghost' | 'removed' | 'silhouette' | 'invalid'
 
+/**
+ * Edges are drawn, never hit.
+ *
+ * The placement raycaster walks the whole model root every animation frame
+ * while a part is armed, and three's `Line.raycast` tests every segment in
+ * the buffer: the merged batch edges carry over two million vertices at five
+ * thousand parts, so leaving them hittable cost roughly a million
+ * segment-distance tests per sample for a surface nothing can land on.
+ */
+export const NO_RAYCAST = () => {}
+
 interface PartVisualProps {
   definition: PartDefinition
   colorCode: number
@@ -258,7 +269,7 @@ export const PartVisual = memo(function PartVisual({ definition, colorCode, appe
     <group>
       <mesh geometry={geometry.surface} material={materials} castShadow={castShadow} receiveShadow={castShadow} />
       {showEdges && geometry.edges && appearance !== 'silhouette' && (
-        <lineSegments geometry={geometry.edges} material={edgeMaterial(colorCode, appearance)} />
+        <lineSegments geometry={geometry.edges} material={edgeMaterial(colorCode, appearance)} raycast={NO_RAYCAST} />
       )}
     </group>
   )

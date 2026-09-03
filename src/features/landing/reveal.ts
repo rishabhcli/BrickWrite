@@ -209,6 +209,14 @@ export function useFilmStage(paused = false) {
  * variables, a lerp so the lamp does not stutter. Touch and reduced motion
  * leave the lamp parked — a wandering highlight on a phone is not craft,
  * it is a fingerprint smudge.
+ *
+ * Two things this deliberately does not do, because it used to do both. It does
+ * not measure a magnet inside the frame it is also writing styles in — that is
+ * one forced layout per magnet per frame — so rects are cached and a scroll only
+ * marks them stale for the next frame to re-read. And it does not run the lamp
+ * lerp on a surface that has no lamp: `.bw-studio` hides the whole atmosphere,
+ * so on the landing page every one of those frames was interpolating a variable
+ * nothing reads.
  */
 export function usePointerField<T extends HTMLElement>(paused = false) {
   const ref = useRef<T | null>(null)
@@ -227,8 +235,11 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
       return
     }
 
+    // `.bw-clutch` is the only consumer of `--bw-ptr-*`. Asked once, on mount.
+    const clutch = root.querySelector<HTMLElement>('.bw-clutch')
+    const lamp = !!clutch && clutch.offsetParent !== null
+
     let frame = 0
-    let running = false
     let armed = false
     let currentX = window.innerWidth * 0.62
     let currentY = window.innerHeight * 0.2
@@ -237,17 +248,16 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
     const scroller = document.getElementById('pf-main')
     // `.pf-frame__body` is both the scroller and Chromium's containing block
     // for the fixed landing chrome. Add its scroll position back, then remove
-    // its top-bar offset so the decorative lamp follows the pointer on scroll.
+    // its top-bar offset, so the lamp follows the pointer on scroll.
     const scrollOffset = () => (scroller ? scroller.scrollTop - scroller.getBoundingClientRect().top : window.scrollY)
-    const paintScrollOffset = () => {
-      const offset = scrollOffset()
-      root.style.setProperty('--bw-scroll-y', `${offset.toFixed(1)}px`)
-      root.style.setProperty('--bw-ptr-y', `${(currentY + offset).toFixed(1)}px`)
-    }
 
-    let magnets: HTMLElement[] = [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
-    const recount = () => {
+    let magnets = [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
+    let boxes: DOMRect[] = []
+    let stale = true
+    const measure = () => {
       magnets = [...root.querySelectorAll<HTMLElement>('.bw-magnet')]
+      boxes = magnets.map((magnet) => magnet.getBoundingClientRect())
+      stale = false
     }
     const park = () => {
       for (const magnet of magnets) {
@@ -256,14 +266,11 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
       }
     }
 
-    const tick = () => {
-      running = false
-      currentX += (targetX - currentX) * 0.14
-      currentY += (targetY - currentY) * 0.14
-      root.style.setProperty('--bw-ptr-x', `${currentX.toFixed(1)}px`)
-      paintScrollOffset()
-      for (const magnet of magnets) {
-        const box = magnet.getBoundingClientRect()
+    const pullMagnets = () => {
+      for (let index = 0; index < magnets.length; index += 1) {
+        const magnet = magnets[index]
+        const box = boxes[index]
+        if (!magnet || !box) continue
         const cx = box.left + box.width / 2
         const cy = box.top + box.height / 2
         const reach = Math.max(box.width, box.height) * 0.9 + 48
@@ -278,10 +285,25 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
         magnet.style.setProperty('--bw-mag-x', step((dx / Math.max(1, box.width)) * 8))
         magnet.style.setProperty('--bw-mag-y', step((dy / Math.max(1, box.height)) * 6))
       }
-      if (Math.abs(targetX - currentX) > 0.4 || Math.abs(targetY - currentY) > 0.4) {
-        running = true
-        frame = requestAnimationFrame(tick)
-      }
+    }
+
+    const tick = () => {
+      frame = 0
+      // Read before write: re-measuring here rather than in the scroll handler
+      // is what keeps a scroll from costing a synchronous layout.
+      if (stale) measure()
+      pullMagnets()
+      if (!lamp) return
+      currentX += (targetX - currentX) * 0.14
+      currentY += (targetY - currentY) * 0.14
+      root.style.setProperty('--bw-ptr-x', `${currentX.toFixed(1)}px`)
+      root.style.setProperty('--bw-ptr-y', `${(currentY + scrollOffset()).toFixed(1)}px`)
+      // Only the lerp needs another frame. The magnets read the pointer
+      // directly, so with no lamp they have already settled.
+      if (Math.abs(targetX - currentX) > 0.4 || Math.abs(targetY - currentY) > 0.4) frame = requestAnimationFrame(tick)
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(tick)
     }
 
     const onMove = (event: PointerEvent) => {
@@ -291,10 +313,14 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
         armed = true
         setLive(true)
       }
-      if (!running) {
-        running = true
-        frame = requestAnimationFrame(tick)
-      }
+      schedule()
+    }
+
+    const invalidate = () => {
+      stale = true
+      // A parked pointer needs no new magnet pass, but the lamp still has to
+      // keep up with the scroll.
+      if (lamp) schedule()
     }
 
     const onLeave = () => {
@@ -303,16 +329,16 @@ export function usePointerField<T extends HTMLElement>(paused = false) {
       park()
     }
 
-    paintScrollOffset()
+    if (lamp) schedule()
     window.addEventListener('pointermove', onMove, { passive: true })
-    window.addEventListener('resize', recount, { passive: true })
-    scroller?.addEventListener('scroll', paintScrollOffset, { passive: true })
+    window.addEventListener('resize', invalidate, { passive: true })
+    scroller?.addEventListener('scroll', invalidate, { passive: true })
     document.documentElement.addEventListener('mouseleave', onLeave)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('resize', recount)
-      scroller?.removeEventListener('scroll', paintScrollOffset)
+      window.removeEventListener('resize', invalidate)
+      scroller?.removeEventListener('scroll', invalidate)
       document.documentElement.removeEventListener('mouseleave', onLeave)
     }
   }, [reduced, paused])

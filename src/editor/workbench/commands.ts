@@ -95,6 +95,8 @@ export function createCommandHandlers(host: CommandHost): Record<string, () => C
   return {
     // Tools ---------------------------------------------------------------
     'tool.select': () => run(() => w.setTool('select')),
+    'tool.pan': () => run(() => w.setTool('pan')),
+    'tool.orbit': () => run(() => w.setTool('orbit')),
     'tool.move': () => run(() => w.setTool('move')),
     'tool.rotate': () =>
       run(() => {

@@ -1,18 +1,34 @@
 /** A single arbiter for native controls, R3F handles and click selection. */
 export type PointerOwner = 'none' | 'orbit' | 'select' | 'marquee' | 'placement' | 'gizmo' | 'joint' | 'section'
 export const CLICK_SLOP_PX = 4
+
+/** What a drag means once it clears the slop. Decided by the caller, not here. */
+export type DragIntent = 'orbit' | 'marquee'
+
 export interface HitContext {
   placementArmed?: boolean
   gizmo?: boolean
   joint?: boolean
   section?: boolean
+  /**
+   * True while a camera tool owns the left button — Pan, Orbit, or Space held.
+   *
+   * A press then belongs to the camera outright, which is what makes them modal
+   * rather than modifier-shaped: no pick on release, no marquee, nothing to
+   * arbitrate. Edit gestures that are already in flight still win, because a
+   * gizmo or section handle under the cursor is a more specific answer than
+   * "the camera generally has this button".
+   */
+  cameraTool?: boolean
 }
+
 export function classifyPointerDown(event: Pick<PointerEvent, 'button' | 'shiftKey' | 'altKey'>, ctx: HitContext): PointerOwner {
   if (ctx.placementArmed) return 'placement'
   if (event.button !== 0) return event.button === 1 || event.button === 2 ? 'orbit' : 'none'
   if (ctx.gizmo) return 'gizmo'
   if (ctx.joint) return 'joint'
   if (ctx.section) return 'section'
+  if (ctx.cameraTool) return 'orbit'
   if (event.shiftKey || event.altKey) return 'marquee'
   return 'select'
 }
@@ -42,6 +58,11 @@ export class PointerRouter {
     this.placementArmed = armed
     if (armed || this.owner === 'placement') this.claim(armed ? 'placement' : 'none')
   }
+  /** True while Pan or Orbit is the active tool, or Space is held. */
+  cameraTool = false
+  setCameraTool(active: boolean) {
+    this.cameraTool = active
+  }
   subscribe(listener: (owner: PointerOwner) => void) {
     this.listeners.add(listener)
     listener(this.owner)
@@ -52,7 +73,7 @@ export class PointerRouter {
     return () => { this.hitTests.delete(test) }
   }
   classify(event: PointerEvent) {
-    const context: HitContext = { placementArmed: this.placementArmed }
+    const context: HitContext = { placementArmed: this.placementArmed, cameraTool: this.cameraTool }
     for (const test of this.hitTests) Object.assign(context, test(event))
     return classifyPointerDown(event, context)
   }
@@ -65,12 +86,20 @@ export function pointerRouterFor(canvas: HTMLCanvasElement): PointerRouter {
 }
 
 /** Installs once per canvas, before controls' bubbling listeners. Left drags
- * enter CameraControls through its rotate API only after click slop is crossed;
- * no replayed/synthetic pointerdown is needed to turn a click into an orbit. */
+ * enter CameraControls through its own API only after click slop is crossed;
+ * no replayed/synthetic pointerdown is needed to turn a click into a camera move.
+ *
+ * `drag` is asked what a left drag means the moment it clears the slop, and
+ * answers from the active tool: the camera in Orbit, Pan and the gizmo tools, a
+ * marquee in Select. It applies the motion itself when it takes the gesture, and
+ * returns 'marquee' to hand the gesture to the selection layer instead. Deciding
+ * at the slop rather than at the press is what keeps a click a click — a press
+ * that claimed 'marquee' outright would cancel and stop the camera on every
+ * single selection. */
 export function installPointerRouter(
   canvas: HTMLCanvasElement,
   router: PointerRouter,
-  rotate: (dx: number, dy: number) => void,
+  drag: (dx: number, dy: number) => DragIntent,
 ) {
   let press: { id: number; x: number; y: number; lastX: number; lastY: number; left: boolean; button: number; manual: boolean } | null = null
   let deferredContext = false
@@ -101,10 +130,14 @@ export function installPointerRouter(
   }
   const move = (event: PointerEvent) => {
     if (!press || event.pointerId !== press.id || !press.left || !press.manual) return
-    if (router.owner === 'select' && Math.hypot(event.clientX - press.x, event.clientY - press.y) > CLICK_SLOP_PX) {
-      router.claim('orbit')
+    const dx = event.clientX - press.lastX
+    const dy = event.clientY - press.lastY
+    if (router.owner === 'select') {
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) <= CLICK_SLOP_PX) return
+      router.claim(drag(dx, dy) === 'marquee' ? 'marquee' : 'orbit')
+    } else if (router.owner === 'orbit') {
+      drag(dx, dy)
     }
-    if (router.owner === 'orbit') rotate(event.clientX - press.lastX, event.clientY - press.lastY)
     if (router.owner !== 'select') { press.lastX = event.clientX; press.lastY = event.clientY }
   }
   const release = (event?: Event) => {

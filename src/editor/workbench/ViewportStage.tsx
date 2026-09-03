@@ -232,7 +232,9 @@ export function ViewportStage({
       <p id="viewport-keys" className="visually-hidden">
         {workbench.tool === 'move' || workbench.tool === 'rotate'
           ? 'Arrows move · Page Up/Down raise/lower · Shift for a coarser step · Escape cancels a drag'
-          : 'Drag to orbit · Right-drag to pan · Scroll to zoom · Shift-drag to select'}
+          : workbench.tool === 'select'
+            ? 'Drag to box select · drag a selected part to move it · Middle-drag to orbit · Right-drag or hold Space to pan · Scroll to zoom'
+            : 'Drag to move the camera · Middle-drag to orbit · Right-drag or hold Space to pan · Scroll to zoom'}
         {' · F frames · Shift+F focuses'}
       </p>
       <span id="viewport-live" className="visually-hidden" role="status" aria-live="polite" />

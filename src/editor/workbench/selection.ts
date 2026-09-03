@@ -112,14 +112,15 @@ export function connectionAdjacency(document: ModelDocument): Map<string, Set<st
 export function connectedComponent(document: ModelDocument, seed: readonly string[]): string[] {
   const adjacency = connectionAdjacency(document)
   const seen = new Set<string>()
-  const queue = seed.filter((id) => document.parts[id])
-  for (const id of queue) seen.add(id)
-  while (queue.length) {
-    const current = queue.shift()!
-    for (const neighbour of adjacency.get(current) ?? []) {
+  // A moving cursor rather than `shift()`: a building is one component, so the
+  // frontier is the model and shifting it is quadratic in part count.
+  const frontier = seed.filter((id) => document.parts[id])
+  for (const id of frontier) seen.add(id)
+  for (let head = 0; head < frontier.length; head += 1) {
+    for (const neighbour of adjacency.get(frontier[head]!) ?? []) {
       if (seen.has(neighbour)) continue
       seen.add(neighbour)
-      queue.push(neighbour)
+      frontier.push(neighbour)
     }
   }
   return [...seen]

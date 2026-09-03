@@ -690,21 +690,70 @@ export function ViewportControls(props: ViewportControlsProps) {
 
   useEffect(() => {
     const element = gl.domElement
-    let pressed: { x: number; y: number; button: number; shift: boolean; alt: boolean } | null = null
+    let pressed: { x: number; y: number; button: number; shift: boolean; alt: boolean; marquee: boolean } | null = null
     let lasso: Array<readonly [number, number]> | null = null
     /** Set on press when the pointer landed on a part that is already selected. */
     let grabbed: { partId: string; x: number; y: number } | null = null
     let reseating = false
 
-    const local = (event: PointerEvent) => {
-      const bounds = element.getBoundingClientRect()
-      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+    // `getBoundingClientRect` during a pointermove is a forced synchronous layout,
+    // and this listener is on the window: every move anywhere in the app paid one,
+    // on a page whose chrome runs a 20px backdrop blur. The box only changes when
+    // the canvas resizes or the page scrolls, which is what `ui/liquid/rect.ts`
+    // already says and does for the glass surfaces.
+    let box = element.getBoundingClientRect()
+    const measure = () => { box = element.getBoundingClientRect() }
+    const boxObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    boxObserver?.observe(element)
+    window.addEventListener('scroll', measure, { passive: true, capture: true })
+    window.addEventListener('resize', measure, { passive: true })
+
+    const local = (event: PointerEvent) => ({ x: event.clientX - box.left, y: event.clientY - box.top })
+
+    /*
+     * The marquee is drawn once per frame, not once per pointer event.
+     *
+     * A high-rate mouse delivers several moves per frame and each one used to
+     * be a `setState` on the viewport, so a box-select re-rendered the whole
+     * scene tree faster than the scene could draw it. Coalescing to the frame
+     * costs the overlay nothing — it cannot be seen more often than it is
+     * painted — and the terminal clear is flushed synchronously, because an
+     * overlay that outlives its gesture by a frame is a visible artefact.
+     */
+    let overlayFrame = 0
+    let queued: OverlayState | null = null
+    const EMPTY_OVERLAY: OverlayState = { marquee: null, lasso: null, sweep: null }
+    let published: OverlayState = EMPTY_OVERLAY
+    const emit = (next: OverlayState) => {
+      published = next
+      handlers.current.onOverlay(next)
+    }
+    const publishOverlay = (next: OverlayState) => {
+      queued = next
+      if (overlayFrame) return
+      overlayFrame = requestAnimationFrame(() => {
+        overlayFrame = 0
+        if (queued) emit(queued)
+        queued = null
+      })
+    }
+    const clearOverlay = () => {
+      if (overlayFrame) cancelAnimationFrame(overlayFrame)
+      overlayFrame = 0
+      queued = null
+      // Clearing what is already clear is a re-render for nothing, and this runs
+      // on every release, cancel and blur whether a gesture happened or not.
+      if (published === EMPTY_OVERLAY) return
+      emit(EMPTY_OVERLAY)
     }
 
     const onDown = (event: PointerEvent) => {
       if (!router.accepts(event) || !latest.current.enabled || !['select', 'orbit', 'marquee'].includes(router.owner)) return
+      // One layout read per press, so a gesture can never run on a box that moved
+      // without resizing or scrolling. The moves it covers pay nothing.
+      measure()
       const point = local(event)
-      pressed = { x: point.x, y: point.y, button: event.button, shift: event.shiftKey, alt: event.altKey }
+      pressed = { x: point.x, y: point.y, button: event.button, shift: event.shiftKey, alt: event.altKey, marquee: false }
       if (event.button !== 0) return
       // Only worth an identity read when something is selected to grab, so an
       // ordinary orbit press does not pay for a pick it will not use.
@@ -716,22 +765,28 @@ export function ViewportControls(props: ViewportControlsProps) {
           grabbed = { partId: hit.partId, x: point.x, y: point.y }
         }
       }
+      // A camera tool owns the button outright, modifiers included: Pan that
+      // sometimes boxed instead would not be a mode.
+      if (router.cameraTool) return
       if (event.altKey) {
         lasso = [[point.x, point.y]]
         router.claim('marquee')
-        handlers.current.onOverlay({ marquee: null, lasso, sweep: null })
+        publishOverlay({ marquee: null, lasso, sweep: null })
       } else if (event.shiftKey) {
+        // Shift boxes from any editing tool, which is the gesture that existed
+        // before Select had one of its own. A plain drag in Select becomes a
+        // marquee at the slop instead, decided by the router.
         router.claim('marquee')
-        handlers.current.onOverlay({
-          marquee: { left: point.x, top: point.y, width: 0, height: 0 },
-          lasso: null,
-          sweep: null,
-        })
+        pressed.marquee = true
+        publishOverlay({ marquee: { left: point.x, top: point.y, width: 0, height: 0 }, lasso: null, sweep: null })
       }
     }
 
     const onMove = (event: PointerEvent) => {
+      // Hover owns no gesture, so it should not cost one. This listener is on the
+      // window and fires for every move in the document, including over the docks.
       if (!router.accepts(event)) return
+      if (!pressed && !jointDrag.current && !sectionDrag.current) return
       const point = local(event)
       if (jointDrag.current) {
         pendingJointPoint.current = point
@@ -758,12 +813,16 @@ export function ViewportControls(props: ViewportControlsProps) {
         // them.
         if (Math.hypot(point.x - last[0], point.y - last[1]) >= 2) {
           lasso = [...lasso, [point.x, point.y]]
-          handlers.current.onOverlay({ marquee: null, lasso, sweep: null })
+          publishOverlay({ marquee: null, lasso, sweep: null })
         }
         return
       }
-      if (pressed.shift) {
-        handlers.current.onOverlay({
+      // Either the press claimed it (shift) or the router promoted it at the
+      // slop (Select). Reading the owner rather than the modifier is what lets
+      // one drag serve both without the tool leaking into this handler.
+      if (pressed.marquee || router.owner === 'marquee') {
+        pressed.marquee = true
+        publishOverlay({
           marquee: {
             left: Math.min(pressed.x, point.x),
             top: Math.min(pressed.y, point.y),
@@ -814,17 +873,17 @@ export function ViewportControls(props: ViewportControlsProps) {
         const points = lasso.length >= 3 ? lasso : null
         lasso = null
         restoreOrbit()
-        handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
+        clearOverlay()
         if (points) {
           const region = handlers.current.pickRegion({ kind: 'lasso', points })
-          handlers.current.onSelectMany([...region.partIds], true)
+          handlers.current.onSelectMany([...region.partIds], start.shift)
         }
         return
       }
 
-      if (start.shift) {
+      if (start.marquee) {
         restoreOrbit()
-        handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
+        clearOverlay()
         const width = Math.abs(point.x - start.x)
         const height = Math.abs(point.y - start.y)
         // A shift-click that never became a drag is a click, handled below.
@@ -836,7 +895,10 @@ export function ViewportControls(props: ViewportControlsProps) {
             x1: point.x,
             y1: point.y,
           })
-          handlers.current.onSelectMany([...region.partIds], true)
+          // Shift adds, a plain box replaces. A marquee that could only ever
+          // grow gave the operator no way to correct one, which is why every
+          // box in Select used to end in a trip to the empty background.
+          handlers.current.onSelectMany([...region.partIds], start.shift)
           return
         }
       }
@@ -873,7 +935,7 @@ export function ViewportControls(props: ViewportControlsProps) {
       pressed = null
       lasso = null
       restoreOrbit()
-      handlers.current.onOverlay({ marquee: null, lasso: null, sweep: null })
+      clearOverlay()
     }
 
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
@@ -885,6 +947,9 @@ export function ViewportControls(props: ViewportControlsProps) {
     window.addEventListener('pointercancel', onCancel)
     return () => {
       onCancel()
+      boxObserver?.disconnect()
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
       window.removeEventListener('keydown', onEscape)
       window.removeEventListener('blur', onCancel)
       element.removeEventListener('pointerdown', onDown)

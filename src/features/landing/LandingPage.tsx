@@ -74,6 +74,14 @@ export function LandingPage() {
     >
       <PlateAtmosphere />
       <div className="bw-studs" aria-hidden="true" />
+      <div className="bw-progress" aria-hidden="true">
+        <i />
+      </div>
+      <div className="bw-focus bw-focus-lead" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
       <div id="bw-main">
         <section className="bw-studio-hero" ref={track('--bw-hero-t')} aria-labelledby="bw-hero-title">
           <div className="bw-studio-topline">
@@ -150,7 +158,7 @@ export function LandingPage() {
           <StudPlate paused={motionPaused} />
         </section>
 
-        <section className="bw-campus-section" aria-labelledby="bw-collection-title">
+        <section className="bw-campus-section bw-plate-edge" aria-labelledby="bw-collection-title">
           <div className="bw-campus-heading">
             <span className="bw-studio-label">01 / THE LARGE-SCALE STARTING LIBRARY</span>
             <h2 id="bw-collection-title">
@@ -218,6 +226,11 @@ export function LandingPage() {
       </div>
 
       <Colophon />
+      <div className="bw-focus bw-focus-trail" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
     </div>
   )
 }
@@ -345,7 +358,7 @@ function AssemblyFilm({ demo, paused, track }: { demo: DemoSummary; paused: bool
   const active = chapters.find((chapter) => chapter.stage === film.stage) ?? chapters[0]
 
   return (
-    <section className="bw-assembly-section" ref={track('--bw-film-t')} aria-labelledby="bw-assembly-title">
+    <section className="bw-assembly-section bw-plate-edge" ref={track('--bw-film-t')} aria-labelledby="bw-assembly-title">
       <div className="bw-assembly-film bw-film" data-assembly-stage={film.stage}>
         <div className="bw-assembly-visual bw-film-stage" data-stage={film.stage}>
           <div
@@ -581,7 +594,7 @@ function Proof({ label, value, good = false }: { label: string; value: ReactNode
 
 function FeaturedBuilds() {
   return (
-    <section className="bw-section bw-featured" aria-labelledby="bw-demos-title">
+    <section className="bw-section bw-featured bw-plate-edge" aria-labelledby="bw-demos-title">
       <div className="bw-shell">
         <div className="bw-section-head bw-section-head-split">
           <div>
@@ -655,7 +668,7 @@ function DemoCard({ demo, index }: { demo: DemoSummary; index: number }) {
 function ClosingSection({ track }: { track: ScrollTrack }) {
   return (
     <section
-      className="bw-section bw-section-close bw-simple-close"
+      className="bw-section bw-section-close bw-simple-close bw-plate-edge"
       ref={track('--bw-close-t')}
       aria-labelledby="bw-close-title"
     >
@@ -695,7 +708,7 @@ function ClosingSection({ track }: { track: ScrollTrack }) {
 
 function Colophon() {
   return (
-    <footer className="bw-footer bw-shell">
+    <footer className="bw-footer bw-shell bw-plate-edge">
       <span className="bw-footer-wordmark" aria-hidden="true">
         brickwright<span>+</span>
       </span>

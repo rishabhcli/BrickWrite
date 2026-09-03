@@ -2,6 +2,8 @@ import type { SVGProps } from 'react'
 
 export type WorkbenchIconName =
   | 'select'
+  | 'pan'
+  | 'orbit'
   | 'move'
   | 'rotate'
   | 'connect'
@@ -55,6 +57,22 @@ const paths: Record<WorkbenchIconName, React.ReactNode> = {
     <>
       <path d="m5 3.8 12.6 8-6.3 1.6-2.4 6.2z" />
       <path d="m13.2 14.2 4 4" />
+    </>
+  ),
+  // A hand, and a brick seen from an orbit: the two ways of moving that move
+  // the camera rather than the model.
+  pan: (
+    <>
+      <path d="M9 11.2V4.9a1.6 1.6 0 0 1 3.2 0v5.6" />
+      <path d="M12.2 10.5V4.2a1.6 1.6 0 0 1 3.2 0v6.3" />
+      <path d="M15.4 10.9V6.4a1.6 1.6 0 0 1 3.2 0v8.1a6.5 6.5 0 0 1-6.5 6.5h-.9a5.6 5.6 0 0 1-4.2-1.9l-3.4-3.9a1.6 1.6 0 0 1 2.3-2.2L9 15.6V11" />
+    </>
+  ),
+  orbit: (
+    <>
+      <rect x="9" y="9" width="6" height="6" rx="1.4" />
+      <ellipse cx="12" cy="12" rx="10" ry="4.4" transform="rotate(-28 12 12)" />
+      <circle cx="20.2" cy="7.7" r="1.5" />
     </>
   ),
   move: (

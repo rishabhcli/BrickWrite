@@ -1293,9 +1293,11 @@ export function useWorkbench() {
     if (tool === 'move')
       return state.selection.length ? `Drag the arrows · ${gridLdu} LDU snap` : 'Select parts to move them'
     if (tool === 'rotate') return state.selection.length ? 'Drag a ring to turn' : 'Select parts to turn them'
+    if (tool === 'pan') return 'Drag to slide the view · Space pans from any tool'
+    if (tool === 'orbit') return 'Drag to turn the view · middle-drag does this anywhere'
     return state.selection.length
-      ? `${state.selection.length} selected · double-click for the module`
-      : 'Click a part · shift-drag to box select'
+      ? `${state.selection.length} selected · drag one to move them · double-click for the module`
+      : 'Click a part · drag to box select'
   }, [connect.stage, gridLdu, placement, state.selection.length, tool])
 
   const rotatePlacement = useCallback((direction = 1) => {

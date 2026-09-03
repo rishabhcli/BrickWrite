@@ -931,7 +931,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
     rotateX(calc(50deg * var(--seat-t))) rotateZ(calc(var(--bw-spin, 0deg) * var(--loose) - 30deg * var(--seat-t)))
     scale(calc(0.54 + 0.42 * var(--seat-t)));
   transform-style: preserve-3d;
-  will-change: transform;
 }
 .bw-assembly-brick.path {
   border-color: rgba(131, 231, 238, 0.43);
@@ -990,9 +989,6 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
 }
 .bw-assembly-film[data-assembly-stage='validated'] {
   --bw-stage-floor: 1;
-}
-.bw-assembly-brick {
-  filter: saturate(calc(1 + 0.08 * var(--seat-t))) brightness(calc(1 + 0.04 * var(--seat-t)));
 }
 
 /*
