@@ -400,6 +400,26 @@ try {
   // The token's scope withheld forking, so the action must be absent.
   assert(!unlistedHtml.includes('Edit a copy'), 'a view-only link offered the fork action')
 
+  // The page is not the whole page. Its hero image, its viewer payload and the
+  // og:image every unfurl fetches are separate requests to `[[rest]].ts`, and
+  // they carry the cookie and no `?t=` — which is exactly the combination that
+  // route used to refuse, having read only the query parameter. An unlisted
+  // link looked fine in HTML and rendered broken.
+  const linkCookie = setCookie.split(';')[0]
+  for (const resource of ['view.json', 'summary.json']) {
+    const response = await fetch(`${edgeUrl}/share/${slug}/${resource}`, { headers: { cookie: linkCookie } })
+    assert(response.ok, `${resource} returned ${response.status} to a visitor holding the link cookie`)
+  }
+  const unlistedCard = await fetch(`${edgeUrl}/share/${slug}/card/opengraph.png`, { headers: { cookie: linkCookie } })
+  assert(unlistedCard.ok, `the og:image returned ${unlistedCard.status} to a visitor holding the link cookie`)
+  assert(unlistedCard.headers.get('content-type') === 'image/png', 'the unlisted og:image is not a PNG')
+  // 403 rather than 404: the cookie resolved and the scope refused. A cookie
+  // the route cannot see is indistinguishable from no publication at all.
+  const download = await fetch(`${edgeUrl}/share/${slug}/model.json`, { headers: { cookie: linkCookie } })
+  assert(download.status === 403, `a view-only link got ${download.status} for model.json, not 403`)
+  const noCookie = await fetch(`${edgeUrl}/share/${slug}/view.json`)
+  assert(noCookie.status === 404, `view.json answered ${noCookie.status} without any credential`)
+
   const [tokenId] = minted.token.split('.')
   const wrongToken = await fetch(`${edgeUrl}/share/${slug}?t=${tokenId}.${'A'.repeat(43)}`)
   assert(wrongToken.status === 404, `a forged token returned ${wrongToken.status}`)
