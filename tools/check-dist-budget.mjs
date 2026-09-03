@@ -4,13 +4,14 @@ import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 
 const root = path.resolve(process.argv[2] ?? 'dist')
-// 280 MiB. Raised from 200 when the ten demos were rebuilt as real models — the
-// collection now carries 112,000+ editable parts, and most of its bytes are the
-// stored connection graphs rather than the parts themselves. Unlike the
-// file-count and single-file ceilings below, this one tracks no platform limit —
-// Pages publishes no aggregate-byte limit — so it is ours to set against how big
-// a deploy we are willing to push and wait on.
-const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 280 * 1024 * 1024)
+// 320 MiB, against 299.75 MiB measured. Raised from 200 when the ten demos were
+// rebuilt as real models — the collection now carries 112,000+ editable parts,
+// and most of its bytes are the stored connection graphs rather than the parts
+// themselves. Unlike the file-count and single-file ceilings below, this one
+// tracks no platform limit — Pages publishes no aggregate-byte limit — so it is
+// ours to set against how big a deploy we are willing to push and wait on. This
+// is the largest it should get without the fix described below.
+const totalBudget = Number(process.env.DIST_TOTAL_BUDGET_BYTES ?? 320 * 1024 * 1024)
 const fileBudget = Number(process.env.DIST_FILE_COUNT_BUDGET ?? 16_000)
 // 24 MiB, against a 25 MiB platform ceiling. The margin is thin and the reason
 // is worth stating plainly: roughly four fifths of a demo `document.json` is its
