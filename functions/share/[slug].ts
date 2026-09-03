@@ -1,6 +1,6 @@
 import { pageEtag, renderSharePage } from '../../src/features/share/page'
 import { originFor, storeFor, type ShareEnv } from '../_lib/env'
-import { resolvePublication } from '../_lib/resolve'
+import { resolvePresented } from '../_lib/resolve'
 import {
   cookieToken,
   exchangeTokenForCookie,
@@ -42,30 +42,7 @@ export const onRequestGet = async (context: {
   try {
     const store = storeFor(env)
 
-    /*
-     * Both credentials are tried, the URL's first.
-     *
-     * A stale `?t=` in browser history or a chat scrollback must not lock
-     * somebody out of a publication they already hold a working cookie for, and
-     * trying the second grants no access the visitor did not already have —
-     * both are credentials the visitor was given, for this same path.
-     */
-    const attempt = (token: string | null) =>
-      resolvePublication(store, slug, token)
-        .then((value) => ({ ok: true as const, value }))
-        .catch((cause: unknown) => ({ ok: false as const, cause }))
-
-    let resolved = await attempt(fromUrl ?? fromCookie)
-    // Which credential actually worked, not which one was offered. The
-    // exchange below turns on this: a `?t=` that failed must not be written to
-    // a cookie just because the *cookie* then succeeded.
-    let grantedByUrl = resolved.ok && fromUrl !== null
-    if (!resolved.ok && fromUrl && fromCookie && fromCookie !== fromUrl) {
-      resolved = await attempt(fromCookie)
-      grantedByUrl = false
-    }
-    if (!resolved.ok) throw resolved.cause
-    const { publication, decision } = resolved.value
+    const { publication, decision, grantedByUrl } = await resolvePresented(store, slug, { fromUrl, fromCookie })
 
     /*
      * The secret arrived in the URL and access was actually granted by it, so

@@ -15,6 +15,51 @@ import { logEdgeFailure, redactEdgeText } from './log'
 
 const SECRET = 'Zm9vYmFyYmF6cXV1eGNvcmdlZ3JhdWx0Z2FycGx5'
 
+describe('the share surface reaches a log drain at all', () => {
+  it('logs an unexpected failure, with the path already redacted', async () => {
+    const { handleError } = await import('./respond')
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((line) => errors.push(String(line)))
+    try {
+      const response = handleError(new Error('SHARE_KV read failed for pub:slug:my-model'), {
+        origin: 'https://brickwrite.tech',
+        wantsHtml: false,
+        path: '/share/my-model?t=secret-token-value',
+      })
+      expect(response.status).toBe(500)
+      // The body still says nothing: only the log gets the detail.
+      await expect(response.text()).resolves.not.toContain('SHARE_KV')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(errors).toHaveLength(1)
+    const line = JSON.parse(errors[0])
+    expect(line.service).toBe('functions/share')
+    expect(line.cause).toContain('SHARE_KV read failed')
+    // An unlisted token in a logged path is a working link handed to whoever
+    // reads the drain.
+    expect(errors[0]).not.toContain('secret-token-value')
+  })
+
+  it('says nothing for a refusal the caller already understands', async () => {
+    const { handleError } = await import('./respond')
+    const { ShareError } = await import('../../src/features/share/types')
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((line) => errors.push(String(line)))
+    try {
+      handleError(new ShareError('NOT_FOUND', 'No such publication.', 404), {
+        origin: 'https://brickwrite.tech',
+        wantsHtml: false,
+        path: '/share/nope',
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(errors).toEqual([])
+  })
+})
+
 describe('edge log redaction', () => {
   it('strips an unlisted share token from a logged path', () => {
     const lines: string[] = []

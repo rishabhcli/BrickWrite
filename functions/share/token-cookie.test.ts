@@ -9,6 +9,7 @@ import { mintShareToken } from '../../src/features/share/tokens'
 import type { ModelDocument } from '../../src/cad/types'
 import type { ShareEnv } from '../_lib/env'
 import { onRequestGet } from './[slug]'
+import { onRequestGet as subResource } from './[slug]/[[rest]]'
 
 /**
  * Getting the unlisted-link secret out of the query string.
@@ -163,5 +164,69 @@ describe('a public publication', () => {
     const response = await get(created.slug)
     expect(response.status).toBe(200)
     expect(response.headers.get('set-cookie')).toBeNull()
+  })
+})
+
+/**
+ * The exchange has to work for the whole page, not just its HTML.
+ *
+ * `[[rest]].ts` serves every card, `view.json`, `model.json` and
+ * `summary.json`, and it resolved with `presentedToken(url)` alone. Since the
+ * exchange redirects to the clean address, by the time those requests go out
+ * the token is only in the cookie — so an unlisted link rendered a page with a
+ * broken hero image, a viewer that could not load the model, and a 404
+ * og:image in every unfurl. No path existed on which the token was still in
+ * the URL when a sub-resource was fetched.
+ */
+describe('the cookie the exchange wrote reaches the page’s own sub-resources', () => {
+  const sub = (slug: string, rest: string[], options: { token?: string; cookie?: string } = {}) => {
+    const url = new URL(`https://brickwrite.test/share/${slug}/${rest.join('/')}`)
+    if (options.token) url.searchParams.set('t', options.token)
+    return subResource({
+      request: new Request(url, { headers: options.cookie ? { cookie: options.cookie } : {} }),
+      env: env(),
+      params: { slug, rest },
+    })
+  }
+
+  it('serves every JSON sub-resource to a visitor holding only the cookie', async () => {
+    const { publication, token } = await unlisted()
+    const exchange = await get(publication.slug, { token })
+    const cookie = cookiePair(exchange.headers.get('set-cookie'))
+    expect(cookie).toBeTruthy()
+
+    for (const resource of ['view.json', 'summary.json']) {
+      const response = await sub(publication.slug, [resource], { cookie: cookie! })
+      expect(response.status, `${resource} refused a valid cookie`).toBe(200)
+    }
+
+    // 403 rather than 404: the cookie resolved and the capability refused. A
+    // token the route cannot see is indistinguishable from no publication, so
+    // this is what tells the two failures apart.
+    const download = await sub(publication.slug, ['model.json'], { cookie: cookie! })
+    expect(download.status).toBe(403)
+  })
+
+  it('still refuses a visitor holding neither credential', async () => {
+    const { publication } = await unlisted()
+    expect((await sub(publication.slug, ['view.json'])).status).toBe(404)
+  })
+
+  it('refuses a cookie minted for a different publication', async () => {
+    const first = await unlisted()
+    const second = await unlisted()
+    const exchange = await get(first.publication.slug, { token: first.token })
+    const cookie = cookiePair(exchange.headers.get('set-cookie'))
+    // The browser would not send it — the cookie is Path-scoped — but the
+    // route must not accept it if something else does.
+    expect((await sub(second.publication.slug, ['view.json'], { cookie: cookie! })).status).toBe(404)
+  })
+
+  it('falls back to a working cookie when the URL carries a stale token', async () => {
+    const { publication, token } = await unlisted()
+    const exchange = await get(publication.slug, { token })
+    const cookie = cookiePair(exchange.headers.get('set-cookie'))
+    const stale = `${token.slice(0, -4)}zzzz`
+    expect((await sub(publication.slug, ['view.json'], { token: stale, cookie: cookie! })).status).toBe(200)
   })
 })

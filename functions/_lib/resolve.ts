@@ -48,3 +48,44 @@ export async function resolvePublication(
   }
   return { publication, decision }
 }
+
+/**
+ * Resolves using either credential the visitor holds, URL first.
+ *
+ * An unlisted link delivers its token as `?t=`, is exchanged for a
+ * path-scoped cookie, and redirects to the clean address. Only the page route
+ * ever read that cookie — `[[rest]].ts` resolved with `presentedToken(url)`
+ * alone — so once the exchange had happened every card, `view.json`,
+ * `model.json` and `summary.json` answered TOKEN_REQUIRED. An unlisted link
+ * rendered a page with a broken hero image, a viewer that could not load the
+ * model, and a 404 og:image in every unfurl. There was no path on which the
+ * token was still in the URL when those requests went out.
+ *
+ * A stale `?t=` must not lock out a visitor holding a working cookie, so the
+ * second credential is tried when the first fails. Trying it grants nothing
+ * they were not already given, for this same path.
+ *
+ * `grantedByUrl` is which credential *worked*, not which was offered: the page
+ * route writes the cookie on that, and a failed `?t=` must not be persisted
+ * because the cookie then succeeded.
+ */
+export async function resolvePresented(
+  store: PublicationStore,
+  slug: string,
+  credentials: { fromUrl: string | null; fromCookie: string | null },
+): Promise<Resolved & { grantedByUrl: boolean }> {
+  const { fromUrl, fromCookie } = credentials
+  const attempt = (token: string | null) =>
+    resolvePublication(store, slug, token)
+      .then((value) => ({ ok: true as const, value }))
+      .catch((cause: unknown) => ({ ok: false as const, cause }))
+
+  let resolved = await attempt(fromUrl ?? fromCookie)
+  let grantedByUrl = resolved.ok && fromUrl !== null
+  if (!resolved.ok && fromUrl && fromCookie && fromCookie !== fromUrl) {
+    resolved = await attempt(fromCookie)
+    grantedByUrl = false
+  }
+  if (!resolved.ok) throw resolved.cause
+  return { ...resolved.value, grantedByUrl }
+}

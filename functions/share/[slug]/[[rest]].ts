@@ -2,8 +2,8 @@ import { canonicalJson } from '../../../src/features/share/canonical'
 import { sanitizeFilename } from '../../../src/features/share/sanitize'
 import { ShareError } from '../../../src/features/share/types'
 import { originFor, storeFor, type ShareEnv } from '../../_lib/env'
-import { resolvePublication } from '../../_lib/resolve'
-import { handleError, json, matchesEtag, notModified, png, presentedToken, wantsHtml } from '../../_lib/respond'
+import { resolvePresented } from '../../_lib/resolve'
+import { cookieToken, handleError, json, matchesEtag, notModified, png, presentedToken, wantsHtml } from '../../_lib/respond'
 
 /**
  * Everything under `/share/:slug/`.
@@ -35,7 +35,13 @@ export const onRequestGet = async (context: {
 
   try {
     const store = storeFor(env)
-    const { publication, decision } = await resolvePublication(store, slug, presentedToken(url))
+    // The cookie, not just `?t=`: the page exchanges the parameter and
+    // redirects, so by the time a card, view.json, model.json or summary.json
+    // is fetched the URL no longer carries the token and only the cookie does.
+    const { publication, decision } = await resolvePresented(store, slug, {
+      fromUrl: presentedToken(url),
+      fromCookie: cookieToken(request, slug),
+    })
 
     if (rest.length === 2 && rest[0] === 'card') {
       const preset = rest[1].replace(/\.png$/i, '')

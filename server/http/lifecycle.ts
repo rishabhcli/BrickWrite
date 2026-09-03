@@ -52,11 +52,28 @@ export function requestLifetime(request: IncomingMessage, response: ServerRespon
 
 export type RequestLifetime = ReturnType<typeof requestLifetime>
 
-/** Invalid environment values must not disable deadlines or become a 1 ms timer. */
-export function boundedTimeout(value: unknown, fallback: number): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.min(Math.floor(parsed), 600_000) || 1 : fallback
+/**
+ * A positive integer from an environment variable, or the fallback.
+ *
+ * `Number('')` is 0 and `Number('eight')` is NaN, and `??` catches neither
+ * because both are values. Two spend ceilings read their env directly with
+ * `Number()`: blanking one made every chat request refuse itself against a
+ * budget of zero, and misspelling one made the ceiling disappear — `used >= NaN`
+ * is false forever. An invalid value must not raise or remove a limit.
+ */
+export function boundedCount(value: unknown, fallback: number, max: number): number {
+  const parsed = Math.floor(Number(value))
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback
 }
+
+/**
+ * Deadlines, in terms of the same parser.
+ *
+ * It used to end in `|| 1`, so a value between 0 and 1 became a one-millisecond
+ * timer — the exact outcome the comment above forbids. Flooring before the
+ * range check makes that a fallback instead.
+ */
+export const boundedTimeout = (value: unknown, fallback: number): number => boundedCount(value, fallback, 600_000)
 
 export class RequestBodyError extends Error {
   readonly code: 'BAD_REQUEST' | 'PAYLOAD_TOO_LARGE'

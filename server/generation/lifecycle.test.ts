@@ -6,7 +6,7 @@ import { createGenerationRoute } from './index.ts'
 import { createAssistantRoute } from '../assistant/handler.ts'
 import { AnthropicModelProvider } from '../assistant/provider.ts'
 import { MAX_REQUEST_BYTES } from '../assistant/protocol.ts'
-import { boundedTimeout } from '../http/lifecycle.ts'
+import { boundedCount, boundedTimeout } from '../http/lifecycle.ts'
 import { createAssistantTransport } from '../../src/agent/provider.ts'
 import { createGenerationProvider } from '../../src/generation/provider.ts'
 import type { ChatRequest } from '../../src/agent/protocol.ts'
@@ -361,6 +361,26 @@ it.each(['garbage', '', '0', '-20', 'Infinity', undefined])(
 )
 it('caps excessively large timeouts without overflowing Node timers', () => {
   expect(boundedTimeout(2 ** 40, 120_000)).toBe(600_000)
+})
+
+// A value that floors to zero used to come back as a 1 ms timer via `|| 1`,
+// which is the outcome the helper's own comment forbids.
+it('treats a sub-millisecond deadline as invalid rather than as 1 ms', () => {
+  expect(boundedTimeout(0.5, 120_000)).toBe(120_000)
+})
+
+it.each([
+  ['', 8],
+  ['eight', 8],
+  ['0', 8],
+  ['-3', 8],
+  ['4', 4],
+  ['9999', 32],
+])('a spend ceiling of %s resolves to %i rather than 0 or NaN', (value, expected) => {
+  // `Number('')` is 0 and `Number('eight')` is NaN, and `??` catches neither.
+  // Zero refused every chat request against a budget of zero; NaN removed the
+  // ceiling entirely, because `used >= NaN` is false forever.
+  expect(boundedCount(value, 8, 32)).toBe(expected)
 })
 
 describe('browser transports through the real Node HTTP handler', () => {

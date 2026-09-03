@@ -2,6 +2,7 @@ import { baseSecurityHeaders, renderRefusalPage } from '../../src/features/share
 import { redactShareUrl } from '../../src/features/share/sanitize'
 import { ShareError } from '../../src/features/share/types'
 import { MissingBindingError } from './env'
+import { logEdgeFailure } from './log'
 
 /**
  * Response helpers shared by every route.
@@ -94,9 +95,17 @@ export function handleError(cause: unknown, context: { origin: string; wantsHtml
   if (cause instanceof MissingBindingError) {
     return respond(503, 'Sharing is not configured', cause.message, context)
   }
-  // Deliberately not `String(cause)`: the message could contain a key, a path
-  // or a token, and none of those belong in a response body.
-  void safePath
+  // Deliberately not `String(cause)` in the *body*: the message could contain
+  // a key, a path or a token, and none of those belong in a response. It does
+  // belong in the log, which is why `safePath` was computed — and then thrown
+  // away with `void safePath`, so a SHARE_KV failure 500'd every share page
+  // and the gallery while reaching no drain at all.
+  logEdgeFailure({
+    service: 'functions/share',
+    path: safePath,
+    detail: 'The share service could not complete this request.',
+    cause,
+  })
   return respond(500, 'Something went wrong', 'The share service could not complete this request.', context)
 }
 

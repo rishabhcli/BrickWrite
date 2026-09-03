@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type Anthropic from '@anthropic-ai/sdk'
 import { ModelProviderUnavailableError, awaitWithAbort } from '../../src/platform/contracts.js'
 import {
+  boundedCount,
   boundedTimeout,
   ndjsonWriter,
   readRequestText,
@@ -207,15 +208,25 @@ export function structuralCheck(value: unknown, schema: Record<string, unknown>)
     throw new Error('Expected a JSON array at the root of the response.')
 }
 
+/** Upper bounds on what the environment may set. Neither is a client input. */
+const MAX_TOOL_TURN_CEILING = 32
+const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+const MAX_OUTPUT_TOKEN_CEILING = 32_000
+
 export function createAssistantRoute(options: AssistantRouteOptions = {}) {
   const provider = options.provider ?? new AnthropicModelProvider()
   const maxToolTurns =
-    options.maxToolTurns ?? Number(process.env.BRICKWRIGHT_ASSISTANT_MAX_TOOL_TURNS ?? DEFAULT_MAX_TOOL_TURNS)
+    options.maxToolTurns ??
+    boundedCount(process.env.BRICKWRIGHT_ASSISTANT_MAX_TOOL_TURNS, DEFAULT_MAX_TOOL_TURNS, MAX_TOOL_TURN_CEILING)
   const timeoutMs = boundedTimeout(
     options.timeoutMs ?? process.env.BRICKWRIGHT_ASSISTANT_TIMEOUT_MS,
     DEFAULT_TIMEOUT_MS,
   )
-  const maxOutputTokens = options.maxOutputTokens ?? Number(process.env.BRICKWRIGHT_ASSISTANT_MAX_TOKENS ?? 8192)
+  // Capped at the ceiling the wire protocol already enforces on a client's own
+  // `maxTokens`, so the deployment default cannot exceed what a request may ask.
+  const maxOutputTokens =
+    options.maxOutputTokens ??
+    boundedCount(process.env.BRICKWRIGHT_ASSISTANT_MAX_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKEN_CEILING)
 
   async function handleChat(response: ServerResponse, body: ChatRequest, span: RequestLifetime, context?: RouteContext) {
     if (body.messages[0]?.role !== 'user') {

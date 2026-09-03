@@ -29,11 +29,17 @@ export function redactEdgeText(text: string): string {
     .replace(/([?&]t=)[^&#\s"']*/gi, '$1redacted')
 }
 
-export function logEdgeFailure(event: { readonly path: string; readonly detail: string; readonly cause?: unknown }): void {
+export function logEdgeFailure(event: {
+  readonly path: string
+  readonly detail: string
+  readonly cause?: unknown
+  /** Which surface failed. The proxy was the only caller, so it was hard-coded. */
+  readonly service?: string
+}): void {
   const payload = {
     ts: new Date().toISOString(),
     level: 'error',
-    service: 'functions/api',
+    service: event.service ?? 'functions/api',
     // Redacted even though today's callers pass a bare pathname: the signature
     // accepts any path, and the next caller should not have to know that.
     path: redactEdgeText(redactShareUrl(event.path)),
