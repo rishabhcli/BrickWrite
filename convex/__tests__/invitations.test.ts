@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
 import type { Doc } from '../_generated/dataModel'
-import { codeOf, expectOk, harness, person, seedProject, subjectOf, type Harness, type SeededProject } from './harness'
+import { codeOf, expectOk, harness, person, seedProject, subjectOf, type Harness, type SeededProject } from './harness.setup'
 
 /**
  * The invitation lifecycle, against the real handlers.

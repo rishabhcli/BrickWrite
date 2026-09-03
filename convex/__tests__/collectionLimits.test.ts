@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { api, internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import { COLLECTION_LIMITS } from '../model/limits'
-import { codeOf, expectOk, harness, person, seedProject, snapshotUpload, subjectOf, type Harness } from './harness'
+import { codeOf, expectOk, harness, person, seedProject, snapshotUpload, subjectOf, type Harness } from './harness.setup'
 
 /**
  * Read and write ceilings have to agree.

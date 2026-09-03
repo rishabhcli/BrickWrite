@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import { auditCategory } from '../model/audit'
-import { expectOk, harness, person, snapshotUpload, transaction, type Harness } from './harness'
+import { expectOk, harness, person, snapshotUpload, transaction, type Harness } from './harness.setup'
 
 /**
  * What the audit trail actually records.

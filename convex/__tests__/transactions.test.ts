@@ -1,7 +1,7 @@
 // @vitest-environment edge-runtime
 import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
-import { codeOf, expectOk, harness, person, seedProject, transaction } from './harness'
+import { codeOf, expectOk, harness, person, seedProject, transaction } from './harness.setup'
 
 /**
  * The transaction log: compare-and-advance, idempotency and atomicity.

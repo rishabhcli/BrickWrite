@@ -1,7 +1,7 @@
 // @vitest-environment edge-runtime
 import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
-import { codeOf, document, expectOk, harness, person, seedProject, snapshotUpload, subjectOf, transaction } from './harness'
+import { codeOf, document, expectOk, harness, person, seedProject, snapshotUpload, subjectOf, transaction } from './harness.setup'
 
 /**
  * Project lifecycle and checkpoint integrity.

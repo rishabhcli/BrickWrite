@@ -15,7 +15,7 @@ import {
   subjectOf,
   type Identity,
   type SeededProject,
-} from './harness'
+} from './harness.setup'
 
 /**
  * The authorisation gate, against the handlers that enforce it.

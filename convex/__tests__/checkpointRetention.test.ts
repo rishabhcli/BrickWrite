@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { api } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import { CHECKPOINT_PRUNE_CHUNKS, CHECKPOINT_RETENTION } from '../model/snapshots'
-import { codeOf, expectOk, harness, person, snapshotUpload, type Harness } from './harness'
+import { codeOf, expectOk, harness, person, snapshotUpload, type Harness } from './harness.setup'
 
 /**
  * Automatic checkpoints are bounded; named versions are not.

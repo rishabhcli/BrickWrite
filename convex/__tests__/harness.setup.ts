@@ -18,6 +18,16 @@ declare global {
   }
 }
 
+/*
+ * Named `harness.setup.ts`, not `harness.ts`, because `convex deploy` decides
+ * what to push by filename: any basename with more than one dot is skipped
+ * (`bundler/index.js`). Every `*.test.ts` here is skipped for that reason, and
+ * this file — the one helper without a second dot — was not, so the deployment
+ * tried to analyse it as a function module and refused the whole push on its
+ * `import.meta.glob`. Production Convex had been undeployable since this
+ * directory was added.
+ */
+
 /**
  * The real Convex handlers, under test.
  *
