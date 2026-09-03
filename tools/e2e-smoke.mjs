@@ -300,35 +300,46 @@ try {
     'Geometry compiler left unresolved LDraw references',
   )
 
-  // -- a new session opens a blank project -----------------------------------
-  // This asserted a twenty-part showcase, because the editor opened on a copy
-  // of a sample rover. It no longer does, deliberately: opening somebody
-  // else's model is not a starting point, and its subassembly names and steps
-  // described a build the operator never asked for. The empty state offers
-  // starters for one click instead.
+  // -- a fresh session opens on the showcase ---------------------------------
+  // This asserted an empty document for two days, from when the sample rover
+  // was deleted until Meridian Green replaced it. Both of those were true in
+  // their turn and the code now seeds the civic building, so the assertion was
+  // failing on a decision rather than on a defect.
   //
-  // The property is inverted rather than dropped, because "a new project is
-  // empty" is exactly what regressed last time — every new project used to
-  // begin as a copy of the rover. Empty in the buildable sense: one unlocked
-  // assembly and one step, which is what a placed part lands in.
-  //
-  // The kernel's ability to validate a real connected assembly is still
-  // covered, further down, against the buildings this suite generates and the
-  // blocks it stamps — models the app actually produces.
-  assert(startParts === 0, `A new session opened with ${startParts} parts already in the document`)
-  const openingAssemblies = Object.values(initial.document.subassemblies)
+  // The decision, stated once here: a first run opens on a finished model the
+  // operator can pull apart, because an empty grid asks a newcomer to imagine
+  // what the application does. What must stay empty is a *new project* — see
+  // `session.createProject` — since starting your own build by deleting
+  // somebody else's model is the failure the rover actually caused.
   assert(
-    openingAssemblies.length === 1 && openingAssemblies[0].locked === false,
-    `A new project should open with one unlocked assembly, saw ${JSON.stringify(openingAssemblies.map((entry) => [entry.name, entry.locked]))}`,
+    startParts > 1000,
+    `A fresh session should open on the showcase megabuild, saw ${startParts} parts`,
   )
-  assert(initial.document.steps.length === 1, `A new project should open with one step, saw ${initial.document.steps.length}`)
   assert(
-    initial.validation.collisions.length === 0 && initial.validation.connectionCount === 0,
-    `An empty document reported ${initial.validation.collisions.length} collisions and ${initial.validation.connectionCount} connections`,
+    initial.document.name.length > 0 && Object.values(initial.document.subassemblies).length > 1,
+    `The showcase should open with named subassemblies, saw ${JSON.stringify(
+      Object.values(initial.document.subassemblies).map((entry) => entry.name),
+    )}`,
+  )
+  assert(
+    initial.document.steps.length > 1,
+    `The showcase should open with a real build sequence, saw ${initial.document.steps.length} step(s)`,
+  )
+  // The point of shipping a seeded document is that it is *sound*: a first run
+  // that opens on overlapping parts teaches the operator the kernel does not
+  // work. Connections are asserted as present because a model with none is a
+  // pile of parts that happen to be adjacent.
+  assert(
+    initial.validation.collisions.length === 0,
+    `The showcase opened with ${initial.validation.collisions.length} collisions`,
+  )
+  assert(
+    initial.validation.connectionCount > 0,
+    'The showcase opened with no mated connectors, so nothing in it is actually attached',
   )
   assert(
     initial.validation.unverifiedCollisions === 0,
-    `An empty document reported ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
+    `The showcase reported ${initial.validation.unverifiedCollisions} collision verdicts reached from bounding boxes alone`,
   )
 
   // -- compiled geometry is really published ---------------------------------

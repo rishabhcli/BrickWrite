@@ -77,6 +77,32 @@ describe('session projects', () => {
     expect(session.status.restore?.source).toBe('showcase')
   })
 
+  /**
+   * A blank stored project must not shadow the opening document forever.
+   *
+   * Between the rover's deletion and Meridian Green replacing it, sessions
+   * opened blank and checkpointed that blank document. Restore preferred the
+   * newest stored project unconditionally, so every profile that ran a build
+   * from those two days kept opening an empty grid — the showcase was seeded,
+   * discarded, and never seen again.
+   */
+  it('restores the newest project that has parts, not an empty one', async () => {
+    const seeded = cadEngine.getSnapshot().document
+    const blank = await session.createProject('Empty leftover')
+    expect(blank.ok).toBe(true)
+    const blankId = session.currentProjectId
+    expect(Object.keys(cadEngine.getSnapshot().document.parts)).toHaveLength(0)
+    await session.settled()
+
+    // A fresh boot against the same store, with the seed back in the engine.
+    cadEngine.replaceDocument(seeded)
+    await session.start()
+
+    // The blank project is the newest by savedAt and still loses.
+    expect(session.currentProjectId).not.toBe(blankId)
+    expect(Object.keys(cadEngine.getSnapshot().document.parts).length).toBeGreaterThan(0)
+  })
+
   it('forks into a new project without touching the original', async () => {
     const originId = session.currentProjectId
     const originRevision = cadEngine.getSnapshot().document.revision

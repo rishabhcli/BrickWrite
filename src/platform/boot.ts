@@ -435,14 +435,17 @@ function appliedLiveQuery(appliedSearch: string): boolean {
 
 export type EditorQueryApplication =
   | { applied: 'none' }
-  | { applied: 'blank' | 'project'; ok: true }
-  | { applied: 'blank' | 'project'; ok: false; message: string }
+  | { applied: 'blank' | 'project' | 'showcase'; ok: true }
+  | { applied: 'blank' | 'project' | 'showcase'; ok: false; message: string }
 
 /**
  * Honours `/editor` query flags after restore, before the workbench paints.
  *
  * `?project=` opens that stored project. `?doc=blank` starts an empty document
- * instead of the showcase. Plain `/editor` still restores the newest project.
+ * instead of the showcase. `?doc=showcase` opens a fresh copy of the showcase
+ * as its own project, which is the only way to reach it once this profile has
+ * projects of its own — restore prefers the operator's work, as it should.
+ * Plain `/editor` still restores the newest project.
  * Applied here rather than in the React tree so the showcase cannot flash.
  * One-shot keys are then stripped from the live URL so a refresh cannot repeat
  * the action. A failed open keeps `?project=` so a refresh can retry, and still
@@ -471,6 +474,15 @@ export async function applyEditorQuery(
     }
     if (appliedLiveQuery(search)) consumeSearchParams(['doc'])
     return { applied: 'blank', ok: true }
+  }
+  if (query.get('doc') === 'showcase') {
+    const { createShowcaseDocument } = await import('../cad/sample')
+    const opened = await session.session.importDocument(createShowcaseDocument())
+    if (!opened.ok) {
+      return { applied: 'showcase', ok: false, message: opened.message ?? 'The showcase could not be opened.' }
+    }
+    if (appliedLiveQuery(search)) consumeSearchParams(['doc'])
+    return { applied: 'showcase', ok: true }
   }
   return { applied: 'none' }
 }

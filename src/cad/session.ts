@@ -82,7 +82,14 @@ class Session {
     const current = cadEngine.getSnapshot().document
     try {
       const projects = await this.repository.listProjects()
-      const newest = projects[0]
+      // A stored project with no parts in it is not work to be restored: it is
+      // the blank document that earlier builds of this application opened on,
+      // checkpointed on first run. Letting it win means the opening showcase
+      // can never appear again on that browser profile — indistinguishable, to
+      // the operator, from the showcase having been deleted. Restore the newest
+      // project that actually holds parts, and fall through to the opening
+      // document when none of them does.
+      const newest = projects.find((project) => project.partCount > 0)
       if (newest) {
         const loaded = await this.repository.loadProject(newest.projectId)
         if (loaded && this.usable(loaded.document)) {

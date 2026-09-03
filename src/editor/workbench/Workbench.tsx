@@ -564,7 +564,7 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
       if (live !== routed) navigate(live, { replace: true })
     }
     const run = async () => {
-      if (query.get('doc') === 'blank' || query.get('project')) {
+      if (query.get('doc') === 'blank' || query.get('doc') === 'showcase' || query.get('project')) {
         const sessionMod = await import('../../cad/session')
         const result = await applyEditorQuery(
           sessionMod,
@@ -573,7 +573,12 @@ export function Workbench({ contributions = [] }: WorkbenchProps) {
         if (result.applied !== 'none' && !result.ok) {
           notifyRef.current({
             kind: 'error',
-            title: result.applied === 'project' ? 'Project not opened' : 'Blank project not created',
+            title:
+              result.applied === 'project'
+                ? 'Project not opened'
+                : result.applied === 'showcase'
+                  ? 'Showcase not opened'
+                  : 'Blank project not created',
             detail: result.message,
           })
         }
