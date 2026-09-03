@@ -237,43 +237,8 @@ function diverseSpotlights(): DemoSummary[] {
   return preferred.length ? preferred : [...DEMOS].slice(0, 4)
 }
 
-/**
- * True once the browser has actually painted.
- *
- * `useEffect` runs after React commits, which on a throttled main thread is
- * still before the pixels land, so it is not a paint signal. Two nested frames
- * are: the first callback runs before the paint this commit produced, the
- * second after it.
- */
-function usePainted(): boolean {
-  const [painted, setPainted] = useState(false)
-  useEffect(() => {
-    let second = 0
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setPainted(true))
-    })
-    return () => {
-      cancelAnimationFrame(first)
-      cancelAnimationFrame(second)
-    }
-  }, [])
-  return painted
-}
-
-/**
- * A transparent 1×1 GIF, inline.
- *
- * Holds the `img` box until the real thumbnail is wanted. An `img` with no
- * `src` renders its `alt` text and reflows when the image lands; `src=""`
- * renders a broken-image icon. This does neither, costs no request, and lets
- * `width`/`height` reserve the space, so deferring the fetch moves no layout.
- */
-const HELD =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-
 /** Four real generated assets, laid out plainly—not a mascot pretending to be the product. */
 function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
-  const painted = usePainted()
   return (
     <div className="bw-build-constellation" aria-label="A sample of editable large-scale builds">
       {demos.map((demo, index) => {
@@ -288,19 +253,17 @@ function BuildConstellation({ demos }: { demos: DemoSummary[] }) {
           >
             {/*
               The first tile is eager and high priority: it is above the fold on
-              every viewport and is the largest image the page paints.
-              (The LCP *element* is the h1, which beats it by about 4%.)
+              every viewport and is the largest image the page paints. (The LCP
+              *element* is the h1, which beats it by about 4%.)
 
-              The other three are held behind first paint. `loading="lazy"` does
-              not defer them — all four are inside the viewport at 1440×900, so
-              the browser fetches 182,484 B of thumbnail before it has the font
-              the headline is set in. At the acceptance gate's 1.6 Mbit/s that
-              is most of a second spent ahead of the element being measured.
-              Three held tiles take 125,306 B out of that window, and `HELD`
-              keeps their boxes so nothing moves when they arrive.
+              The other three stay `lazy`/`low`. That does not actually defer
+              them — all four are inside the viewport at 1440×900 — but it no
+              longer matters: preloading Manrope moved the headline face to
+              fourth on the wire, ahead of every thumbnail, so nothing the
+              measured element waits for sits behind these.
             */}
             <img
-              src={index === 0 || painted ? demo.assets.thumbnail.url : HELD}
+              src={demo.assets.thumbnail.url}
               alt={`${demo.title}, ${demo.validation.partCount.toLocaleString()} editable parts.`}
               width={720}
               height={450}
