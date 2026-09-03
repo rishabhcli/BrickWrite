@@ -103,6 +103,48 @@ describe('session projects', () => {
     expect(Object.keys(cadEngine.getSnapshot().document.parts).length).toBeGreaterThan(0)
   })
 
+  /**
+   * Work that exists only in the transaction log must still be restored.
+   *
+   * `summary.partCount` is written with the checkpoint, and a checkpoint is
+   * only rewritten every `CHECKPOINT_INTERVAL` transactions. A project created
+   * blank and then built in therefore reports zero parts while its work sits in
+   * the log. Skipping it on that count is data loss: edit, reload, and the
+   * operator's build is replaced by the opening document.
+   */
+  it('restores a project whose only work is in the transaction log', async () => {
+    const seeded = cadEngine.getSnapshot().document
+    const created = await session.createProject('Log only')
+    expect(created.ok).toBe(true)
+    const projectId = session.currentProjectId
+
+    // Placed directly: a blank project has no stud for the snap helper to find.
+    const placed = cadEngine.execute(
+      'Place',
+      [{ type: 'part.add', part: { ...makePart('log_only_part'), subassemblyId: 'main' } }],
+      'human',
+    )
+    expect(placed.ok).toBe(true)
+    await session.settled()
+
+    // The checkpoint is still the empty one it was created with.
+    const summary = (await session.listProjects()).find((p) => p.projectId === projectId)
+    expect(summary?.partCount).toBe(0)
+
+    // Leave it as the only candidate: switching projects checkpoints the one
+    // being left, so the fixture project would otherwise be newer than this.
+    for (const other of await session.listProjects()) {
+      if (other.projectId !== projectId) await session.deleteProject(other.projectId)
+    }
+
+    cadEngine.replaceDocument(seeded)
+    const restore = await session.start()
+
+    expect(session.currentProjectId).toBe(projectId)
+    expect(cadEngine.getSnapshot().document.parts.log_only_part).toBeDefined()
+    expect(restore.source).toBe('indexeddb')
+  })
+
   it('forks into a new project without touching the original', async () => {
     const originId = session.currentProjectId
     const originRevision = cadEngine.getSnapshot().document.revision

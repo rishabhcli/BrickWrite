@@ -82,33 +82,38 @@ class Session {
     const current = cadEngine.getSnapshot().document
     try {
       const projects = await this.repository.listProjects()
-      // A stored project with no parts in it is not work to be restored: it is
+      // A stored project with nothing in it is not work to be restored: it is
       // the blank document that earlier builds of this application opened on,
       // checkpointed on first run. Letting it win means the opening showcase
       // can never appear again on that browser profile — indistinguishable, to
-      // the operator, from the showcase having been deleted. Restore the newest
-      // project that actually holds parts, and fall through to the opening
-      // document when none of them does.
-      const newest = projects.find((project) => project.partCount > 0)
-      if (newest) {
-        const loaded = await this.repository.loadProject(newest.projectId)
-        if (loaded && this.usable(loaded.document)) {
-          cadEngine.replaceDocument(loaded.document)
-          return {
-            source: 'indexeddb',
-            revision: loaded.document.revision,
-            partCount: Object.keys(loaded.document.parts).length,
-            replayedTransactions: loaded.replayed.length,
-          }
-        }
-        if (loaded) {
+      // the operator, from the showcase having been deleted. So walk the
+      // projects newest-first and restore the first one that has parts.
+      //
+      // "Has parts" is read off the *replayed* document, never off
+      // `summary.partCount`. That count comes from the last checkpoint, and a
+      // checkpoint is only rewritten every `CHECKPOINT_INTERVAL` transactions:
+      // a project created blank and then built in still reports zero while the
+      // work sits in its transaction log. Trusting the summary here discarded
+      // exactly that work — edit, reload, and the showcase came back instead.
+      for (const candidate of projects) {
+        const loaded = await this.repository.loadProject(candidate.projectId)
+        if (!loaded) continue
+        if (!this.usable(loaded.document)) {
           return {
             source: 'showcase',
             revision: current.revision,
             partCount: Object.keys(current.parts).length,
             replayedTransactions: 0,
-            warning: `Stored project "${newest.name}" references parts this catalog revision cannot place; it was left untouched.`,
+            warning: `Stored project "${candidate.name}" references parts this catalog revision cannot place; it was left untouched.`,
           }
+        }
+        if (Object.keys(loaded.document.parts).length === 0) continue
+        cadEngine.replaceDocument(loaded.document)
+        return {
+          source: 'indexeddb',
+          revision: loaded.document.revision,
+          partCount: Object.keys(loaded.document.parts).length,
+          replayedTransactions: loaded.replayed.length,
         }
       }
 
