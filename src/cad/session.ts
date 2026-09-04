@@ -74,6 +74,13 @@ class Session {
     this.detach?.()
     this.detach = cadEngine.onCommit((transaction, document) => {
       void this.autosave.record(document, transaction)
+      // Dynamic: the share/publish stack must not enter the WebMCP adapter's
+      // static import graph (see src/webmcp/imports.test.ts) — the same reason
+      // shareHost.ts reaches createPublication through import() rather than a
+      // top-level import.
+      void import('./autopublish').then(({ autoPublishIfEligible }) =>
+        autoPublishIfEligible(document, cadEngine.getSnapshot().validation),
+      )
     })
     return this.restore
   }

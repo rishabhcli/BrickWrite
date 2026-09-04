@@ -84,12 +84,17 @@ export function embedAncestors(env: ShareEnv): string[] | null {
  *
  * `operator` is the deployment-wide secret: one principal, shared, for tooling.
  * `session` is a real account, verified against the project's published key set.
+ * `anonymous` is a Hexclave guest session — no account behind it, but a stable
+ * subject for as long as that browser keeps its refresh token — verified
+ * against the separate anonymous-users issuer so it can never be confused with
+ * a real one. It exists so a build made without an account still has someone
+ * to record as `ownerSubject` when the 25-part threshold auto-publishes it.
  * A publication records the subject that created it and refuses writes from any
  * other session, which is the ownership model this surface did not have.
  */
 export type SharePrincipal =
   | { readonly kind: 'operator'; readonly subject: OPERATOR_SUBJECT }
-  | { readonly kind: 'session'; readonly subject: string }
+  | { readonly kind: 'session' | 'anonymous'; readonly subject: string }
 
 /**
  * The owner value written for anything the operator secret publishes.
@@ -105,6 +110,7 @@ export const OPERATOR_SUBJECT: OPERATOR_SUBJECT = '@operator'
 const HEXCLAVE_DEFAULT_ORIGIN = 'https://api.hexclave.com'
 
 let verifierFor: { key: string; verifier: SessionVerifier } | null = null
+let anonymousVerifierFor: { key: string; verifier: SessionVerifier } | null = null
 
 /**
  * The session verifier for this deployment, built once per isolate.
@@ -119,17 +125,36 @@ function sessionVerifier(env: ShareEnv): SessionVerifier | null {
   const origin = (env.HEXCLAVE_API_URL?.trim() || HEXCLAVE_DEFAULT_ORIGIN).replace(/\/+$/, '')
   const key = `${origin}|${projectId}`
   if (verifierFor?.key === key) return verifierFor.verifier
-  // Only the normal issuer. The anonymous-users issuer signs with the same key
-  // set, so admitting it would make an anonymous token a publisher.
   const issuer = `${origin}/api/v1/projects/${projectId}`
   const verifier = createSessionVerifier({ issuer, jwksUrl: `${issuer}/.well-known/jwks.json` })
   verifierFor = { key, verifier }
   return verifier
 }
 
-/** Test seam: configuration changes must be able to rebuild the verifier. */
+/**
+ * The verifier for Hexclave's anonymous-users issuer — a distinct issuer and
+ * audience from a real session's, and the only one built with
+ * `allowAnonymous`. This is what lets a signed-out visitor's silently-created
+ * guest session publish, without loosening what `sessionVerifier` above
+ * accepts for anything else that asks it for a principal.
+ */
+function anonymousSessionVerifier(env: ShareEnv): SessionVerifier | null {
+  const projectId = env.HEXCLAVE_PROJECT_ID?.trim()
+  if (!projectId) return null
+  const origin = (env.HEXCLAVE_API_URL?.trim() || HEXCLAVE_DEFAULT_ORIGIN).replace(/\/+$/, '')
+  const key = `${origin}|${projectId}`
+  if (anonymousVerifierFor?.key === key) return anonymousVerifierFor.verifier
+  const issuer = `${origin}/api/v1/projects-anonymous-users/${projectId}`
+  const jwksUrl = `${origin}/api/v1/projects/${projectId}/.well-known/jwks.json?include_anonymous=true`
+  const verifier = createSessionVerifier({ issuer, jwksUrl, audience: `${projectId}:anon`, allowAnonymous: true })
+  anonymousVerifierFor = { key, verifier }
+  return verifier
+}
+
+/** Test seam: configuration changes must be able to rebuild the verifiers. */
 export function resetShareSessionVerifier(): void {
   verifierFor = null
+  anonymousVerifierFor = null
 }
 
 /**
@@ -149,9 +174,15 @@ export async function authorizePrincipal(env: ShareEnv, request: Request): Promi
   const looksLikeJwt = presented.split('.').length === 3 && !presented.split('.').some((part) => part.length === 0)
   if (looksLikeJwt) {
     const verifier = sessionVerifier(env)
-    if (!verifier) return null
-    const claims = await verifier.verify(presented)
-    return claims ? { kind: 'session', subject: claims.subject } : null
+    const claims = verifier ? await verifier.verify(presented) : null
+    if (claims) return { kind: 'session', subject: claims.subject }
+
+    // Not a real session. It may be a Hexclave guest session instead — a
+    // different issuer signs those, so a token that fails the check above can
+    // still be a legitimate anonymous one rather than a forgery.
+    const anonymous = anonymousSessionVerifier(env)
+    const anonymousClaims = anonymous ? await anonymous.verify(presented) : null
+    return anonymousClaims ? { kind: 'anonymous', subject: anonymousClaims.subject } : null
   }
 
   const expected = env.SHARE_PUBLISH_TOKEN

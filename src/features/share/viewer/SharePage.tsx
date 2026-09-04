@@ -154,12 +154,9 @@ export default function SharePage({ slug: slugOverride, search: searchOverride, 
   }
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
-  const token = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get('t')
-  const publicLink = phase.publication.visibility === 'public'
-  const shareUrl =
-    token && !publicLink
-      ? `${origin}/share/${phase.publication.slug}?t=${encodeURIComponent(token)}`
-      : `${origin}/share/${phase.publication.slug}`
+  // Every publication is public, so its canonical address is always a working
+  // share URL — no token-bearing link to fall back to.
+  const shareUrl = `${origin}/share/${phase.publication.slug}`
   return (
     <main className="bw-share-route">
       {forkNotice ? (
@@ -173,7 +170,6 @@ export default function SharePage({ slug: slugOverride, search: searchOverride, 
         geometry={residentGeometry}
         shareUrl={shareUrl}
         embedUrl={`${origin}/embed/${phase.publication.slug}`}
-        urlGrantsAccess={publicLink || Boolean(token)}
         unavailableDefinitionIds={[
           ...phase.geometry.unavailable,
           ...phase.geometry.failed.map((entry) => entry.definitionId),

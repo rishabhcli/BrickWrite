@@ -16,7 +16,6 @@ import {
   type PublicationAuthor,
   type PublicationCard,
   type ShareCapabilities,
-  type Visibility,
 } from '../types'
 import { useStudioSettings } from './useStudioSettings'
 import '../share.css'
@@ -69,7 +68,6 @@ type PublishPhase =
       slug: string
       revision: number
       contentHash: string
-      visibility: Visibility
       token?: string
       shareUrl?: string
     }
@@ -95,7 +93,6 @@ export function ShareStudio({
   const [title, setTitle] = useState(document.name)
   const [description, setDescription] = useState('')
   const [tagText, setTagText] = useState('')
-  const [visibility, setVisibility] = useState<Visibility>('unlisted')
   const [capabilities, setCapabilities] = useState<ShareCapabilities>({
     view: true,
     comment: false,
@@ -183,7 +180,6 @@ export function ShareStudio({
       const publication = await createPublication({
         document,
         validation,
-        visibility,
         capabilities,
         title,
         description,
@@ -197,14 +193,13 @@ export function ShareStudio({
         slug: result.slug,
         revision: publication.revision,
         contentHash: publication.contentHash,
-        visibility: publication.visibility,
         token: result.token,
         shareUrl: result.shareUrl,
       })
     } catch (cause) {
       setPhase({ kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
     }
-  }, [input, document, validation, visibility, capabilities, title, description, tagText, author, onPublish])
+  }, [input, document, validation, capabilities, title, description, tagText, author, onPublish])
 
   const busy = phase.kind === 'rendering' || phase.kind === 'publishing'
 
@@ -519,28 +514,7 @@ export function ShareStudio({
             />
           </label>
 
-          <div className="bw-studio-row" role="radiogroup" aria-label="Visibility">
-            {(['private', 'unlisted', 'public'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={visibility === option}
-                className={visibility === option ? 'is-active' : ''}
-                data-testid={`visibility-${option}`}
-                onClick={() => setVisibility(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-          <p className="bw-studio-hint">
-            {visibility === 'private'
-              ? 'Only you can open it. The address returns the same "not found" a nonexistent one does.'
-              : visibility === 'unlisted'
-                ? 'Reachable only through a link carrying a 256-bit token. Not indexed, not listed in the gallery, and revocable.'
-                : 'Anyone can open it, and it appears in the public gallery.'}
-          </p>
+          <p className="bw-studio-hint">Anyone can open it, and it appears in the public gallery.</p>
 
           <fieldset className="bw-studio-caps">
             <legend>Capabilities</legend>
@@ -594,37 +568,19 @@ export function ShareStudio({
   )
 }
 
-function publishedHref(origin: string, phase: Extract<PublishPhase, { kind: 'published' }>): string | null {
-  if (phase.shareUrl) return phase.shareUrl
-  if (phase.visibility === 'public') return `${origin}/share/${phase.slug}`
-  if (phase.visibility === 'unlisted' && phase.token) {
-    return `${origin}/share/${phase.slug}?t=${encodeURIComponent(phase.token)}`
-  }
-  return null
+function publishedHref(origin: string, phase: Extract<PublishPhase, { kind: 'published' }>): string {
+  return phase.shareUrl || `${origin}/share/${phase.slug}`
 }
 
 function publishedStatus(origin: string, phase: Extract<PublishPhase, { kind: 'published' }>): string {
-  const href = publishedHref(origin, phase)
   const hash = `revision ${phase.revision}, content hash ${phase.contentHash.slice(0, 12)}…`
-  if (href) return `Published at ${href} — ${hash}`
-  if (phase.visibility === 'private') {
-    return `Published privately — ${hash} The address /share/${phase.slug} returns the same "not found" a stranger sees.`
-  }
-  return `Published as unlisted — ${hash} /share/${phase.slug} is not a working link without the access token, which this session did not receive.`
+  return `Published at ${publishedHref(origin, phase)} — ${hash}`
 }
 
 function PublishedLink({ origin, phase }: { origin: string; phase: Extract<PublishPhase, { kind: 'published' }> }) {
-  const href = publishedHref(origin, phase)
-  if (!href) {
-    return (
-      <p className="bw-studio-published" data-testid="published-link-unavailable">
-        No working share URL was returned. Mint a token for this publication before sending the address to anyone.
-      </p>
-    )
-  }
   return (
     <p className="bw-studio-published">
-      <a href={href} data-testid="published-link">
+      <a href={publishedHref(origin, phase)} data-testid="published-link">
         Open the share page
       </a>
     </p>

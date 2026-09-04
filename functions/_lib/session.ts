@@ -12,14 +12,19 @@
  *   1. **The algorithm is the verifier's, not the token's.** `alg` is read only
  *      to reject anything that is not ES256. Trusting it is how `alg: none` and
  *      HMAC-confusion forgeries get accepted.
- *   2. **One issuer.** The anonymous-users issuer signs with the same key set,
- *      so a signature check alone would admit anonymous tokens. `iss` is
- *      compared exactly, and `is_anonymous` / `is_restricted` are refused on top
- *      — the same two classes `server/security/auth.ts` and
- *      `convex/model/identity.ts` refuse.
+ *   2. **One issuer.** A verifier is built for exactly one issuer and checks
+ *      `iss` exactly, so a key set that happens to serve more than one
+ *      issuer's keys cannot make a verifier accept the wrong one.
  *   3. **Every failure is null.** A caller cannot distinguish an expired token
  *      from a forged one from an unreachable key set, and none of them is a
  *      principal.
+ *
+ * Brickwrite builds two verifiers from this factory: one for real Hexclave
+ * sessions, which refuses `is_anonymous` / `is_restricted` — the same two
+ * classes `server/security/auth.ts` and `convex/model/identity.ts` refuse —
+ * and one for the anonymous-users issuer, which requires them, for the one
+ * write (publishing) this deployment lets a guest session make. `allowAnonymous`
+ * picks which; nothing about signature or expiry checking changes either way.
  */
 
 export interface SessionClaims {
@@ -29,6 +34,18 @@ export interface SessionClaims {
 export interface SessionVerifierOptions {
   readonly jwksUrl: string
   readonly issuer: string
+  /**
+   * The `aud` a valid token must carry. Hexclave's anonymous-users issuer uses
+   * a different audience than the regular one, so a verifier built for one
+   * cannot be tricked into accepting a token minted for the other even if a
+   * future key rotation ever let their signatures overlap.
+   */
+  readonly audience?: string
+  /**
+   * Requires `is_anonymous: true` instead of refusing it. Set only for the
+   * verifier built against Hexclave's anonymous-users issuer.
+   */
+  readonly allowAnonymous?: boolean
   /** Test seam. */
   readonly now?: () => number
   /** Test seam; defaults to the platform `fetch`. */
@@ -160,7 +177,16 @@ export function createSessionVerifier(options: SessionVerifierOptions) {
       if (!verified) return null
 
       if (payload.iss !== options.issuer) return null
-      if (payload.is_anonymous === true || payload.is_restricted === true) return null
+      if (options.audience) {
+        const aud = payload.aud
+        const matchesAudience = aud === options.audience || (Array.isArray(aud) && aud.includes(options.audience))
+        if (!matchesAudience) return null
+      }
+      if (options.allowAnonymous) {
+        if (payload.is_anonymous !== true) return null
+      } else if (payload.is_anonymous === true || payload.is_restricted === true) {
+        return null
+      }
 
       const seconds = now() / 1000
       if (typeof payload.exp !== 'number' || payload.exp <= seconds) return null

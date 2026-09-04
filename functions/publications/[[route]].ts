@@ -29,18 +29,18 @@ import { handleError, json, wantsHtml } from '../_lib/respond'
  *
  *   `POST /publications`                     publish a captured snapshot
  *   `POST /publications/:slug/revoke`        withdraw it
- *   `POST /publications/:slug/access`        change visibility or capabilities
- *   `POST /publications/:slug/tokens`        mint an unlisted link
+ *   `POST /publications/:slug/access`        change capabilities
+ *   `POST /publications/:slug/tokens`        mint a link with narrowed scope
  *   `POST /publications/:slug/tokens/:id/revoke`
  *   `GET  /publications/:slug/tokens`        list a publication's links
  *   `GET  /publications`                     the public gallery feed
  *
- * Every write resolves a principal first — a verified Hexclave session, or the
- * deployment-wide operator secret for tooling — and every write against an
- * existing publication then checks that principal against the publication's
- * recorded owner. Possession of a credential is not authority over somebody
- * else's model. The *reads* need no secret and are governed by the same access
- * gate as the page.
+ * Every write resolves a principal first — a verified Hexclave session, a
+ * Hexclave anonymous/guest session, or the deployment-wide operator secret for
+ * tooling — and every write against an existing publication then checks that
+ * principal against the publication's recorded owner. Possession of a
+ * credential is not authority over somebody else's model. The *reads* need no
+ * secret and are governed by the same access gate as the page.
  *
  * Cards arrive base64-encoded alongside the publication. They are rendered in
  * the client, where the compiled geometry is already resident, from the exact
@@ -108,10 +108,7 @@ export const onRequest = async (context: {
 
     if (route.length === 2 && route[1] === 'access') {
       const publication = await mustOwn(store, slug, principal)
-      const updated = updatePublicationAccess(publication, {
-        visibility: parseVisibility(body.visibility),
-        capabilities: parseCapabilities(body.capabilities),
-      })
+      const updated = updatePublicationAccess(publication, { capabilities: parseCapabilities(body.capabilities) })
       await store.updateMetadata(updated)
       return json({ slug, visibility: updated.visibility, capabilities: updated.capabilities })
     }
@@ -181,15 +178,15 @@ async function mustFind(store: ReturnType<typeof storeFor>, slug: string): Promi
 /**
  * Resolves a publication the caller is entitled to change.
  *
- * A caller who is not the owner is told `NOT_FOUND`, the same answer a missing
- * slug gets. `FORBIDDEN` would confirm that a particular slug is published,
- * which for a `private` or `unlisted` publication is exactly the fact its
- * publisher chose not to disclose — the same reasoning `convex/model/auth.ts`
- * applies to private projects.
+ * A caller who is not the owner is told `NOT_FOUND` rather than `FORBIDDEN`,
+ * the same policy `convex/model/auth.ts` applies to projects a caller does not
+ * own — one answer for "wrong account" and "no such slug" rather than two.
  *
- * Two principals pass: the recorded owner, and the operator. The operator is
- * also the only way to administer a publication written before ownership
- * existed, because there is nothing else to compare such a record against.
+ * Two principals pass: the recorded owner (a real session or an anonymous
+ * guest session, matched by subject either way — see `SharePrincipal`), and
+ * the operator. The operator is also the only way to administer a publication
+ * written before ownership existed, because there is nothing else to compare
+ * such a record against.
  */
 async function mustOwn(
   store: ReturnType<typeof storeFor>,
@@ -238,8 +235,8 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
  *   - **`revokedAt` and `moderation` are forced to null.** Otherwise publishing
  *     is a way to clear a moderation decision, or to ship a record that reads as
  *     already-withdrawn.
- *   - **Capabilities are derived from visibility**, not accepted, so a `private`
- *     publication cannot arrive carrying `embed: true`.
+ *   - **`visibility` is forced to `public`.** Every publication is, regardless
+ *     of what the client sent — there is no other setting left to honour.
  *   - **The summary's three countable fields are cross-checked** against the
  *     document. The rest of the summary needs the catalogue and is carried
  *     through as submitted; it is display-only and reaches the page through the
@@ -350,13 +347,9 @@ async function publish(
  * re-deriving it needs the compiled catalogue.
  */
 function rederive(submitted: Publication, principal: SharePrincipal): Publication {
-  const visibility =
-    submitted.visibility === 'public' || submitted.visibility === 'unlisted' || submitted.visibility === 'private'
-      ? submitted.visibility
-      : 'private'
   const sanitised: Publication = {
     ...submitted,
-    visibility,
+    visibility: 'public',
     title: sanitizeTitle(submitted.title) || 'Untitled build',
     description: sanitizeDescription(submitted.description ?? ''),
     tags: sanitizeTags(submitted.tags ?? []),
@@ -368,8 +361,8 @@ function rederive(submitted: Publication, principal: SharePrincipal): Publicatio
     moderation: null,
     ownerSubject: principal.subject,
   }
-  // Re-derives `capabilities` from `visibility` rather than trusting the body.
-  return updatePublicationAccess(sanitised, { visibility, capabilities: submitted.capabilities })
+  // Re-derives `capabilities` rather than trusting the body.
+  return updatePublicationAccess(sanitised, { capabilities: submitted.capabilities })
 }
 
 async function sha256HexOf(bytes: Uint8Array): Promise<string> {
@@ -383,10 +376,6 @@ function decodeBase64(value: string): Uint8Array {
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
   return bytes
-}
-
-function parseVisibility(value: unknown): 'private' | 'unlisted' | 'public' | undefined {
-  return value === 'private' || value === 'unlisted' || value === 'public' ? value : undefined
 }
 
 function parseCapabilities(value: unknown): ShareCapabilities | undefined {

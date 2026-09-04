@@ -5,7 +5,6 @@ import { MemoryKv } from './backend/memory-kv'
 import { hostileDocument, privateDocument, SECRETS } from './__fixtures__/model'
 import { cardUrlFor, metaDescription, renderEmbedPage, renderRefusalPage, renderSharePage } from './page'
 import { createPublication } from './publish'
-import { mintShareToken } from './tokens'
 import type { Publication, PublicationCard } from './types'
 
 /**
@@ -34,7 +33,6 @@ const card = (preset: PublicationCard['preset'], width: number, height: number):
 async function publicPublication(overrides: Parameters<typeof createPublication>[0] | null = null) {
   return createPublication({
     document: privateDocument(9),
-    visibility: 'public',
     capabilities: { view: true, comment: false, fork: true, download: true, embed: true },
     title: 'Survey Rover',
     description: 'A rover built from real parts.',
@@ -105,7 +103,7 @@ describe('share page metadata', () => {
   })
 
   it('falls back to a measured description rather than marketing copy', async () => {
-    const publication = await createPublication({ document: privateDocument(9), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(9) })
     const description = metaDescription(publication)
     expect(description).toContain('6 parts')
     expect(description).toContain('2 unique elements')
@@ -130,7 +128,7 @@ describe('share page metadata', () => {
   })
 
   it('says "Author not stated" rather than inventing a creator', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     const { page } = await pageFor(publication)
     expect(page.html).toContain('Author not stated')
     expect(page.html).not.toContain('<meta name="author"')
@@ -138,41 +136,26 @@ describe('share page metadata', () => {
   })
 
   it('marks a publication with no cards honestly instead of shipping a broken image', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     const { page } = await pageFor(publication)
     expect(page.html).not.toContain('og:image')
     expect(page.html).toContain('No render was captured for this publication')
   })
 
-  it('marks an unlisted page noindex and no-store', async () => {
+  it('marks a page with public viewing turned off as noindex and no-store', async () => {
     const publication = await createPublication({
       document: privateDocument(2),
-      visibility: 'unlisted',
-      capabilities: { view: true },
+      capabilities: { view: false, comment: false, fork: false, download: false, embed: false },
     })
-    const minted = await mintShareToken({
-      publicationId: publication.id,
-      slug: publication.slug,
-      scope: { view: true, comment: false, fork: false, download: false, embed: false },
-    })
-    const kv = new MemoryKv()
-    const store = new KvPublicationStore(kv)
-    await store.putToken(minted.record)
-    const decision = await resolveAccess({
-      publication,
-      presentedToken: minted.token,
-      lookupToken: (id) => store.getToken(id),
-    })
-    const page = renderSharePage({ publication, decision, origin: ORIGIN, nonce: 'N' })
+    const { page } = await pageFor(publication)
 
     expect(page.html).toContain('<meta name="robots" content="noindex, nofollow, noarchive">')
     expect(page.headers['Cache-Control']).toBe('private, no-store')
-    // Whatever else appears on the page, the token that unlocked it must not.
-    expect(page.html).not.toContain(minted.token.split('.')[1])
-    // Forking is off for this link, so the action is absent rather than broken.
+    // Forking is off, so the action is absent rather than broken. The address
+    // is still the publication's real one, so "Copy link" still appears — a
+    // publication is always public, however few capabilities it grants.
     expect(page.html).not.toContain('Edit a copy')
-    expect(page.html).not.toContain('Copy link')
-    expect(page.html).toContain('This address is not a shareable link')
+    expect(page.html).toContain('Copy link')
   })
 })
 
@@ -221,7 +204,6 @@ describe('share page injection resistance', () => {
   it('escapes hostile model, step and subassembly names', async () => {
     const publication = await createPublication({
       document: hostileDocument(),
-      visibility: 'public',
       title: '"><script>alert(1)</script>',
       description: '</p><img src=x onerror=alert(2)>',
       tags: ['"><svg onload=alert(3)>'],
@@ -257,7 +239,6 @@ describe('share page injection resistance', () => {
   it('escapes the JSON-LD payload so it cannot close its own script tag', async () => {
     const publication = await createPublication({
       document: privateDocument(1),
-      visibility: 'public',
       title: 'A</script><script>alert(1)</script>',
     })
     const { page } = await pageFor(publication)

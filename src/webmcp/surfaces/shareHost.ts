@@ -35,12 +35,7 @@ const compactPublication = (publication: Publication) => ({
   },
 })
 
-export async function prepareShare(input: {
-  title?: string
-  description?: string
-  visibility?: 'private' | 'unlisted' | 'public'
-  tags?: string[]
-}) {
+export async function prepareShare(input: { title?: string; description?: string; tags?: string[] }) {
   const { createPublication } = await import('../../features/share/publish')
   const snapshot = cadEngine.getSnapshot()
   let publication: Publication
@@ -48,7 +43,6 @@ export async function prepareShare(input: {
     publication = await createPublication({
       document: snapshot.document,
       validation: snapshot.validation,
-      visibility: input.visibility ?? 'unlisted',
       title: input.title,
       description: input.description,
       tags: input.tags,

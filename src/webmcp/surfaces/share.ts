@@ -5,7 +5,6 @@ import { json, tool } from '../gateway'
 const PrepareSchema = z.object({
   title: z.string().max(120).optional(),
   description: z.string().max(2000).optional(),
-  visibility: z.enum(['private', 'unlisted', 'public']).optional(),
   tags: z.array(z.string().min(1).max(40)).max(16).optional(),
 })
 

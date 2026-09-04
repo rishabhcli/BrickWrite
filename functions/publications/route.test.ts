@@ -23,6 +23,7 @@ import { onRequest } from './[[route]]'
 catalog.install(fixture as unknown as CatalogPayload)
 
 const ISSUER = 'https://hexclave.test/api/v1/projects/proj_test'
+const ANONYMOUS_ISSUER = 'https://hexclave.test/api/v1/projects-anonymous-users/proj_test'
 const b64url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 const encodeJson = (value: unknown) => b64url(new TextEncoder().encode(JSON.stringify(value)))
@@ -45,6 +46,10 @@ async function session(subject: string, overrides: Record<string, unknown> = {})
   )
   return `${input}.${b64url(new Uint8Array(signature))}`
 }
+
+/** A Hexclave guest session: its own issuer and audience, never a real one's. */
+const anonymousSession = (subject: string) =>
+  session(subject, { iss: ANONYMOUS_ISSUER, aud: 'proj_test:anon', is_anonymous: true, is_restricted: true })
 
 let kv: MemoryKv
 
@@ -96,7 +101,6 @@ const document_ = (): ModelDocument =>
 async function record(overrides: Partial<Publication> = {}): Promise<Publication> {
   const base = await createPublication({
     document: document_(),
-    visibility: 'public',
     title: 'Test build',
   })
   return { ...base, ...overrides }
@@ -152,6 +156,38 @@ describe('who may write at all', () => {
   })
 })
 
+describe('publishing without an account', () => {
+  it('accepts a Hexclave anonymous session', async () => {
+    expect((await publishAs(await anonymousSession('anon_a'))).response.status).toBe(201)
+  })
+
+  it('records the anonymous session as the owner', async () => {
+    const { publication } = await publishAs(await anonymousSession('anon_a'))
+    expect((await stored(publication.slug))?.ownerSubject).toBe('anon_a')
+  })
+
+  it('still checks the anonymous session’s signature, not just its issuer', async () => {
+    const impostor = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const real = signing
+    signing = impostor
+    const forged = await anonymousSession('anon_a')
+    signing = real
+    expect((await publishAs(forged)).response.status).toBe(403)
+  })
+
+  it('lets the same guest session manage what it published', async () => {
+    const credential = await anonymousSession('anon_a')
+    const { publication } = await publishAs(credential)
+    const response = await call(`${publication.slug}/revoke`, { credential, body: {} })
+    expect(response.status).toBe(200)
+  })
+
+  it('still requires the is_anonymous claim on the anonymous issuer, not just the right issuer and audience', async () => {
+    const incomplete = await session('someone', { iss: ANONYMOUS_ISSUER, aud: 'proj_test:anon' })
+    expect((await publishAs(incomplete)).response.status).toBe(403)
+  })
+})
+
 describe('ownership', () => {
   it('records the publishing session as the owner', async () => {
     const { publication } = await publishAs(await session('user_a'))
@@ -170,7 +206,7 @@ describe('ownership', () => {
 
   for (const [name, path, body] of [
     ['revoke', 'revoke', {}],
-    ['access', 'access', { visibility: 'public' }],
+    ['access', 'access', { capabilities: { view: true, comment: false, fork: false, download: false, embed: false } }],
     ['tokens', 'tokens', {}],
   ] as const) {
     it(`refuses ${name} from a different account`, async () => {
@@ -285,16 +321,12 @@ describe('what actually gets stored', () => {
     expect(saved?.moderation).toBeNull()
   })
 
-  it('derives capabilities from visibility rather than trusting the body', async () => {
+  it('stores every publication as public, whatever the client claims', async () => {
     const { publication } = await publishAs(await session('user_a'), {
-      visibility: 'private',
-      capabilities: { view: true, comment: true, fork: true, download: true, embed: true },
+      visibility: 'private' as Publication['visibility'],
     })
     const saved = await stored(publication.slug)
-    expect(saved?.visibility).toBe('private')
-    // Whatever the flags said, a private publication is resolved through the
-    // same function the access route uses.
-    expect(saved?.capabilities).toBeDefined()
+    expect(saved?.visibility).toBe('public')
   })
 
   it('re-sanitises text the client is trusted to have sanitised', async () => {
@@ -315,14 +347,6 @@ describe('what actually gets stored', () => {
     expect(saved?.tags).toEqual(['b-bold-b', 'ok'])
   })
 
-  it('refuses an unknown visibility rather than storing it', async () => {
-    const { publication } = await publishAs(await session('user_a'), {
-      visibility: 'everyone' as Publication['visibility'],
-    })
-    // Not an error — narrowed to the closed setting, because an unrecognised
-    // visibility must never resolve to a more open one than the publisher has.
-    expect((await stored(publication.slug))?.visibility).toBe('private')
-  })
 })
 
 /**

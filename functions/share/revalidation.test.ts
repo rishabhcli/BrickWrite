@@ -56,7 +56,6 @@ const FULL = { view: true, comment: true, fork: true, download: true, embed: tru
 async function published(title = 'Public build') {
   const publication = await createPublication({
     document: document_(),
-    visibility: 'public',
     capabilities: FULL,
     title,
   })

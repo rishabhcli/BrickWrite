@@ -11,7 +11,6 @@ import {
   type PublicationAuthor,
   type PublicationCard,
   type ShareCapabilities,
-  type Visibility,
 } from './types'
 
 /**
@@ -42,7 +41,6 @@ export interface PublishRequest {
    * fabricated pass.
    */
   validation?: ValidationReport | null
-  visibility: Visibility
   capabilities?: Partial<ShareCapabilities>
   title?: string
   description?: string
@@ -66,11 +64,8 @@ export function normaliseAuthor(author: PublicationAuthor | null | undefined): P
   return { displayName, handle: handle || null, url: sanitizeUrl(author.url) }
 }
 
-function resolveCapabilities(visibility: Visibility, requested: Partial<ShareCapabilities> | undefined): ShareCapabilities {
+function resolveCapabilities(requested: Partial<ShareCapabilities> | undefined): ShareCapabilities {
   const base = { ...DEFAULT_CAPABILITIES, ...requested }
-  // A private publication grants nothing to anybody but its owner, whatever the
-  // capability flags say. Storing the flags anyway means flipping visibility to
-  // unlisted later restores the publisher's intent instead of resetting it.
   return {
     view: Boolean(base.view),
     comment: Boolean(base.comment),
@@ -115,8 +110,8 @@ export async function createPublication(request: PublishRequest): Promise<Public
     schemaVersion: PUBLICATION_SCHEMA_VERSION,
     id: `pub_${base32(randomBytes(16))}`,
     slug: mintSlug(title),
-    visibility: request.visibility,
-    capabilities: resolveCapabilities(request.visibility, request.capabilities),
+    visibility: 'public',
+    capabilities: resolveCapabilities(request.capabilities),
     title,
     description: sanitizeDescription(request.description ?? ''),
     tags: sanitizeTags(request.tags ?? []),
@@ -206,20 +201,20 @@ export function revokePublication(publication: Publication, now = new Date()): P
 }
 
 /**
- * Applies a visibility or capability change.
+ * Applies a capability change.
  *
  * The snapshot, revision and content hash are carried through untouched — a
- * publisher can close a publication down or open it up without republishing,
- * and doing so must not alter the artifact anybody already has a link to.
+ * publisher can turn comments, forking, downloads or embedding on or off
+ * without republishing, and doing so must not alter the artifact anybody
+ * already has a link to. Visibility is not one of the things this changes:
+ * every publication is public for its whole life.
  */
 export function updatePublicationAccess(
   publication: Publication,
-  changes: { visibility?: Visibility; capabilities?: Partial<ShareCapabilities> },
+  changes: { capabilities?: Partial<ShareCapabilities> },
 ): Publication {
-  const visibility = changes.visibility ?? publication.visibility
   return deepFreeze({
     ...publication,
-    visibility,
-    capabilities: resolveCapabilities(visibility, { ...publication.capabilities, ...changes.capabilities }),
+    capabilities: resolveCapabilities({ ...publication.capabilities, ...changes.capabilities }),
   })
 }

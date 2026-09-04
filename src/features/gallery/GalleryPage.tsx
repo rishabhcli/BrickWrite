@@ -237,9 +237,9 @@ export default function GalleryPage({
         <div className="bw-gallery-state bw-gallery-empty" data-testid="gallery-empty">
           <h2>Nothing has been published yet</h2>
           <p>
-            The gallery lists public publications, and there are none. It is not seeded with examples: when somebody
-            publishes a model with public visibility, it appears here, and until then this page is honest about being
-            empty.
+            The gallery lists every published build, and there are none yet. It is not seeded with examples: a build
+            publishes itself automatically once it reaches 25 parts, and until one does this page is honest about
+            being empty.
           </p>
           <p>
             <a className="bw-gallery-action" href="/editor">

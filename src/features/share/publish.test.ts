@@ -27,7 +27,6 @@ const publishAt = (revision: number) =>
   createPublication({
     document: privateDocument(revision),
     validation: healthyValidation(revision),
-    visibility: 'public',
     title: 'Survey Rover',
     description: 'Six parts, three steps.',
     author: { displayName: 'Rishabh', handle: 'rish', url: 'https://example.com/rish' },
@@ -47,7 +46,6 @@ describe('publication immutability', () => {
     const publication = await createPublication({
       document,
       validation: healthyValidation(12),
-      visibility: 'public',
       now: new Date('2026-08-27T12:00:00.000Z'),
     })
     const bytesAtPublish = publicationBytes(publication)
@@ -110,22 +108,22 @@ describe('publication immutability', () => {
     expect(first.revision).toBe(12)
   })
 
-  it('keeps the snapshot when visibility, capabilities or revocation change', async () => {
+  it('keeps the snapshot when capabilities or revocation change', async () => {
     const publication = await publishAt(12)
-    const closed = updatePublicationAccess(publication, { visibility: 'unlisted', capabilities: { fork: false } })
+    const closed = updatePublicationAccess(publication, { capabilities: { fork: false } })
     const revoked = revokePublication(closed, new Date('2026-09-01T00:00:00.000Z'))
 
     expect(closed.contentHash).toBe(publication.contentHash)
     expect(revoked.contentHash).toBe(publication.contentHash)
     expect(canonicalJson(revoked.document)).toBe(canonicalJson(publication.document))
-    expect(revoked.visibility).toBe('unlisted')
+    expect(revoked.visibility).toBe('public')
     expect(revoked.capabilities.fork).toBe(false)
     expect(revoked.revokedAt).toBe('2026-09-01T00:00:00.000Z')
   })
 
   it('hashes the same revision to the same value across independent publications', async () => {
-    const a = await createPublication({ document: privateDocument(12), visibility: 'public' })
-    const b = await createPublication({ document: privateDocument(12), visibility: 'unlisted' })
+    const a = await createPublication({ document: privateDocument(12), title: 'Survey Rover' })
+    const b = await createPublication({ document: privateDocument(12), title: 'A different title' })
     // Identical snapshot bytes, whatever the surrounding metadata says.
     expect(a.contentHash).toBe(b.contentHash)
   })
@@ -201,12 +199,11 @@ describe('publication privacy', () => {
   })
 
   it('publishes no author rather than inventing one', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     expect(publication.author).toBeNull()
 
     const blank = await createPublication({
       document: privateDocument(1),
-      visibility: 'public',
       author: { displayName: '   ', handle: null, url: null },
     })
     expect(blank.author).toBeNull()
@@ -231,7 +228,6 @@ describe('publication sanitisation', () => {
   it('strips markup from every operator-authored string', async () => {
     const publication = await createPublication({
       document: hostileDocument(),
-      visibility: 'public',
       title: '<script>alert("title")</script>',
       description: 'Line one<img src=x onerror=alert(1)>\n\n\n\nLine two',
       tags: ['<b>tag</b>', 'Fine Tag', 'javascript:alert(1)', '   ', 'fine tag'],
@@ -254,7 +250,6 @@ describe('publication sanitisation', () => {
     await expect(
       createPublication({
         document: privateDocument(1),
-        visibility: 'public',
         cards: [
           {
             preset: 'opengraph',

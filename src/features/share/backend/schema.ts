@@ -32,8 +32,10 @@ import type {
  *
  * The one invariant the cloud implementation must preserve, because the whole
  * workstream rests on it: **`publications` rows are insert-only for
- * `snapshot`, `revision` and `contentHash`.** Visibility, capabilities,
- * `revokedAt` and `moderation` may be patched; the snapshot may not.
+ * `snapshot`, `revision` and `contentHash`.** Capabilities, `revokedAt` and
+ * `moderation` may be patched; `visibility` is written once at insert and
+ * never patched — every publication is public — and the snapshot may not
+ * change at all.
  */
 
 export const CONVEX_SHARE_TABLES = `
@@ -46,7 +48,7 @@ export const CONVEX_SHARE_TABLES = `
     slug: v.string(),
     ownerId: v.optional(v.id('users')),
     projectId: v.optional(v.string()),
-    visibility: v.union(v.literal('private'), v.literal('unlisted'), v.literal('public')),
+    visibility: v.literal('public'),
     capabilities: v.object({
       view: v.boolean(),
       comment: v.boolean(),

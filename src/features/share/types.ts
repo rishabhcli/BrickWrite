@@ -18,7 +18,13 @@ import type { Bounds, ConnectionFamily } from '../../cad/types'
 /** Publication record schema. Bumped when the wire shape changes. */
 export const PUBLICATION_SCHEMA_VERSION = 1
 
-export type Visibility = 'private' | 'unlisted' | 'public'
+/**
+ * Every publication is public. Kept as a named, single-value type rather than
+ * deleted outright: `Publication.visibility` is still a field real stored
+ * records carry, and a one-value union documents that at the type level
+ * instead of silently dropping the field and hoping nothing read it.
+ */
+export type Visibility = 'public'
 
 /**
  * What a viewer may do, independent of how they found the page.

@@ -22,7 +22,6 @@ const publish = () =>
   createPublication({
     document: privateDocument(11),
     validation: healthyValidation(11),
-    visibility: 'public',
     capabilities: { view: true, comment: false, fork: true, download: false, embed: true },
     title: 'Survey Rover',
     author: { displayName: 'Rishabh Bansal', handle: null, url: null },
@@ -112,7 +111,7 @@ describe('read-only viewer', () => {
   })
 
   it('says "Author not stated" rather than inventing one', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     renderViewer(publication)
     expect(screen.queryByTestId('viewer-author')).toBeNull()
     expect(screen.getByText('Author not stated')).toBeInTheDocument()

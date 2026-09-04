@@ -37,7 +37,6 @@ describe('gallery projection', () => {
     const publication = await createPublication({
       document: privateDocument(5),
       validation: healthyValidation(5),
-      visibility: 'public',
       title: 'Rover',
       tags: ['rover'],
     })
@@ -65,7 +64,7 @@ describe('gallery projection', () => {
   })
 
   it('reports no card rather than pointing at one that was never rendered', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     expect(galleryEntryFrom(publication).cardPreset).toBeNull()
   })
 })
@@ -187,7 +186,7 @@ describe('moderation', () => {
   })
 
   it('hides rather than deletes, and records who decided and why', async () => {
-    const publication = await createPublication({ document: privateDocument(1), visibility: 'public' })
+    const publication = await createPublication({ document: privateDocument(1) })
     const hidden = applyModeration(publication, {
       status: 'hidden',
       reason: 'Infringing a licensed set.',

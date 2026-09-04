@@ -94,9 +94,9 @@ const RENDER_VERSION = '1'
  * The pages carried `must-revalidate` with nothing to revalidate against, so
  * every reload of a share link re-rendered the page and re-sent the whole body.
  * Derived from the publication, the access decision and the origin — everything
- * that decides what the page says — so a revocation or a visibility change
- * moves it immediately, which is why the pages can be revalidated rather than
- * cached outright.
+ * that decides what the page says — so a revocation, a moderation decision or
+ * a capability change moves it immediately, which is why the pages can be
+ * revalidated rather than cached outright.
  *
  * The nonce is deliberately not an input: it differs per response and changes
  * nothing a reader sees.
@@ -219,8 +219,9 @@ export function renderSharePage(options: PageOptions): RenderedPage {
     status: decision.status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      // The page embeds mutable state (visibility, revocation), so it is never
-      // cached at the edge. The cards it points at are immutable and are.
+      // The page embeds mutable state (capabilities, revocation, moderation),
+      // so it is never cached at the edge. The cards it points at are immutable
+      // and are.
       'Cache-Control': decision.noindex ? 'private, no-store' : 'public, max-age=0, must-revalidate',
       'Content-Security-Policy': contentSecurityPolicy(nonce, "'none'"),
       'X-Frame-Options': 'DENY',
@@ -311,15 +312,11 @@ function shareBody(options: PageOptions, heroCard: PublicationCard | null): stri
       `<button type="button" class="share-action" data-copy="${escapeAttribute(embedSnippet(options))}">Copy embed code</button>`,
     )
   }
-  if (publication.visibility === 'public') {
-    actions.push(
-      `<button type="button" class="share-action" data-copy="${escapeAttribute(canonical)}" data-share-url="${escapeAttribute(canonical)}" data-share-title="${escapeAttribute(publication.title)}">Copy link</button>`,
-    )
-  } else {
-    actions.push(
-      '<p class="share-warning">This address is not a shareable link. Recipients need the original URL that included the access token; after this browser exchanged it for a cookie, copying the address bar will not grant them access.</p>',
-    )
-  }
+  // Every publication is public, so its canonical address is always a
+  // shareable link — there is no unlisted-token case left to warn about.
+  actions.push(
+    `<button type="button" class="share-action" data-copy="${escapeAttribute(canonical)}" data-share-url="${escapeAttribute(canonical)}" data-share-title="${escapeAttribute(publication.title)}">Copy link</button>`,
+  )
 
   const tags = publication.tags.length
     ? `<ul class="share-tags">${publication.tags.map((tag) => `<li><a href="${escapeAttribute(`${trimOrigin(origin)}/gallery?tag=${encodeURIComponent(tag)}`)}">#${escapeHtml(tag)}</a></li>`).join('')}</ul>`

@@ -22,3 +22,25 @@ export async function hexclaveAuthorizationHeader(): Promise<string | null> {
 
 export type AuthorizationHeaderSource = () => Promise<string | null>
 
+/**
+ * Authorization header for a build that has no account behind it.
+ *
+ * `{ or: 'anonymous' }` returns the signed-in user unchanged, or silently
+ * mints a Hexclave guest session — no prompt, no redirect — the first time
+ * anything asks for one. This is what lets the auto-publish trigger in
+ * `cad/autopublish.ts` give a build *some* subject to own it, whether or not
+ * the person building it ever created an account. `functions/_lib/env.ts`
+ * verifies the guest session against Hexclave's separate anonymous-users
+ * issuer, so this can never be mistaken for a real one server-side.
+ */
+export async function hexclaveAuthorizationHeaderOrAnonymous(): Promise<string | null> {
+  const app = getHexclaveClientApp()
+  if (app.status !== 'ok') return null
+  try {
+    await app.data.getUser({ or: 'anonymous' })
+    return await app.data.getAuthorizationHeader()
+  } catch {
+    return null
+  }
+}
+

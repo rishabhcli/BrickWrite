@@ -1,4 +1,3 @@
-import { baseCapabilities, intersectCapabilities, verifyShareToken } from './tokens'
 import {
   NO_CAPABILITIES,
   type CapabilityKey,
@@ -11,23 +10,18 @@ import {
 /**
  * The access gate.
  *
- * One function decides what an anonymous visitor may do with a publication, and
- * every surface — the share page, the embed, the card endpoint, the JSON API,
- * the viewer — asks it rather than re-deriving the rules. A second copy of this
+ * One function decides what a visitor may do with a publication, and every
+ * surface — the share page, the embed, the card endpoint, the JSON API, the
+ * viewer — asks it rather than re-deriving the rules. A second copy of this
  * logic is how an embed ends up honouring a revoked link.
  *
  * The order of the checks is the policy:
  *
  *   1. **Revoked** beats everything, including ownership.
  *   2. **Moderation** hides a publication from the public without deleting it.
- *   3. **Owner** sees their own private work.
- *   4. **Public** grants the publication's own capabilities.
- *   5. **Unlisted** grants nothing until a valid token is presented, and then
- *      only the intersection of the token's scope and the publication's.
- *   6. **Private** grants nothing to anybody else, token or not.
- *
- * A publication that is unlisted and has no valid token fails *closed*: the
- * caller receives `NO_CAPABILITIES`, not a read-only fallback.
+ *   3. **Owner** sees their own work with every capability the record allows.
+ *   4. **Everyone else** gets the publication's own capabilities — every
+ *      publication is public, so there is no narrower case to fall through to.
  */
 
 export interface AccessDecision {
@@ -46,12 +40,18 @@ export interface AccessDecision {
 
 export interface AccessRequest {
   publication: Publication
-  /** The `?t=` value, if any. Never logged. */
+  /**
+   * The `?t=` value, if any, and a way to look it up.
+   *
+   * No longer consulted: every publication is public, so there is no unlisted
+   * state left for a token to unlock. Kept on the request shape rather than
+   * ripped out of every caller — a link callers already pass along is now
+   * simply inert, not a compile error.
+   */
   presentedToken?: string | null
   /** True only when the caller has independently authenticated the owner. */
   viewerIsOwner?: boolean
   now?: Date
-  /** Fetches a token record by its public id. */
   lookupToken?: (id: string) => Promise<ShareTokenRecord | null>
 }
 
@@ -83,70 +83,20 @@ export async function resolveAccess(request: AccessRequest): Promise<AccessDecis
       capabilities: { ...publication.capabilities, view: true },
       reason: null,
       message: null,
-      // A private or unlisted page is never indexable, even for its owner: the
-      // crawler and the owner see the same response headers.
-      noindex: publication.visibility !== 'public',
+      noindex: false,
       tokenId: null,
       status: 200,
     }
   }
 
-  if (publication.visibility === 'public') {
-    return {
-      allowed: publication.capabilities.view,
-      capabilities: baseCapabilities('public', publication.capabilities),
-      reason: publication.capabilities.view ? null : 'CAPABILITY_DISABLED',
-      message: publication.capabilities.view ? null : 'The author has turned off public viewing for this model.',
-      noindex: !publication.capabilities.view,
-      tokenId: null,
-      status: publication.capabilities.view ? 200 : 403,
-    }
-  }
-
-  if (publication.visibility === 'private') {
-    // Deliberately the same response an unknown slug produces, so the existence
-    // of a private publication is not confirmable by URL.
-    return deny('NOT_FOUND', 'No published model was found at this address.', 404)
-  }
-
-  // Unlisted from here down.
-  if (!request.presentedToken) {
-    return deny('TOKEN_REQUIRED', 'This model is shared by link only. The address is missing its access token.', 404)
-  }
-  if (!request.lookupToken) {
-    return deny('STORE_UNAVAILABLE', 'Link access cannot be checked right now. Try again shortly.', 503)
-  }
-
-  const verification = await verifyShareToken(request.presentedToken, {
-    lookup: request.lookupToken,
-    publicationId: publication.id,
-    now: request.now,
-  })
-
-  if (!verification.ok) {
-    // Expiry is the one failure worth distinguishing: it is not a security
-    // boundary — the link was valid — and telling somebody their link aged out
-    // saves a support round trip. Every other failure collapses to one message
-    // so a wrong token cannot be told apart from a revoked or unknown one.
-    const expired = verification.reason === 'expired'
-    return deny(
-      'TOKEN_REJECTED',
-      expired
-        ? 'This link has expired. Ask the author for a new one.'
-        : 'This link is not valid. It may have been revoked, or the address may be incomplete.',
-      expired ? 410 : 404,
-    )
-  }
-
-  const capabilities = intersectCapabilities(publication.capabilities, verification.scope)
   return {
-    allowed: capabilities.view,
-    capabilities,
-    reason: capabilities.view ? null : 'CAPABILITY_DISABLED',
-    message: capabilities.view ? null : 'This link does not grant permission to view the model.',
-    noindex: true,
-    tokenId: verification.record.id,
-    status: capabilities.view ? 200 : 403,
+    allowed: publication.capabilities.view,
+    capabilities: { ...publication.capabilities },
+    reason: publication.capabilities.view ? null : 'CAPABILITY_DISABLED',
+    message: publication.capabilities.view ? null : 'The author has turned off public viewing for this model.',
+    noindex: !publication.capabilities.view,
+    tokenId: null,
+    status: publication.capabilities.view ? 200 : 403,
   }
 }
 
@@ -161,15 +111,9 @@ export function requireCapability(decision: AccessDecision, capability: Capabili
 /**
  * Whether a publication may appear in the gallery.
  *
- * Public, viewable, not revoked, not hidden. An unlisted publication is never
- * listed — that is the entire meaning of the word — and this is the single
- * predicate that decides it.
+ * Viewable, not revoked, not hidden. Every publication is public by
+ * construction, so those three are the only ways left to be unlistable.
  */
 export function isPubliclyListable(publication: Publication): boolean {
-  return (
-    publication.visibility === 'public' &&
-    publication.capabilities.view &&
-    !publication.revokedAt &&
-    publication.moderation?.status !== 'hidden'
-  )
+  return publication.capabilities.view && !publication.revokedAt && publication.moderation?.status !== 'hidden'
 }

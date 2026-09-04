@@ -28,12 +28,11 @@ import type { ShareTokenRecord } from './types'
 
 const FULL = { view: true, comment: true, fork: true, download: true, embed: true }
 
-async function fixture(options: { visibility?: 'unlisted' | 'public' | 'private' } = {}) {
+async function fixture() {
   const kv = new MemoryKv()
   const store = new KvPublicationStore(kv)
   const publication = await createPublication({
     document: privateDocument(4),
-    visibility: options.visibility ?? 'unlisted',
     capabilities: FULL,
     title: 'Rover',
   })
@@ -232,106 +231,28 @@ describe('constant-time comparison', () => {
 })
 
 describe('access resolution', () => {
-  it('grants nothing for an unlisted publication with no token', async () => {
-    const { publication, store } = await fixture()
-    const decision = await resolveAccess({ publication, lookupToken: (id) => store.getToken(id) })
-    expect(decision.allowed).toBe(false)
-    expect(decision.reason).toBe('TOKEN_REQUIRED')
-    expect(decision.capabilities).toEqual({
-      view: false,
-      comment: false,
-      fork: false,
-      download: false,
-      embed: false,
-    })
-    expect(decision.noindex).toBe(true)
-  })
-
-  it('grants the intersected scope for a valid token', async () => {
-    const { publication, store, minted } = await fixture()
-    const decision = await resolveAccess({
-      publication,
-      presentedToken: minted.token,
-      lookupToken: (id) => store.getToken(id),
-    })
-    expect(decision.allowed).toBe(true)
-    expect(decision.capabilities).toEqual(FULL)
-    expect(decision.tokenId).toBe(minted.record.id)
-    // An unlisted page is never indexable, however it was reached.
-    expect(decision.noindex).toBe(true)
-  })
-
-  it('fails closed once the token is revoked, indistinguishably from a bad one', async () => {
-    const { publication, store, minted } = await fixture()
-    const [id] = minted.token.split('.')
-    const forged = await resolveAccess({
-      publication,
-      presentedToken: `${id}.${'A'.repeat(43)}`,
-      lookupToken: (lookup) => store.getToken(lookup),
-    })
-
-    await store.putToken(revokeToken(minted.record))
-    const revoked = await resolveAccess({
-      publication,
-      presentedToken: minted.token,
-      lookupToken: (lookup) => store.getToken(lookup),
-    })
-
-    expect(revoked.allowed).toBe(false)
-    expect(revoked.status).toBe(404)
-    // Byte-identical to the response a forged token gets. Anything else would
-    // let a caller distinguish "this link was real and is now revoked" from
-    // "this link never existed", which is a slug-and-id oracle.
-    expect(revoked.message).toBe(forged.message)
-    expect(revoked.status).toBe(forged.status)
-    expect(revoked.reason).toBe(forged.reason)
-  })
-
-  it('fails closed once the publication itself is revoked, token or not', async () => {
-    const { publication, store, minted } = await fixture()
-    const revoked = revokePublication(publication)
-    const decision = await resolveAccess({
-      publication: revoked,
-      presentedToken: minted.token,
-      viewerIsOwner: true,
-      lookupToken: (id) => store.getToken(id),
-    })
-    expect(decision.allowed).toBe(false)
-    expect(decision.reason).toBe('REVOKED')
-    expect(decision.status).toBe(410)
-  })
-
-  it('treats a private publication as absent rather than forbidden', async () => {
-    const { publication } = await fixture({ visibility: 'private' })
-    const decision = await resolveAccess({ publication })
-    expect(decision.status).toBe(404)
-    expect(decision.reason).toBe('NOT_FOUND')
-  })
-
   it('lets a public publication through and marks it indexable', async () => {
-    const { publication } = await fixture({ visibility: 'public' })
+    const { publication } = await fixture()
     const decision = await resolveAccess({ publication })
     expect(decision.allowed).toBe(true)
     expect(decision.noindex).toBe(false)
   })
 
-  it('honours a capability that was switched off after minting', async () => {
-    const { publication, store, minted } = await fixture()
-    const narrowed = updatePublicationAccess(publication, { capabilities: { ...FULL, download: false } })
-    const decision = await resolveAccess({
-      publication: narrowed,
-      presentedToken: minted.token,
-      lookupToken: (id) => store.getToken(id),
-    })
-    expect(decision.capabilities.download).toBe(false)
-    expect(decision.capabilities.view).toBe(true)
+  it('fails closed once the publication itself is revoked, even for its owner', async () => {
+    const { publication } = await fixture()
+    const revoked = revokePublication(publication)
+    const decision = await resolveAccess({ publication: revoked, viewerIsOwner: true })
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('REVOKED')
+    expect(decision.status).toBe(410)
   })
 
-  it('reports a 503 rather than granting access when the token store is missing', async () => {
-    const { publication, minted } = await fixture()
-    const decision = await resolveAccess({ publication, presentedToken: minted.token })
-    expect(decision.allowed).toBe(false)
-    expect(decision.status).toBe(503)
+  it('honours a capability that was turned off after publishing', async () => {
+    const { publication } = await fixture()
+    const narrowed = updatePublicationAccess(publication, { capabilities: { ...FULL, download: false } })
+    const decision = await resolveAccess({ publication: narrowed })
+    expect(decision.capabilities.download).toBe(false)
+    expect(decision.capabilities.view).toBe(true)
   })
 })
 

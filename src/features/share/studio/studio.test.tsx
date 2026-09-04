@@ -94,13 +94,8 @@ describe('share studio', () => {
     expect(screen.getByText(/1080 × 1350/)).toBeInTheDocument()
   })
 
-  it('explains each visibility in terms of what actually happens', () => {
+  it('states plainly that every publication is public', () => {
     renderStudio()
-    fireEvent.click(screen.getByTestId('visibility-private'))
-    expect(screen.getByText(/returns the same "not found"/)).toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('visibility-unlisted'))
-    expect(screen.getByText(/256-bit token/)).toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('visibility-public'))
     expect(screen.getByText(/appears in the public gallery/)).toBeInTheDocument()
   })
 
@@ -119,7 +114,6 @@ describe('share studio', () => {
     const onPublish = renderStudio()
     fireEvent.change(screen.getByTestId('publish-title'), { target: { value: 'Survey Rover' } })
     fireEvent.change(screen.getByTestId('publish-tags'), { target: { value: 'rover technic' } })
-    fireEvent.click(screen.getByTestId('visibility-public'))
     fireEvent.click(screen.getByTestId('publish-button'))
 
     await waitFor(() => expect(onPublish).toHaveBeenCalledTimes(1), { timeout: 60_000 })
@@ -169,17 +163,5 @@ describe('share studio', () => {
     fireEvent.click(screen.getByTestId('publish-button'))
     await waitFor(() => expect(screen.getByTestId('publish-error')).toHaveTextContent('409'), { timeout: 60_000 })
     expect(screen.queryByTestId('published-link')).toBeNull()
-  }, 90_000)
-
-  it('does not present an unlisted slug as a working share URL', async () => {
-    renderStudio()
-    fireEvent.click(screen.getByTestId('visibility-unlisted'))
-    fireEvent.click(screen.getByTestId('publish-button'))
-    await waitFor(() => expect(screen.getByTestId('publish-status')).toHaveTextContent(/Published as unlisted/), {
-      timeout: 60_000,
-    })
-    expect(screen.queryByTestId('published-link')).toBeNull()
-    expect(screen.getByTestId('published-link-unavailable')).toHaveTextContent(/Mint a token/)
-    expect(screen.getByTestId('publish-status')).toHaveTextContent(/not a working link without the access token/)
   }, 90_000)
 })

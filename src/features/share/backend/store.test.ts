@@ -32,7 +32,6 @@ const build = () => {
 const publish = (revision: number, overrides: Record<string, unknown> = {}) =>
   createPublication({
     document: privateDocument(revision),
-    visibility: 'public',
     capabilities: FULL,
     title: 'Rover',
     ...overrides,
@@ -96,14 +95,14 @@ describe('publication store', () => {
     expect(await store.getBySlug(publication.slug)).toEqual(publication)
   })
 
-  it('allows visibility, capability, revocation and moderation changes', async () => {
+  it('allows capability, revocation and moderation changes', async () => {
     const { store } = build()
     const publication = await publish(4)
     await store.put(publication)
 
-    const closed = updatePublicationAccess(publication, { visibility: 'private' })
+    const closed = updatePublicationAccess(publication, { capabilities: { ...FULL, view: false } })
     await store.updateMetadata(closed)
-    expect((await store.getBySlug(publication.slug))?.visibility).toBe('private')
+    expect((await store.getBySlug(publication.slug))?.capabilities.view).toBe(false)
 
     const revoked = revokePublication(closed, new Date('2026-10-01T00:00:00.000Z'))
     await store.updateMetadata(revoked)
@@ -141,33 +140,39 @@ describe('public feed', () => {
       await store.put(publication)
       visible.push(publication.slug)
     }
-    const unlisted = await publish(9, { visibility: 'unlisted', now: new Date(Date.UTC(2026, 5, 1)) })
-    await store.put(unlisted)
+    const notViewable = await publish(9, {
+      capabilities: { ...FULL, view: false },
+      now: new Date(Date.UTC(2026, 5, 1)),
+    })
+    await store.put(notViewable)
     const hidden = await publish(10, { now: new Date(Date.UTC(2026, 5, 2)) })
     await store.put(revokePublication(hidden))
     await store.updateMetadata(revokePublication(hidden))
 
     const page = await store.listPublic({ limit: 10 })
     expect(page.entries.map((entry) => entry.slug)).toEqual([...visible].reverse())
-    expect(page.entries.some((entry) => entry.slug === unlisted.slug)).toBe(false)
+    expect(page.entries.some((entry) => entry.slug === notViewable.slug)).toBe(false)
     expect(page.entries.some((entry) => entry.slug === hidden.slug)).toBe(false)
   })
 
   it('fills a page rather than returning a short one', async () => {
     const { store } = build()
+    const listable: string[] = []
     for (let index = 0; index < 6; index += 1) {
-      // Alternating unlisted entries mean a naive implementation that took one
-      // KV page and filtered it would return half a page.
-      await store.put(
-        await publish(index + 1, {
-          visibility: index % 2 === 0 ? 'public' : 'unlisted',
-          now: new Date(Date.UTC(2026, 0, index + 1)),
-        }),
-      )
+      // Alternating not-viewable entries mean a naive implementation that took
+      // one KV page and filtered it would return half a page.
+      const publication = await publish(index + 1, {
+        capabilities: index % 2 === 0 ? FULL : { ...FULL, view: false },
+        now: new Date(Date.UTC(2026, 0, index + 1)),
+      })
+      await store.put(publication)
+      if (index % 2 === 0) listable.push(publication.slug)
     }
     const page = await store.listPublic({ limit: 3 })
     expect(page.entries).toHaveLength(3)
-    expect(page.entries.every((entry) => entry.visibility === 'public')).toBe(true)
+    expect(page.entries.every((entry) => entry.capabilities.view)).toBe(true)
+    // Newest first, same as the plain-public case above.
+    expect(page.entries.map((entry) => entry.slug)).toEqual([...listable].reverse())
   })
 
   it('pages with a cursor', async () => {
@@ -303,7 +308,7 @@ describe('the gallery index', () => {
   it('reads only the records it returns, whatever else is stored', async () => {
     const { kv, store } = counting()
     for (let index = 0; index < 30; index += 1) {
-      await store.put(await publish(index, { visibility: 'unlisted', title: `Hidden ${index}` }))
+      await store.put(await publish(index, { capabilities: { ...FULL, view: false }, title: `Hidden ${index}` }))
     }
     await store.put(await publish(99, { title: 'The one public build' }))
 
@@ -324,13 +329,13 @@ describe('the gallery index', () => {
     expect((await store.listPublic()).entries).toEqual([])
   })
 
-  it('adds a publication to the gallery when it becomes public', async () => {
+  it('adds a publication to the gallery when it becomes viewable', async () => {
     const { store } = counting()
-    const publication = await publish(4, { visibility: 'unlisted' })
+    const publication = await publish(4, { capabilities: { ...FULL, view: false } })
     await store.put(publication)
     expect((await store.listPublic()).entries).toEqual([])
 
-    await store.updateMetadata(updatePublicationAccess(publication, { visibility: 'public' }))
+    await store.updateMetadata(updatePublicationAccess(publication, { capabilities: { view: true } }))
     expect((await store.listPublic()).entries.map((entry) => entry.slug)).toEqual([publication.slug])
   })
 
@@ -341,7 +346,10 @@ describe('the gallery index', () => {
     const { kv, store } = counting()
     const publication = await publish(4)
     await store.put(publication)
-    await kv.put(`pub:slug:${publication.slug}`, JSON.stringify({ ...publication, visibility: 'unlisted' }))
+    await kv.put(
+      `pub:slug:${publication.slug}`,
+      JSON.stringify({ ...publication, capabilities: { ...publication.capabilities, view: false } }),
+    )
 
     expect((await store.listPublic()).entries).toEqual([])
     kv.reads = 0
@@ -472,23 +480,23 @@ describe('a partly applied access change', () => {
 
   it('does not strand a publication outside the gallery when revealing it', async () => {
     const { kv, store } = flaky()
-    const publication = await publish(4, { visibility: 'unlisted' })
+    const publication = await publish(4, { capabilities: { ...FULL, view: false } })
     await store.put(publication)
 
     /*
      * The index write fails, which is the half that has to be able to fail
      * safely. Committing the record first and losing this one leaves a record
-     * that says `public` with nothing pointing at it: live, reachable by its
+     * that says viewable with nothing pointing at it: live, reachable by its
      * link, and absent from the gallery, with no read able to discover it.
      */
     kv.failPutMatching = /^pub:feed:/
     await expect(
-      store.updateMetadata(updatePublicationAccess(publication, { visibility: 'public' })),
+      store.updateMetadata(updatePublicationAccess(publication, { capabilities: { view: true } })),
     ).rejects.toThrow()
     kv.failPutMatching = null
 
-    // Nothing claims to be public, so nothing is missing from the gallery.
-    expect((await store.getBySlug(publication.slug))?.visibility).toBe('unlisted')
+    // Nothing claims to be viewable, so nothing is missing from the gallery.
+    expect((await store.getBySlug(publication.slug))?.capabilities.view).toBe(false)
     expect((await store.listPublic()).entries).toEqual([])
   })
 
@@ -624,9 +632,9 @@ describe('a partly applied access change', () => {
 
   it('converges once the change is retried', async () => {
     const { kv, store } = flaky()
-    const publication = await publish(4, { visibility: 'unlisted' })
+    const publication = await publish(4, { capabilities: { ...FULL, view: false } })
     await store.put(publication)
-    const revealed = updatePublicationAccess(publication, { visibility: 'public' })
+    const revealed = updatePublicationAccess(publication, { capabilities: { view: true } })
 
     kv.failPutMatching = /^pub:feed:/
     await expect(store.updateMetadata(revealed)).rejects.toThrow()
