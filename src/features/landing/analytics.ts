@@ -22,7 +22,7 @@ export type LandingSurface = 'landing' | 'explore'
 export type LandingAnalyticsEvent =
   | { name: 'landing.viewed' }
   | { name: 'landing.hero_stage_advanced'; stage: 'brief' | 'candidate' | 'refinement' | 'validated' }
-  | { name: 'landing.cta_selected'; cta: 'start-blank' | 'describe-build' | 'explore-demos' | 'open-editor' }
+  | { name: 'landing.cta_selected'; cta: 'start-blank' | 'describe-build' | 'open-showcase' | 'open-editor' }
   | { name: 'demo.viewed'; demoId: string; surface: LandingSurface }
   | { name: 'demo.step_scrubbed'; demoId: string; step: number }
   | { name: 'demo.view_changed'; demoId: string; view: 'solid' | 'exploded' | 'before-after' }
@@ -57,7 +57,7 @@ export const LANDING_EVENT_NAMES: readonly LandingAnalyticsEvent['name'][] = [
 const ENUMS: Record<string, readonly string[]> = {
   name: LANDING_EVENT_NAMES,
   stage: ['brief', 'candidate', 'refinement', 'validated'],
-  cta: ['start-blank', 'describe-build', 'explore-demos', 'open-editor'],
+  cta: ['start-blank', 'describe-build', 'open-showcase', 'open-editor'],
   surface: ['landing', 'explore'],
   view: ['solid', 'exploded', 'before-after'],
   destination: ['local', 'cloud'],

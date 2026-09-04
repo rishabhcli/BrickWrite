@@ -245,7 +245,7 @@ Landing calls to action (live copy in `LandingPage.tsx`):
 
 | CTA | Target |
 | --- | --- |
-| Explore the megabuilds | `/explore` |
+| Open the showcase | `/editor?doc=showcase` (Meridian Green, regardless of the visitor's own projects) |
 | Start from scratch | `/editor?doc=blank` |
 | Open this build | `/explore?demo=<spotlight>` |
 | Open the editor | `/editor` (restores the newest local project, or a blank) |

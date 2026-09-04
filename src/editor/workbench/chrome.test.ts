@@ -172,6 +172,22 @@ describe('workbench chrome polish', () => {
     expect(withoutComments).toMatch(/\.right-dock-object \.dock-section\.closed\s*\{[^}]*flex:\s*none/)
   })
 
+  // A plain open block let flexbox shrink it below its own content height
+  // (min-height: 0), and its body had no overflow clipping — so a full-height
+  // body kept painting past its own squeezed box, on top of the next block's
+  // header. A grow block still needs to give up its body entirely under
+  // pressure, but never below the header that names it.
+  it('never lets an open Object block shrink below its own content or header', () => {
+    const [openRule] = [...withoutComments.matchAll(/\.right-dock-object \.dock-section\.open\s*\{([^}]*)\}/g)].map(
+      (match) => match[1],
+    )
+    expect(openRule).toMatch(/min-height:\s*auto;/)
+    const [growRule] = [
+      ...withoutComments.matchAll(/\.right-dock-object \.dock-section\.open\.grow\s*\{([^}]*)\}/g),
+    ].map((match) => match[1])
+    expect(growRule).toMatch(/min-height:\s*34px;/)
+  })
+
   it('keeps four timeline tabs on one row at the laptop 124px strip', () => {
     expect(withoutComments).toMatch(/container-name:\s*timeline/)
     expect(withoutComments).toMatch(/@container timeline \(max-height: 140px\)/)

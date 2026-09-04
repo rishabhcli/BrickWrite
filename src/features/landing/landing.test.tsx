@@ -64,7 +64,7 @@ describe('the landing page', () => {
       'href',
       hrefFor({ kind: 'explore', demoId: lead.id }),
     )
-    expect(screen.getByRole('link', { name: /Explore the megabuilds/ })).toHaveAttribute('href', '/explore')
+    expect(screen.getByRole('link', { name: /Open the showcase/ })).toHaveAttribute('href', '/editor?doc=showcase')
     expect(screen.getByRole('link', { name: /Start from scratch/ })).toHaveAttribute('href', '/editor?doc=blank')
     expect(screen.getByRole('link', { name: /Describe another idea/ })).toHaveAttribute(
       'href',

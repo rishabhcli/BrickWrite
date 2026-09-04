@@ -115,10 +115,13 @@ export function LandingPage() {
               <div className="bw-hero-actions">
                 <LandingLink
                   className="bw-button primary"
-                  target={{ kind: 'explore' }}
-                  onFollow={() => trackLanding({ name: 'landing.cta_selected', cta: 'explore-demos' })}
+                  target={{ kind: 'path', href: '/editor?doc=showcase' }}
+                  onFollow={() => {
+                    trackLanding({ name: 'landing.cta_selected', cta: 'open-showcase' })
+                    trackLanding({ name: 'editor.opened', from: 'landing', withProject: false })
+                  }}
                 >
-                  Explore the megabuilds <span aria-hidden="true">↗</span>
+                  Open the showcase <span aria-hidden="true">↗</span>
                 </LandingLink>
                 <LandingLink
                   className="bw-studio-text-link"

@@ -8875,12 +8875,22 @@ body.part-dragging * {
 .right-dock-object .dock-section.closed {
   flex: none;
 }
+/* An open block must never be squeezed below what it can show, or a size the
+ * flexbox math picked disagrees with the height its own (unclipped)
+ * `.dock-section-body` actually paints at — and the difference is content
+ * from a shrunk-away block sitting on top of the next header in the column.
+ * A plain block holds to its natural content height (`auto`); a `grow` block
+ * may still give up all its body to a hungrier sibling, but never below its
+ * own 34px header, so at worst it collapses to a header rather than a
+ * collision. `.right-dock-object` already scrolls, which is where the
+ * height neither block will give up any further has to go. */
 .right-dock-object .dock-section.open {
   flex: 0 1 auto;
-  min-height: 0;
+  min-height: auto;
 }
 .right-dock-object .dock-section.open.grow {
   flex: 1 1 auto;
+  min-height: 34px;
 }
 .proposal-overlay-reviewing {
   font: 700 9px var(--font-chrome);
@@ -9116,4 +9126,3 @@ body.part-dragging * {
   flex-wrap: wrap;
   row-gap: 4px;
 }
-
