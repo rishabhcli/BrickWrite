@@ -8,7 +8,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { LiquidStage } from './ui/liquid'
 import { AppShell } from './platform/AppShell'
+import { installAnalyticsDelivery } from './platform/analyticsDelivery'
 import { registerRoute } from './platform/routes'
+
+installAnalyticsDelivery()
 
 /**
  * Boot sequence.
@@ -34,6 +37,8 @@ registerRoute('editor', () => import('./App'))
 registerRoute('share', () => import('./features/share/viewer/SharePage'))
 registerRoute('gallery', () => import('./features/gallery/GalleryPage'))
 registerRoute('projects', () => import('./features/projects/ProjectsPage'))
+registerRoute('terms', () => import('./features/legal/TermsPage'))
+registerRoute('privacy', () => import('./features/legal/PrivacyPage'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

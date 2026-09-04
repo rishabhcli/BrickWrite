@@ -25,7 +25,7 @@ import { gateStatus } from './security/gate.js'
 export type { RouteModule } from './dispatch.js'
 export { createRequestListener } from './dispatch.js'
 
-const CANDIDATES = ['./assistant/index.ts', './generation/index.ts'] as const
+const CANDIDATES = ['./assistant/index.ts', './generation/index.ts', './analytics/index.ts'] as const
 
 async function loadRoutes(): Promise<RouteModule[]> {
   const loaded: RouteModule[] = []

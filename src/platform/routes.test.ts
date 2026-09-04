@@ -17,7 +17,7 @@ afterEach(() => {
 describe('route registry', () => {
   it('declares every top-level surface exactly once', () => {
     const ids = PLATFORM_ROUTES.map((route) => route.id)
-    expect(ids).toEqual(['landing', 'explore', 'editor', 'projects', 'account', 'share', 'gallery'])
+    expect(ids).toEqual(['landing', 'explore', 'editor', 'projects', 'account', 'share', 'gallery', 'terms', 'privacy'])
     expect(new Set(ids).size).toBe(ids.length)
   })
 
@@ -27,6 +27,8 @@ describe('route registry', () => {
     expect(byId.account).toBe('none')
     expect(byId.gallery).toBe('none')
     expect(byId.explore).toBe('none')
+    expect(byId.terms).toBe('none')
+    expect(byId.privacy).toBe('none')
     expect(byId.editor).toBe('editor')
     expect(byId.projects).toBe('catalog')
     expect(byId.share).toBe('catalog')

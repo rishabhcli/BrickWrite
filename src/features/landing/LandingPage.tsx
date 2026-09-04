@@ -23,6 +23,7 @@ import { useScrollDriver, type ScrollTrack } from './scroll'
 import { StudField } from './stud-field'
 import { StudPlate } from './StudPlate'
 import { useReducedMotion } from '../explore/motion'
+import { reopenAnalyticsConsent } from '../../platform/consent'
 import './landing.css'
 import './studio.css'
 
@@ -720,8 +721,30 @@ function Colophon() {
         LDraw geometry.
       </p>
       <p>
-        LEGO&reg; is a trademark of the LEGO Group, which does not sponsor, endorse or authorise LDraw or Brickwright.
+        This software uses the LDraw&trade; Parts Library, licensed CC BY 4.0. LEGO&reg; is a trademark of the LEGO
+        Group, which does not sponsor, endorse or authorise LDraw or Brickwright.
       </p>
+      <p>
+        Connection metadata derived from the LDCad Shadow Library by Roland Melkert, licensed CC BY-SA 4.0. Part
+        names, categories and usage data from the Rebrickable catalogue.
+      </p>
+      <ul className="bw-footer-links">
+        <li>
+          <LandingLink className="bw-studio-text-link" target={{ kind: 'path', href: '/terms' }}>
+            Terms
+          </LandingLink>
+        </li>
+        <li>
+          <LandingLink className="bw-studio-text-link" target={{ kind: 'path', href: '/privacy' }}>
+            Privacy
+          </LandingLink>
+        </li>
+        <li>
+          <button type="button" className="bw-studio-text-link" onClick={() => reopenAnalyticsConsent()}>
+            Cookie preferences
+          </button>
+        </li>
+      </ul>
     </footer>
   )
 }

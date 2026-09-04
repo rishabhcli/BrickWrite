@@ -4,7 +4,11 @@
 same revisioned document, catalog, command bus, constraint kernel, proposals, validation,
 viewport and undo stack.
 
-![Brickwright CAD console](docs/assets/brickwright-console.png)
+![Brickwright CAD editor — parts palette, viewport and inspector](docs/assets/brickwright-editor.png)
+
+![Brickwright landing page — curated megabuilds ready to fork](docs/assets/brickwright-landing.png)
+
+![A Brickwright megabuild rendered in the studio-lit viewport](docs/assets/brickwright-render.png)
 
 This repository is a working vertical slice, not a mock chat interface. You can search the
 real LDraw library, click a part into the viewport and watch it mate on real connectors, drag
@@ -189,7 +193,7 @@ catalog:fixture` verifies the whole pipeline against committed deterministic fix
 - **Project archives** — export and import a project as JSON, carrying the document,
   transaction history, notes and constraints, not only an `.ldr` snapshot. The Export
   Center is the human path; `session.exportArchive` / `importArchive` is the kernel path.
-- **Curated megabuilds** — ten kernel-gated published sets (1,080–11,493 editable parts),
+- **Curated megabuilds** — ten kernel-gated published sets (7,947–14,714 editable parts),
   shown on `/` and `/explore`. **Edit this build** copies the snapshot into a new project
   and opens `/editor?project=…`; the published bytes do not change. See
   [landing and explore](docs/integration/landing.md).

@@ -73,6 +73,8 @@ const ROUTE_GUIDE: Record<RouteId, string> = {
   account: 'Account settings. Requires sign-in. Nothing here for an agent.',
   share: 'A published, content-addressed model at /share/:slug. Read-only; can be forked into a project.',
   gallery: 'Published models from other builders. Read-only browse.',
+  terms: 'Static Terms of Service text. Nothing here for an agent.',
+  privacy: 'Static Privacy Policy text. Nothing here for an agent.',
 }
 
 function currentRouteId(): RouteId {

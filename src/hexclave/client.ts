@@ -1,5 +1,6 @@
 import { HexclaveClientApp } from '@hexclave/react'
 import { buildAnalyticsOptions } from '../platform/analytics'
+import { getAnalyticsConsent } from '../platform/consent'
 import { hexclaveUrlOptions } from './urls'
 
 /**
@@ -26,13 +27,18 @@ import { hexclaveUrlOptions } from './urls'
  *    `platform/config.ts`.
  *  - `analytics` blocks every region that can hold CAD content from session
  *    replay. See `platform/analytics.ts`, which is also where the registry of
- *    those regions lives.
+ *    those regions lives. It is also `{ enabled: false }` outright until the
+ *    visitor consents (`platform/consent.ts`) — Hexclave documents no runtime
+ *    toggle for this, only constructor-time configuration, so a changed
+ *    choice takes effect on the next load rather than this instant. Auth
+ *    still has to work either way, which is why the whole app is not gated
+ *    behind consent, only this one option.
  */
 function createHexclaveClientApp() {
   return new HexclaveClientApp({
     tokenStore: 'cookie',
     urls: hexclaveUrlOptions(),
-    analytics: buildAnalyticsOptions(),
+    analytics: getAnalyticsConsent() === 'granted' ? buildAnalyticsOptions() : { enabled: false },
   })
 }
 

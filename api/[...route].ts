@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 // Keep explicit output extensions: Vercel transpiles this TypeScript function
 // to native ESM rather than bundling local modules, so extensionless imports
 // fail in the Node runtime even though TypeScript can resolve them locally.
+import { createAnalyticsRoute } from '../server/analytics/index.js'
 import { createAssistantRoute } from '../server/assistant/handler.js'
 import type { RouteContext } from '../server/dispatch.js'
 import { createGenerationRoute } from '../server/generation/index.js'
@@ -14,7 +15,7 @@ import { gateStatus, isPaidRequest, openPaidGate } from '../server/security/gate
 import { requestUrl } from '../server/http/lifecycle.js'
 import { logProcessEvent } from '../server/log.js'
 
-const routes = [createAssistantRoute(), createGenerationRoute()]
+const routes = [createAssistantRoute(), createGenerationRoute(), createAnalyticsRoute()]
 
 /*
  * Installed at module scope, once per cold start.

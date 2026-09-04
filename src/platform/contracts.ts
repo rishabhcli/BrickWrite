@@ -13,7 +13,7 @@
  */
 
 /** Where a surface is mounted in the application shell. */
-export type RouteId = 'landing' | 'explore' | 'editor' | 'projects' | 'account' | 'share' | 'gallery'
+export type RouteId = 'landing' | 'explore' | 'editor' | 'projects' | 'account' | 'share' | 'gallery' | 'terms' | 'privacy'
 
 /**
  * A lazily-loaded top-level surface.

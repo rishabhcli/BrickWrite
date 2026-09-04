@@ -7955,24 +7955,29 @@
   text-transform: none;
 }
 
-/* The island occupies only its intrinsic bounds. The grid cell and canvas stay
-   free of an overlay, so orbiting and selection continue everywhere around it. */
+/* Anchor the compact tools to the viewport's right edge, not the window: open
+   docks must never cover them. Only the island's intrinsic bounds intercept
+   input, leaving the center of the canvas free for orbiting and selection. */
 .toolbar-island {
   grid-column: 3;
   grid-row: 3;
   z-index: 18;
   align-self: end;
-  justify-self: center;
+  justify-self: end;
   width: max-content;
   max-width: calc(100% - 24px);
+  margin-inline-end: 12px;
   margin-bottom: 14px;
   overflow: visible;
   border-radius: var(--r-surface);
   container-type: inline-size;
   container-name: toolbar-island;
+  /* Inline-size containment otherwise collapses max-content to zero, leaving
+     the buttons overflowing outside the island (and into an open dock). */
+  contain-intrinsic-inline-size: 520px;
 }
 .toolbar-island .toolrail {
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   min-height: 48px;
   /* Not `overflow-x: auto; overflow-y: visible`.

@@ -12,23 +12,31 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * own account gate, and its own honest error state.
  */
 
+interface FakeCloudSummary {
+  projectId: string
+  localProjectId: string
+  name: string
+  revision: number
+  savedAt: string
+  partCount: null
+  origin: 'cloud'
+  role: null
+  visibility: null
+}
+
+type FakeListResult =
+  | { ok: true; value: FakeCloudSummary[] }
+  | { ok: false; error: { code: string; message: string; repair: string } }
+
 const cloud = vi.hoisted(() => ({
   accountStatus: 'signed-in' as 'signed-in' | 'signed-out' | 'restricted' | 'expired',
   cloudStatus: 'ready' as 'ready' | 'unconfigured',
-  listProjects: vi.fn(async () => ({
-    ok: true as const,
-    value: [] as Array<{
-      projectId: string
-      localProjectId: string
-      name: string
-      revision: number
-      savedAt: string
-      partCount: null
-      origin: 'cloud'
-      role: null
-      visibility: null
-    }>,
-  })),
+  listProjects: vi.fn(
+    async (): Promise<FakeListResult> => ({
+      ok: true,
+      value: [],
+    }),
+  ),
   close: vi.fn(async () => {}),
 }))
 

@@ -520,6 +520,25 @@ body:has(.bw-landing) #pf-main::-webkit-scrollbar-thumb {
   max-width: 88ch;
   line-height: 1.65;
 }
+.bw-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.bw-footer-links .bw-studio-text-link {
+  padding: 0;
+}
+button.bw-studio-text-link {
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  font: inherit;
+  cursor: pointer;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .bw-film-chapter {

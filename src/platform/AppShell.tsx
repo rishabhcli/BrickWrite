@@ -330,6 +330,8 @@ const ROUTE_TITLES: Record<string, string> = {
   account: 'Account / Brickwright',
   share: 'Share / Brickwright',
   gallery: 'Gallery / Brickwright',
+  terms: 'Terms of Service / Brickwright',
+  privacy: 'Privacy Policy / Brickwright',
 }
 
 /** Last route whose title was announced. Skips focus on first paint and on AccountGate remounts. */

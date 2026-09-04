@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ReactNode } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { PRIMARY_NAV, isRouteRegistered, routeById } from './routes'
+import { ConsentBanner } from './ConsentBanner'
 import { useOnlineStatus } from './connectivity'
 import { OfflineNotice } from './states'
 import './platform.css'
@@ -93,6 +94,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
       </header>
 
       {online ? null : <OfflineNotice />}
+      <ConsentBanner />
 
       <main className="pf-frame__body" id="pf-main" tabIndex={-1}>
         {children}

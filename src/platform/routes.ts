@@ -100,6 +100,8 @@ export const PLATFORM_ROUTES: readonly RouteModule[] = Object.freeze([
   { id: 'account', path: '/account', boot: 'none', load: () => loadSurface('account'), requiresAuth: true },
   { id: 'share', path: '/share/:slug', boot: 'catalog', load: () => loadSurface('share') },
   { id: 'gallery', path: '/gallery', boot: 'none', load: () => loadSurface('gallery') },
+  { id: 'terms', path: '/terms', boot: 'none', load: () => loadSurface('terms') },
+  { id: 'privacy', path: '/privacy', boot: 'none', load: () => loadSurface('privacy') },
 ])
 
 export function routeById(id: RouteId): RouteModule {

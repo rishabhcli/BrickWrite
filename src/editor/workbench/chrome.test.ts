@@ -33,6 +33,19 @@ function mediaBlocks(source: string, width: string): string[] {
 }
 
 describe('workbench chrome polish', () => {
+  it('anchors the tool cluster inside the right edge of the viewport track', () => {
+    const islandRules = [...withoutComments.matchAll(/\.toolbar-island\s*\{([^{}]*)\}/g)]
+      .map((match) => match[1])
+      .join('\n')
+    expect(islandRules).toMatch(/grid-column:\s*3;/)
+    expect(islandRules).toMatch(/grid-row:\s*3;/)
+    expect(islandRules).toMatch(/justify-self:\s*end;/)
+    expect(islandRules).not.toMatch(/justify-self:\s*center;/)
+    expect(islandRules).toMatch(/margin-inline-end:\s*12px;/)
+    expect(islandRules).toMatch(/max-width:\s*calc\(100% - 24px\);/)
+    expect(islandRules).toMatch(/contain-intrinsic-inline-size:\s*520px;/)
+  })
+
   it('does not pin the timeline row to 0 with !important', () => {
     expect(withoutComments).not.toMatch(/\.app-shell[^{]*{[^{}]*grid-template-rows:[^;}]*!important/)
   })

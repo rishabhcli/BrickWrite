@@ -230,7 +230,17 @@ export type PlatformAnalyticsEvent =
 
 export type PlatformAnalyticsEventName = PlatformAnalyticsEvent['name']
 
-const ROUTE_IDS: readonly string[] = ['landing', 'explore', 'editor', 'projects', 'account', 'share', 'gallery']
+const ROUTE_IDS: readonly string[] = [
+  'landing',
+  'explore',
+  'editor',
+  'projects',
+  'account',
+  'share',
+  'gallery',
+  'terms',
+  'privacy',
+]
 
 /**
  * Every string-valued field, with the complete set of values it may hold.
