@@ -178,6 +178,14 @@ describe('the first-load control budget', () => {
    * no model and nothing selected. The number is a budget, not a target — it
    * exists so the next defensible control has to displace one rather than join
    * the pile. Raise it deliberately, with a reason, or don't.
+   *
+   * Raised from 46 to 48: Pan and Orbit joined Select/Move/Rotate/Connect as
+   * explicit tool-mode buttons. Both gestures already existed as mouse
+   * modifiers, which is exactly the problem — a touch or keyboard-only
+   * operator had no way to reach them at all, and a mouse operator had no way
+   * to discover them. Nothing displaced: the two next most cuttable things on
+   * this list are the category tabs and the view cube, and both predate this
+   * change and answer to their own budgets.
    */
   it('opens with a countable amount of chrome, not a cockpit', () => {
     mount()
@@ -187,7 +195,7 @@ describe('the first-load control budget', () => {
       ),
     ].filter((node) => !node.closest('.parts-grid, .swatches, [hidden], [aria-hidden="true"]'))
 
-    expect(interactive.length).toBeLessThanOrEqual(46)
+    expect(interactive.length).toBeLessThanOrEqual(48)
     // Controls whose subject is absent are the ones that used to make up the
     // difference, so name a few explicitly rather than trusting the count.
     for (const gone of ['Remove selection', 'Command deck', 'Frame selected parts', 'Left view', 'Back view']) {
