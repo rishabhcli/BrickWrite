@@ -3,12 +3,32 @@ import type { RecordedLandingEvent } from '../features/landing/analytics'
 
 const ENDPOINT = '/api/analytics/events'
 
+/**
+ * Telemetry that must never be visible when it fails.
+ *
+ * `fetch(...).catch(() => {})` only swallows a *rejected* promise — a
+ * network-level failure. A proxy with nothing behind it (every acceptance
+ * suite except the one that boots its own edge process, and plausibly a real
+ * deployment mid-redeploy) answers with a plain HTTP error instead, which
+ * `fetch` resolves rather than rejects, and the browser logs to the console
+ * as a failed resource load regardless of what the calling code does with the
+ * response. `sendBeacon` is the platform's actual answer to this: a fire-and-
+ * forget transmission that survives page unload and reports nothing back, so
+ * there is nothing here to catch and nothing for the browser to log either.
+ * `fetch` is only the fallback for the browsers new enough to run this build
+ * but without it, which is a compatibility floor, not a load-bearing path.
+ */
 function post(surface: 'platform' | 'landing', recorded: { event: unknown; at: number }): void {
+  const body = JSON.stringify({ surface, event: recorded.event, at: recorded.at })
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }))
+    return
+  }
   if (typeof fetch !== 'function') return
   fetch(ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ surface, event: recorded.event, at: recorded.at }),
+    body,
     keepalive: true,
   }).catch(() => {})
 }
