@@ -25,7 +25,12 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The unit suite alone took 11m of the last successful run's 15 — already
+    # most of the budget before this timeout ever needed to fire on a real
+    # regression. It exists to bound a hang, not to race the suite's natural
+    # growth, so it gets raised here rather than chased every time the count
+    # of test files crosses whatever the current ceiling happens to be.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
