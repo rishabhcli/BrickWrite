@@ -1,4 +1,3 @@
-import { hexclaveAuthorizationHeaderOrAnonymous } from '../hexclave/authorization'
 import { createPublication } from '../features/share/publish'
 import type { ModelDocument, ValidationReport } from './types'
 
@@ -58,6 +57,11 @@ export async function autoPublishIfEligible(document: ModelDocument, validation:
 
   inFlight.add(projectId)
   try {
+    // Dynamic, and only reached once a document has actually crossed the
+    // threshold: a static import here would drag the whole Hexclave SDK into
+    // every `import('./autopublish')` — including the one `onCommit` fires
+    // on every single commit — long before this eligibility check ever runs.
+    const { hexclaveAuthorizationHeaderOrAnonymous } = await import('../hexclave/authorization')
     const authorization = await hexclaveAuthorizationHeaderOrAnonymous()
     if (!authorization) return
 
