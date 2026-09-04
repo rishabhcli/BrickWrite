@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { IndexedDbDriver, MemoryDriver, ProjectRepository, type ProjectSummary } from '../../cad/persistence'
 import { DEMOS } from '../../demos'
+import { createConvexCloud, type AccessTokenSource } from '../../cloud/convexClient'
+import { CloudProjectStore, type StoredProjectSummary } from '../../cloud/projectStore'
 import { PlateAtmosphere } from '../landing/plate'
 import { usePointerField } from '../landing/reveal'
+import { useAccountSession } from '../../platform/auth/accountSession'
 import './projects.css'
 
 const STARTERS = [
@@ -17,15 +20,34 @@ const STARTERS = [
   })),
 ]
 
+/**
+ * A standalone token source, rather than importing `cloud/browserRuntime`.
+ * That module reaches for `cadEngine`/`session`/`commandBus` to bridge a live
+ * kernel into cloud sync — machinery this dashboard has no use for and no
+ * reason to pull into a route that never boots the editor.
+ */
+const dashboardTokenSource: AccessTokenSource = async (args) => {
+  try {
+    const { getHexclaveClientApp } = await import('../../hexclave/client')
+    const app = getHexclaveClientApp()
+    return app.status === 'ok' ? await app.data.getConvexClientAuth({})(args) : null
+  } catch {
+    return null
+  }
+}
+
 export function ProjectsPage() {
   const navigate = useNavigate()
   const pointer = usePointerField<HTMLDivElement>()
+  const account = useAccountSession()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [cloudOnly, setCloudOnly] = useState<StoredProjectSummary[] | null>(null)
+  const [cloudError, setCloudError] = useState<string | null>(null)
 
   const store = useMemo(
     () => new ProjectRepository(typeof indexedDB !== 'undefined' ? new IndexedDbDriver() : new MemoryDriver()),
@@ -47,6 +69,42 @@ export function ProjectsPage() {
   useEffect(() => {
     void loadProjects()
   }, [loadProjects])
+
+  // A build claimed to the cloud from another browser has no local copy here
+  // at all, so the list above — IndexedDB only — can never show it. This is
+  // the one place this page looks past its own browser, for a real signed-in
+  // account only: there is no other device for an anonymous guest session to
+  // share a build with.
+  useEffect(() => {
+    if (account.status !== 'signed-in') {
+      setCloudOnly(null)
+      setCloudError(null)
+      return
+    }
+    let live = true
+    const cloud = createConvexCloud({ tokenSource: dashboardTokenSource })
+    if (cloud.status !== 'ready') {
+      setCloudOnly(null)
+      setCloudError(null)
+      return
+    }
+    void new CloudProjectStore(cloud.backend).listProjects().then((result) => {
+      if (!live) return
+      if (result.ok) {
+        setCloudError(null)
+        setCloudOnly(result.value.filter((summary) => !projects.some((local) => local.projectId === summary.localProjectId)))
+      } else {
+        // Reported, never hidden: an unreachable deployment must not look
+        // like an account with nothing saved to it.
+        setCloudOnly(null)
+        setCloudError(`${result.error.message} ${result.error.repair}`.trim())
+      }
+    })
+    return () => {
+      live = false
+      void cloud.close()
+    }
+  }, [account.status, projects])
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -229,6 +287,47 @@ export function ProjectsPage() {
             )}
           </div>
         </section>
+
+        {cloudError || (cloudOnly && cloudOnly.length > 0) ? (
+          <section className="bw-projects-list-section" aria-labelledby="bw-cloud-title">
+            <div className="bw-section-head">
+              <h2 className="bw-display x3" id="bw-cloud-title">
+                Saved to the cloud, not yet in this browser
+              </h2>
+              <p>Open the editor's Projects panel to download one of these here.</p>
+            </div>
+            {cloudError ? (
+              <div className="bw-projects-empty" role="alert">
+                <h3 className="bw-display x3">The cloud list could not be read</h3>
+                <p>{cloudError}</p>
+              </div>
+            ) : (
+              <div className="bw-projects-grid">
+                {(cloudOnly ?? []).map((project) => (
+                  <article className="bw-project-card" key={project.projectId}>
+                    <div className="bw-project-card-header">
+                      <h3 className="bw-project-card-title">{project.name}</h3>
+                    </div>
+                    <div className="bw-project-card-meta">
+                      <span>
+                        r<b>{project.revision}</b>
+                      </span>
+                      <span>{new Date(project.savedAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="bw-project-card-actions">
+                      <Link className="bw-button small primary" to="/editor">
+                        Open in editor{' '}
+                        <span className="bw-key" aria-hidden="true">
+                          →
+                        </span>
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
     </div>
   )

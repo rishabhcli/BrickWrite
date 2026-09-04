@@ -81,6 +81,9 @@ class Session {
       void import('./autopublish').then(({ autoPublishIfEligible }) =>
         autoPublishIfEligible(document, cadEngine.getSnapshot().validation),
       )
+      // Dynamic for the same reason: src/cloud pulls in the Convex client, and
+      // the WebMCP adapter has no business shipping it.
+      void import('./autoclaim').then(({ autoClaimIfEligible }) => autoClaimIfEligible(document))
     })
     return this.restore
   }
