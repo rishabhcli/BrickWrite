@@ -39,6 +39,31 @@ async function waitForServer(deadlineMs = 60_000) {
   throw new Error(`Timed out waiting for ${url}`)
 }
 
+// Vite proxies `/api` to this address (`vite.config.ts`), same as local dev
+// (`tools/dev.mjs`). Without it, any page that calls the API — analytics on
+// every load, the assistant and generation surfaces — gets a 502 from a proxy
+// with nothing behind it, which a suite asserting on browser console errors
+// then reports as the application's fault rather than the harness's.
+const apiUrl = process.env.BRICKWRIGHT_API_URL ?? `http://127.0.0.1:${process.env.BRICKWRIGHT_API_PORT ?? 8787}`
+
+const apiReachable = async () => {
+  try {
+    await fetch(`${apiUrl}/api/analytics/events`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForApi(deadlineMs = 60_000) {
+  const started = Date.now()
+  while (Date.now() - started < deadlineMs) {
+    if (await apiReachable()) return
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error(`Timed out waiting for the API server at ${apiUrl}`)
+}
+
 function run(command, args, env) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'inherit', env: { ...process.env, ...env } })
@@ -49,6 +74,7 @@ function run(command, args, env) {
 const only = process.argv.slice(2).filter((arg) => !arg.startsWith('-'))
 
 let server
+let api
 try {
   if (!(await reachable())) {
     server = spawn(
@@ -57,6 +83,13 @@ try {
       { stdio: 'ignore' },
     )
     await waitForServer()
+  }
+
+  // Only for the default target: an explicit BRICKWRIGHT_API_URL means the
+  // caller already has an API process running somewhere for this run.
+  if (!process.env.BRICKWRIGHT_API_URL && !(await apiReachable())) {
+    api = spawn(process.execPath, ['--import', './tools/ts-resolve.mjs', 'server/index.ts'], { stdio: 'ignore' })
+    await waitForApi()
   }
 
   const entries = (await readdir('tools/e2e'))
@@ -85,4 +118,5 @@ try {
   process.stdout.write(`\n${results.length} suite(s) passed\n`)
 } finally {
   server?.kill()
+  api?.kill()
 }

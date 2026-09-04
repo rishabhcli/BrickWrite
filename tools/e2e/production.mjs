@@ -51,6 +51,30 @@ async function waitForServer() {
   throw new Error(`Timed out waiting for production preview at ${origin}`)
 }
 
+// Vite's preview server proxies `/api` the same as dev (`vite.config.ts`), to
+// nothing unless something is actually listening there. Without this, the
+// landing page's own analytics beacon 502s on every run and fails the
+// browser-error assertion below for a harness gap, not a bundle regression.
+const apiPort = Number(process.env.BRICKWRIGHT_API_PORT ?? 8787)
+const apiUrl = process.env.BRICKWRIGHT_API_URL ?? `http://127.0.0.1:${apiPort}`
+
+async function apiReachable() {
+  try {
+    await fetch(`${apiUrl}/api/analytics/events`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForApi() {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (await apiReachable()) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`Timed out waiting for the API server at ${apiUrl}`)
+}
+
 const server = spawn(
   process.execPath,
   ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'],
@@ -58,8 +82,16 @@ const server = spawn(
 )
 
 let browser
+let api
 try {
   await waitForServer()
+  // Only for the default target, and only if nothing is already listening
+  // there: an explicit BRICKWRIGHT_API_URL, or another process already on
+  // the default port, means this run does not own that server's lifecycle.
+  if (!process.env.BRICKWRIGHT_API_URL && !(await apiReachable())) {
+    api = spawn(process.execPath, ['--import', './tools/ts-resolve.mjs', 'server/index.ts'], { stdio: 'ignore' })
+    await waitForApi()
+  }
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const errors = []
@@ -91,4 +123,5 @@ try {
 } finally {
   await browser?.close()
   server.kill()
+  api?.kill()
 }
