@@ -139,8 +139,9 @@ try {
   await shot(page, 'studio')
   step('studio preview drawn')
 
-  // Exercise the controls the studio actually ships, then publish public with
-  // fork, download and embed enabled.
+  // Exercise the controls the studio actually ships, then publish with fork,
+  // download and embed enabled. Every publication is public now, so there is
+  // no visibility control left to exercise here.
   await page.locator('[data-testid="preset-blueprint"]').click()
   await page.locator('[data-testid="preset-studio"]').click()
   await page.locator('[data-testid="crop-square"]').click()
@@ -151,7 +152,6 @@ try {
     .locator('[data-testid="publish-description"]')
     .fill('A brick-built survey rover assembled from real LDraw parts at exact LDU transforms.')
   await page.locator('[data-testid="publish-tags"]').fill('rover technic showcase')
-  await page.locator('[data-testid="visibility-public"]').click()
   for (const capability of ['fork', 'download', 'embed']) {
     const box = page.locator(`[data-testid="capability-${capability}"]`)
     if (!(await box.isChecked())) await box.check()
@@ -347,19 +347,23 @@ try {
   assert(!embed.headers.get('x-frame-options'), 'the embed sets X-Frame-Options, which cannot express an allowlist')
   assert((embed.headers.get('x-robots-tag') ?? '').includes('noindex'), 'the embed is indexable')
 
-  // == 7. unlisted tokens ===================================================
-  step('unlisted tokens')
+  // == 7. share links are inert — every publication is already public ======
+  // There is no visibility left to gate with a token: the publication is
+  // public from the moment it is created. Minting still works — it is a
+  // kept, tested subsystem, just one nothing in the access gate consults
+  // any more — and a stray `?t=` from a bookmarked pre-existing link must
+  // not do anything surprising to a page that no longer needs one.
+  step('share links')
   const authorised = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
     Authorization: `Bearer ${publishToken}`,
   }
-  await fetch(`${edgeUrl}/publications/${slug}/access`, {
-    method: 'POST',
-    headers: authorised,
-    body: JSON.stringify({ visibility: 'unlisted' }),
-  })
-  assert((await fetch(`${edgeUrl}/share/${slug}`)).status === 404, 'an unlisted page opened without a token')
+  assert((await fetch(`${edgeUrl}/share/${slug}`)).ok, 'the public page needs a token it should not')
+  assert(
+    (await fetch(`${edgeUrl}/share/${slug}?t=not-a-real-token`)).ok,
+    'a stray token in the address broke an already-public page',
+  )
 
   const minted = await (
     await fetch(`${edgeUrl}/publications/${slug}/tokens`, {
@@ -377,79 +381,7 @@ try {
     'the mint response leaked the stored hash',
   )
 
-  // `?t=` is a bootstrap, not the credential. A valid one is exchanged for a
-  // path-scoped HttpOnly cookie and redirected to the address without it, so
-  // the secret stops travelling in a query string that edge logs, browser
-  // history and every intervening proxy retain. `redirect: 'manual'` because
-  // Node's fetch keeps no cookie jar: following the redirect automatically
-  // would drop the cookie and land on the page that correctly refuses.
-  const handoff = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`, {
-    redirect: 'manual',
-  })
-  assert(handoff.status === 303, `a valid token returned ${handoff.status} instead of the cookie handoff`)
-  assert(handoff.headers.get('location') === `/share/${slug}`, 'the handoff did not clear the token from the URL')
-  const setCookie = handoff.headers.get('set-cookie') ?? ''
-  assert(setCookie.includes('HttpOnly') && setCookie.includes('Secure'), 'the link cookie is not HttpOnly and Secure')
-  assert(setCookie.includes(`Path=/share/${slug}`), 'the link cookie is not scoped to this publication')
-
-  const withToken = await fetch(`${edgeUrl}/share/${slug}`, { headers: { cookie: setCookie.split(';')[0] } })
-  assert(withToken.ok, `the exchanged cookie returned ${withToken.status}`)
-  const unlistedHtml = await withToken.text()
-  assert(meta(unlistedHtml, 'name="robots"').startsWith('noindex'), 'an unlisted page is indexable')
-  assert(!unlistedHtml.includes(minted.token.split('.')[1]), 'the unlisted page echoed the token secret')
-  // The token's scope withheld forking, so the action must be absent.
-  assert(!unlistedHtml.includes('Edit a copy'), 'a view-only link offered the fork action')
-
-  // The page is not the whole page. Its hero image, its viewer payload and the
-  // og:image every unfurl fetches are separate requests to `[[rest]].ts`, and
-  // they carry the cookie and no `?t=` — which is exactly the combination that
-  // route used to refuse, having read only the query parameter. An unlisted
-  // link looked fine in HTML and rendered broken.
-  const linkCookie = setCookie.split(';')[0]
-  for (const resource of ['view.json', 'summary.json']) {
-    const response = await fetch(`${edgeUrl}/share/${slug}/${resource}`, { headers: { cookie: linkCookie } })
-    assert(response.ok, `${resource} returned ${response.status} to a visitor holding the link cookie`)
-  }
-  const unlistedCard = await fetch(`${edgeUrl}/share/${slug}/card/opengraph.png`, { headers: { cookie: linkCookie } })
-  assert(unlistedCard.ok, `the og:image returned ${unlistedCard.status} to a visitor holding the link cookie`)
-  assert(unlistedCard.headers.get('content-type') === 'image/png', 'the unlisted og:image is not a PNG')
-  // 403 rather than 404: the cookie resolved and the scope refused. A cookie
-  // the route cannot see is indistinguishable from no publication at all.
-  const download = await fetch(`${edgeUrl}/share/${slug}/model.json`, { headers: { cookie: linkCookie } })
-  assert(download.status === 403, `a view-only link got ${download.status} for model.json, not 403`)
-  const noCookie = await fetch(`${edgeUrl}/share/${slug}/view.json`)
-  assert(noCookie.status === 404, `view.json answered ${noCookie.status} without any credential`)
-
-  const [tokenId] = minted.token.split('.')
-  const wrongToken = await fetch(`${edgeUrl}/share/${slug}?t=${tokenId}.${'A'.repeat(43)}`)
-  assert(wrongToken.status === 404, `a forged token returned ${wrongToken.status}`)
-
-  const expired = await (
-    await fetch(`${edgeUrl}/publications/${slug}/tokens`, {
-      method: 'POST',
-      headers: authorised,
-      body: JSON.stringify({ label: 'already expired', expiresAt: '2020-01-01T00:00:00.000Z' }),
-    })
-  ).json()
-  const expiredResponse = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(expired.token)}`)
-  assert(expiredResponse.status === 410, `an expired token returned ${expiredResponse.status}`)
-
-  await fetch(`${edgeUrl}/publications/${slug}/tokens/${tokenId}/revoke`, {
-    method: 'POST',
-    headers: authorised,
-    body: '{}',
-  })
-  const afterRevokeToken = await fetch(`${edgeUrl}/share/${slug}?t=${encodeURIComponent(minted.token)}`)
-  assert(afterRevokeToken.status === 404, `a revoked token returned ${afterRevokeToken.status}`)
-
   // == 8. revoke the publication ============================================
-  await fetch(`${edgeUrl}/publications/${slug}/access`, {
-    method: 'POST',
-    headers: authorised,
-    body: JSON.stringify({ visibility: 'public' }),
-  })
-  assert((await fetch(`${edgeUrl}/share/${slug}`)).ok, 'the publication did not come back when made public again')
-
   // Everything up to here was a page the application is expected to render
   // cleanly, so the console has to be clean now — after the revocation the
   // suite deliberately loads a 410, which the browser reports as a failed
