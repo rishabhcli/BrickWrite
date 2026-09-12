@@ -16,3 +16,4 @@ artifacts
 .env*
 !.env.example
 .playwright-mcp
+docs/how-it-works/guide.html

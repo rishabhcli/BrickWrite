@@ -18,6 +18,18 @@ Site Tools: five of them are registered on every route, so an agent handed the b
 orient itself and navigate into the workspace, where 25–41 more appear depending on the
 autonomy mode.
 
+## How it works
+
+A diagram-first tour for humans — one document, two operators, the catalog, snapping,
+collision, generation, the assistant, local-first save, Hexclave accounts, sharing, and how
+the three production services fit together — is
+
+**[docs/how-brickwright-works.pdf](docs/how-brickwright-works.pdf)**
+
+Rebuild it with `python3 docs/how-it-works/build_guide.py` after editing the generator.
+[ARCHITECTURE.md](ARCHITECTURE.md) is the engineer’s data-flow companion; this README is
+the measured inventory of what works today.
+
 ## Run it
 
 ```bash
@@ -429,6 +441,7 @@ shift-drag selects a region, that the build sequence is still on screen after an
 that the first-run guide appears once and not again. It also opens the delivery center, verifies a hierarchical MPD, generates the real
 printable guide and asserts that its step images are embedded rather than remotely fetched.
 
+The visual guide is [docs/how-brickwright-works.pdf](docs/how-brickwright-works.pdf).
 Architecture and data-flow details are in [ARCHITECTURE.md](ARCHITECTURE.md); everyday
 editing shortcuts in [docs/cad-editing.md](docs/cad-editing.md); how the three deployed
 services fit together — and the two configuration mistakes that fail silently — in
